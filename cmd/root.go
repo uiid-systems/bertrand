@@ -27,23 +27,17 @@ func printExitMessage(name string) {
 	fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
 }
 
-func requireInit(cmd *cobra.Command, args []string) error {
-	if cmd.Name() == "init" || cmd.Name() == "version" || cmd.Name() == "completion" {
-		return nil
-	}
+func isInitialized() bool {
 	configPath := filepath.Join(session.BaseDir, "config.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("bertrand is not initialized — run: bertrand init")
-	}
-	return nil
+	_, err := os.Stat(configPath)
+	return err == nil
 }
 
 var rootCmd = &cobra.Command{
-	Use:               "bertrand [session-name]",
-	Short:             "Agentic workflow manager for Claude Code",
-	Long:              "Launch and manage concurrent Claude Code sessions with automatic focus management.",
-	Args:              cobra.MaximumNArgs(1),
-	PersistentPreRunE: requireInit,
+	Use:   "bertrand [session-name]",
+	Short: "Agentic workflow manager for Claude Code",
+	Long:  "Launch and manage concurrent Claude Code sessions with automatic focus management.",
+	Args:  cobra.MaximumNArgs(1),
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -60,6 +54,9 @@ var rootCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 {
+			if !isInitialized() {
+				return fmt.Errorf("bertrand is not initialized — run: bertrand init")
+			}
 			return resumeSession(args[0])
 		}
 		return launchInteractive()
@@ -77,6 +74,20 @@ func Execute() {
 }
 
 func launchInteractive() error {
+	if !isInitialized() {
+		m := tui.NewInitPromptModel()
+		p := tea.NewProgram(m)
+		result, err := p.Run()
+		if err != nil {
+			return err
+		}
+		prompt := result.(tui.InitPromptModel)
+		if !prompt.Accepted() || prompt.Quitting() {
+			return nil
+		}
+		return runInit(nil, nil)
+	}
+
 	sessions, _ := session.ListSessions()
 
 	m := tui.NewLaunchModel(sessions)
