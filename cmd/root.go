@@ -27,11 +27,23 @@ func printExitMessage(name string) {
 	fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
 }
 
+func requireInit(cmd *cobra.Command, args []string) error {
+	if cmd.Name() == "init" || cmd.Name() == "version" || cmd.Name() == "completion" {
+		return nil
+	}
+	configPath := filepath.Join(session.BaseDir, "config.yaml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("bertrand is not initialized — run: bertrand init")
+	}
+	return nil
+}
+
 var rootCmd = &cobra.Command{
-	Use:   "bertrand [session-name]",
-	Short: "Agentic workflow manager for Claude Code",
-	Long:  "Launch and manage concurrent Claude Code sessions with automatic focus management.",
-	Args:  cobra.MaximumNArgs(1),
+	Use:               "bertrand [session-name]",
+	Short:             "Agentic workflow manager for Claude Code",
+	Long:              "Launch and manage concurrent Claude Code sessions with automatic focus management.",
+	Args:              cobra.MaximumNArgs(1),
+	PersistentPreRunE: requireInit,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
