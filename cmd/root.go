@@ -81,10 +81,12 @@ func launchInteractive() error {
 		return nil
 	}
 
-	if launch.IsResume() {
-		return resumeSession(launch.Chosen())
+	// Re-exec with session name as arg so Warp shows "bertrand <name>" in the block header
+	self, err := os.Executable()
+	if err != nil {
+		self = os.Args[0]
 	}
-	return launchNewSession(launch.Chosen())
+	return syscall.Exec(self, []string{"bertrand", launch.Chosen()}, os.Environ())
 }
 
 func launchNewSession(name string) error {
