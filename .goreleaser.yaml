@@ -24,7 +24,7 @@ changelog:
 brews:
   - repository:
       owner: uiid-systems
-      name: homebrew-tap
+      name: homebrew-bertrand
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/uiid-systems/bertrand
