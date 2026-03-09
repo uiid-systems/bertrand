@@ -1,0 +1,36 @@
+version: 2
+
+builds:
+  - binary: bertrand
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - repository:
+      owner: uiid-systems
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/uiid-systems/bertrand
+    description: Multi-session workflow manager for Claude Code
+    license: MIT
+    install: |
+      bin.install "bertrand"
+    test: |
+      system "#{bin}/bertrand", "--version"
