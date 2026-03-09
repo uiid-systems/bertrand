@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -69,6 +70,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Hammerspoon setup
 	if choice.EnableFocusQueue {
+		// Install Hammerspoon if not present
+		if _, err := os.Stat("/Applications/Hammerspoon.app"); os.IsNotExist(err) {
+			fmt.Printf("  %s\n", label("Hammerspoon not found, installing via Homebrew..."))
+			brewCmd := exec.Command("brew", "install", "--cask", "hammerspoon")
+			brewCmd.Stdout = os.Stdout
+			brewCmd.Stderr = os.Stderr
+			if err := brewCmd.Run(); err != nil {
+				return fmt.Errorf("failed to install Hammerspoon: %w", err)
+			}
+			fmt.Printf("%s %s\n", check, label("Hammerspoon installed"))
+		}
 		hsPath := choice.HammerspoonPath
 		if strings.HasPrefix(hsPath, "~") {
 			home, _ := os.UserHomeDir()
