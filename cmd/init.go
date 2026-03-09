@@ -17,15 +17,22 @@ import (
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "First-time setup wizard",
-	RunE:  runInit,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runInitWizard(true)
+	},
 }
 
 func init() {
 	rootCmd.AddCommand(initCmd)
 }
 
-func runInit(cmd *cobra.Command, args []string) error {
-	m := tui.NewWizardModel()
+func runInitWizard(showLogo bool) error {
+	var m tui.WizardModel
+	if showLogo {
+		m = tui.NewWizardModel()
+	} else {
+		m = tui.NewWizardModelNoLogo()
+	}
 	p := tea.NewProgram(m)
 	result, err := p.Run()
 	if err != nil {

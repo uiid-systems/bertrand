@@ -23,14 +23,19 @@ type WizardChoice struct {
 }
 
 type WizardModel struct {
-	step    wizardStep
-	cursor  int
-	choice  WizardChoice
+	step     wizardStep
+	cursor   int
+	choice   WizardChoice
 	quitting bool
+	showLogo bool
 }
 
 func NewWizardModel() WizardModel {
-	return WizardModel{choice: WizardChoice{HammerspoonPath: "~/.hammerspoon"}}
+	return WizardModel{choice: WizardChoice{HammerspoonPath: "~/.hammerspoon"}, showLogo: true}
+}
+
+func NewWizardModelNoLogo() WizardModel {
+	return WizardModel{choice: WizardChoice{HammerspoonPath: "~/.hammerspoon"}, showLogo: false}
 }
 
 func (m WizardModel) Choice() WizardChoice { return m.choice }
@@ -123,7 +128,10 @@ func (m WizardModel) View() string {
 		return ""
 	}
 
-	s := Logo() + "\n"
+	s := ""
+	if m.showLogo {
+		s = Logo() + "\n"
+	}
 
 	switch m.step {
 	case stepTerminal:

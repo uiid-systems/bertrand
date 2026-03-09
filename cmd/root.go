@@ -53,6 +53,8 @@ var rootCmd = &cobra.Command{
 		return names, cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Soft clear: move bertrand to top of visible area, preserve scrollback
+		fmt.Print("\033[2J\033[H")
 		if len(args) == 1 {
 			if !isInitialized() {
 				return fmt.Errorf("bertrand is not initialized — run: bertrand init")
@@ -85,7 +87,7 @@ func launchInteractive() error {
 		if !prompt.Accepted() || prompt.Quitting() {
 			return nil
 		}
-		return runInit(nil, nil)
+		return runInitWizard(false)
 	}
 
 	sessions, _ := session.ListSessions()
