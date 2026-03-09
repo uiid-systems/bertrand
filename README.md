@@ -1,6 +1,6 @@
 # bertrand
 
-Multi-session workflow manager for Claude Code. Named after Bertrand "ElkY" Grospellier — the Starcraft pro who became the architect of multi-tabling poker. Manages concurrent Claude Code sessions with automatic focus management, modeled after poker multi-tabling.
+Multi-session workflow manager for Claude Code. Manages concurrent Claude Code sessions with automatic focus management.
 
 ## How It Works
 
