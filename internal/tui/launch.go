@@ -187,7 +187,7 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 var (
 	sessionNameActive     = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
-	sessionDimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sessionDimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	sessionSummaryActive  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	sessionSummaryDim     = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	statusWorkingStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
