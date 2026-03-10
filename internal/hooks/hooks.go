@@ -326,7 +326,7 @@ local tmpDir = baseDir .. "/tmp"
 local windowMap = {}        -- windowId → sessionName
 local sessionWindows = {}   -- sessionName → windowId
 local queue = {}
-local snapshotApp = nil
+local snapshotWin = nil
 local watcher = nil
 local pollTimer = nil
 local cleanupTick = 0
@@ -386,6 +386,7 @@ local function showBorder(win)
   borderCanvas:level(hs.canvas.windowLevels.floating)
   borderCanvas:behavior(hs.canvas.windowBehaviors.transient)
   borderCanvas:clickActivating(false)
+  borderCanvas:canvasMouseEvents(false)
   borderCanvas:show()
 
   -- Track window movement/resize
@@ -617,9 +618,9 @@ local function refreshQueue()
   end)
 
   if #queue > 0 and wasEmpty then
-    local front = hs.application.frontmostApplication()
-    if front and front:name() ~= "Warp" then
-      snapshotApp = front
+    local focusedWin = hs.window.focusedWindow()
+    if focusedWin then
+      snapshotWin = focusedWin
     end
     -- Notify first, then focus
     for _, item in ipairs(queue) do
@@ -632,10 +633,14 @@ local function refreshQueue()
     focusSessionWindow(queue[1].session)
 
   elseif #queue == 0 and not wasEmpty then
-    if snapshotApp then
-      snapshotApp:activate()
-      print("bertrand: queue empty, restored " .. snapshotApp:name())
-      snapshotApp = nil
+    if snapshotWin then
+      if snapshotWin:application() then
+        snapshotWin:focus()
+        print("bertrand: queue empty, restored " .. snapshotWin:application():name() .. " window")
+      else
+        print("bertrand: queue empty, snapshot window was closed")
+      end
+      snapshotWin = nil
     end
   end
 end
@@ -743,7 +748,7 @@ function bertrand.stop()
   windowMap = {}
   sessionWindows = {}
   queue = {}
-  snapshotApp = nil
+  snapshotWin = nil
   warpFilter = nil
   warpIcon = nil
   print("bertrand: stopped")
