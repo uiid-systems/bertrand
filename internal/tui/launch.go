@@ -235,11 +235,11 @@ func (m LaunchModel) View() string {
 
 			var status string
 			switch s.Status {
-			case "working":
+			case session.StatusWorking:
 				status = statusWorkingStyle.Render("● working")
-			case "blocked":
+			case session.StatusBlocked:
 				status = statusBlockedStyle.Render("● blocked")
-			case "done":
+			case session.StatusDone:
 				status = statusDoneStyle.Render("● done")
 			}
 

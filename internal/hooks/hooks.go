@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/uiid-systems/bertrand/internal/session"
 )
@@ -88,7 +89,7 @@ rm -f "$HOME/.bertrand/sessions/$name/pending"
 
 // InstallHooks writes hook scripts to ~/.bertrand/hooks/ and returns the path.
 func InstallHooks() (string, error) {
-	dir := filepath.Join(session.BaseDir, "hooks")
+	dir := filepath.Join(session.BaseDir(), "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
 	}
@@ -121,10 +122,19 @@ type hookMatcher struct {
 	Hooks   []hookEntry `json:"hooks"`
 }
 
+// isBertrandHook checks if a hook command references a bertrand hook script.
+func isBertrandHook(command string) bool {
+	return strings.Contains(command, ".bertrand/hooks/")
+}
+
 // InjectSettings adds bertrand hooks to Claude Code's settings.json.
-// It preserves existing settings and only adds/updates the hook entries.
+// It preserves existing non-bertrand hook entries for each event.
 func InjectSettings() error {
-	settingsPath := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
 
 	var settings map[string]interface{}
 
@@ -141,10 +151,10 @@ func InjectSettings() error {
 		}
 	}
 
-	hooksDir := filepath.Join(session.BaseDir, "hooks")
+	hooksDir := filepath.Join(session.BaseDir(), "hooks")
 
-	bertrandHooks := map[string]interface{}{
-		"PreToolUse": []hookMatcher{
+	bertrandHooks := map[string][]hookMatcher{
+		"PreToolUse": {
 			{
 				Matcher: "AskUserQuestion",
 				Hooks: []hookEntry{
@@ -166,7 +176,7 @@ func InjectSettings() error {
 				},
 			},
 		},
-		"PostToolUse": []hookMatcher{
+		"PostToolUse": {
 			{
 				Matcher: "AskUserQuestion",
 				Hooks: []hookEntry{
@@ -190,14 +200,33 @@ func InjectSettings() error {
 		},
 	}
 
-	// Merge hooks — preserve existing non-bertrand hooks
 	existingHooks, _ := settings["hooks"].(map[string]interface{})
 	if existingHooks == nil {
 		existingHooks = make(map[string]interface{})
 	}
 
-	for event, matchers := range bertrandHooks {
-		existingHooks[event] = matchers
+	for event, newMatchers := range bertrandHooks {
+		// Preserve existing non-bertrand hooks for this event
+		var kept []hookMatcher
+		if existing, ok := existingHooks[event]; ok {
+			raw, _ := json.Marshal(existing)
+			var existingMatchers []hookMatcher
+			if json.Unmarshal(raw, &existingMatchers) == nil {
+				for _, m := range existingMatchers {
+					isBertrand := false
+					for _, h := range m.Hooks {
+						if isBertrandHook(h.Command) {
+							isBertrand = true
+							break
+						}
+					}
+					if !isBertrand {
+						kept = append(kept, m)
+					}
+				}
+			}
+		}
+		existingHooks[event] = append(kept, newMatchers...)
 	}
 	settings["hooks"] = existingHooks
 
@@ -212,9 +241,14 @@ func InjectSettings() error {
 	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
 }
 
-// RemoveSettings removes bertrand hooks from Claude Code's settings.json.
+// RemoveSettings removes only bertrand hooks from Claude Code's settings.json,
+// preserving any user-configured hooks.
 func RemoveSettings() error {
-	settingsPath := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
 
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -231,17 +265,34 @@ func RemoveSettings() error {
 		return nil
 	}
 
-	// Remove our hook entries
 	for _, event := range []string{"PreToolUse", "PostToolUse"} {
 		matchers, ok := existingHooks[event]
 		if !ok {
 			continue
 		}
-		// If it's our hook (contains our scripts), remove the whole event
-		data, _ := json.Marshal(matchers)
-		str := string(data)
-		if len(str) > 0 && (contains(str, "on-blocked.sh") || contains(str, "on-permission-wait.sh")) {
+		raw, _ := json.Marshal(matchers)
+		var parsed []hookMatcher
+		if json.Unmarshal(raw, &parsed) != nil {
+			continue
+		}
+		// Keep only non-bertrand matchers
+		var kept []hookMatcher
+		for _, m := range parsed {
+			isBertrand := false
+			for _, h := range m.Hooks {
+				if isBertrandHook(h.Command) {
+					isBertrand = true
+					break
+				}
+			}
+			if !isBertrand {
+				kept = append(kept, m)
+			}
+		}
+		if len(kept) == 0 {
 			delete(existingHooks, event)
+		} else {
+			existingHooks[event] = kept
 		}
 	}
 
@@ -256,19 +307,6 @@ func RemoveSettings() error {
 		return err
 	}
 	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // HammerspoonConfig returns the Lua config for bertrand's focus queue.

@@ -103,7 +103,7 @@ func (m arrangeModel) View() string {
 // --- layout execution ---
 
 func runLayout(name string, emoji string) error {
-	signalFile := filepath.Join(session.BaseDir, "tmp", "signal-"+name)
+	signalFile := filepath.Join(session.BaseDir(), "tmp", "signal-"+name)
 	if err := os.WriteFile(signalFile, []byte(name), 0644); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func runLayout(name string, emoji string) error {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
 
-	ackFile := filepath.Join(session.BaseDir, "tmp", "ack-"+name)
+	ackFile := filepath.Join(session.BaseDir(), "tmp", "ack-"+name)
 	os.Remove(ackFile)
 	for i := 0; i < 60; i++ {
 		fmt.Printf("\r\033[2K  %s %s",
@@ -164,7 +164,6 @@ func init() {
 	rootCmd.AddCommand(arrangeCmd)
 
 	for _, l := range layouts {
-		l := l // capture loop var
 		arrangeCmd.AddCommand(&cobra.Command{
 			Use:   l.name,
 			Short: fmt.Sprintf("%s %s windows", l.label, l.emoji),

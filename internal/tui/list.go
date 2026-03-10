@@ -11,10 +11,10 @@ import (
 var (
 	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true)
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	statusColors  = map[string]lipgloss.Color{
-		"working": lipgloss.Color("82"),
-		"blocked": lipgloss.Color("214"),
-		"done":    lipgloss.Color("241"),
+	statusColors = map[string]lipgloss.Color{
+		session.StatusWorking: lipgloss.Color("82"),
+		session.StatusBlocked: lipgloss.Color("214"),
+		session.StatusDone:    lipgloss.Color("241"),
 	}
 )
 

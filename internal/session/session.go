@@ -9,10 +9,23 @@ import (
 	"time"
 )
 
-var BaseDir = filepath.Join(os.Getenv("HOME"), ".bertrand")
+// Status constants for session state.
+const (
+	StatusWorking = "working"
+	StatusBlocked = "blocked"
+	StatusDone    = "done"
+)
 
-func SessionsDir() string    { return filepath.Join(BaseDir, "sessions") }
-func ContractPath() string   { return filepath.Join(BaseDir, "contract.md") }
+func BaseDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	return filepath.Join(home, ".bertrand")
+}
+
+func SessionsDir() string  { return filepath.Join(BaseDir(), "sessions") }
+func ContractPath() string { return filepath.Join(BaseDir(), "contract.md") }
 
 type State struct {
 	Session   string    `json:"session"`
@@ -81,10 +94,11 @@ func ListSessions() ([]State, error) {
 
 	var sessions []State
 	for _, e := range entries {
-		if !e.IsDir() || e.Name()[0] == '.' {
+		name := e.Name()
+		if !e.IsDir() || name == "" || name[0] == '.' {
 			continue
 		}
-		s, err := ReadState(e.Name())
+		s, err := ReadState(name)
 		if err != nil {
 			continue
 		}
@@ -104,7 +118,7 @@ func ActiveSessions() ([]State, error) {
 	}
 	var active []State
 	for _, s := range all {
-		if s.Status != "done" {
+		if s.Status != StatusDone {
 			active = append(active, s)
 		}
 	}
@@ -126,7 +140,7 @@ func IsProcessAlive(pid int) bool {
 
 // RegisterPID writes a PID-to-session mapping so hooks can look up the session name.
 func RegisterPID(pid int, sessionName string) error {
-	dir := filepath.Join(BaseDir, "tmp")
+	dir := filepath.Join(BaseDir(), "tmp")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -135,7 +149,7 @@ func RegisterPID(pid int, sessionName string) error {
 
 // LookupPID returns the session name for a given PID.
 func LookupPID(pid int) (string, error) {
-	data, err := os.ReadFile(filepath.Join(BaseDir, "tmp", fmt.Sprintf("%d", pid)))
+	data, err := os.ReadFile(filepath.Join(BaseDir(), "tmp", fmt.Sprintf("%d", pid)))
 	if err != nil {
 		return "", err
 	}
@@ -144,5 +158,5 @@ func LookupPID(pid int) (string, error) {
 
 // CleanupPID removes the PID mapping file.
 func CleanupPID(pid int) {
-	os.Remove(filepath.Join(BaseDir, "tmp", fmt.Sprintf("%d", pid)))
+	os.Remove(filepath.Join(BaseDir(), "tmp", fmt.Sprintf("%d", pid)))
 }

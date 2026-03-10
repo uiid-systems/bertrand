@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,7 +29,7 @@ func printExitMessage(name string) {
 }
 
 func isInitialized() bool {
-	configPath := filepath.Join(session.BaseDir, "config.yaml")
+	configPath := filepath.Join(session.BaseDir(), "config.yaml")
 	_, err := os.Stat(configPath)
 	return err == nil
 }
@@ -67,6 +68,7 @@ var rootCmd = &cobra.Command{
 
 func SetVersion(v string) {
 	rootCmd.Version = v
+	tui.SetVersion(v)
 }
 
 func Execute() {
@@ -123,45 +125,51 @@ func launchNewSession(name string) error {
 
 	// Check for existing active session with same name
 	if s, err := session.ReadState(name); err == nil {
-		if s.Status != "done" && session.IsProcessAlive(s.PID) {
+		if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
 			return fmt.Errorf("session %q is already active (pid %d)", name, s.PID)
 		}
 	}
 
-	return launchSession(name)
+	return runSession(name, "started")
 }
 
-func launchSession(name string) error {
+// runSession is the shared core for launching and resuming sessions.
+// It handles PID registration, Hammerspoon registration, signal trapping,
+// subprocess lifecycle, and cleanup.
+func runSession(name, verb string) error {
 	pid := os.Getpid()
 
 	if err := session.RegisterPID(pid, name); err != nil {
 		return fmt.Errorf("failed to register PID: %w", err)
 	}
-	if err := session.WriteState(name, "working", "Session started", pid); err != nil {
+	if err := session.WriteState(name, session.StatusWorking, "Session "+verb, pid); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 
-	// Write registration marker for Hammerspoon window tracking.
-	regFile := filepath.Join(session.BaseDir, "tmp", "register-"+name)
-	os.WriteFile(regFile, []byte(name), 0644)
+	// Write registration marker for Hammerspoon window tracking
+	regFile := filepath.Join(session.BaseDir(), "tmp", "register-"+name)
+	if err := os.WriteFile(regFile, []byte(name), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write registration marker: %v\n", err)
+	}
 
 	// Set Warp tab/window title to session name
 	fmt.Printf("\033]0;bertrand: %s\007", name)
 
-	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m started\033[0m\n\n", name)
+	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m %s\033[0m\n\n", name, verb)
 
+	var cleanupOnce sync.Once
 	cleanup := func() {
-		session.WriteState(name, "done", "Session ended", pid)
-		session.CleanupPID(pid)
-		// Remove pending permission marker if present
-		os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
+		cleanupOnce.Do(func() {
+			session.WriteState(name, session.StatusDone, "Session ended", pid)
+			session.CleanupPID(pid)
+			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
 
-		// If no active sessions remain, clean up
-		active, _ := session.ActiveSessions()
-		if len(active) == 0 {
-			os.Remove(session.ContractPath())
-		}
-		printExitMessage(name)
+			active, _ := session.ActiveSessions()
+			if len(active) == 0 {
+				os.Remove(session.ContractPath())
+			}
+			printExitMessage(name)
+		})
 	}
 
 	// Trap signals for cleanup
@@ -197,53 +205,9 @@ func resumeSession(name string) error {
 		return fmt.Errorf("session %q not found", name)
 	}
 
-	if s.Status != "done" && session.IsProcessAlive(s.PID) {
+	if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
 		return fmt.Errorf("session %q is still active (pid %d)", name, s.PID)
 	}
 
-	pid := os.Getpid()
-	if err := session.RegisterPID(pid, name); err != nil {
-		return fmt.Errorf("failed to register PID: %w", err)
-	}
-	if err := session.WriteState(name, "working", "Session resumed", pid); err != nil {
-		return fmt.Errorf("failed to write state: %w", err)
-	}
-
-	// Write registration marker for Hammerspoon window tracking
-	regFile := filepath.Join(session.BaseDir, "tmp", "register-"+name)
-	os.WriteFile(regFile, []byte(name), 0644)
-
-	// Set Warp tab/window title to session name
-	fmt.Printf("\033]0;bertrand: %s\007", name)
-
-	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m resumed\033[0m\n\n", name)
-
-	cleanup := func() {
-		session.WriteState(name, "done", "Session ended", pid)
-		session.CleanupPID(pid)
-		// Remove pending permission marker if present
-		os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
-		printExitMessage(name)
-	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		cleanup()
-		os.Exit(0)
-	}()
-
-	claudeCmd := exec.Command("claude", "--append-system-prompt", contract.Template(name))
-	claudeCmd.Stdin = os.Stdin
-	claudeCmd.Stdout = os.Stdout
-	claudeCmd.Stderr = os.Stderr
-	claudeCmd.Env = append(os.Environ(),
-		fmt.Sprintf("BERTRAND_PID=%d", pid),
-		"WARP_DISABLE_AUTO_TITLE=true",
-	)
-
-	err = claudeCmd.Run()
-	cleanup()
-	return err
+	return runSession(name, "resumed")
 }

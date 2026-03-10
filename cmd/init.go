@@ -65,8 +65,8 @@ func runInitWizard(showLogo bool) error {
 	fmt.Printf("%s %s\n", check, label("Claude Code hooks configured"))
 
 	// Write config
-	configPath := filepath.Join(session.BaseDir, "config.yaml")
-	if err := os.MkdirAll(session.BaseDir, 0755); err != nil {
+	configPath := filepath.Join(session.BaseDir(), "config.yaml")
+	if err := os.MkdirAll(session.BaseDir(), 0755); err != nil {
 		return err
 	}
 	config := fmt.Sprintf("terminal: %s\nfocus_queue: %v\n", choice.Terminal, choice.EnableFocusQueue)

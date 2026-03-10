@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-var Version = "0.1.0"
+var Version = "dev"
+
+// SetVersion sets the display version for the logo.
+func SetVersion(v string) { Version = v }
 
 var logoLines = []string{
 	` .o8                              .                                        .o8 `,

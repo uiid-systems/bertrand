@@ -52,7 +52,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 		status := updateStatus
 		if status == "" {
-			status = "working"
+			status = session.StatusWorking
 		}
 		summary := updateSummary
 		if summary == "" {
