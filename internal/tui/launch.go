@@ -188,7 +188,6 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 var (
 	sessionNameStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
 	sessionDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	sessionActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
 	statusWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	statusBlockedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
