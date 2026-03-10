@@ -570,9 +570,10 @@ local function processRegistrations()
 end
 
 local function refreshQueue()
-  -- Stale cleanup only every 10 ticks
+  -- Stale cleanup only every 10 ticks (~5s at 0.5s interval)
   cleanupTick = cleanupTick + 1
-  if cleanupTick >= 10 then
+  local isCleanupTick = cleanupTick >= 10
+  if isCleanupTick then
     cleanupTick = 0
     local changed = false
     for winId, sessionName in pairs(windowMap) do
@@ -651,14 +652,16 @@ local function refreshQueue()
     end
   end
 
-  -- Reconcile delivered OS notifications against actual session state
+  -- Reconcile delivered OS notifications against actual session state (~5s)
   -- Catches orphans missed by in-memory tracking (e.g. after partial reload)
-  local delivered = hs.notify.deliveredNotifications() or {}
-  for _, n in ipairs(delivered) do
-    if n:title() == "bertrand" then
-      local sess = n:subTitle()
-      if sess and not currentlyBlocked[sess] then
-        n:withdraw()
+  if isCleanupTick then
+    local delivered = hs.notify.deliveredNotifications() or {}
+    for _, n in ipairs(delivered) do
+      if n:title() == "bertrand" then
+        local sess = n:subTitle()
+        if sess and not currentlyBlocked[sess] then
+          n:withdraw()
+        end
       end
     end
   end
