@@ -18,6 +18,13 @@ When a session needs your attention, Hammerspoon focuses the terminal window and
 ## Install
 
 ```sh
+brew tap uiid-systems/bertrand
+brew install bertrand
+```
+
+Or with Go:
+
+```sh
 go install github.com/uiid-systems/bertrand@latest
 ```
 
