@@ -79,8 +79,10 @@ func (m ListModel) View() string {
 		}
 		status := lipgloss.NewStyle().Foreground(statusColor).Render(sess.Status)
 
-		summary := dimStyle.Render(sess.Summary)
-		s += fmt.Sprintf("%s%s  %s  %s\n", cursor, name, status, summary)
+		s += fmt.Sprintf("%s%s  %s\n", cursor, name, status)
+		if sess.Summary != "" && sess.Summary != "Session ended" && sess.Summary != "Session started" {
+			s += fmt.Sprintf("      %s\n", dimStyle.Render(sess.Summary))
+		}
 	}
 	s += "\n" + dimStyle.Render("↑↓ navigate • enter select • esc quit") + "\n"
 	return s

@@ -243,8 +243,11 @@ func (m LaunchModel) View() string {
 				status = statusDoneStyle.Render("● done")
 			}
 
-			summary := sessionDimStyle.Render(s.Summary)
-			b.WriteString(fmt.Sprintf("%s%s  %s  %s\n", prefix, nameStyle.Render(s.Session), status, summary))
+			b.WriteString(fmt.Sprintf("%s%s  %s\n", prefix, nameStyle.Render(s.Session), status))
+			if s.Summary != "" && s.Summary != "Session ended" && s.Summary != "Session started" {
+				indent := "      "
+				b.WriteString(fmt.Sprintf("%s%s\n", indent, sessionDimStyle.Render(s.Summary)))
+			}
 		}
 	}
 
