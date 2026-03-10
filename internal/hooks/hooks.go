@@ -335,6 +335,13 @@ local cleanupTick = 0
 local activeNotifications = {}
 local notifiedSessions = {}
 
+-- Window border state
+local borderCanvas = nil
+local borderTimer = nil
+local focusSub = nil
+local BORDER_WIDTH = 4
+local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 1 }
+
 -- Cache the Warp window filter (creating it is expensive)
 local warpFilter = nil
 local function getWarpFilter()
@@ -354,6 +361,57 @@ local function getWarpIcon()
     end
   end
   return warpIcon
+end
+
+local hideBorder
+local function showBorder(win)
+  if not win then hideBorder() return end
+  local frame = win:frame()
+  if not borderCanvas then
+    borderCanvas = hs.canvas.new(frame)
+  end
+  borderCanvas:frame({
+    x = frame.x - BORDER_WIDTH, y = frame.y - BORDER_WIDTH,
+    w = frame.w + BORDER_WIDTH * 2, h = frame.h + BORDER_WIDTH * 2,
+  })
+  borderCanvas:replaceElements(
+    { type = "rectangle", frame = { x = 0, y = 0, w = "1", h = "1" },
+      fillColor = BORDER_COLOR, action = "fill" },
+    { type = "rectangle",
+      frame = { x = BORDER_WIDTH, y = BORDER_WIDTH,
+                w = frame.w, h = frame.h },
+      fillColor = { red = 0, green = 0, blue = 0, alpha = 0 },
+      action = "fill", compositeRule = "copy" }
+  )
+  borderCanvas:level(hs.canvas.windowLevels.floating)
+  borderCanvas:behavior(hs.canvas.windowBehaviors.transient)
+  borderCanvas:clickActivating(false)
+  borderCanvas:show()
+
+  -- Track window movement/resize
+  if borderTimer then borderTimer:stop() end
+  borderTimer = hs.timer.doEvery(0.1, function()
+    if not win or not win:id() then hideBorder() return end
+    local f = win:frame()
+    borderCanvas:frame({
+      x = f.x - BORDER_WIDTH, y = f.y - BORDER_WIDTH,
+      w = f.w + BORDER_WIDTH * 2, h = f.h + BORDER_WIDTH * 2,
+    })
+  end)
+end
+
+hideBorder = function()
+  if borderTimer then borderTimer:stop(); borderTimer = nil end
+  if borderCanvas then borderCanvas:hide() end
+end
+
+local function updateBorder()
+  local win = hs.window.focusedWindow()
+  if win and windowMap[win:id()] then
+    showBorder(win)
+  else
+    hideBorder()
+  end
 end
 
 local registrationsPath = tmpDir .. "/registrations.json"
@@ -400,6 +458,7 @@ local function focusSessionWindow(sessionName)
     local win = hs.window.get(winId)
     if win then
       win:focus()
+      showBorder(win)
       return true
     end
   end
@@ -666,12 +725,20 @@ function bertrand.start()
     processSignals()
     refreshQueue()
   end)
+  -- Track window focus changes for border highlight
+  focusSub = hs.window.filter.new(nil):subscribe(
+    { hs.window.filter.windowFocused, hs.window.filter.windowUnfocused },
+    function() updateBorder() end
+  )
   print("bertrand: watching " .. baseDir)
 end
 
 function bertrand.stop()
   if watcher then watcher:stop() end
   if pollTimer then pollTimer:stop() end
+  if focusSub then focusSub:unsubscribeAll(); focusSub = nil end
+  hideBorder()
+  if borderCanvas then borderCanvas:delete(); borderCanvas = nil end
   for sn, _ in pairs(activeNotifications) do withdrawNotification(sn) end
   windowMap = {}
   sessionWindows = {}
