@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true)
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	selectedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
+	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	summaryDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	summarySelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	statusColors = map[string]lipgloss.Color{
 		session.StatusWorking: lipgloss.Color("82"),
 		session.StatusBlocked: lipgloss.Color("214"),
@@ -66,11 +68,13 @@ func (m ListModel) View() string {
 
 	s := "Sessions:\n\n"
 	for i, sess := range m.sessions {
-		cursor := "  "
-		name := sess.Session
-		if i == m.cursor {
-			cursor = "> "
-			name = selectedStyle.Render(name)
+		isSelected := i == m.cursor
+
+		prefix := "    "
+		nameStyle := dimStyle
+		if isSelected {
+			prefix = "  ❯ "
+			nameStyle = selectedStyle
 		}
 
 		statusColor, ok := statusColors[sess.Status]
@@ -79,9 +83,15 @@ func (m ListModel) View() string {
 		}
 		status := lipgloss.NewStyle().Foreground(statusColor).Render(sess.Status)
 
-		s += fmt.Sprintf("%s%s  %s\n", cursor, name, status)
-		if sess.Summary != "" && sess.Summary != "Session ended" && sess.Summary != "Session started" {
-			s += fmt.Sprintf("      %s\n", dimStyle.Render(sess.Summary))
+		s += fmt.Sprintf("%s%s  %s\n", prefix, nameStyle.Render(sess.Session), status)
+
+		hasSummary := sess.Summary != "" && sess.Summary != "Session ended" && sess.Summary != "Session started"
+		if hasSummary {
+			summStyle := summaryDimStyle
+			if isSelected {
+				summStyle = summarySelStyle
+			}
+			s += fmt.Sprintf("        %s\n", summStyle.Render(sess.Summary))
 		}
 	}
 	s += "\n" + dimStyle.Render("↑↓ navigate • enter select • esc quit") + "\n"
