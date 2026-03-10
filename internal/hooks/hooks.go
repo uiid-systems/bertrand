@@ -353,12 +353,12 @@ local cleanupTick = 0
 local activeNotifications = {}
 local notifiedSessions = {}
 
--- Window border state
-local borderCanvas = nil
-local borderTimer = nil
-local focusSub = nil
-local BORDER_WIDTH = 4
-local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 0.5 }
+-- Window border state (disabled — canvas causes HSCanvasWindow makeKeyWindow errors)
+-- local borderCanvas = nil
+-- local borderTimer = nil
+-- local focusSub = nil
+-- local BORDER_WIDTH = 4
+-- local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 0.5 }
 
 -- Cache the Warp window filter (creating it is expensive)
 local warpFilter = nil
@@ -381,53 +381,10 @@ local function getWarpIcon()
   return warpIcon
 end
 
-local hideBorder
-local function showBorder(win)
-  if not win then hideBorder() return end
-  local frame = win:frame()
-  if not borderCanvas then
-    borderCanvas = hs.canvas.new(frame)
-  end
-  borderCanvas:frame({
-    x = frame.x, y = frame.y,
-    w = frame.w, h = frame.h,
-  })
-  borderCanvas:replaceElements(
-    { type = "rectangle", frame = { x = 0, y = 0, w = "1", h = "1" },
-      strokeColor = BORDER_COLOR, strokeWidth = BORDER_WIDTH * 2,
-      action = "stroke" }
-  )
-  borderCanvas:level(hs.canvas.windowLevels.floating)
-  borderCanvas:behavior(hs.canvas.windowBehaviors.transient)
-  borderCanvas:clickActivating(false)
-  borderCanvas:canvasMouseEvents(false)
-  borderCanvas:show()
-
-  -- Track window movement/resize
-  if borderTimer then borderTimer:stop() end
-  borderTimer = hs.timer.doEvery(0.1, function()
-    if not win or not win:id() then hideBorder() return end
-    local f = win:frame()
-    borderCanvas:frame({
-      x = f.x, y = f.y,
-      w = f.w, h = f.h,
-    })
-  end)
-end
-
-hideBorder = function()
-  if borderTimer then borderTimer:stop(); borderTimer = nil end
-  if borderCanvas then borderCanvas:hide() end
-end
-
-local function updateBorder()
-  local win = hs.window.focusedWindow()
-  if win and windowMap[win:id()] then
-    showBorder(win)
-  else
-    hideBorder()
-  end
-end
+-- Border functions (disabled — canvas causes HSCanvasWindow makeKeyWindow errors)
+local function showBorder(win) end
+local function hideBorder() end
+local function updateBorder() end
 
 local registrationsPath = tmpDir .. "/registrations.json"
 
@@ -473,7 +430,6 @@ local function focusSessionWindow(sessionName)
     local win = hs.window.get(winId)
     if win then
       win:focus()
-      showBorder(win)
       return true
     end
   end
@@ -493,21 +449,67 @@ local function notifyBlocked(sessionName, summary)
   if summary:sub(1, #prefix) == prefix then
     summary = summary:sub(#prefix + 1)
   end
-  local n = hs.notify.new(function()
-    focusSessionWindow(sessionName)
-  end, {
-    title = "bertrand",
-    subTitle = sessionName,
-    informativeText = summary,
-    autoWithdraw = false,
-    withdrawAfter = 0,
-  })
-  local icon = getWarpIcon()
-  if icon then n:setIdImage(icon) end
-  n:send()
+
+  local function sendNotification()
+    local ok, n = pcall(hs.notify.new, function()
+      focusSessionWindow(sessionName)
+    end, {
+      title = "bertrand",
+      subTitle = sessionName,
+      informativeText = summary,
+      autoWithdraw = false,
+      withdrawAfter = 0,
+    })
+    if not ok or not n then
+      print("bertrand: ERROR creating notification for " .. sessionName .. ": " .. tostring(n))
+      return nil
+    end
+    local icon = getWarpIcon()
+    if icon then n:setIdImage(icon) end
+    local sendOk, sendErr = pcall(function() n:send() end)
+    if not sendOk then
+      print("bertrand: ERROR sending notification for " .. sessionName .. ": " .. tostring(sendErr))
+      return nil
+    end
+    -- Verify notification was actually delivered
+    local presented = n:presented()
+    if not presented then
+      print("bertrand: WARN notification not presented for " .. sessionName .. ", will retry")
+      return nil
+    end
+    print("bertrand: notification sent for " .. sessionName)
+    return n
+  end
+
+  local n = sendNotification()
+  if not n then
+    -- Retry once after a short delay
+    hs.timer.doAfter(0.5, function()
+      if notifiedSessions[sessionName] then return end
+      print("bertrand: retrying notification for " .. sessionName)
+      local retryN = sendNotification()
+      if retryN then
+        activeNotifications[sessionName] = retryN
+        notifiedSessions[sessionName] = true
+      else
+        print("bertrand: FAILED notification retry for " .. sessionName)
+        -- Mark as notified anyway to avoid infinite retry loops
+        notifiedSessions[sessionName] = true
+      end
+    end)
+    return
+  end
+
   activeNotifications[sessionName] = n
   notifiedSessions[sessionName] = true
-  hs.sound.getByName("Hero"):play()
+
+  local soundOk, soundErr = pcall(function()
+    local s = hs.sound.getByName("Hero")
+    if s then s:play() else print("bertrand: WARN 'Hero' sound not found") end
+  end)
+  if not soundOk then
+    print("bertrand: ERROR playing sound: " .. tostring(soundErr))
+  end
 end
 
 local function withdrawNotification(sessionName)
@@ -766,20 +768,21 @@ function bertrand.start()
     processSignals()
     refreshQueue()
   end)
-  -- Track window focus changes for border highlight
-  focusSub = hs.window.filter.new(nil):subscribe(
-    { hs.window.filter.windowFocused, hs.window.filter.windowUnfocused },
-    function() updateBorder() end
-  )
+  -- Border focus tracking (disabled — canvas causes HSCanvasWindow errors)
+  -- focusSub = hs.window.filter.new(nil):subscribe(
+  --   { hs.window.filter.windowFocused, hs.window.filter.windowUnfocused },
+  --   function() updateBorder() end
+  -- )
   print("bertrand: watching " .. baseDir)
 end
 
 function bertrand.stop()
   if watcher then watcher:stop() end
   if pollTimer then pollTimer:stop() end
-  if focusSub then focusSub:unsubscribeAll(); focusSub = nil end
-  hideBorder()
-  if borderCanvas then borderCanvas:delete(); borderCanvas = nil end
+  -- Border cleanup (disabled)
+  -- if focusSub then focusSub:unsubscribeAll(); focusSub = nil end
+  -- hideBorder()
+  -- if borderCanvas then borderCanvas:delete(); borderCanvas = nil end
   for sn, _ in pairs(activeNotifications) do withdrawNotification(sn) end
   windowMap = {}
   sessionWindows = {}
