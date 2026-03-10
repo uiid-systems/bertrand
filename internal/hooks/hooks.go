@@ -43,12 +43,11 @@ bertrand update --name "$name" --status working --summary "Resumed after input"
 }
 
 // PermissionWaitScript returns the hook script that writes a pending marker
-// when any tool (except AskUserQuestion) fires PreToolUse. Hammerspoon uses
-// a 2s debounce on this marker so auto-approved tools don't trigger
-// focus/notification, but real permission prompts do.
+// when a real permission dialog is shown (PermissionRequest event). This only
+// fires when the user is actually prompted — auto-approved tools never trigger it.
 func PermissionWaitScript() string {
 	return `#!/usr/bin/env bash
-# Hook: PreToolUse (all tools) → write pending marker for permission detection
+# Hook: PermissionRequest (all tools) → write pending marker for real permission prompts
 BERTRAND_PID="${BERTRAND_PID:-}"
 [ -z "$BERTRAND_PID" ] && exit 0
 
@@ -58,12 +57,7 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
-# Skip tools that are always auto-approved (no permission prompt)
-case "$tool" in
-  AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
-esac
-
-# Write pending marker (file mtime serves as timestamp for debounce)
+# Write pending marker — this hook only fires for real permission prompts
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 `
 }
@@ -169,16 +163,6 @@ func InjectSettings() error {
 					},
 				},
 			},
-			{
-				Matcher: "",
-				Hooks: []hookEntry{
-					{
-						Type:    "command",
-						Command: filepath.Join(hooksDir, "on-permission-wait.sh"),
-						Timeout: 5,
-					},
-				},
-			},
 		},
 		"PostToolUse": {
 			{
@@ -197,6 +181,18 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-permission-done.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+		},
+		"PermissionRequest": {
+			{
+				Matcher: "",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-permission-wait.sh"),
 						Timeout: 5,
 					},
 				},
@@ -269,7 +265,7 @@ func RemoveSettings() error {
 		return nil
 	}
 
-	for _, event := range []string{"PreToolUse", "PostToolUse"} {
+	for _, event := range []string{"PreToolUse", "PostToolUse", "PermissionRequest"} {
 		matchers, ok := existingHooks[event]
 		if !ok {
 			continue
@@ -511,35 +507,42 @@ local function processRegistrations()
 
   for entry in iter, dir do
     if entry:sub(1, 9) == "register-" then
-      local sessionName = entry:sub(10)
       local filePath = tmpDir .. "/" .. entry
 
-      if sessionWindows[sessionName] then
-        windowMap[sessionWindows[sessionName]] = nil
-      end
+      -- Read session name from file content (supports project/session format)
+      local f = io.open(filePath, "r")
+      local sessionName = f and f:read("*a") or nil
+      if f then f:close() end
+      if not sessionName or sessionName == "" then
+        os.remove(filePath)
+      else
+        if sessionWindows[sessionName] then
+          windowMap[sessionWindows[sessionName]] = nil
+        end
 
-      local win = hs.window.focusedWindow()
-      if not win or win:application():name() ~= "Warp" then
-        win = nil
-        local warpWindows = getWarpFilter():getWindows()
-        for _, w in ipairs(warpWindows) do
-          if not windowMap[w:id()] then
-            win = w
-            break
+        local win = hs.window.focusedWindow()
+        if not win or win:application():name() ~= "Warp" then
+          win = nil
+          local warpWindows = getWarpFilter():getWindows()
+          for _, w in ipairs(warpWindows) do
+            if not windowMap[w:id()] then
+              win = w
+              break
+            end
           end
         end
-      end
 
-      if win then
-        local winId = win:id()
-        windowMap[winId] = sessionName
-        sessionWindows[sessionName] = winId
-        print("bertrand: registered " .. sessionName .. " → window " .. winId)
-      else
-        print("bertrand: no Warp window found for " .. sessionName)
-      end
+        if win then
+          local winId = win:id()
+          windowMap[winId] = sessionName
+          sessionWindows[sessionName] = winId
+          print("bertrand: registered " .. sessionName .. " → window " .. winId)
+        else
+          print("bertrand: no Warp window found for " .. sessionName)
+        end
 
-      os.remove(filePath)
+        os.remove(filePath)
+      end
     end
   end
   saveRegistrations()
@@ -569,37 +572,45 @@ local function refreshQueue()
 
   local currentlyBlocked = {}
 
-  local iter, dir = hs.fs.dir(sessionsDir)
-  if not iter then return end
+  -- Two-level scan: projects → sessions
+  local pIter, pDir = hs.fs.dir(sessionsDir)
+  if not pIter then return end
 
-  for entry in iter, dir do
-    if entry ~= "." and entry ~= ".." then
-      local state = readJSON(sessionsDir .. "/" .. entry .. "/state.json")
-      if state and state.status == "blocked" then
-        currentlyBlocked[entry] = true
-        table.insert(queue, {
-          session = entry,
-          timestamp = state.timestamp or "",
-          summary = state.summary or "Waiting for input",
-        })
-      end
+  for project in pIter, pDir do
+    if project ~= "." and project ~= ".." then
+      local projectPath = sessionsDir .. "/" .. project
+      local sIter, sDir = hs.fs.dir(projectPath)
+      if sIter then
+        for sess in sIter, sDir do
+          if sess ~= "." and sess ~= ".." then
+            local fullName = project .. "/" .. sess
+            local sessPath = projectPath .. "/" .. sess
+            local state = readJSON(sessPath .. "/state.json")
 
-      -- Check for pending permission marker (debounced: only if >2s old)
-      if state and state.status == "working" and not currentlyBlocked[entry] then
-        local pendingPath = sessionsDir .. "/" .. entry .. "/pending"
-        local pendingAttr = hs.fs.attributes(pendingPath)
-        if pendingAttr then
-          local age = os.time() - pendingAttr.modification
-          if age >= 2 then
-            local pf = io.open(pendingPath, "r")
-            local toolName = pf and pf:read("*a") or "tool"
-            if pf then pf:close() end
-            currentlyBlocked[entry] = true
-            table.insert(queue, {
-              session = entry,
-              timestamp = state.timestamp or "",
-              summary = "Waiting for permission: " .. toolName,
-            })
+            if state and state.status == "blocked" then
+              currentlyBlocked[fullName] = true
+              table.insert(queue, {
+                session = fullName,
+                timestamp = state.timestamp or "",
+                summary = state.summary or "Waiting for input",
+              })
+            end
+
+            -- Check for pending permission marker (PermissionRequest hook only)
+            if state and state.status == "working" and not currentlyBlocked[fullName] then
+              local pendingPath = sessPath .. "/pending"
+              local pf = io.open(pendingPath, "r")
+              if pf then
+                local toolName = pf:read("*a") or "tool"
+                pf:close()
+                currentlyBlocked[fullName] = true
+                table.insert(queue, {
+                  session = fullName,
+                  timestamp = state.timestamp or "",
+                  summary = "Waiting for permission: " .. toolName,
+                })
+              end
+            end
           end
         end
       end

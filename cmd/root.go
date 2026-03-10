@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -21,6 +22,17 @@ var (
 	ticketPattern   = regexp.MustCompile(`^[A-Z]+-[0-9]+-[a-z0-9-]+$`)
 	freeformPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 )
+
+// validateNamePart checks if a single name part (project or session) is valid.
+func validateNamePart(part string) bool {
+	return ticketPattern.MatchString(part) || freeformPattern.MatchString(part)
+}
+
+// regFilename returns a safe filename for the Hammerspoon registration marker.
+// Replaces "/" with "--" since filenames can't contain slashes.
+func regFilename(name string) string {
+	return "register-" + strings.ReplaceAll(name, "/", "--")
+}
 
 func printSaveMessage(name, description string) {
 	fmt.Print(tui.Goodbye())
@@ -100,6 +112,9 @@ func launchInteractive() error {
 		return runInitWizard(false)
 	}
 
+	// Migrate flat sessions from pre-project era
+	session.MigrateFlatSessions()
+
 	sessions, _ := session.ListSessions()
 
 	m := tui.NewLaunchModel(sessions)
@@ -127,8 +142,15 @@ func launchInteractive() error {
 }
 
 func launchNewSession(name string) error {
-	if !ticketPattern.MatchString(name) && !freeformPattern.MatchString(name) {
-		return fmt.Errorf("invalid session name %q — use ticket format (ENG-142-auth-refactor) or freeform (fix-navbar-spacing)", name)
+	project, sess, err := session.ParseName(name)
+	if err != nil {
+		return err
+	}
+	if !validateNamePart(project) {
+		return fmt.Errorf("invalid project name %q — use lowercase letters, numbers, and hyphens", project)
+	}
+	if !validateNamePart(sess) {
+		return fmt.Errorf("invalid session name %q — use ticket format (ENG-142-auth-refactor) or freeform (fix-navbar-spacing)", sess)
 	}
 
 	// Check for existing active session with same name
@@ -155,7 +177,7 @@ func runSession(name, verb string) error {
 	}
 
 	// Write registration marker for Hammerspoon window tracking
-	regFile := filepath.Join(session.BaseDir(), "tmp", "register-"+name)
+	regFile := filepath.Join(session.BaseDir(), "tmp", regFilename(name))
 	if err := os.WriteFile(regFile, []byte(name), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write registration marker: %v\n", err)
 	}
@@ -175,7 +197,7 @@ func runSession(name, verb string) error {
 			}
 			session.WriteState(name, session.StatusDone, summary, pid)
 			session.CleanupPID(pid)
-			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
+			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {
@@ -251,7 +273,7 @@ func runSession(name, verb string) error {
 
 		case tui.ExitDiscard:
 			session.CleanupPID(pid)
-			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
+			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 			session.DeleteSession(name)
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {
@@ -271,8 +293,12 @@ func runSession(name, verb string) error {
 }
 
 func resumeSession(name string) error {
-	if !ticketPattern.MatchString(name) && !freeformPattern.MatchString(name) {
-		return fmt.Errorf("invalid session name %q — use ticket format (ENG-142-auth-refactor) or freeform (fix-navbar-spacing)", name)
+	// Validate project/session format
+	if _, _, err := session.ParseName(name); err != nil {
+		// Also accept flat names for CLI resume of legacy sessions
+		if !validateNamePart(name) {
+			return fmt.Errorf("invalid session name %q — use project/session format (e.g., bertrand/tinkering)", name)
+		}
 	}
 
 	s, err := session.ReadState(name)

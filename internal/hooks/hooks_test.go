@@ -73,6 +73,9 @@ func TestInjectSettings_CreatesNewFile(t *testing.T) {
 	if _, ok := hooks["PostToolUse"]; !ok {
 		t.Error("missing PostToolUse hooks")
 	}
+	if _, ok := hooks["PermissionRequest"]; !ok {
+		t.Error("missing PermissionRequest hooks")
+	}
 }
 
 func TestInjectSettings_PreservesUserHooks(t *testing.T) {
@@ -108,9 +111,9 @@ func TestInjectSettings_PreservesUserHooks(t *testing.T) {
 	var matchers []hookMatcher
 	json.Unmarshal(raw, &matchers)
 
-	// Should have user hook + 2 bertrand hooks = 3 total
-	if len(matchers) != 3 {
-		t.Errorf("expected 3 PreToolUse matchers (1 user + 2 bertrand), got %d", len(matchers))
+	// Should have user hook + 1 bertrand hook = 2 total
+	if len(matchers) != 2 {
+		t.Errorf("expected 2 PreToolUse matchers (1 user + 1 bertrand), got %d", len(matchers))
 	}
 
 	// First should be the user hook (preserved)
@@ -136,9 +139,9 @@ func TestInjectSettings_Idempotent(t *testing.T) {
 	var matchers []hookMatcher
 	json.Unmarshal(raw, &matchers)
 
-	// Should still be exactly 2 bertrand hooks, not 4
-	if len(matchers) != 2 {
-		t.Errorf("expected 2 PreToolUse matchers after double inject, got %d", len(matchers))
+	// Should still be exactly 1 bertrand hook, not 2
+	if len(matchers) != 1 {
+		t.Errorf("expected 1 PreToolUse matcher after double inject, got %d", len(matchers))
 	}
 }
 
@@ -190,6 +193,11 @@ func TestRemoveSettings_PreservesUserHooks(t *testing.T) {
 	// PostToolUse should be fully removed (no user hooks there)
 	if _, ok := hooks["PostToolUse"]; ok {
 		t.Error("PostToolUse should have been fully removed")
+	}
+
+	// PermissionRequest should be fully removed
+	if _, ok := hooks["PermissionRequest"]; ok {
+		t.Error("PermissionRequest should have been fully removed")
 	}
 }
 

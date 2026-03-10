@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -27,11 +28,26 @@ func BaseDir() string {
 func SessionsDir() string  { return filepath.Join(BaseDir(), "sessions") }
 func ContractPath() string { return filepath.Join(BaseDir(), "contract.md") }
 
+// SessionDir returns the filesystem path for a session. The name can be either
+// "project/session" (new hierarchical format) or a flat name (legacy).
+// filepath.Join handles both cases naturally.
+func SessionDir(name string) string { return filepath.Join(SessionsDir(), name) }
+
+// ParseName splits a "project/session" name into its parts.
+// Returns an error if the name doesn't contain exactly one slash.
+func ParseName(name string) (project, session string, err error) {
+	parts := strings.SplitN(name, "/", 3)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("session name must be project/session, got %q", name)
+	}
+	return parts[0], parts[1], nil
+}
+
 // SummaryPath returns the path to a session's exit summary hint file.
-func SummaryPath(name string) string { return filepath.Join(SessionsDir(), name, "summary") }
+func SummaryPath(name string) string { return filepath.Join(SessionDir(name), "summary") }
 
 // DiscardPath returns the path to a session's discard marker hint file.
-func DiscardPath(name string) string { return filepath.Join(SessionsDir(), name, "discard") }
+func DiscardPath(name string) string { return filepath.Join(SessionDir(name), "discard") }
 
 // ReadSummary returns the session exit summary if one was written by the hook.
 func ReadSummary(name string) string {
@@ -51,7 +67,7 @@ type State struct {
 }
 
 func WriteState(name, status, summary string, pid int) error {
-	dir := filepath.Join(SessionsDir(), name)
+	dir := SessionDir(name)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -86,7 +102,7 @@ func WriteState(name, status, summary string, pid int) error {
 }
 
 func ReadState(name string) (*State, error) {
-	data, err := os.ReadFile(filepath.Join(SessionsDir(), name, "state.json"))
+	data, err := os.ReadFile(filepath.Join(SessionDir(name), "state.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -94,11 +110,56 @@ func ReadState(name string) (*State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
 	}
+	// Normalize: ensure Session field matches the path-derived name
+	if !strings.Contains(s.Session, "/") {
+		s.Session = name
+	}
 	return &s, nil
 }
 
+// ListSessions returns all sessions across all projects (two-level walk).
 func ListSessions() ([]State, error) {
+	projects, err := ListProjects()
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []State
+	for _, project := range projects {
+		projectSessions, err := ListSessionsForProject(project)
+		if err != nil {
+			continue
+		}
+		sessions = append(sessions, projectSessions...)
+	}
+	return sessions, nil
+}
+
+// ListProjects returns the names of all project directories under sessions/.
+func ListProjects() ([]string, error) {
 	dir := SessionsDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var projects []string
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == "" || name[0] == '.' {
+			continue
+		}
+		projects = append(projects, name)
+	}
+	return projects, nil
+}
+
+// ListSessionsForProject returns all sessions within a given project.
+func ListSessionsForProject(project string) ([]State, error) {
+	dir := filepath.Join(SessionsDir(), project)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -113,7 +174,8 @@ func ListSessions() ([]State, error) {
 		if !e.IsDir() || name == "" || name[0] == '.' {
 			continue
 		}
-		s, err := ReadState(name)
+		fullName := project + "/" + name
+		s, err := ReadState(fullName)
 		if err != nil {
 			continue
 		}
@@ -123,7 +185,7 @@ func ListSessions() ([]State, error) {
 }
 
 func DeleteSession(name string) error {
-	return os.RemoveAll(filepath.Join(SessionsDir(), name))
+	return os.RemoveAll(SessionDir(name))
 }
 
 func ActiveSessions() ([]State, error) {
@@ -174,4 +236,59 @@ func LookupPID(pid int) (string, error) {
 // CleanupPID removes the PID mapping file.
 func CleanupPID(pid int) {
 	os.Remove(filepath.Join(BaseDir(), "tmp", fmt.Sprintf("%d", pid)))
+}
+
+// MigrateFlatSessions moves any flat (non-hierarchical) sessions into a
+// "legacy" project directory. Returns the number of sessions migrated.
+func MigrateFlatSessions() (int, error) {
+	dir := SessionsDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	migrated := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == "" || name[0] == '.' {
+			continue
+		}
+		// A flat session has state.json directly inside it
+		statePath := filepath.Join(dir, name, "state.json")
+		if _, err := os.Stat(statePath); err != nil {
+			continue // not a session dir
+		}
+		// Check it's not already a project dir (would have subdirs with state.json)
+		subEntries, err := os.ReadDir(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		isProject := false
+		for _, sub := range subEntries {
+			if sub.IsDir() {
+				subState := filepath.Join(dir, name, sub.Name(), "state.json")
+				if _, err := os.Stat(subState); err == nil {
+					isProject = true
+					break
+				}
+			}
+		}
+		if isProject {
+			continue
+		}
+		// Move to legacy/<name>
+		legacyDir := filepath.Join(dir, "legacy")
+		if err := os.MkdirAll(legacyDir, 0755); err != nil {
+			return migrated, err
+		}
+		dst := filepath.Join(legacyDir, name)
+		if err := os.Rename(filepath.Join(dir, name), dst); err != nil {
+			return migrated, err
+		}
+		migrated++
+	}
+	return migrated, nil
 }
