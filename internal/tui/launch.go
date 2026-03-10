@@ -186,23 +186,16 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 var (
-	sessionNameStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
-	sessionDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	statusWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	statusBlockedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	dividerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	dangerStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	dangerDimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
-	summaryStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
-	sessionCardActive  = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("34")).
-				Padding(0, 1).
-				Width(60)
-	sessionCardDim = lipgloss.NewStyle().
-			Padding(0, 1).
-			Width(60)
+	sessionNameActive     = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
+	sessionDimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sessionSummaryActive  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	sessionSummaryDim     = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	statusWorkingStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	statusBlockedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	statusDoneStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	dividerStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	dangerStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	dangerDimStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
 )
 
 func (m LaunchModel) View() string {
@@ -226,21 +219,19 @@ func (m LaunchModel) View() string {
 			isDeleting := m.mode == modeConfirmDelete && i == m.cursor
 
 			if isDeleting {
-				var card strings.Builder
-				card.WriteString(fmt.Sprintf("%s %s\n",
+				b.WriteString(fmt.Sprintf("  %s %s  %s\n",
 					dangerStyle.Render("✕"),
 					dangerStyle.Render(s.Session),
+					dangerDimStyle.Render("delete? enter to confirm · any key to cancel"),
 				))
-				card.WriteString(dangerDimStyle.Render("delete? enter to confirm · any key to cancel"))
-				b.WriteString("  ")
-				b.WriteString(lipgloss.NewStyle().
-					Border(lipgloss.RoundedBorder()).
-					BorderForeground(lipgloss.Color("196")).
-					Padding(0, 1).
-					Width(60).
-					Render(card.String()))
-				b.WriteString("\n")
 				continue
+			}
+
+			prefix := "    "
+			nameStyle := sessionDimStyle
+			if isSelected {
+				prefix = "  ❯ "
+				nameStyle = sessionNameActive
 			}
 
 			var status string
@@ -253,28 +244,15 @@ func (m LaunchModel) View() string {
 				status = statusDoneStyle.Render("● done")
 			}
 
-			hasSummary := s.Summary != "" && s.Summary != "Session ended" && s.Summary != "Session started"
+			b.WriteString(fmt.Sprintf("%s%s  %s\n", prefix, nameStyle.Render(s.Session), status))
 
-			if isSelected {
-				var card strings.Builder
-				card.WriteString(fmt.Sprintf("%s  %s", sessionNameStyle.Render(s.Session), status))
-				if hasSummary {
-					card.WriteString("\n")
-					card.WriteString(summaryStyle.Render(s.Summary))
+			hasSummary := s.Summary != "" && s.Summary != "Session ended" && s.Summary != "Session started"
+			if hasSummary {
+				summStyle := sessionSummaryDim
+				if isSelected {
+					summStyle = sessionSummaryActive
 				}
-				b.WriteString("  ")
-				b.WriteString(sessionCardActive.Render(card.String()))
-				b.WriteString("\n")
-			} else {
-				var card strings.Builder
-				card.WriteString(fmt.Sprintf("%s  %s", sessionDimStyle.Render(s.Session), status))
-				if hasSummary {
-					card.WriteString("\n")
-					card.WriteString(summaryStyle.Render(s.Summary))
-				}
-				b.WriteString("  ")
-				b.WriteString(sessionCardDim.Render(card.String()))
-				b.WriteString("\n")
+				b.WriteString(fmt.Sprintf("        %s\n", summStyle.Render(s.Summary)))
 			}
 		}
 	}

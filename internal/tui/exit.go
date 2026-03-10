@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ExitChoice represents the user's selection in the exit menu.
@@ -40,47 +39,14 @@ func (m ExitModel) Description() string { return m.description }
 
 func (m ExitModel) Init() tea.Cmd { return nil }
 
-type exitOption struct {
-	icon     string
-	label    string
-	desc     string
-	accent   lipgloss.Color
-	iconDim  lipgloss.Color
+var exitOptions = []struct {
+	label string
+	desc  string
+}{
+	{"Save and exit", "End session with a description for future reference"},
+	{"Discard and exit", "Delete all session data permanently"},
+	{"Resume conversation", "Continue where Claude left off"},
 }
-
-var exitOptions = []exitOption{
-	{"◆", "Save and exit", "Keep session for later with an optional description", lipgloss.Color("120"), lipgloss.Color("34")},
-	{"✕", "Discard and exit", "Delete this session permanently", lipgloss.Color("208"), lipgloss.Color("130")},
-	{"▶", "Resume conversation", "Pick up where Claude left off", lipgloss.Color("75"), lipgloss.Color("25")},
-}
-
-var (
-	exitTitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
-			Bold(true)
-	exitSubtitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
-	exitActiveLabel = lipgloss.NewStyle().
-			Bold(true)
-	exitDimLabel = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
-	exitDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true)
-	exitInputStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
-	exitCursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("120")).
-			Bold(true)
-	exitBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("236")).
-			Padding(1, 2)
-	exitInputBoxStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("120")).
-				Padding(1, 2)
-)
 
 func (m ExitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -155,6 +121,10 @@ func (m ExitModel) View() string {
 	}
 
 	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(promptStyle.Render(fmt.Sprintf("  Session %s has ended.", m.name)))
+	b.WriteString("\n")
+	b.WriteString(promptStyle.Render("  What would you like to do?"))
 	b.WriteString("\n\n")
 
 	if m.editing {
@@ -163,66 +133,34 @@ func (m ExitModel) View() string {
 		b.WriteString(m.viewMenu())
 	}
 
-	b.WriteString("\n")
 	return b.String()
 }
 
 func (m ExitModel) viewMenu() string {
-	var content strings.Builder
-
-	// Header
-	content.WriteString(exitTitleStyle.Render(fmt.Sprintf("Session %s has ended", m.name)))
-	content.WriteString("\n")
-	content.WriteString(exitSubtitleStyle.Render("What would you like to do?"))
-	content.WriteString("\n\n")
-
-	// Options
+	var b strings.Builder
 	for i, opt := range exitOptions {
-		isActive := i == m.cursor
-
-		var line strings.Builder
-		if isActive {
-			icon := lipgloss.NewStyle().Foreground(opt.accent).Bold(true).Render(opt.icon)
-			label := exitActiveLabel.Foreground(opt.accent).Render(opt.label)
-			line.WriteString(fmt.Sprintf(" %s  %s", icon, label))
-			line.WriteString("\n")
-			line.WriteString(fmt.Sprintf("      %s", exitDescStyle.Render(opt.desc)))
+		cursor := "  "
+		if i == m.cursor {
+			cursor = "▸ "
+			b.WriteString(fmt.Sprintf("  \033[38;5;120m%s%s\033[0m\n", cursor, opt.label))
+			b.WriteString(fmt.Sprintf("    \033[38;5;241m%s\033[0m\n", opt.desc))
 		} else {
-			icon := lipgloss.NewStyle().Foreground(opt.iconDim).Render(opt.icon)
-			label := exitDimLabel.Render(opt.label)
-			line.WriteString(fmt.Sprintf(" %s  %s", icon, label))
-		}
-		content.WriteString(line.String())
-		if i < len(exitOptions)-1 {
-			content.WriteString("\n")
+			b.WriteString(fmt.Sprintf("  \033[38;5;252m%s%s\033[0m\n", cursor, opt.label))
 		}
 	}
-
-	content.WriteString("\n\n")
-	content.WriteString(exitSubtitleStyle.Render("↑↓ navigate · enter select · q quit"))
-
-	return exitBoxStyle.Render(content.String())
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("  ↑↓ navigate • enter select • q quit"))
+	b.WriteString("\n")
+	return b.String()
 }
 
 func (m ExitModel) viewEditing() string {
-	var content strings.Builder
-
-	// Header with the selected option's icon
-	opt := exitOptions[0] // Save option
-	icon := lipgloss.NewStyle().Foreground(opt.accent).Bold(true).Render(opt.icon)
-	content.WriteString(fmt.Sprintf("%s  %s", icon, exitTitleStyle.Render("Save session")))
-	content.WriteString("\n")
-	content.WriteString(exitSubtitleStyle.Render("Describe what you accomplished (optional)"))
-	content.WriteString("\n\n")
-
-	// Input line
-	prompt := exitCursorStyle.Render("❯ ")
-	text := exitInputStyle.Render(m.description)
-	cursor := lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Render("█")
-	content.WriteString(fmt.Sprintf(" %s%s%s", prompt, text, cursor))
-
-	content.WriteString("\n\n")
-	content.WriteString(exitSubtitleStyle.Render("enter save · esc go back"))
-
-	return exitInputBoxStyle.Render(content.String())
+	var b strings.Builder
+	b.WriteString(promptStyle.Render("  Describe what you accomplished (optional):"))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf("  \033[38;5;252m> %s\033[38;5;241m█\033[0m\n", m.description))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("  enter save • esc go back"))
+	b.WriteString("\n")
+	return b.String()
 }
