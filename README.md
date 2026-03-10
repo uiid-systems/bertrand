@@ -10,7 +10,6 @@ When a session needs your attention, Hammerspoon focuses the terminal window and
 
 ## Prerequisites
 
-- **Go 1.26+**
 - **Claude Code** (with `--append-system-prompt` and hooks support)
 - **[Hammerspoon](https://www.hammerspoon.org/)** (optional, for focus queue and window management)
 - **[Warp](https://www.warp.dev/)** terminal (currently the only supported terminal for window tracking)
@@ -66,10 +65,10 @@ Opens an interactive TUI where you type a session name (e.g. `fix-navbar-spacing
 ### Resume a session
 
 ```sh
-bertrand my-session
+bertrand project/session-name
 ```
 
-Resumes state tracking for an existing session. This starts a fresh Claude Code instance (not Claude's `--resume`) with the bertrand contract.
+Shows a resume picker where you choose to start a fresh Claude conversation or resume a previous one. Bertrand sessions and Claude conversations are decoupled — the session timeline and sibling session context are injected regardless of which option you pick.
 
 ### Arrange windows
 
@@ -116,18 +115,21 @@ When enabled via `bertrand init`, Hammerspoon watches session state files and ma
 ```
 ~/.bertrand/
   config.yaml                        # Terminal + focus queue settings
+  log.jsonl                          # Global event log (all sessions)
   hooks/
     on-blocked.sh                    # PreToolUse AskUserQuestion hook
     on-resumed.sh                    # PostToolUse AskUserQuestion hook
-    on-permission-wait.sh            # PreToolUse catch-all (pending marker)
+    on-permission-wait.sh            # PermissionRequest hook (pending marker)
     on-permission-done.sh            # PostToolUse catch-all (clear marker)
+    .version                         # Hook fingerprint (auto-reinstall detection)
   tmp/
     <PID>                            # PID-to-session-name mapping
-    register-<session>               # Hammerspoon window registration marker
+    register-<project>___<session>   # Hammerspoon window registration marker
   sessions/
-    <session-name>/
-      state.json                     # Current session state
-      log.jsonl                      # Append-only event history
+    <project>/
+      <session>/
+        state.json                   # Current session state
+        log.jsonl                    # Append-only event history
 ```
 
 ### Hammerspoon (`~/.hammerspoon/`)
@@ -136,6 +138,29 @@ When enabled via `bertrand init`, Hammerspoon watches session state files and ma
 ~/.hammerspoon/
   bertrand.lua                       # Focus queue, notifications, window layout
   init.lua                           # Auto-injected: require("bertrand").start()
+```
+
+## Releasing
+
+Tag and push — goreleaser handles the rest:
+
+```sh
+git tag v0.X.Y
+git push origin v0.X.Y
+```
+
+This triggers a GitHub Actions workflow that builds Darwin binaries (amd64 + arm64), creates a GitHub release, and updates the [homebrew tap](https://github.com/uiid-systems/homebrew-bertrand). Users get the update via:
+
+```sh
+brew upgrade bertrand
+```
+
+There's also a built-in command that automates version bumping, tagging, pushing, and watching the workflow:
+
+```sh
+bertrand release           # patch bump (default)
+bertrand release --minor   # minor bump
+bertrand release --dry-run # preview without releasing
 ```
 
 ## License
