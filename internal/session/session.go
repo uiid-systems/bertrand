@@ -1,6 +1,8 @@
 package session
 
 import (
+	"bufio"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -281,6 +283,200 @@ func LookupPID(pid int) (string, error) {
 // CleanupPID removes the PID mapping file.
 func CleanupPID(pid int) {
 	os.Remove(filepath.Join(BaseDir(), "tmp", fmt.Sprintf("%d", pid)))
+}
+
+// NewClaudeID generates a UUID v4 for tracking Claude conversation segments.
+func NewClaudeID() string {
+	var uuid [16]byte
+	rand.Read(uuid[:])
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
+}
+
+// ConversationSegment represents a single Claude conversation within a bertrand session.
+type ConversationSegment struct {
+	ClaudeID    string
+	StartedAt   time.Time
+	EndedAt     time.Time
+	LastQuestion string
+	EventCount  int
+}
+
+// ConversationSegments parses log.jsonl to find distinct Claude conversation segments.
+// Events between claude.started and claude.ended are attributed to that conversation.
+// Events from hooks (like session.block) don't carry claude_id, so we track the
+// "current" conversation and attribute interleaved events to it.
+func ConversationSegments(name string) []ConversationSegment {
+	logPath := filepath.Join(SessionDir(name), "log.jsonl")
+	f, err := os.Open(logPath)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var segments []ConversationSegment
+	var currentIdx int = -1 // index of active conversation segment
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var e LogEvent
+		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+			continue
+		}
+
+		switch e.Event {
+		case "claude.started":
+			claudeID := e.Meta["claude_id"]
+			if claudeID == "" {
+				continue
+			}
+			currentIdx = len(segments)
+			segments = append(segments, ConversationSegment{
+				ClaudeID:  claudeID,
+				StartedAt: e.TS,
+			})
+		case "claude.ended":
+			if currentIdx >= 0 && currentIdx < len(segments) {
+				segments[currentIdx].EndedAt = e.TS
+			}
+			currentIdx = -1
+		default:
+			// Attribute all other events to the current conversation
+			if currentIdx >= 0 && currentIdx < len(segments) {
+				segments[currentIdx].EventCount++
+				segments[currentIdx].EndedAt = e.TS
+				if e.Event == "session.block" {
+					if q, ok := e.Meta["question"]; ok {
+						segments[currentIdx].LastQuestion = q
+					}
+				}
+			}
+		}
+	}
+
+	return segments
+}
+
+// LogDigest reads log.jsonl and returns a compact timeline string for contract injection.
+func LogDigest(name string) string {
+	logPath := filepath.Join(SessionDir(name), "log.jsonl")
+	f, err := os.Open(logPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	var lines []string
+	var firstTS, lastTS time.Time
+	eventCount := 0
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var e LogEvent
+		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+			// Try legacy State format
+			var s State
+			if err := json.Unmarshal(scanner.Bytes(), &s); err != nil {
+				continue
+			}
+			// Skip legacy state entries for digest
+			continue
+		}
+
+		if e.Event == "" {
+			continue
+		}
+
+		eventCount++
+		if firstTS.IsZero() {
+			firstTS = e.TS
+		}
+		lastTS = e.TS
+
+		ts := e.TS.Format("15:04")
+
+		switch e.Event {
+		case "session.started":
+			lines = append(lines, fmt.Sprintf("- %s session started", ts))
+		case "session.resumed":
+			lines = append(lines, fmt.Sprintf("- %s session resumed", ts))
+		case "claude.started":
+			id := e.Meta["claude_id"]
+			if len(id) > 8 {
+				id = id[:8]
+			}
+			lines = append(lines, fmt.Sprintf("- %s claude conversation started (%s)", ts, id))
+		case "claude.ended":
+			lines = append(lines, fmt.Sprintf("- %s claude conversation ended", ts))
+		case "session.block":
+			q := e.Meta["question"]
+			if len(q) > 80 {
+				q = q[:77] + "..."
+			}
+			if q != "" {
+				lines = append(lines, fmt.Sprintf("- %s blocked: %q", ts, q))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s blocked", ts))
+			}
+		case "session.resume":
+			lines = append(lines, fmt.Sprintf("- %s user responded", ts))
+		case "session.end":
+			summary := e.Meta["summary"]
+			if summary != "" && summary != "Session ended" {
+				lines = append(lines, fmt.Sprintf("- %s ended: %q", ts, summary))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s ended", ts))
+			}
+		case "permission.request":
+			tool := e.Meta["tool"]
+			if tool != "" {
+				lines = append(lines, fmt.Sprintf("- %s permission: %s", ts, tool))
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	duration := lastTS.Sub(firstTS).Round(time.Second)
+	header := fmt.Sprintf("## Session Timeline (%d events, %s)", eventCount, duration)
+
+	return header + "\n" + strings.Join(lines, "\n")
+}
+
+// SiblingSummaries returns a formatted string of sibling session states
+// within the same project, excluding the given session.
+func SiblingSummaries(name string) string {
+	project, _, err := ParseName(name)
+	if err != nil {
+		return ""
+	}
+
+	siblings, err := ListSessionsForProject(project)
+	if err != nil {
+		return ""
+	}
+
+	var lines []string
+	for _, s := range siblings {
+		if s.Session == name {
+			continue
+		}
+		summary := s.Summary
+		if len(summary) > 60 {
+			summary = summary[:57] + "..."
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s — %q", s.Session, s.Status, summary))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return "## Sibling Sessions\n" + strings.Join(lines, "\n")
 }
 
 // MigrateFlatSessions moves any flat (non-hierarchical) sessions into a
