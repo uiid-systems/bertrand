@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/uiid-systems/bertrand/internal/contract"
+	"github.com/uiid-systems/bertrand/internal/hooks"
 	"github.com/uiid-systems/bertrand/internal/session"
 	"github.com/uiid-systems/bertrand/internal/tui"
 )
@@ -118,6 +119,14 @@ func launchInteractive() error {
 		fmt.Fprintf(os.Stderr, "warning: session migration incomplete: %v\n", err)
 	}
 
+	// Check for stale hooks and auto-reinstall
+	if hooks.HooksStale() {
+		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mHooks updated\033[0m\n")
+		if _, err := hooks.InstallHooks(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update hooks: %v\n", err)
+		}
+	}
+
 	sessions, _ := session.ListSessions()
 
 	m := tui.NewLaunchModel(sessions)
@@ -166,10 +175,19 @@ func launchNewSession(name string) error {
 	return runSession(name, "started")
 }
 
+// runSessionWithResume launches a session that begins by resuming a specific Claude conversation.
+func runSessionWithResume(name, claudeID string) error {
+	return runSessionInner(name, "resumed", claudeID)
+}
+
 // runSession is the shared core for launching and resuming sessions.
 // It handles PID registration, Hammerspoon registration, signal trapping,
 // subprocess lifecycle, exit menu, and cleanup.
 func runSession(name, verb string) error {
+	return runSessionInner(name, verb, "")
+}
+
+func runSessionInner(name, verb, initialClaudeID string) error {
 	pid := os.Getpid()
 
 	if err := session.RegisterPID(pid, name); err != nil {
@@ -222,24 +240,49 @@ func runSession(name, verb string) error {
 		os.Exit(0)
 	}()
 
+	// Build context layers for contract injection
+	contextLayers := func() []string {
+		var layers []string
+		if digest := session.LogDigest(name); digest != "" {
+			layers = append(layers, digest)
+		}
+		if siblings := session.SiblingSummaries(name); siblings != "" {
+			layers = append(layers, siblings)
+		}
+		return layers
+	}
+
 	// Launch Claude — loop supports "Resume conversation" from exit menu
-	useResume := false
+	var resumeClaudeID string // set when user picks "Resume" from exit menu or resume picker
+	if initialClaudeID != "" {
+		resumeClaudeID = initialClaudeID
+	}
 	for {
+		tmpl := contract.Template(name, contextLayers()...)
+
 		var claudeCmd *exec.Cmd
-		if useResume {
-			claudeCmd = exec.Command("claude", "--continue", "--append-system-prompt", contract.Template(name))
+		var claudeID string
+		if resumeClaudeID != "" {
+			claudeID = resumeClaudeID
+			claudeCmd = exec.Command("claude", "--resume", claudeID, "--append-system-prompt", tmpl)
 		} else {
-			claudeCmd = exec.Command("claude", "--append-system-prompt", contract.Template(name))
+			claudeID = session.NewClaudeID()
+			claudeCmd = exec.Command("claude", "--session-id", claudeID, "--append-system-prompt", tmpl)
 		}
 		claudeCmd.Stdin = os.Stdin
 		claudeCmd.Stdout = os.Stdout
 		claudeCmd.Stderr = os.Stderr
 		claudeCmd.Env = append(os.Environ(),
 			fmt.Sprintf("BERTRAND_PID=%d", pid),
+			fmt.Sprintf("BERTRAND_CLAUDE_ID=%s", claudeID),
 			"WARP_DISABLE_AUTO_TITLE=true",
 		)
 
+		session.AppendEvent(name, "claude.started", map[string]string{"claude_id": claudeID})
+
 		claudeCmd.Run()
+
+		session.AppendEvent(name, "claude.ended", map[string]string{"claude_id": claudeID})
 
 		// If signal handler already ran, we're done
 		if forceCleaned {
@@ -288,8 +331,8 @@ func runSession(name, verb string) error {
 			return nil
 
 		case tui.ExitResume:
-			// Re-enter the loop, resuming Claude's conversation
-			useResume = true
+			// Re-enter the loop, resuming this Claude conversation
+			resumeClaudeID = claudeID
 			session.WriteState(name, session.StatusWorking, "Session resumed", pid)
 			fmt.Printf("\n\033[38;5;78m✓\033[0m \033[38;5;252mResuming conversation...\033[0m\n\n")
 			continue
@@ -318,6 +361,37 @@ func resumeSession(name string) error {
 
 	if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
 		return fmt.Errorf("session %q is still active (pid %d)", name, s.PID)
+	}
+
+	// Check for previous Claude conversations to offer resume picker
+	segments := session.ConversationSegments(name)
+	if len(segments) > 0 {
+		var opts []tui.ResumeOption
+		for _, seg := range segments {
+			opts = append(opts, tui.ResumeOption{
+				ClaudeID:     seg.ClaudeID,
+				StartedAt:    seg.StartedAt,
+				LastQuestion: seg.LastQuestion,
+				EventCount:   seg.EventCount,
+				Duration:     seg.EndedAt.Sub(seg.StartedAt),
+			})
+		}
+
+		m := tui.NewResumeModel(name, opts)
+		p := tea.NewProgram(m)
+		result, err := p.Run()
+		if err != nil {
+			return err
+		}
+
+		resume := result.(tui.ResumeModel)
+		if resume.Quitting() {
+			return nil
+		}
+
+		if claudeID := resume.SelectedClaudeID(); claudeID != "" {
+			return runSessionWithResume(name, claudeID)
+		}
 	}
 
 	return runSession(name, "resumed")

@@ -1,6 +1,9 @@
 package contract
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Template is the base contract. The session name gets injected at launch time.
 const templateFmt = `You are running inside bertrand, session: %s. Follow these rules strictly:
@@ -13,6 +16,22 @@ Every option must be a concrete, actionable next step. No filler like "Have ques
 
 Default to multiSelect: true. Most questions benefit from letting the user pick multiple options. Only use single-select (multiSelect: false) when the choices are truly mutually exclusive and exactly one path must be chosen (e.g., "which database?" or "rename to A or B?").`
 
-func Template(sessionName string) string {
-	return fmt.Sprintf(templateFmt, sessionName, sessionName)
+// Template returns the contract with session name and optional context layers injected.
+// Context layers (log digest, sibling summaries) are appended only if non-empty.
+func Template(sessionName string, context ...string) string {
+	base := fmt.Sprintf(templateFmt, sessionName, sessionName)
+
+	var layers []string
+	for _, c := range context {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			layers = append(layers, c)
+		}
+	}
+
+	if len(layers) == 0 {
+		return base
+	}
+
+	return base + "\n\n" + strings.Join(layers, "\n\n")
 }

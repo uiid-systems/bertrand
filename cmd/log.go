@@ -66,6 +66,11 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 				summary = s
 			} else if t, ok := e.Meta["tool"]; ok {
 				summary = t
+			} else if cid, ok := e.Meta["claude_id"]; ok {
+				if len(cid) > 8 {
+					cid = cid[:8]
+				}
+				summary = cid
 			}
 			entries = append(entries, unifiedEntry{
 				Event:   e.Event,
@@ -253,6 +258,10 @@ func eventIcon(event string) string {
 	switch event {
 	case "session.started", "session.resumed", "session.resume", "state.working":
 		return "\033[32m▶\033[0m"
+	case "claude.started":
+		return "\033[38;5;78m▷\033[0m"
+	case "claude.ended":
+		return "\033[38;5;241m▷\033[0m"
 	case "session.block", "state.blocked":
 		return "\033[33m◼\033[0m"
 	case "session.end", "state.done":
@@ -274,6 +283,10 @@ func eventLabel(event string) string {
 		return "resumed"
 	case "session.resume", "state.working":
 		return "resumed"
+	case "claude.started":
+		return "claude started"
+	case "claude.ended":
+		return "claude ended"
 	case "session.block", "state.blocked":
 		return "blocked"
 	case "session.end", "state.done":

@@ -1,7 +1,9 @@
 package hooks
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,9 +32,10 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
 esc_summary="$(printf '%s' "$summary" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s"}}\n' "$name" "$ts" "$esc_summary" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s"}}\n' "$name" "$ts" "$esc_summary" >> "$HOME/.bertrand/log.jsonl"
+printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -49,8 +52,9 @@ bertrand update --name "$name" --status working --summary "Resumed after input"
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '{"event":"session.resume","session":"%s","ts":"%s"}\n' "$name" "$ts" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"session.resume","session":"%s","ts":"%s"}\n' "$name" "$ts" >> "$HOME/.bertrand/log.jsonl"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -75,8 +79,9 @@ printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/log.jsonl"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -103,9 +108,31 @@ rm -f "$HOME/.bertrand/sessions/$name/pending"
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/log.jsonl"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
+}
+
+// hooksFingerprint returns a SHA-256 hash of all hook script contents.
+// Used to detect when installed hooks are outdated.
+func hooksFingerprint() string {
+	h := sha256.New()
+	h.Write([]byte(BlockedScript()))
+	h.Write([]byte(ResumedScript()))
+	h.Write([]byte(PermissionWaitScript()))
+	h.Write([]byte(PermissionDoneScript()))
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
+// HooksStale returns true if installed hooks don't match the current version.
+func HooksStale() bool {
+	versionPath := filepath.Join(session.BaseDir(), "hooks", ".version")
+	data, err := os.ReadFile(versionPath)
+	if err != nil {
+		return true // no version file → stale
+	}
+	return strings.TrimSpace(string(data)) != hooksFingerprint()
 }
 
 // InstallHooks writes hook scripts to ~/.bertrand/hooks/ and returns the path.
@@ -127,6 +154,12 @@ func InstallHooks() (string, error) {
 		if err := os.WriteFile(path, []byte(content), 0755); err != nil {
 			return "", err
 		}
+	}
+
+	// Write version fingerprint
+	versionPath := filepath.Join(dir, ".version")
+	if err := os.WriteFile(versionPath, []byte(hooksFingerprint()+"\n"), 0644); err != nil {
+		return "", err
 	}
 
 	return dir, nil
