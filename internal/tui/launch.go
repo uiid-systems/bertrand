@@ -187,14 +187,23 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 var (
 	sessionNameStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
-	sessionDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	sessionActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+	sessionDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sessionActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
 	statusWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	statusBlockedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	statusDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	dividerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
+	dividerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	dangerStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	dangerDimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
+	summaryStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	sessionCardActive  = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("34")).
+				Padding(0, 1).
+				Width(60)
+	sessionCardDim = lipgloss.NewStyle().
+			Padding(0, 1).
+			Width(60)
 )
 
 func (m LaunchModel) View() string {
@@ -214,23 +223,25 @@ func (m LaunchModel) View() string {
 		b.WriteString("\n\n")
 
 		for i, s := range m.sessions {
-			prefix := "    "
-			nameStyle := sessionDimStyle
 			isSelected := m.mode == modeList && i == m.cursor
 			isDeleting := m.mode == modeConfirmDelete && i == m.cursor
 
 			if isDeleting {
-				b.WriteString(fmt.Sprintf("  %s %s  %s\n",
+				var card strings.Builder
+				card.WriteString(fmt.Sprintf("%s %s\n",
 					dangerStyle.Render("✕"),
 					dangerStyle.Render(s.Session),
-					dangerDimStyle.Render("delete? enter to confirm · any key to cancel"),
 				))
+				card.WriteString(dangerDimStyle.Render("delete? enter to confirm · any key to cancel"))
+				b.WriteString("  ")
+				b.WriteString(lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(lipgloss.Color("196")).
+					Padding(0, 1).
+					Width(60).
+					Render(card.String()))
+				b.WriteString("\n")
 				continue
-			}
-
-			if isSelected {
-				prefix = sessionActiveStyle.Render("  ❯ ")
-				nameStyle = sessionNameStyle
 			}
 
 			var status string
@@ -243,10 +254,28 @@ func (m LaunchModel) View() string {
 				status = statusDoneStyle.Render("● done")
 			}
 
-			b.WriteString(fmt.Sprintf("%s%s  %s\n", prefix, nameStyle.Render(s.Session), status))
-			if s.Summary != "" && s.Summary != "Session ended" && s.Summary != "Session started" {
-				indent := "      "
-				b.WriteString(fmt.Sprintf("%s%s\n", indent, sessionDimStyle.Render(s.Summary)))
+			hasSummary := s.Summary != "" && s.Summary != "Session ended" && s.Summary != "Session started"
+
+			if isSelected {
+				var card strings.Builder
+				card.WriteString(fmt.Sprintf("%s  %s", sessionNameStyle.Render(s.Session), status))
+				if hasSummary {
+					card.WriteString("\n")
+					card.WriteString(summaryStyle.Render(s.Summary))
+				}
+				b.WriteString("  ")
+				b.WriteString(sessionCardActive.Render(card.String()))
+				b.WriteString("\n")
+			} else {
+				var card strings.Builder
+				card.WriteString(fmt.Sprintf("%s  %s", sessionDimStyle.Render(s.Session), status))
+				if hasSummary {
+					card.WriteString("\n")
+					card.WriteString(summaryStyle.Render(s.Summary))
+				}
+				b.WriteString("  ")
+				b.WriteString(sessionCardDim.Render(card.String()))
+				b.WriteString("\n")
 			}
 		}
 	}
