@@ -67,6 +67,52 @@ type State struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// LogEvent is a structured event for the session log.
+type LogEvent struct {
+	Event   string            `json:"event"`
+	Session string            `json:"session"`
+	TS      time.Time         `json:"ts"`
+	Meta    map[string]string `json:"meta,omitempty"`
+}
+
+// AppendEvent writes a structured event to both the per-session and global log.
+func AppendEvent(name, event string, meta map[string]string) error {
+	e := LogEvent{
+		Event:   event,
+		Session: name,
+		TS:      time.Now().UTC(),
+		Meta:    meta,
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+
+	// Per-session log
+	dir := SessionDir(name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if err := appendFile(filepath.Join(dir, "log.jsonl"), line); err != nil {
+		return err
+	}
+
+	// Global log
+	globalDir := BaseDir()
+	return appendFile(filepath.Join(globalDir, "log.jsonl"), line)
+}
+
+func appendFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
+}
+
 func WriteState(name, status, summary string, pid int) error {
 	dir := SessionDir(name)
 	if err := os.MkdirAll(dir, 0755); err != nil {

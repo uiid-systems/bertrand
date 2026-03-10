@@ -178,6 +178,7 @@ func runSession(name, verb string) error {
 	if err := session.WriteState(name, session.StatusWorking, "Session "+verb, pid); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
+	session.AppendEvent(name, "session."+verb, map[string]string{"pid": fmt.Sprintf("%d", pid)})
 
 	// Write registration marker for Hammerspoon window tracking
 	regFile := filepath.Join(session.BaseDir(), "tmp", regFilename(name))
@@ -199,6 +200,7 @@ func runSession(name, verb string) error {
 				summary = "Session ended"
 			}
 			session.WriteState(name, session.StatusDone, summary, pid)
+			session.AppendEvent(name, "session.end", map[string]string{"summary": summary})
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 

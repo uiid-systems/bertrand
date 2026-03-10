@@ -14,6 +14,8 @@ import (
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
+var jsonOutput bool
+
 var logCmd = &cobra.Command{
 	Use:   "log [session]",
 	Short: "Show session activity logs",
@@ -22,18 +24,20 @@ var logCmd = &cobra.Command{
 }
 
 func init() {
+	logCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output as JSON lines")
 	rootCmd.AddCommand(logCmd)
 }
 
-type logEntry struct {
-	Session   string    `json:"session"`
-	Status    string    `json:"status"`
-	Summary   string    `json:"summary"`
-	PID       int       `json:"pid"`
-	Timestamp time.Time `json:"timestamp"`
+// unifiedEntry normalizes both old State entries and new LogEvent entries.
+type unifiedEntry struct {
+	Event   string            // e.g., "session.block", "permission.request", or legacy "state.working"
+	Session string
+	TS      time.Time
+	Summary string
+	Meta    map[string]string
 }
 
-func readLog(name string) ([]logEntry, error) {
+func readUnifiedLog(name string) ([]unifiedEntry, error) {
 	path := filepath.Join(session.SessionDir(name), "log.jsonl")
 	f, err := os.Open(path)
 	if err != nil {
@@ -41,14 +45,48 @@ func readLog(name string) ([]logEntry, error) {
 	}
 	defer f.Close()
 
-	var entries []logEntry
+	var entries []unifiedEntry
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var e logEntry
-		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
 			continue
 		}
-		entries = append(entries, e)
+
+		if _, hasEvent := raw["event"]; hasEvent {
+			// New LogEvent format
+			var e session.LogEvent
+			if json.Unmarshal(scanner.Bytes(), &e) != nil {
+				continue
+			}
+			summary := ""
+			if q, ok := e.Meta["question"]; ok {
+				summary = q
+			} else if s, ok := e.Meta["summary"]; ok {
+				summary = s
+			} else if t, ok := e.Meta["tool"]; ok {
+				summary = t
+			}
+			entries = append(entries, unifiedEntry{
+				Event:   e.Event,
+				Session: e.Session,
+				TS:      e.TS,
+				Summary: summary,
+				Meta:    e.Meta,
+			})
+		} else {
+			// Legacy State format
+			var s session.State
+			if json.Unmarshal(scanner.Bytes(), &s) != nil {
+				continue
+			}
+			entries = append(entries, unifiedEntry{
+				Event:   "state." + s.Status,
+				Session: s.Session,
+				TS:      s.Timestamp,
+				Summary: s.Summary,
+			})
+		}
 	}
 	return entries, scanner.Err()
 }
@@ -70,6 +108,7 @@ func showAllSessions() error {
 	type sessionSummary struct {
 		name         string
 		status       string
+		events       int
 		interactions int
 		duration     time.Duration
 		lastActivity time.Time
@@ -79,25 +118,26 @@ func showAllSessions() error {
 	var summaries []sessionSummary
 
 	for _, s := range allSessions {
-		log, err := readLog(s.Session)
+		log, err := readUnifiedLog(s.Session)
 		if err != nil || len(log) == 0 {
 			continue
 		}
 
-		blocked := 0
+		interactions := 0
 		for _, entry := range log {
-			if entry.Status == "blocked" {
-				blocked++
+			if entry.Event == "session.block" || entry.Event == "state.blocked" {
+				interactions++
 			}
 		}
 
-		first := log[0].Timestamp
-		last := log[len(log)-1].Timestamp
+		first := log[0].TS
+		last := log[len(log)-1].TS
 
 		summaries = append(summaries, sessionSummary{
 			name:         s.Session,
-			status:       log[len(log)-1].Status,
-			interactions: blocked,
+			status:       s.Status,
+			events:       len(log),
+			interactions: interactions,
 			duration:     last.Sub(first),
 			lastActivity: last,
 			lastSummary:  log[len(log)-1].Summary,
@@ -113,29 +153,44 @@ func showAllSessions() error {
 		return nil
 	}
 
+	if jsonOutput {
+		for _, s := range summaries {
+			data, _ := json.Marshal(map[string]interface{}{
+				"session":      s.name,
+				"status":       s.status,
+				"events":       s.events,
+				"interactions": s.interactions,
+				"duration_s":   int(s.duration.Seconds()),
+				"last_activity": s.lastActivity,
+			})
+			fmt.Println(string(data))
+		}
+		return nil
+	}
+
 	for _, s := range summaries {
 		statusIcon := "●"
 		switch s.status {
 		case "working":
-			statusIcon = "\033[32m●\033[0m" // green
+			statusIcon = "\033[32m●\033[0m"
 		case "blocked":
-			statusIcon = "\033[33m●\033[0m" // yellow
+			statusIcon = "\033[33m●\033[0m"
 		case "done":
-			statusIcon = "\033[90m●\033[0m" // gray
+			statusIcon = "\033[90m●\033[0m"
 		}
 
 		dur := formatDuration(s.duration)
 		ago := formatAgo(s.lastActivity)
 
-		fmt.Printf("%s %-28s %s  %d interactions  %s ago\n",
-			statusIcon, s.name, dur, s.interactions, ago)
+		fmt.Printf("%s %-28s %s  %d events  %d interactions  %s ago\n",
+			statusIcon, s.name, dur, s.events, s.interactions, ago)
 	}
 
 	return nil
 }
 
 func showSessionLog(name string) error {
-	log, err := readLog(name)
+	log, err := readUnifiedLog(name)
 	if err != nil {
 		return fmt.Errorf("session %q: %w", name, err)
 	}
@@ -145,47 +200,91 @@ func showSessionLog(name string) error {
 		return nil
 	}
 
+	if jsonOutput {
+		for _, entry := range log {
+			data, _ := json.Marshal(map[string]interface{}{
+				"event":   entry.Event,
+				"session": entry.Session,
+				"ts":      entry.TS,
+				"summary": entry.Summary,
+				"meta":    entry.Meta,
+			})
+			fmt.Println(string(data))
+		}
+		return nil
+	}
+
 	fmt.Printf("\033[1m%s\033[0m\n", name)
 
-	// Session duration
-	first := log[0].Timestamp
-	last := log[len(log)-1].Timestamp
+	first := log[0].TS
+	last := log[len(log)-1].TS
 	fmt.Printf("Started %s  Duration %s\n\n", first.Local().Format("Jan 2 15:04"), formatDuration(last.Sub(first)))
 
 	var prevTime time.Time
 	for _, entry := range log {
 		gap := ""
 		if !prevTime.IsZero() {
-			d := entry.Timestamp.Sub(prevTime)
+			d := entry.TS.Sub(prevTime)
 			if d > 5*time.Second {
 				gap = fmt.Sprintf(" (+%s)", formatDuration(d))
 			}
 		}
-		prevTime = entry.Timestamp
+		prevTime = entry.TS
 
-		icon := " "
-		switch entry.Status {
-		case "working":
-			icon = "\033[32m▶\033[0m"
-		case "blocked":
-			icon = "\033[33m◼\033[0m"
-		case "done":
-			icon = "\033[90m■\033[0m"
+		icon := eventIcon(entry.Event)
+		ts := entry.TS.Local().Format("15:04:05")
+
+		label := entry.Event
+		if entry.Summary != "" {
+			label = entry.Summary
 		}
-
-		ts := entry.Timestamp.Local().Format("15:04:05")
-		summary := entry.Summary
-		if len(summary) > 80 {
-			summary = summary[:77] + "..."
+		if len(label) > 80 {
+			label = label[:77] + "..."
 		}
+		label = strings.ReplaceAll(label, "\n", " ")
 
-		// Escape any control chars in summary
-		summary = strings.ReplaceAll(summary, "\n", " ")
-
-		fmt.Printf("  %s %s %s%s\n", icon, ts, summary, gap)
+		fmt.Printf("  %s %s %-22s %s%s\n", icon, ts, eventLabel(entry.Event), label, gap)
 	}
 
 	return nil
+}
+
+func eventIcon(event string) string {
+	switch event {
+	case "session.started", "session.resumed", "session.resume", "state.working":
+		return "\033[32m▶\033[0m"
+	case "session.block", "state.blocked":
+		return "\033[33m◼\033[0m"
+	case "session.end", "state.done":
+		return "\033[90m■\033[0m"
+	case "permission.request":
+		return "\033[33m🔒\033[0m"
+	case "permission.resolve":
+		return "\033[32m🔓\033[0m"
+	default:
+		return " "
+	}
+}
+
+func eventLabel(event string) string {
+	switch event {
+	case "session.started":
+		return "started"
+	case "session.resumed":
+		return "resumed"
+	case "session.resume", "state.working":
+		return "resumed"
+	case "session.block", "state.blocked":
+		return "blocked"
+	case "session.end", "state.done":
+		return "ended"
+	case "permission.request":
+		return "permission requested"
+	case "permission.resolve":
+		return "permission resolved"
+	default:
+		return event
+	}
 }
 
 func formatDuration(d time.Duration) string {

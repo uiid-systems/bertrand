@@ -26,6 +26,12 @@ summary="$(printf '%s' "$raw" | sed "s/^${name} [^a-zA-Z]* //" | sed "s/^bertran
 [ -z "$summary" ] && summary="Waiting for input"
 
 bertrand update --name "$name" --status blocked --summary "$summary"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+esc_summary="$(printf '%s' "$summary" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s"}}\n' "$name" "$ts" "$esc_summary" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s"}}\n' "$name" "$ts" "$esc_summary" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -39,6 +45,11 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 [ -z "$name" ] && exit 0
 
 bertrand update --name "$name" --status working --summary "Resumed after input"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"event":"session.resume","session":"%s","ts":"%s"}\n' "$name" "$ts" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"session.resume","session":"%s","ts":"%s"}\n' "$name" "$ts" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -60,6 +71,11 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 # Write pending marker — this hook only fires for real permission prompts
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -83,6 +99,11 @@ case "$tool" in
 esac
 
 rm -f "$HOME/.bertrand/sessions/$name/pending"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s"}}\n' "$name" "$ts" "$tool" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
