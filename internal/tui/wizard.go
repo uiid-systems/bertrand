@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -13,40 +14,61 @@ const (
 	stepTerminal wizardStep = iota
 	stepFocusQueue
 	stepHammerspoonPath
+	stepCustomPath
 	stepDone
 )
 
 type WizardChoice struct {
-	Terminal        string
+	Terminal         string
 	EnableFocusQueue bool
-	HammerspoonPath string
+	HammerspoonPath  string
 }
 
 type WizardModel struct {
-	step     wizardStep
-	cursor   int
-	choice   WizardChoice
-	quitting bool
-	showLogo bool
+	step      wizardStep
+	cursor    int
+	choice    WizardChoice
+	quitting  bool
+	showLogo  bool
+	pathInput textinput.Model
+}
+
+func newPathInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "~/.hammerspoon"
+	ti.Prompt = "  ❯ "
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	ti.CharLimit = 120
+	return ti
 }
 
 func NewWizardModel() WizardModel {
-	return WizardModel{choice: WizardChoice{HammerspoonPath: "~/.hammerspoon"}, showLogo: true}
+	return WizardModel{
+		choice:    WizardChoice{HammerspoonPath: "~/.hammerspoon"},
+		showLogo:  true,
+		pathInput: newPathInput(),
+	}
 }
 
 func NewWizardModelNoLogo() WizardModel {
-	return WizardModel{choice: WizardChoice{HammerspoonPath: "~/.hammerspoon"}, showLogo: false}
+	return WizardModel{
+		choice:    WizardChoice{HammerspoonPath: "~/.hammerspoon"},
+		showLogo:  false,
+		pathInput: newPathInput(),
+	}
 }
 
 func (m WizardModel) Choice() WizardChoice { return m.choice }
 func (m WizardModel) Quitting() bool       { return m.quitting }
 
 var (
-	promptStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("120"))
-	checkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	optionStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	cursorStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("114"))
-	hintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("120"))
+	checkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	optionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	cursorStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("114"))
+	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
 var terminals = []string{"Warp", "iTerm2", "Terminal.app"}
@@ -58,6 +80,31 @@ func (m WizardModel) Init() tea.Cmd { return nil }
 func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Custom path input mode
+		if m.step == stepCustomPath {
+			switch msg.String() {
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "esc":
+				// Go back to path selection
+				m.step = stepHammerspoonPath
+				m.cursor = 1
+				return m, nil
+			case "enter":
+				val := m.pathInput.Value()
+				if val == "" {
+					val = "~/.hammerspoon"
+				}
+				m.choice.HammerspoonPath = val
+				m.step = stepDone
+				return m, tea.Quit
+			}
+			var cmd tea.Cmd
+			m.pathInput, cmd = m.pathInput.Update(msg)
+			return m, cmd
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
@@ -89,10 +136,13 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case stepHammerspoonPath:
 				if m.cursor == 0 {
 					m.choice.HammerspoonPath = "~/.hammerspoon"
+					m.step = stepDone
+					return m, tea.Quit
 				}
-				// TODO: custom path input
-				m.step = stepDone
-				return m, tea.Quit
+				// Custom path → switch to text input
+				m.step = stepCustomPath
+				m.pathInput.Focus()
+				return m, textinput.Blink
 			}
 		}
 	}
@@ -146,6 +196,11 @@ func (m WizardModel) View() string {
 		s += checkStyle.Render("  ✓ Focus queue: enabled") + "\n\n"
 		s += promptStyle.Render("? Where do you keep your Hammerspoon config?") + "\n\n"
 		s += renderOptions(pathOptions, m.cursor)
+	case stepCustomPath:
+		s += checkStyle.Render("  ✓ Terminal: "+m.choice.Terminal) + "\n"
+		s += checkStyle.Render("  ✓ Focus queue: enabled") + "\n\n"
+		s += promptStyle.Render("? Enter your Hammerspoon config path:") + "\n\n"
+		s += m.pathInput.View() + "\n"
 	}
 
 	s += "\n" + hintStyle.Render("  ↑↓ navigate • enter select • q quit") + "\n"
