@@ -29,9 +29,10 @@ func validateNamePart(part string) bool {
 }
 
 // regFilename returns a safe filename for the Hammerspoon registration marker.
-// Replaces "/" with "--" since filenames can't contain slashes.
+// Replaces "/" with "___" since filenames can't contain slashes.
+// Uses triple underscore to avoid collision with valid hyphens in names.
 func regFilename(name string) string {
-	return "register-" + strings.ReplaceAll(name, "/", "--")
+	return "register-" + strings.ReplaceAll(name, "/", "___")
 }
 
 func printSaveMessage(name, description string) {
@@ -113,7 +114,9 @@ func launchInteractive() error {
 	}
 
 	// Migrate flat sessions from pre-project era
-	session.MigrateFlatSessions()
+	if _, err := session.MigrateFlatSessions(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: session migration incomplete: %v\n", err)
+	}
 
 	sessions, _ := session.ListSessions()
 
@@ -295,9 +298,14 @@ func runSession(name, verb string) error {
 func resumeSession(name string) error {
 	// Validate project/session format
 	if _, _, err := session.ParseName(name); err != nil {
-		// Also accept flat names for CLI resume of legacy sessions
+		// Accept flat names for CLI resume of legacy sessions
 		if !validateNamePart(name) {
 			return fmt.Errorf("invalid session name %q — use project/session format (e.g., bertrand/tinkering)", name)
+		}
+		// Try legacy/ prefix for migrated flat sessions
+		legacyName := "legacy/" + name
+		if _, err := session.ReadState(legacyName); err == nil {
+			name = legacyName
 		}
 	}
 

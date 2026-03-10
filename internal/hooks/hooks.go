@@ -58,6 +58,7 @@ input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
 # Write pending marker — this hook only fires for real permission prompts
+mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 `
 }
@@ -394,6 +395,11 @@ local function showBorder(win)
       x = f.x - BORDER_WIDTH, y = f.y - BORDER_WIDTH,
       w = f.w + BORDER_WIDTH * 2, h = f.h + BORDER_WIDTH * 2,
     })
+    -- Update inner hole to match new window size (handles resize)
+    borderCanvas[2].frame = {
+      x = BORDER_WIDTH, y = BORDER_WIDTH,
+      w = f.w, h = f.h,
+    }
   end)
 end
 
@@ -513,6 +519,7 @@ local function processRegistrations()
       local f = io.open(filePath, "r")
       local sessionName = f and f:read("*a") or nil
       if f then f:close() end
+      if sessionName then sessionName = sessionName:match("^(.-)%s*$") end
       if not sessionName or sessionName == "" then
         os.remove(filePath)
       else
@@ -579,36 +586,42 @@ local function refreshQueue()
   for project in pIter, pDir do
     if project ~= "." and project ~= ".." then
       local projectPath = sessionsDir .. "/" .. project
-      local sIter, sDir = hs.fs.dir(projectPath)
-      if sIter then
-        for sess in sIter, sDir do
-          if sess ~= "." and sess ~= ".." then
-            local fullName = project .. "/" .. sess
-            local sessPath = projectPath .. "/" .. sess
-            local state = readJSON(sessPath .. "/state.json")
+      local pAttrs = hs.fs.attributes(projectPath)
+      if pAttrs and pAttrs.mode == "directory" then
+        local sIter, sDir = hs.fs.dir(projectPath)
+        if sIter then
+          for sess in sIter, sDir do
+            if sess ~= "." and sess ~= ".." then
+              local sessAttrs = hs.fs.attributes(projectPath .. "/" .. sess)
+              if sessAttrs and sessAttrs.mode == "directory" then
+                local fullName = project .. "/" .. sess
+                local sessPath = projectPath .. "/" .. sess
+                local state = readJSON(sessPath .. "/state.json")
 
-            if state and state.status == "blocked" then
-              currentlyBlocked[fullName] = true
-              table.insert(queue, {
-                session = fullName,
-                timestamp = state.timestamp or "",
-                summary = state.summary or "Waiting for input",
-              })
-            end
+                if state and state.status == "blocked" then
+                  currentlyBlocked[fullName] = true
+                  table.insert(queue, {
+                    session = fullName,
+                    timestamp = state.timestamp or "",
+                    summary = state.summary or "Waiting for input",
+                  })
+                end
 
-            -- Check for pending permission marker (PermissionRequest hook only)
-            if state and state.status == "working" and not currentlyBlocked[fullName] then
-              local pendingPath = sessPath .. "/pending"
-              local pf = io.open(pendingPath, "r")
-              if pf then
-                local toolName = pf:read("*a") or "tool"
-                pf:close()
-                currentlyBlocked[fullName] = true
-                table.insert(queue, {
-                  session = fullName,
-                  timestamp = state.timestamp or "",
-                  summary = "Waiting for permission: " .. toolName,
-                })
+                -- Check for pending permission marker (PermissionRequest hook only)
+                if state and state.status == "working" and not currentlyBlocked[fullName] then
+                  local pendingPath = sessPath .. "/pending"
+                  local pf = io.open(pendingPath, "r")
+                  if pf then
+                    local toolName = pf:read("*a") or "tool"
+                    pf:close()
+                    currentlyBlocked[fullName] = true
+                    table.insert(queue, {
+                      session = fullName,
+                      timestamp = state.timestamp or "",
+                      summary = "Waiting for permission: " .. toolName,
+                    })
+                  end
+                end
               end
             end
           end

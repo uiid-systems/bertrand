@@ -34,9 +34,10 @@ func ContractPath() string { return filepath.Join(BaseDir(), "contract.md") }
 func SessionDir(name string) string { return filepath.Join(SessionsDir(), name) }
 
 // ParseName splits a "project/session" name into its parts.
-// Returns an error if the name doesn't contain exactly one slash.
+// Splits on the first "/" only, so "a/b/c" parses as project="a", session="b/c".
+// Returns an error if the name doesn't contain at least one slash.
 func ParseName(name string) (project, session string, err error) {
-	parts := strings.SplitN(name, "/", 3)
+	parts := strings.SplitN(name, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", fmt.Errorf("session name must be project/session, got %q", name)
 	}
@@ -110,10 +111,8 @@ func ReadState(name string) (*State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
 	}
-	// Normalize: ensure Session field matches the path-derived name
-	if !strings.Contains(s.Session, "/") {
-		s.Session = name
-	}
+	// Normalize: path-derived name is always authoritative
+	s.Session = name
 	return &s, nil
 }
 
@@ -286,6 +285,10 @@ func MigrateFlatSessions() (int, error) {
 		}
 		dst := filepath.Join(legacyDir, name)
 		if err := os.Rename(filepath.Join(dir, name), dst); err != nil {
+			// Skip if destination already exists (prior partial migration)
+			if os.IsExist(err) {
+				continue
+			}
 			return migrated, err
 		}
 		migrated++

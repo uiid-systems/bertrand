@@ -90,6 +90,26 @@ func TestReadState_NormalizesLegacyName(t *testing.T) {
 	}
 }
 
+func TestReadState_NormalizesStaleHierarchicalName(t *testing.T) {
+	base := withTempBaseDir(t)
+
+	// Simulate a session whose state.json has a stale hierarchical name
+	// (e.g., after renaming the project directory)
+	dir := filepath.Join(base, "sessions", "new-proj", "my-session")
+	os.MkdirAll(dir, 0755)
+	state := `{"session":"old-proj/my-session","status":"working","summary":"ok","pid":1}`
+	os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0644)
+
+	s, err := ReadState("new-proj/my-session")
+	if err != nil {
+		t.Fatalf("ReadState: %v", err)
+	}
+	// Should use the path-derived name, not the stale one from the file
+	if s.Session != "new-proj/my-session" {
+		t.Errorf("Session = %q, want %q", s.Session, "new-proj/my-session")
+	}
+}
+
 func TestListSessions(t *testing.T) {
 	withTempBaseDir(t)
 
@@ -280,7 +300,7 @@ func TestParseName(t *testing.T) {
 		{"proj/session", "proj", "session", false},
 		{"my-app/fix-bug", "my-app", "fix-bug", false},
 		{"flat-name", "", "", true},
-		{"a/b/c", "", "", true},
+		{"a/b/c", "a", "b/c", false},
 		{"/session", "", "", true},
 		{"project/", "", "", true},
 		{"", "", "", true},
