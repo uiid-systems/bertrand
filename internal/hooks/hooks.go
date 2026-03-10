@@ -44,7 +44,7 @@ bertrand update --name "$name" --status working --summary "Resumed after input"
 
 // PermissionWaitScript returns the hook script that writes a pending marker
 // when any tool (except AskUserQuestion) fires PreToolUse. Hammerspoon uses
-// a 2-second debounce on this marker so auto-approved tools don't trigger
+// a 2s debounce on this marker so auto-approved tools don't trigger
 // focus/notification, but real permission prompts do.
 func PermissionWaitScript() string {
 	return `#!/usr/bin/env bash
@@ -58,8 +58,10 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
-# Skip AskUserQuestion — handled by on-blocked.sh
-[ "$tool" = "AskUserQuestion" ] && exit 0
+# Skip tools that are always auto-approved (no permission prompt)
+case "$tool" in
+  AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
+esac
 
 # Write pending marker (file mtime serves as timestamp for debounce)
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
@@ -80,8 +82,10 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
-# Skip AskUserQuestion — handled by on-resumed.sh
-[ "$tool" = "AskUserQuestion" ] && exit 0
+# Skip tools that are always auto-approved (no permission prompt)
+case "$tool" in
+  AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
+esac
 
 rm -f "$HOME/.bertrand/sessions/$name/pending"
 `
@@ -352,6 +356,8 @@ local function getWarpIcon()
   return warpIcon
 end
 
+local registrationsPath = tmpDir .. "/registrations.json"
+
 local function readJSON(path)
   local f = io.open(path, "r")
   if not f then return nil end
@@ -360,6 +366,31 @@ local function readJSON(path)
   local ok, data = pcall(hs.json.decode, content)
   if ok then return data end
   return nil
+end
+
+local function saveRegistrations()
+  local data = {}
+  for sessionName, winId in pairs(sessionWindows) do
+    data[sessionName] = winId
+  end
+  local ok, json = pcall(hs.json.encode, data)
+  if ok then
+    local f = io.open(registrationsPath, "w")
+    if f then f:write(json); f:close() end
+  end
+end
+
+local function loadRegistrations()
+  local data = readJSON(registrationsPath)
+  if not data then return end
+  for sessionName, winId in pairs(data) do
+    local win = hs.window.get(winId)
+    if win and win:application():name() == "Warp" then
+      windowMap[winId] = sessionName
+      sessionWindows[sessionName] = winId
+      print("bertrand: restored " .. sessionName .. " → window " .. winId)
+    end
+  end
 end
 
 -- Focus a session's registered window, or fall back to any Warp window
@@ -451,6 +482,7 @@ local function processRegistrations()
       os.remove(filePath)
     end
   end
+  saveRegistrations()
 end
 
 local function refreshQueue()
@@ -458,14 +490,17 @@ local function refreshQueue()
   cleanupTick = cleanupTick + 1
   if cleanupTick >= 10 then
     cleanupTick = 0
+    local changed = false
     for winId, sessionName in pairs(windowMap) do
       if not hs.window.get(winId) then
         windowMap[winId] = nil
         if sessionWindows[sessionName] == winId then
           sessionWindows[sessionName] = nil
         end
+        changed = true
       end
     end
+    if changed then saveRegistrations() end
   end
 
   local wasEmpty = #queue == 0
@@ -489,13 +524,13 @@ local function refreshQueue()
         })
       end
 
-      -- Check for pending permission marker (debounced: only if >1s old)
+      -- Check for pending permission marker (debounced: only if >2s old)
       if state and state.status == "working" and not currentlyBlocked[entry] then
         local pendingPath = sessionsDir .. "/" .. entry .. "/pending"
         local pendingAttr = hs.fs.attributes(pendingPath)
         if pendingAttr then
           local age = os.time() - pendingAttr.modification
-          if age >= 1 then
+          if age >= 2 then
             local pf = io.open(pendingPath, "r")
             local toolName = pf and pf:read("*a") or "tool"
             if pf then pf:close() end
@@ -623,6 +658,7 @@ end
 function bertrand.start()
   os.execute("mkdir -p " .. tmpDir)
   os.execute("mkdir -p " .. sessionsDir)
+  loadRegistrations()
   watcher = hs.pathwatcher.new(baseDir, onChange)
   watcher:start()
   pollTimer = hs.timer.doEvery(0.5, function()
