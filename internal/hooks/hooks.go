@@ -644,10 +644,22 @@ local function refreshQueue()
     end
   end
 
-  -- Withdraw notifications for sessions no longer blocked
+  -- Withdraw in-memory notifications for sessions no longer blocked
   for sessionName, _ in pairs(notifiedSessions) do
     if not currentlyBlocked[sessionName] then
       withdrawNotification(sessionName)
+    end
+  end
+
+  -- Reconcile delivered OS notifications against actual session state
+  -- Catches orphans missed by in-memory tracking (e.g. after partial reload)
+  local delivered = hs.notify.deliveredNotifications() or {}
+  for _, n in ipairs(delivered) do
+    if n:title() == "bertrand" then
+      local sess = n:subTitle()
+      if sess and not currentlyBlocked[sess] then
+        n:withdraw()
+      end
     end
   end
 
@@ -760,6 +772,20 @@ end
 function bertrand.start()
   os.execute("mkdir -p " .. tmpDir)
   os.execute("mkdir -p " .. sessionsDir)
+
+  -- Purge stale notifications left by a previous Hammerspoon session
+  local delivered = hs.notify.deliveredNotifications() or {}
+  local purged = 0
+  for _, n in ipairs(delivered) do
+    if n:title() == "bertrand" then
+      n:withdraw()
+      purged = purged + 1
+    end
+  end
+  if purged > 0 then
+    print("bertrand: purged " .. purged .. " stale notification(s) from previous session")
+  end
+
   loadRegistrations()
   watcher = hs.pathwatcher.new(baseDir, onChange)
   watcher:start()
