@@ -13,7 +13,6 @@ import (
 func BlockedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → mark session as blocked
-# Also detects [EXIT] and [SUMMARY] tags for exit flow hint files.
 BERTRAND_PID="${BERTRAND_PID:-}"
 [ -z "$BERTRAND_PID" ] && exit 0
 
@@ -22,38 +21,7 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 
 input="$(cat)"
 raw="$(printf '%s' "$input" | grep -o '"question"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"question"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
-
-session_dir="$HOME/.bertrand/sessions/$name"
-
-# Detect [SUMMARY] tag — write summary hint file
-case "$raw" in
-  "[SUMMARY]"*)
-    # Strip "[SUMMARY] sessionName » " prefix to get the actual summary
-    summary_text="$(printf '%s' "$raw" | sed "s/^\[SUMMARY\] //" | sed "s/^${name} [^a-zA-Z]* //" | cut -c1-120)"
-    [ -n "$summary_text" ] && printf '%s' "$summary_text" > "$session_dir/summary"
-    bertrand update --name "$name" --status blocked --summary "Saving session..."
-    exit 0
-    ;;
-esac
-
-# Detect [DISCARD] tag — write discard hint file
-case "$raw" in
-  "[DISCARD]"*)
-    printf 'discard' > "$session_dir/discard"
-    bertrand update --name "$name" --status blocked --summary "Discarding session..."
-    exit 0
-    ;;
-esac
-
-# Detect [EXIT] tag — mark as exit flow (no special file needed yet)
-case "$raw" in
-  "[EXIT]"*)
-    bertrand update --name "$name" --status blocked --summary "Ending session..."
-    exit 0
-    ;;
-esac
-
-# Normal blocked flow — strip prefix and update
+# Strip "sessionName » " or "bertrand:sessionName > " prefix
 summary="$(printf '%s' "$raw" | sed "s/^${name} [^a-zA-Z]* //" | sed "s/^bertrand:${name} > //" | cut -c1-80)"
 [ -z "$summary" ] && summary="Waiting for input"
 
@@ -394,11 +362,23 @@ local function readJSON(path)
   return nil
 end
 
-local function focusSession(sessionName)
+-- Focus a session's registered window, or fall back to any Warp window
+local function focusSessionWindow(sessionName)
   local winId = sessionWindows[sessionName]
-  if not winId then return end
-  local win = hs.window.get(winId)
-  if win then win:focus() end
+  if winId then
+    local win = hs.window.get(winId)
+    if win then
+      win:focus()
+      return true
+    end
+  end
+  -- Fallback: focus any Warp window
+  local warpWindows = getWarpFilter():getWindows()
+  if #warpWindows > 0 then
+    warpWindows[1]:focus()
+    return true
+  end
+  return false
 end
 
 local function notifyBlocked(sessionName, summary)
@@ -409,7 +389,7 @@ local function notifyBlocked(sessionName, summary)
     summary = summary:sub(#prefix + 1)
   end
   local n = hs.notify.new(function()
-    focusSession(sessionName)
+    focusSessionWindow(sessionName)
   end, {
     title = "bertrand",
     subTitle = sessionName,
@@ -502,16 +482,11 @@ local function refreshQueue()
       local state = readJSON(sessionsDir .. "/" .. entry .. "/state.json")
       if state and state.status == "blocked" then
         currentlyBlocked[entry] = true
-        local winId = sessionWindows[entry]
-        if winId then
-          -- Skip hs.window.get here — trust the mapping, validate lazily
-          table.insert(queue, {
-            session = entry,
-            winId = winId,
-            timestamp = state.timestamp or "",
-            summary = state.summary or "Waiting for input",
-          })
-        end
+        table.insert(queue, {
+          session = entry,
+          timestamp = state.timestamp or "",
+          summary = state.summary or "Waiting for input",
+        })
       end
 
       -- Check for pending permission marker (debounced: only if >1s old)
@@ -525,15 +500,11 @@ local function refreshQueue()
             local toolName = pf and pf:read("*a") or "tool"
             if pf then pf:close() end
             currentlyBlocked[entry] = true
-            local winId = sessionWindows[entry]
-            if winId then
-              table.insert(queue, {
-                session = entry,
-                winId = winId,
-                timestamp = state.timestamp or "",
-                summary = "Waiting for permission: " .. toolName,
-              })
-            end
+            table.insert(queue, {
+              session = entry,
+              timestamp = state.timestamp or "",
+              summary = "Waiting for permission: " .. toolName,
+            })
           end
         end
       end
@@ -560,13 +531,11 @@ local function refreshQueue()
     for _, item in ipairs(queue) do
       notifyBlocked(item.session, item.summary)
     end
-    local win = hs.window.get(queue[1].winId)
-    if win then win:focus() end
+    focusSessionWindow(queue[1].session)
 
   elseif #queue > 0 and queue[1].session ~= previousFirst then
     notifyBlocked(queue[1].session, queue[1].summary)
-    local win = hs.window.get(queue[1].winId)
-    if win then win:focus() end
+    focusSessionWindow(queue[1].session)
 
   elseif #queue == 0 and not wasEmpty then
     if snapshotApp then

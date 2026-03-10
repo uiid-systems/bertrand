@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -200,28 +199,6 @@ func TestRemoveSettings_NoFile(t *testing.T) {
 	// Should not error when settings file doesn't exist
 	if err := RemoveSettings(); err != nil {
 		t.Errorf("RemoveSettings with no file: %v", err)
-	}
-}
-
-func TestBlockedScript_ExitTags(t *testing.T) {
-	script := BlockedScript()
-
-	// Should detect [SUMMARY], [DISCARD], and [EXIT] tags
-	tags := []string{"[SUMMARY]", "[DISCARD]", "[EXIT]"}
-	for _, tag := range tags {
-		if !strings.Contains(script, tag) {
-			t.Errorf("BlockedScript should detect %s tag", tag)
-		}
-	}
-
-	// Should write summary hint file on [SUMMARY]
-	if !strings.Contains(script, "$session_dir/summary") {
-		t.Error("BlockedScript should write summary hint file")
-	}
-
-	// Should write discard hint file on [DISCARD]
-	if !strings.Contains(script, "$session_dir/discard") {
-		t.Error("BlockedScript should write discard hint file")
 	}
 }
 

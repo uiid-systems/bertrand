@@ -22,14 +22,18 @@ var (
 	freeformPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 )
 
-func printExitMessage(name string, discarded bool) {
+func printSaveMessage(name, description string) {
 	fmt.Print(tui.Goodbye())
-	if discarded {
-		fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m discarded\033[0m\n\n", name)
-	} else {
-		fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m ended\033[0m\n", name)
-		fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
+	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m saved\033[0m\n", name)
+	if description != "" {
+		fmt.Printf("\033[38;5;241m  %s\033[0m\n", description)
 	}
+	fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
+}
+
+func printDiscardMessage(name string) {
+	fmt.Print(tui.Goodbye())
+	fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m discarded\033[0m\n\n", name)
 }
 
 func isInitialized() bool {
@@ -139,7 +143,7 @@ func launchNewSession(name string) error {
 
 // runSession is the shared core for launching and resuming sessions.
 // It handles PID registration, Hammerspoon registration, signal trapping,
-// subprocess lifecycle, and cleanup.
+// subprocess lifecycle, exit menu, and cleanup.
 func runSession(name, verb string) error {
 	pid := os.Getpid()
 
@@ -161,57 +165,109 @@ func runSession(name, verb string) error {
 
 	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m %s\033[0m\n\n", name, verb)
 
+	// forceCleaned tracks whether a signal forced cleanup (skip exit menu)
+	var forceCleaned bool
 	var cleanupOnce sync.Once
-	cleanup := func() {
+	cleanup := func(summary string) {
 		cleanupOnce.Do(func() {
+			if summary == "" {
+				summary = "Session ended"
+			}
+			session.WriteState(name, session.StatusDone, summary, pid)
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
-
-			// Check for exit flow hint files
-			_, discardErr := os.Stat(session.DiscardPath(name))
-			shouldDiscard := discardErr == nil
-
-			if shouldDiscard {
-				session.DeleteSession(name)
-			} else {
-				summary := session.ReadSummary(name)
-				if summary == "" {
-					summary = "Session ended"
-				}
-				session.WriteState(name, session.StatusDone, summary, pid)
-				// Clean up the summary hint file
-				os.Remove(session.SummaryPath(name))
-			}
 
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {
 				os.Remove(session.ContractPath())
 			}
-			printExitMessage(name, shouldDiscard)
 		})
 	}
 
-	// Trap signals for cleanup
+	// Trap signals — force cleanup without exit menu
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		cleanup()
+		forceCleaned = true
+		cleanup("Session ended")
+		printSaveMessage(name, "")
 		os.Exit(0)
 	}()
 
-	claudeCmd := exec.Command("claude", "--append-system-prompt", contract.Template(name))
-	claudeCmd.Stdin = os.Stdin
-	claudeCmd.Stdout = os.Stdout
-	claudeCmd.Stderr = os.Stderr
-	claudeCmd.Env = append(os.Environ(),
-		fmt.Sprintf("BERTRAND_PID=%d", pid),
-		"WARP_DISABLE_AUTO_TITLE=true",
-	)
+	// Launch Claude — loop supports "Resume conversation" from exit menu
+	useResume := false
+	for {
+		var claudeCmd *exec.Cmd
+		if useResume {
+			claudeCmd = exec.Command("claude", "--continue", "--append-system-prompt", contract.Template(name))
+		} else {
+			claudeCmd = exec.Command("claude", "--append-system-prompt", contract.Template(name))
+		}
+		claudeCmd.Stdin = os.Stdin
+		claudeCmd.Stdout = os.Stdout
+		claudeCmd.Stderr = os.Stderr
+		claudeCmd.Env = append(os.Environ(),
+			fmt.Sprintf("BERTRAND_PID=%d", pid),
+			"WARP_DISABLE_AUTO_TITLE=true",
+		)
 
-	err := claudeCmd.Run()
-	cleanup()
-	return err
+		claudeCmd.Run()
+
+		// If signal handler already ran, we're done
+		if forceCleaned {
+			return nil
+		}
+
+		// Show exit menu
+		m := tui.NewExitModel(name)
+		p := tea.NewProgram(m)
+		result, err := p.Run()
+		if err != nil {
+			cleanup("Session ended")
+			printSaveMessage(name, "")
+			return err
+		}
+
+		exit := result.(tui.ExitModel)
+
+		if exit.Quitting() && !exit.Chosen() {
+			// Ctrl+C during menu — save with no description
+			cleanup("Session ended")
+			printSaveMessage(name, "")
+			return nil
+		}
+
+		switch exit.Choice() {
+		case tui.ExitSave:
+			desc := exit.Description()
+			summary := "Session ended"
+			if desc != "" {
+				summary = desc
+			}
+			cleanup(summary)
+			printSaveMessage(name, desc)
+			return nil
+
+		case tui.ExitDiscard:
+			session.CleanupPID(pid)
+			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
+			session.DeleteSession(name)
+			active, _ := session.ActiveSessions()
+			if len(active) == 0 {
+				os.Remove(session.ContractPath())
+			}
+			printDiscardMessage(name)
+			return nil
+
+		case tui.ExitResume:
+			// Re-enter the loop, resuming Claude's conversation
+			useResume = true
+			session.WriteState(name, session.StatusWorking, "Session resumed", pid)
+			fmt.Printf("\n\033[38;5;78m✓\033[0m \033[38;5;252mResuming conversation...\033[0m\n\n")
+			continue
+		}
+	}
 }
 
 func resumeSession(name string) error {
