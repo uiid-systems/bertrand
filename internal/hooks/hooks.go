@@ -358,7 +358,7 @@ local borderCanvas = nil
 local borderTimer = nil
 local focusSub = nil
 local BORDER_WIDTH = 4
-local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 1 }
+local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 0.5 }
 
 -- Cache the Warp window filter (creating it is expensive)
 local warpFilter = nil
@@ -389,17 +389,13 @@ local function showBorder(win)
     borderCanvas = hs.canvas.new(frame)
   end
   borderCanvas:frame({
-    x = frame.x - BORDER_WIDTH, y = frame.y - BORDER_WIDTH,
-    w = frame.w + BORDER_WIDTH * 2, h = frame.h + BORDER_WIDTH * 2,
+    x = frame.x, y = frame.y,
+    w = frame.w, h = frame.h,
   })
   borderCanvas:replaceElements(
     { type = "rectangle", frame = { x = 0, y = 0, w = "1", h = "1" },
-      fillColor = BORDER_COLOR, action = "fill" },
-    { type = "rectangle",
-      frame = { x = BORDER_WIDTH, y = BORDER_WIDTH,
-                w = frame.w, h = frame.h },
-      fillColor = { red = 0, green = 0, blue = 0, alpha = 0 },
-      action = "fill", compositeRule = "copy" }
+      strokeColor = BORDER_COLOR, strokeWidth = BORDER_WIDTH * 2,
+      action = "stroke" }
   )
   borderCanvas:level(hs.canvas.windowLevels.floating)
   borderCanvas:behavior(hs.canvas.windowBehaviors.transient)
@@ -413,14 +409,9 @@ local function showBorder(win)
     if not win or not win:id() then hideBorder() return end
     local f = win:frame()
     borderCanvas:frame({
-      x = f.x - BORDER_WIDTH, y = f.y - BORDER_WIDTH,
-      w = f.w + BORDER_WIDTH * 2, h = f.h + BORDER_WIDTH * 2,
-    })
-    -- Update inner hole to match new window size (handles resize)
-    borderCanvas[2].frame = {
-      x = BORDER_WIDTH, y = BORDER_WIDTH,
+      x = f.x, y = f.y,
       w = f.w, h = f.h,
-    }
+    })
   end)
 end
 
