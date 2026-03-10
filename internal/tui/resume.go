@@ -88,14 +88,14 @@ func (m ResumeModel) View() string {
 
 	// "Start fresh" option
 	if m.cursor == 0 {
-		b.WriteString(fmt.Sprintf("  \033[38;5;120m▸ Start fresh conversation\033[0m\n"))
-		b.WriteString(fmt.Sprintf("    \033[38;5;241mNew Claude session with session timeline injected\033[0m\n"))
+		b.WriteString("  \033[38;5;120m▸ Start fresh conversation\033[0m\n")
+		b.WriteString("    \033[38;5;241mNew Claude session with session timeline injected\033[0m\n")
 	} else {
-		b.WriteString(fmt.Sprintf("  \033[38;5;252m  Start fresh conversation\033[0m\n"))
+		b.WriteString("  \033[38;5;252m  Start fresh conversation\033[0m\n")
 	}
 
 	if len(m.options) > 0 {
-		b.WriteString(fmt.Sprintf("\n  \033[38;5;241m──────────────────────────────────\033[0m\n\n"))
+		b.WriteString("\n  \033[38;5;241m──────────────────────────────────\033[0m\n\n")
 	}
 
 	// Conversation segments — show newest first for easier access
@@ -124,7 +124,7 @@ func (m ResumeModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  \033[38;5;241m↑↓ navigate • enter select • esc quit\033[0m\n"))
+	b.WriteString("  \033[38;5;241m↑↓ navigate • enter select • esc quit\033[0m\n")
 	return b.String()
 }
 
