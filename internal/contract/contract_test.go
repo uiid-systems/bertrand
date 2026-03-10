@@ -22,3 +22,36 @@ func TestTemplate(t *testing.T) {
 		t.Errorf("expected session name to appear at least 2 times, got %d", count)
 	}
 }
+
+func TestTemplate_ExitFlow(t *testing.T) {
+	result := Template("test-session")
+
+	// Should contain exit flow instructions
+	exitTags := []string{
+		"[EXIT] test-session »",
+		"[SUMMARY] test-session »",
+		"[DISCARD] test-session »",
+	}
+	for _, tag := range exitTags {
+		if !strings.Contains(result, tag) {
+			t.Errorf("template should contain %q", tag)
+		}
+	}
+
+	// Should contain the three exit options
+	exitOptions := []string{
+		"Save and exit",
+		"Discard and exit",
+		"Drop to prompt",
+	}
+	for _, opt := range exitOptions {
+		if !strings.Contains(result, opt) {
+			t.Errorf("template should contain exit option %q", opt)
+		}
+	}
+
+	// Should still have the "Done for now" instruction
+	if !strings.Contains(result, "Done for now") {
+		t.Error("template should still reference 'Done for now' as the trigger")
+	}
+}

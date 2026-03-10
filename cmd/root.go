@@ -22,10 +22,14 @@ var (
 	freeformPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 )
 
-func printExitMessage(name string) {
+func printExitMessage(name string, discarded bool) {
 	fmt.Print(tui.Goodbye())
-	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m ended\033[0m\n", name)
-	fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
+	if discarded {
+		fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m discarded\033[0m\n\n", name)
+	} else {
+		fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m ended\033[0m\n", name)
+		fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
+	}
 }
 
 func isInitialized() bool {
@@ -160,15 +164,30 @@ func runSession(name, verb string) error {
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
-			session.WriteState(name, session.StatusDone, "Session ended", pid)
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionsDir(), name, "pending"))
+
+			// Check for exit flow hint files
+			_, discardErr := os.Stat(session.DiscardPath(name))
+			shouldDiscard := discardErr == nil
+
+			if shouldDiscard {
+				session.DeleteSession(name)
+			} else {
+				summary := session.ReadSummary(name)
+				if summary == "" {
+					summary = "Session ended"
+				}
+				session.WriteState(name, session.StatusDone, summary, pid)
+				// Clean up the summary hint file
+				os.Remove(session.SummaryPath(name))
+			}
 
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {
 				os.Remove(session.ContractPath())
 			}
-			printExitMessage(name)
+			printExitMessage(name, shouldDiscard)
 		})
 	}
 

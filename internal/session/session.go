@@ -27,6 +27,21 @@ func BaseDir() string {
 func SessionsDir() string  { return filepath.Join(BaseDir(), "sessions") }
 func ContractPath() string { return filepath.Join(BaseDir(), "contract.md") }
 
+// SummaryPath returns the path to a session's exit summary hint file.
+func SummaryPath(name string) string { return filepath.Join(SessionsDir(), name, "summary") }
+
+// DiscardPath returns the path to a session's discard marker hint file.
+func DiscardPath(name string) string { return filepath.Join(SessionsDir(), name, "discard") }
+
+// ReadSummary returns the session exit summary if one was written by the hook.
+func ReadSummary(name string) string {
+	data, err := os.ReadFile(SummaryPath(name))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 type State struct {
 	Session   string    `json:"session"`
 	Status    string    `json:"status"`

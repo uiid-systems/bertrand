@@ -169,6 +169,37 @@ func TestIsProcessAlive(t *testing.T) {
 	}
 }
 
+func TestSummaryAndDiscardPaths(t *testing.T) {
+	withTempBaseDir(t)
+
+	// Verify paths point to the right locations
+	sp := SummaryPath("my-session")
+	if filepath.Base(sp) != "summary" {
+		t.Errorf("SummaryPath base = %q, want %q", filepath.Base(sp), "summary")
+	}
+	dp := DiscardPath("my-session")
+	if filepath.Base(dp) != "discard" {
+		t.Errorf("DiscardPath base = %q, want %q", filepath.Base(dp), "discard")
+	}
+}
+
+func TestReadSummary(t *testing.T) {
+	withTempBaseDir(t)
+
+	// No summary file → empty string
+	if s := ReadSummary("no-summary"); s != "" {
+		t.Errorf("ReadSummary with no file = %q, want empty", s)
+	}
+
+	// Write a summary file
+	WriteState("with-summary", StatusWorking, "working", 1)
+	os.WriteFile(SummaryPath("with-summary"), []byte("Implemented auth, TODO: tests"), 0644)
+
+	if s := ReadSummary("with-summary"); s != "Implemented auth, TODO: tests" {
+		t.Errorf("ReadSummary = %q, want %q", s, "Implemented auth, TODO: tests")
+	}
+}
+
 func TestListSessions_SkipsHiddenAndFiles(t *testing.T) {
 	base := withTempBaseDir(t)
 

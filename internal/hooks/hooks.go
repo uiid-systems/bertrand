@@ -13,6 +13,7 @@ import (
 func BlockedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → mark session as blocked
+# Also detects [EXIT] and [SUMMARY] tags for exit flow hint files.
 BERTRAND_PID="${BERTRAND_PID:-}"
 [ -z "$BERTRAND_PID" ] && exit 0
 
@@ -21,7 +22,38 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 
 input="$(cat)"
 raw="$(printf '%s' "$input" | grep -o '"question"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"question"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
-# Strip "sessionName » " or "bertrand:sessionName > " prefix
+
+session_dir="$HOME/.bertrand/sessions/$name"
+
+# Detect [SUMMARY] tag — write summary hint file
+case "$raw" in
+  "[SUMMARY]"*)
+    # Strip "[SUMMARY] sessionName » " prefix to get the actual summary
+    summary_text="$(printf '%s' "$raw" | sed "s/^\[SUMMARY\] //" | sed "s/^${name} [^a-zA-Z]* //" | cut -c1-120)"
+    [ -n "$summary_text" ] && printf '%s' "$summary_text" > "$session_dir/summary"
+    bertrand update --name "$name" --status blocked --summary "Saving session..."
+    exit 0
+    ;;
+esac
+
+# Detect [DISCARD] tag — write discard hint file
+case "$raw" in
+  "[DISCARD]"*)
+    printf 'discard' > "$session_dir/discard"
+    bertrand update --name "$name" --status blocked --summary "Discarding session..."
+    exit 0
+    ;;
+esac
+
+# Detect [EXIT] tag — mark as exit flow (no special file needed yet)
+case "$raw" in
+  "[EXIT]"*)
+    bertrand update --name "$name" --status blocked --summary "Ending session..."
+    exit 0
+    ;;
+esac
+
+# Normal blocked flow — strip prefix and update
 summary="$(printf '%s' "$raw" | sed "s/^${name} [^a-zA-Z]* //" | sed "s/^bertrand:${name} > //" | cut -c1-80)"
 [ -z "$summary" ] && summary="Waiting for input"
 
