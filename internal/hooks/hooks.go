@@ -22,7 +22,8 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 input="$(cat)"
 raw="$(printf '%s' "$input" | grep -o '"question"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"question"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 # Strip "sessionName » " or "bertrand:sessionName > " prefix
-summary="$(printf '%s' "$raw" | sed "s/^${name} [^a-zA-Z]* //" | sed "s/^bertrand:${name} > //" | cut -c1-80)"
+# Use | delimiter — session names contain / which breaks s///
+summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertrand:${name} > ||" | cut -c1-80)"
 [ -z "$summary" ] && summary="Waiting for input"
 
 bertrand update --name "$name" --status blocked --summary "$summary"
@@ -451,12 +452,18 @@ local function notifyBlocked(sessionName, summary)
   end
 
   local function sendNotification()
-    local ok, n = pcall(hs.notify.new, function()
+    local ok, n = pcall(hs.notify.new, function(notif)
       focusSessionWindow(sessionName)
+      -- Withdraw after user clicks (action or notification body)
+      if notif then notif:withdraw() end
+      activeNotifications[sessionName] = nil
+      notifiedSessions[sessionName] = nil
     end, {
       title = "bertrand",
       subTitle = sessionName,
       informativeText = summary,
+      hasActionButton = true,
+      actionButtonTitle = "Focus",
       autoWithdraw = false,
       withdrawAfter = 0,
     })
