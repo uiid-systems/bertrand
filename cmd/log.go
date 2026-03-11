@@ -220,58 +220,125 @@ func showSessionLog(name string) error {
 	}
 
 	fmt.Printf("\033[1m%s\033[0m\n", name)
-
-	first := log[0].TS
-	last := log[len(log)-1].TS
-	fmt.Printf("Started %s  Duration %s\n\n", first.Local().Format("Jan 2 15:04"), formatDuration(last.Sub(first)))
-
-	var prevTime time.Time
-	for _, entry := range log {
-		gap := ""
-		if !prevTime.IsZero() {
-			d := entry.TS.Sub(prevTime)
-			if d > 5*time.Second {
-				gap = fmt.Sprintf(" (+%s)", formatDuration(d))
-			}
-		}
-		prevTime = entry.TS
-
-		icon := eventIcon(entry.Event)
-		ts := entry.TS.Local().Format("15:04:05")
-
-		label := entry.Event
-		if entry.Summary != "" {
-			label = entry.Summary
-		}
-		if len(label) > 80 {
-			label = label[:77] + "..."
-		}
-		label = strings.ReplaceAll(label, "\n", " ")
-
-		fmt.Printf("  %s %s %-22s %s%s\n", icon, ts, eventLabel(entry.Event), label, gap)
-	}
-
+	fmt.Print(renderTimeline(log))
 	return nil
 }
 
-func eventIcon(event string) string {
+// renderTimeline formats log entries as a vertical pipe timeline.
+// Used by both `bertrand log <session>` and the exit screen.
+func renderTimeline(entries []unifiedEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	first := entries[0].TS
+	last := entries[len(entries)-1].TS
+
+	b.WriteString(fmt.Sprintf("\033[38;5;241mStarted %s  Duration %s\033[0m\n\n",
+		first.Local().Format("Jan 2 15:04"), formatDuration(last.Sub(first))))
+
+	for i, entry := range entries {
+		isFirst := i == 0
+		isLast := i == len(entries)-1
+
+		// Connector character
+		var connector string
+		if isFirst {
+			connector = "┌"
+		} else if isLast {
+			connector = "└"
+		} else {
+			connector = "├"
+		}
+
+		// Color the connector based on event type
+		connectorColor := eventConnectorColor(entry.Event)
+		coloredConnector := fmt.Sprintf("\033[38;5;%dm%s\033[0m", connectorColor, connector)
+
+		ts := entry.TS.Local().Format("15:04")
+		label := eventLabel(entry.Event)
+
+		// Build the detail text
+		detail := ""
+		if entry.Summary != "" {
+			detail = entry.Summary
+			if len(detail) > 60 {
+				detail = detail[:57] + "..."
+			}
+			detail = strings.ReplaceAll(detail, "\n", " ")
+		}
+
+		// Gap indicator
+		gap := ""
+		if i > 0 {
+			d := entry.TS.Sub(entries[i-1].TS)
+			if d > 5*time.Second {
+				gap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", formatDuration(d))
+			}
+		}
+
+		// Format: "  HH:MM  ├ label  detail  +gap"
+		if detail != "" {
+			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m  \033[38;5;%dm%s\033[0m%s\n",
+				ts, coloredConnector, label, eventDetailColor(entry.Event), detail, gap))
+		} else {
+			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m%s\n",
+				ts, coloredConnector, label, gap))
+		}
+
+		// Draw a pipe between entries (except after last)
+		if !isLast {
+			b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m\n", 238))
+		}
+	}
+
+	// Footer with stats
+	eventCount := len(entries)
+	interactions := 0
+	for _, e := range entries {
+		if e.Event == "session.block" || e.Event == "state.blocked" {
+			interactions++
+		}
+	}
+	b.WriteString(fmt.Sprintf("\n\033[38;5;241m  %d events", eventCount))
+	if interactions > 0 {
+		b.WriteString(fmt.Sprintf("  %d interactions", interactions))
+	}
+	b.WriteString(fmt.Sprintf("  %s\033[0m\n", formatDuration(last.Sub(first))))
+
+	return b.String()
+}
+
+func eventConnectorColor(event string) int {
 	switch event {
 	case "session.started", "session.resumed", "session.resume", "state.working":
-		return "\033[32m▶\033[0m"
+		return 78 // green
 	case "claude.started":
-		return "\033[38;5;78m▷\033[0m"
+		return 78 // green
 	case "claude.ended":
-		return "\033[38;5;241m▷\033[0m"
+		return 241 // dim
 	case "session.block", "state.blocked":
-		return "\033[33m◼\033[0m"
+		return 214 // orange
 	case "session.end", "state.done":
-		return "\033[90m■\033[0m"
+		return 241 // dim
 	case "permission.request":
-		return "\033[33m🔒\033[0m"
+		return 214 // orange
 	case "permission.resolve":
-		return "\033[32m🔓\033[0m"
+		return 78 // green
 	default:
-		return " "
+		return 241
+	}
+}
+
+func eventDetailColor(event string) int {
+	switch event {
+	case "session.block", "state.blocked":
+		return 252 // bright for question text
+	case "claude.started":
+		return 241 // dim for claude_id
+	default:
+		return 241
 	}
 }
 

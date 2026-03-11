@@ -36,18 +36,31 @@ func regFilename(name string) string {
 	return "register-" + strings.ReplaceAll(name, "/", "___")
 }
 
-func printSaveMessage(name, description string) {
+func printSaveMessage(name string, timeline string) {
 	fmt.Print(tui.Goodbye())
 	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m saved\033[0m\n", name)
-	if description != "" {
-		fmt.Printf("\033[38;5;241m  %s\033[0m\n", description)
+	if timeline != "" {
+		fmt.Print(timeline)
 	}
 	fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
 }
 
-func printDiscardMessage(name string) {
+func printDiscardMessage(name string, timeline string) {
 	fmt.Print(tui.Goodbye())
-	fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m discarded\033[0m\n\n", name)
+	fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m discarded\033[0m\n", name)
+	if timeline != "" {
+		fmt.Print(timeline)
+	}
+	fmt.Println()
+}
+
+// sessionTimeline reads the session log and renders a pipe timeline.
+func sessionTimeline(name string) string {
+	entries, err := readUnifiedLog(name)
+	if err != nil || len(entries) == 0 {
+		return ""
+	}
+	return renderTimeline(entries)
 }
 
 func isInitialized() bool {
@@ -236,7 +249,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		<-sigCh
 		forceCleaned = true
 		cleanup("Session ended")
-		printSaveMessage(name, "")
+		printSaveMessage(name, sessionTimeline(name))
 		os.Exit(0)
 	}()
 
@@ -295,31 +308,29 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		result, err := p.Run()
 		if err != nil {
 			cleanup("Session ended")
-			printSaveMessage(name, "")
+			printSaveMessage(name, sessionTimeline(name))
 			return err
 		}
 
 		exit := result.(tui.ExitModel)
 
-		if exit.Quitting() && !exit.Chosen() {
-			// Ctrl+C during menu — save with no description
+		if !exit.Chosen() {
+			// Menu closed without selection — default to save
 			cleanup("Session ended")
-			printSaveMessage(name, "")
+			printSaveMessage(name, sessionTimeline(name))
 			return nil
 		}
 
 		switch exit.Choice() {
 		case tui.ExitSave:
-			desc := exit.Description()
-			summary := "Session ended"
-			if desc != "" {
-				summary = desc
-			}
-			cleanup(summary)
-			printSaveMessage(name, desc)
+			cleanup("Session ended")
+			printSaveMessage(name, sessionTimeline(name))
 			return nil
 
 		case tui.ExitDiscard:
+			// Write end event and capture timeline before deleting session data
+			session.AppendEvent(name, "session.end", map[string]string{"summary": "Session discarded"})
+			timeline := sessionTimeline(name)
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 			session.DeleteSession(name)
@@ -327,7 +338,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			if len(active) == 0 {
 				os.Remove(session.ContractPath())
 			}
-			printDiscardMessage(name)
+			printDiscardMessage(name, timeline)
 			return nil
 
 		case tui.ExitResume:
