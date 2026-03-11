@@ -387,12 +387,26 @@ local cleanupTick = 0
 local activeNotifications = {}
 local notifiedSessions = {}
 
--- Window border state (disabled — canvas causes HSCanvasWindow makeKeyWindow errors)
--- local borderCanvas = nil
--- local borderTimer = nil
--- local focusSub = nil
--- local BORDER_WIDTH = 4
--- local BORDER_COLOR = { red = 0, green = 1, blue = 0, alpha = 0.5 }
+-- Dim settings — read from ~/.bertrand/config.yaml, fall back to defaults
+local DIM_ALL_WINDOWS = true
+local DIM_OPACITY = 0.65
+local dimFilter = nil
+local dimmedWindows = {}        -- winId → true, tracks windows we've dimmed
+
+local function loadDimSettings()
+  local f = io.open(baseDir .. "/config.yaml", "r")
+  if not f then return end
+  local content = f:read("*a")
+  f:close()
+  local allVal = content:match("dim_all_windows:%s*(%S+)")
+  if allVal == "false" then DIM_ALL_WINDOWS = false
+  elseif allVal == "true" then DIM_ALL_WINDOWS = true end
+  local opVal = content:match("dim_opacity:%s*([%d%.]+)")
+  if opVal then
+    local n = tonumber(opVal)
+    if n and n >= 0 and n <= 1 then DIM_OPACITY = n end
+  end
+end
 
 -- Cache the Warp window filter (creating it is expensive)
 local warpFilter = nil
@@ -415,10 +429,57 @@ local function getWarpIcon()
   return warpIcon
 end
 
--- Border functions (disabled — canvas causes HSCanvasWindow makeKeyWindow errors)
-local function showBorder(win) end
-local function hideBorder() end
-local function updateBorder() end
+-- Dim unfocused windows (uses setAlpha, no canvas needed)
+local function isBertrandWindow(win)
+  return windowMap[win:id()] ~= nil
+end
+
+local function updateDim()
+  local focused = hs.window.focusedWindow()
+  local focusedId = focused and focused:id() or nil
+
+  if DIM_ALL_WINDOWS then
+    -- Dim all visible windows except the focused one
+    local allWindows = hs.window.allWindows()
+    for _, win in ipairs(allWindows) do
+      local wid = win:id()
+      if wid ~= focusedId then
+        win:setAlpha(DIM_OPACITY)
+        dimmedWindows[wid] = true
+      else
+        win:setAlpha(1.0)
+        dimmedWindows[wid] = nil
+      end
+    end
+  else
+    -- Dim only bertrand-registered windows
+    for winId, _ in pairs(windowMap) do
+      local win = hs.window.get(winId)
+      if win then
+        if winId ~= focusedId then
+          win:setAlpha(DIM_OPACITY)
+          dimmedWindows[winId] = true
+        else
+          win:setAlpha(1.0)
+          dimmedWindows[winId] = nil
+        end
+      end
+    end
+  end
+end
+
+local function restoreAllAlpha()
+  for winId, _ in pairs(dimmedWindows) do
+    local win = hs.window.get(winId)
+    if win then win:setAlpha(1.0) end
+  end
+  dimmedWindows = {}
+  -- Also restore any bertrand windows just in case
+  for winId, _ in pairs(windowMap) do
+    local win = hs.window.get(winId)
+    if win then win:setAlpha(1.0) end
+  end
+end
 
 local registrationsPath = tmpDir .. "/registrations.json"
 
@@ -815,6 +876,7 @@ end
 function bertrand.start()
   os.execute("mkdir -p " .. tmpDir)
   os.execute("mkdir -p " .. sessionsDir)
+  loadDimSettings()
 
   -- Purge stale notifications left by a previous Hammerspoon session
   local delivered = hs.notify.deliveredNotifications() or {}
@@ -837,21 +899,22 @@ function bertrand.start()
     processSignals()
     refreshQueue()
   end)
-  -- Border focus tracking (disabled — canvas causes HSCanvasWindow errors)
-  -- focusSub = hs.window.filter.new(nil):subscribe(
-  --   { hs.window.filter.windowFocused, hs.window.filter.windowUnfocused },
-  --   function() updateBorder() end
-  -- )
+  -- Dim unfocused windows on focus change
+  dimFilter = hs.window.filter.new(nil)
+  dimFilter:subscribe(
+    { hs.window.filter.windowFocused, hs.window.filter.windowUnfocused },
+    function() updateDim() end
+  )
+  updateDim()
   print("bertrand: watching " .. baseDir)
 end
 
 function bertrand.stop()
   if watcher then watcher:stop() end
   if pollTimer then pollTimer:stop() end
-  -- Border cleanup (disabled)
-  -- if focusSub then focusSub:unsubscribeAll(); focusSub = nil end
-  -- hideBorder()
-  -- if borderCanvas then borderCanvas:delete(); borderCanvas = nil end
+  -- Restore all dimmed windows to full opacity
+  restoreAllAlpha()
+  if dimFilter then dimFilter:unsubscribeAll(); dimFilter = nil end
   for sn, _ in pairs(activeNotifications) do withdrawNotification(sn) end
   windowMap = {}
   sessionWindows = {}

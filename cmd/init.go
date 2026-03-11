@@ -64,12 +64,40 @@ func runInitWizard(showLogo bool) error {
 	}
 	fmt.Printf("%s %s\n", check, label("Claude Code hooks configured"))
 
-	// Write config
+	// Write config (merge: preserve existing keys, add missing defaults)
 	configPath := filepath.Join(session.BaseDir(), "config.yaml")
 	if err := os.MkdirAll(session.BaseDir(), 0755); err != nil {
 		return err
 	}
-	config := fmt.Sprintf("terminal: %s\nfocus_queue: %v\n", choice.Terminal, choice.EnableFocusQueue)
+	existing, _ := os.ReadFile(configPath)
+	existingStr := string(existing)
+
+	// Core keys always overwritten by wizard choice
+	lines := []string{
+		fmt.Sprintf("terminal: %s", choice.Terminal),
+		fmt.Sprintf("focus_queue: %v", choice.EnableFocusQueue),
+	}
+
+	// Optional keys: only add if not already present
+	defaults := map[string]string{
+		"dim_all_windows": "true",
+		"dim_opacity":     "0.65",
+	}
+	for key, val := range defaults {
+		if !strings.Contains(existingStr, key+":") {
+			lines = append(lines, fmt.Sprintf("%s: %s", key, val))
+		} else {
+			// Preserve the existing line
+			for _, line := range strings.Split(existingStr, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), key+":") {
+					lines = append(lines, strings.TrimSpace(line))
+					break
+				}
+			}
+		}
+	}
+
+	config := strings.Join(lines, "\n") + "\n"
 	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
 		return err
 	}
