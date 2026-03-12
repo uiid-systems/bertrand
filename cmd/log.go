@@ -62,6 +62,8 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 			summary := ""
 			if q, ok := e.Meta["question"]; ok {
 				summary = q
+			} else if a, ok := e.Meta["answer"]; ok && a != "" {
+				summary = a
 			} else if s, ok := e.Meta["summary"]; ok {
 				summary = s
 			} else if t, ok := e.Meta["tool"]; ok {
@@ -226,10 +228,132 @@ func showSessionLog(name string) error {
 	return nil
 }
 
+// compactEntry represents a collapsed/deduped timeline entry.
+type compactEntry struct {
+	Event    string
+	TS       time.Time
+	Summary  string
+	Answer   string            // answer from the following session.resume, if any
+	Meta     map[string]string // original meta for Q&A pairing
+	ToolWork string            // collapsed permission summary like "8× Bash, 2× Edit"
+	RawCount int               // number of raw events this entry represents
+}
+
+// compactTimeline collapses permission pairs and deduplicates consecutive events.
+func compactTimeline(entries []unifiedEntry) []compactEntry {
+	var result []compactEntry
+	i := 0
+	for i < len(entries) {
+		e := entries[i]
+
+		// Skip permission events — they'll be collected as tool work
+		if e.Event == "permission.request" || e.Event == "permission.resolve" {
+			i++
+			continue
+		}
+
+		// Deduplicate: skip if identical event+summary as previous compact entry
+		if len(result) > 0 {
+			prev := result[len(result)-1]
+			if prev.Event == e.Event && prev.Summary == e.Summary {
+				result[len(result)-1].RawCount++
+				i++
+				continue
+			}
+		}
+
+		ce := compactEntry{
+			Event:    e.Event,
+			TS:       e.TS,
+			Summary:  e.Summary,
+			Meta:     e.Meta,
+			RawCount: 1,
+		}
+
+		// For block events, look ahead for the paired resume to capture the answer
+		if e.Event == "session.block" || e.Event == "state.blocked" {
+			for j := i + 1; j < len(entries); j++ {
+				ej := entries[j]
+				if ej.Event == "session.resume" || ej.Event == "state.working" {
+					if a, ok := ej.Meta["answer"]; ok && a != "" {
+						ce.Answer = a
+					}
+					break
+				}
+				// Stop looking if we hit another block
+				if ej.Event == "session.block" || ej.Event == "state.blocked" {
+					break
+				}
+			}
+		}
+
+		// For non-permission events, look ahead and collect any following permission
+		// events as tool work summary, attaching to this entry
+		if e.Event != "session.block" && e.Event != "state.blocked" {
+			toolCounts := map[string]int{}
+			rawPermCount := 0
+			j := i + 1
+			for j < len(entries) {
+				ej := entries[j]
+				if ej.Event == "permission.request" || ej.Event == "permission.resolve" {
+					if ej.Event == "permission.resolve" {
+						tool := ej.Meta["tool"]
+						if tool == "" {
+							tool = "unknown"
+						}
+						toolCounts[tool]++
+					}
+					rawPermCount++
+					j++
+					continue
+				}
+				break
+			}
+			if len(toolCounts) > 0 {
+				ce.ToolWork = formatToolCounts(toolCounts)
+				ce.RawCount += rawPermCount
+			}
+		}
+
+		result = append(result, ce)
+		i++
+	}
+	return result
+}
+
+// formatToolCounts formats a map of tool→count into "8× Bash, 2× Edit".
+func formatToolCounts(counts map[string]int) string {
+	// Sort by count descending, then name ascending
+	type tc struct {
+		name  string
+		count int
+	}
+	var items []tc
+	for name, count := range counts {
+		items = append(items, tc{name, count})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count != items[j].count {
+			return items[i].count > items[j].count
+		}
+		return items[i].name < items[j].name
+	})
+	var parts []string
+	for _, item := range items {
+		parts = append(parts, fmt.Sprintf("%d× %s", item.count, item.name))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // renderTimeline formats log entries as a vertical pipe timeline.
 // Used by both `bertrand log <session>` and the exit screen.
 func renderTimeline(entries []unifiedEntry) string {
 	if len(entries) == 0 {
+		return ""
+	}
+
+	compact := compactTimeline(entries)
+	if len(compact) == 0 {
 		return ""
 	}
 
@@ -240,9 +364,10 @@ func renderTimeline(entries []unifiedEntry) string {
 	b.WriteString(fmt.Sprintf("\033[38;5;241mStarted %s  Duration %s\033[0m\n\n",
 		first.Local().Format("Jan 2 15:04"), formatDuration(last.Sub(first))))
 
-	for i, entry := range entries {
+	var prevTS time.Time
+	for i, ce := range compact {
 		isFirst := i == 0
-		isLast := i == len(entries)-1
+		isLast := i == len(compact)-1
 
 		// Connector character
 		var connector string
@@ -255,38 +380,54 @@ func renderTimeline(entries []unifiedEntry) string {
 		}
 
 		// Color the connector based on event type
-		connectorColor := eventConnectorColor(entry.Event)
+		connectorColor := eventConnectorColor(ce.Event)
 		coloredConnector := fmt.Sprintf("\033[38;5;%dm%s\033[0m", connectorColor, connector)
 
-		ts := entry.TS.Local().Format("15:04")
-		label := eventLabel(entry.Event)
+		ts := ce.TS.Local().Format("15:04")
+		label := eventLabel(ce.Event)
 
 		// Build the detail text
 		detail := ""
-		if entry.Summary != "" {
-			detail = entry.Summary
+		if ce.Summary != "" {
+			detail = ce.Summary
 			if len(detail) > 60 {
 				detail = detail[:57] + "..."
 			}
 			detail = strings.ReplaceAll(detail, "\n", " ")
 		}
 
-		// Gap indicator
+		// Gap indicator (based on previous compact entry, not raw)
 		gap := ""
-		if i > 0 {
-			d := entry.TS.Sub(entries[i-1].TS)
+		if !isFirst {
+			d := ce.TS.Sub(prevTS)
 			if d > 5*time.Second {
 				gap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", formatDuration(d))
 			}
 		}
+		prevTS = ce.TS
 
 		// Format: "  HH:MM  ├ label  detail  +gap"
 		if detail != "" {
 			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m  \033[38;5;%dm%s\033[0m%s\n",
-				ts, coloredConnector, label, eventDetailColor(entry.Event), detail, gap))
+				ts, coloredConnector, label, eventDetailColor(ce.Event), detail, gap))
 		} else {
 			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m%s\n",
 				ts, coloredConnector, label, gap))
+		}
+
+		// Show answer on the next line if present (Q&A pair)
+		if ce.Answer != "" {
+			answer := ce.Answer
+			if len(answer) > 60 {
+				answer = answer[:57] + "..."
+			}
+			answer = strings.ReplaceAll(answer, "\n", " ")
+			b.WriteString(fmt.Sprintf("         \033[38;5;238m│\033[0m  \033[38;5;78m→ %s\033[0m\n", answer))
+		}
+
+		// Show tool work summary on the pipe line if present
+		if ce.ToolWork != "" {
+			b.WriteString(fmt.Sprintf("         \033[38;5;238m│\033[0m  \033[38;5;241m%s\033[0m\n", ce.ToolWork))
 		}
 
 		// Draw a pipe between entries (except after last)

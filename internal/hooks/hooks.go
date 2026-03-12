@@ -48,13 +48,32 @@ BERTRAND_PID="${BERTRAND_PID:-}"
 name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 [ -z "$name" ] && exit 0
 
+# Extract answer from tool_response (PostToolUse provides it via stdin)
+input="$(cat)"
+# tool_response is a string like: User has answered your questions: "question"="answer"
+# Use python3 for reliable JSON parsing (inner quotes are escaped in JSON)
+answer="$(printf '%s' "$input" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    r=str(d.get('tool_response',''))
+    i=r.rfind('=\"')
+    if i>=0:
+        rest=r[i+2:]
+        j=rest.find('\"')
+        if j>=0: print(rest[:j])
+except: pass
+" 2>/dev/null)"
+[ -z "$answer" ] && answer=""
+esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-120)"
+
 bertrand update --name "$name" --status working --summary "Resumed after input"
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
