@@ -17,10 +17,12 @@ const (
 )
 
 type ExitModel struct {
-	name   string
-	cursor int
-	choice ExitChoice
-	chosen bool
+	name      string
+	cursor    int
+	choice    ExitChoice
+	chosen    bool
+	StatusBar StatusBarData
+	width     int
 }
 
 func NewExitModel(name string) ExitModel {
@@ -43,6 +45,9 @@ var exitOptions = []struct {
 
 func (m ExitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -68,6 +73,8 @@ func (m ExitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ExitModel) View() string {
 	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(StatusBar(m.StatusBar, m.width))
 	b.WriteString("\n")
 	b.WriteString(promptStyle.Render(fmt.Sprintf("  Session %s has ended.", m.name)))
 	b.WriteString("\n")

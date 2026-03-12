@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -61,6 +62,51 @@ func sessionTimeline(name string) string {
 		return ""
 	}
 	return renderTimeline(entries)
+}
+
+// buildStatusBar creates StatusBarData for a session, pulling sibling info.
+func buildStatusBar(name string, startTime time.Time) tui.StatusBarData {
+	d := tui.StatusBarData{SessionName: name}
+
+	if s, err := session.ReadState(name); err == nil {
+		d.Status = s.Status
+	}
+
+	if !startTime.IsZero() {
+		d.Duration = time.Since(startTime)
+	}
+
+	entries, _ := readUnifiedLog(name)
+	d.EventCount = len(entries)
+
+	if active, err := session.ActiveSessions(); err == nil {
+		count := 0
+		var working, blocked int
+		for _, s := range active {
+			if s.Session != name {
+				count++
+				switch s.Status {
+				case session.StatusWorking:
+					working++
+				case session.StatusBlocked:
+					blocked++
+				}
+			}
+		}
+		d.SiblingCount = count
+		if count > 0 {
+			var parts []string
+			if working > 0 {
+				parts = append(parts, fmt.Sprintf("%d working", working))
+			}
+			if blocked > 0 {
+				parts = append(parts, fmt.Sprintf("%d blocked", blocked))
+			}
+			d.SiblingInfo = strings.Join(parts, ", ")
+		}
+	}
+
+	return d
 }
 
 func isInitialized() bool {
@@ -201,6 +247,7 @@ func runSession(name, verb string) error {
 }
 
 func runSessionInner(name, verb, initialClaudeID string) error {
+	sessionStart := time.Now()
 	pid := os.Getpid()
 
 	if err := session.RegisterPID(pid, name); err != nil {
@@ -305,6 +352,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 
 		// Show exit menu
 		m := tui.NewExitModel(name)
+		m.StatusBar = buildStatusBar(name, sessionStart)
 		p := tea.NewProgram(m)
 		result, err := p.Run()
 		if err != nil {
@@ -391,6 +439,7 @@ func resumeSession(name string) error {
 		}
 
 		m := tui.NewResumeModel(name, opts)
+		m.StatusBar = buildStatusBar(name, time.Time{})
 		p := tea.NewProgram(m)
 		result, err := p.Run()
 		if err != nil {

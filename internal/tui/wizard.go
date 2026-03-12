@@ -31,6 +31,7 @@ type WizardModel struct {
 	quitting  bool
 	showLogo  bool
 	pathInput textinput.Model
+	width     int
 }
 
 func newPathInput() textinput.Model {
@@ -79,6 +80,9 @@ func (m WizardModel) Init() tea.Cmd { return nil }
 
 func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		// Custom path input mode
 		if m.step == stepCustomPath {
@@ -180,8 +184,9 @@ func (m WizardModel) View() string {
 
 	s := ""
 	if m.showLogo {
-		s = Logo() + "\n"
+		s = Logo()
 	}
+	s += "\n" + StatusBar(StatusBarData{}, m.width)
 
 	switch m.step {
 	case stepTerminal:

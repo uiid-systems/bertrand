@@ -8,6 +8,7 @@ type InitPromptModel struct {
 	cursor   int
 	accepted bool
 	quitting bool
+	width    int
 }
 
 func NewInitPromptModel() InitPromptModel {
@@ -21,6 +22,9 @@ func (m InitPromptModel) Init() tea.Cmd { return nil }
 
 func (m InitPromptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -50,6 +54,7 @@ func (m InitPromptModel) View() string {
 	}
 
 	s := Logo()
+	s += "\n" + StatusBar(StatusBarData{}, m.width)
 	s += promptStyle.Render("  Bertrand needs to be initialized before first use.") + "\n"
 	s += promptStyle.Render("  Run setup now?") + "\n\n"
 	s += renderOptions(initOptions, m.cursor)
