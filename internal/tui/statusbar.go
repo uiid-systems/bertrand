@@ -20,19 +20,22 @@ type StatusBarData struct {
 }
 
 var (
-	sbNameStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
-	sbStatStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	sbDivStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	sbNameStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("120")).Bold(true)
+	sbStatStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	sbDivStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	sbDotWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	sbDotBlockedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	sbDotDimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
 func statusDotStyle(status string) lipgloss.Style {
 	switch status {
 	case "working":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+		return sbDotWorkingStyle
 	case "blocked":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+		return sbDotBlockedStyle
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+		return sbDotDimStyle
 	}
 }
 

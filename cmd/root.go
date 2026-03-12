@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
