@@ -165,6 +165,146 @@ printf '{"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":
 `
 }
 
+// StatuslineScript returns the statusline wrapper script.
+// When BERTRAND_SESSION is set, it renders a session header line before
+// delegating to the user's original statusline command (e.g. ccstatusline).
+// When not in a bertrand session, it passes through to the fallback directly.
+func StatuslineScript() string {
+	return `#!/usr/bin/env bash
+# Bertrand statusline wrapper
+# In a bertrand session: renders bertrand's own statusline
+# Otherwise: delegates to the user's original statusline tool
+#
+# Session detection uses BERTRAND_PID → ~/.bertrand/tmp/<pid> lookup
+# (same pattern as all bertrand hook scripts). BERTRAND_SESSION is used
+# as an optimization when available.
+FALLBACK_FILE="$HOME/.bertrand/statusline-fallback"
+if [ -f "$FALLBACK_FILE" ]; then
+  FALLBACK="$(cat "$FALLBACK_FILE")"
+else
+  FALLBACK="${BERTRAND_STATUSLINE_FALLBACK:-ccstatusline}"
+fi
+input="$(cat)"
+
+# Resolve session name via PID lookup (primary) or env var (fallback)
+name=""
+BERTRAND_PID="${BERTRAND_PID:-}"
+if [ -n "$BERTRAND_PID" ]; then
+  name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)"
+fi
+[ -z "$name" ] && name="${BERTRAND_SESSION:-}"
+
+if [ -z "$name" ]; then
+  # Not in a bertrand session — pass through to fallback
+  if command -v "$FALLBACK" >/dev/null 2>&1; then
+    printf '%s' "$input" | "$FALLBACK"
+  fi
+  exit 0
+fi
+
+# ── Bertrand session statusline ──
+
+HAS_JQ=0
+command -v jq >/dev/null 2>&1 && HAS_JQ=1
+
+# Colors (256-color ANSI — matches bertrand palette)
+c_name=$'\033[1;38;5;120m'   # bright green, bold — session name
+c_status=$'\033[38;5;78m'    # green — working
+c_blocked=$'\033[38;5;214m'  # orange — blocked
+c_dim=$'\033[38;5;241m'      # gray — labels/separators
+c_val=$'\033[38;5;252m'      # light gray — values
+c_ctx=$'\033[38;5;158m'      # mint — context ok
+c_ctx_warn=$'\033[38;5;215m' # peach — context warning
+c_ctx_crit=$'\033[38;5;203m' # red — context critical
+c_rst=$'\033[0m'
+
+# Session state
+state_file="$HOME/.bertrand/sessions/$name/state.json"
+status=""
+if [ -f "$state_file" ]; then
+  if [ "$HAS_JQ" -eq 1 ]; then
+    status="$(jq -r '.status // ""' "$state_file" 2>/dev/null)"
+  else
+    status="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_file" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+  fi
+fi
+
+case "$status" in
+  working) dot="${c_status}● working${c_rst}" ;;
+  blocked) dot="${c_blocked}● blocked${c_rst}" ;;
+  *)       dot="" ;;
+esac
+
+# Sibling count — scan state files for other active sessions
+siblings=0
+if [ -d "$HOME/.bertrand/sessions" ]; then
+  for d in "$HOME/.bertrand/sessions"/*/state.json; do
+    [ -f "$d" ] || continue
+    sess_dir="$(dirname "$d")"
+    sess_name="${sess_dir##*/}"
+    [ "$sess_name" = "$name" ] && continue
+    if [ "$HAS_JQ" -eq 1 ]; then
+      spid="$(jq -r '.pid // 0' "$d" 2>/dev/null)"
+      s="$(jq -r '.status // ""' "$d" 2>/dev/null)"
+    else
+      spid="$(grep -o '"pid"[[:space:]]*:[[:space:]]*[0-9]*' "$d" | head -1 | sed 's/.*:[[:space:]]*//')"
+      s="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$d" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+    fi
+    [ "$s" = "done" ] && continue
+    [ -n "$spid" ] && [ "$spid" != "0" ] && kill -0 "$spid" 2>/dev/null && siblings=$((siblings + 1))
+  done
+fi
+
+# Claude JSON data
+if [ "$HAS_JQ" -eq 1 ]; then
+  model="$(echo "$input" | jq -r '.model.display_name // "Claude"' 2>/dev/null)"
+  ctx_size="$(echo "$input" | jq -r '.context_window.context_window_size // 200000' 2>/dev/null)"
+  usage="$(echo "$input" | jq '.context_window.current_usage' 2>/dev/null)"
+  if [ "$usage" != "null" ] && [ -n "$usage" ]; then
+    tokens="$(echo "$usage" | jq '(.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null)"
+  fi
+else
+  model="$(echo "$input" | grep -o '"display_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"display_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+  [ -z "$model" ] && model="Claude"
+  tokens=""
+fi
+
+# Context remaining
+ctx_pct=""
+if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
+  used_pct=$((tokens * 100 / ctx_size))
+  remaining=$((100 - used_pct))
+  [ "$remaining" -lt 0 ] && remaining=0
+  [ "$remaining" -gt 100 ] && remaining=100
+  ctx_pct="$remaining"
+  if [ "$remaining" -le 20 ]; then
+    ctx_color="$c_ctx_crit"
+  elif [ "$remaining" -le 40 ]; then
+    ctx_color="$c_ctx_warn"
+  else
+    ctx_color="$c_ctx"
+  fi
+fi
+
+# ── Render ──
+# Line 1: session name + status + siblings
+printf '%s%s%s' "$c_name" "$name" "$c_rst"
+[ -n "$dot" ] && printf '  %s' "$dot"
+if [ "$siblings" -gt 0 ]; then
+  s_label="siblings"
+  [ "$siblings" -eq 1 ] && s_label="sibling"
+  printf '  %s%d %s%s' "$c_dim" "$siblings" "$s_label" "$c_rst"
+fi
+
+# Line 2: model + context
+printf '\n%s%s%s' "$c_val" "$model" "$c_rst"
+if [ -n "$ctx_pct" ]; then
+  printf '  %sctx %s%s%%%s' "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
+fi
+printf '\n'
+`
+}
+
 // hooksFingerprint returns a SHA-256 hash of all hook script contents.
 // Used to detect when installed hooks are outdated.
 func hooksFingerprint() string {
@@ -175,6 +315,7 @@ func hooksFingerprint() string {
 	h.Write([]byte(PermissionDoneScript()))
 	h.Write([]byte(WorktreeEnteredScript()))
 	h.Write([]byte(WorktreeExitedScript()))
+	h.Write([]byte(StatuslineScript()))
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
@@ -202,6 +343,7 @@ func InstallHooks() (string, error) {
 		"on-permission-done.sh":   PermissionDoneScript(),
 		"on-worktree-entered.sh":  WorktreeEnteredScript(),
 		"on-worktree-exited.sh":   WorktreeExitedScript(),
+		"statusline.sh":           StatuslineScript(),
 	}
 
 	for name, content := range scripts {
@@ -361,6 +503,23 @@ func InjectSettings() error {
 	}
 	settings["hooks"] = existingHooks
 
+	// Configure statusline to use bertrand's wrapper.
+	// Save the user's current statusline command as the fallback.
+	statuslineCmd := filepath.Join(hooksDir, "statusline.sh")
+	existingStatusLine, _ := settings["statusLine"].(map[string]interface{})
+	if existingStatusLine != nil {
+		if cmd, ok := existingStatusLine["command"].(string); ok && cmd != statuslineCmd {
+			// Save the user's original statusline command as the fallback
+			fallbackPath := filepath.Join(session.BaseDir(), "statusline-fallback")
+			os.WriteFile(fallbackPath, []byte(cmd), 0644)
+		}
+	}
+	settings["statusLine"] = map[string]interface{}{
+		"command": statuslineCmd,
+		"padding": 0,
+		"type":    "command",
+	}
+
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -431,6 +590,20 @@ func RemoveSettings() error {
 		delete(settings, "hooks")
 	} else {
 		settings["hooks"] = existingHooks
+	}
+
+	// Restore original statusline if bertrand's wrapper is configured
+	if sl, ok := settings["statusLine"].(map[string]interface{}); ok {
+		if cmd, ok := sl["command"].(string); ok && strings.Contains(cmd, ".bertrand/hooks/statusline.sh") {
+			fallbackPath := filepath.Join(session.BaseDir(), "statusline-fallback")
+			if fallback, err := os.ReadFile(fallbackPath); err == nil {
+				sl["command"] = strings.TrimSpace(string(fallback))
+				settings["statusLine"] = sl
+				os.Remove(fallbackPath)
+			} else {
+				delete(settings, "statusLine")
+			}
+		}
 	}
 
 	out, err := json.MarshalIndent(settings, "", "  ")
