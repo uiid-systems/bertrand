@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/uiid-systems/bertrand/internal/session"
 )
 
 // StatusBarData holds the information displayed in the status bar.
@@ -30,9 +31,9 @@ var (
 
 func statusDotStyle(status string) lipgloss.Style {
 	switch status {
-	case "working":
+	case session.StatusWorking:
 		return sbDotWorkingStyle
-	case "blocked":
+	case session.StatusBlocked:
 		return sbDotBlockedStyle
 	default:
 		return sbDotDimStyle

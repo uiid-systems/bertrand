@@ -335,6 +335,7 @@ func (m LaunchModel) View() string {
 	if m.step == stepSession {
 		sb.SessionName = m.project
 	}
+	b.WriteString("\n")
 	b.WriteString(StatusBar(sb, m.width))
 
 	if m.step == stepSession {
