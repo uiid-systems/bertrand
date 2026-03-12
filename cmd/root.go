@@ -281,6 +281,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			session.AppendEvent(name, "session.end", map[string]string{"summary": summary})
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
+			os.Remove(session.WorktreePath(name))
 
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {
@@ -381,6 +382,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			timeline := sessionTimeline(name)
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
+			os.Remove(session.WorktreePath(name))
 			session.DeleteSession(name)
 			active, _ := session.ActiveSessions()
 			if len(active) == 0 {

@@ -114,6 +114,57 @@ printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%
 `
 }
 
+// WorktreeEnteredScript returns the hook script that writes a worktree marker
+// when a session enters a git worktree via EnterWorktree.
+func WorktreeEnteredScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse EnterWorktree → write worktree marker
+BERTRAND_PID="${BERTRAND_PID:-}"
+[ -z "$BERTRAND_PID" ] && exit 0
+
+name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+# Extract branch name from tool output — best effort
+branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branch //')"
+[ -z "$branch" ] && branch="unknown"
+esc_branch="$(printf '%s' "$branch" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+
+# Write worktree marker file
+mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
+printf '%s' "$branch" > "$HOME/.bertrand/sessions/$name/worktree"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
+// WorktreeExitedScript returns the hook script that removes the worktree marker
+// when a session exits a git worktree via ExitWorktree.
+func WorktreeExitedScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse ExitWorktree → remove worktree marker
+BERTRAND_PID="${BERTRAND_PID:-}"
+[ -z "$BERTRAND_PID" ] && exit 0
+
+name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+[ -z "$name" ] && exit 0
+
+# Remove worktree marker
+rm -f "$HOME/.bertrand/sessions/$name/worktree"
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
 // hooksFingerprint returns a SHA-256 hash of all hook script contents.
 // Used to detect when installed hooks are outdated.
 func hooksFingerprint() string {
@@ -122,6 +173,8 @@ func hooksFingerprint() string {
 	h.Write([]byte(ResumedScript()))
 	h.Write([]byte(PermissionWaitScript()))
 	h.Write([]byte(PermissionDoneScript()))
+	h.Write([]byte(WorktreeEnteredScript()))
+	h.Write([]byte(WorktreeExitedScript()))
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
@@ -143,10 +196,12 @@ func InstallHooks() (string, error) {
 	}
 
 	scripts := map[string]string{
-		"on-blocked.sh":         BlockedScript(),
-		"on-resumed.sh":         ResumedScript(),
-		"on-permission-wait.sh": PermissionWaitScript(),
-		"on-permission-done.sh": PermissionDoneScript(),
+		"on-blocked.sh":           BlockedScript(),
+		"on-resumed.sh":           ResumedScript(),
+		"on-permission-wait.sh":   PermissionWaitScript(),
+		"on-permission-done.sh":   PermissionDoneScript(),
+		"on-worktree-entered.sh":  WorktreeEnteredScript(),
+		"on-worktree-exited.sh":   WorktreeExitedScript(),
 	}
 
 	for name, content := range scripts {
@@ -227,6 +282,26 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-resumed.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "EnterWorktree",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-worktree-entered.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "ExitWorktree",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-worktree-exited.sh"),
 						Timeout: 5,
 					},
 				},
