@@ -3,6 +3,7 @@ package cleanup
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,16 @@ func scanMergedBranches(repoDir string) ([]Item, error) {
 	// Find main branch name
 	mainBranch := detectMainBranch(repoDir)
 
+	// Collect branches currently checked out in worktrees to exclude them
+	wtCmd := exec.Command("git", "-C", repoDir, "worktree", "list", "--porcelain")
+	wtOut, _ := wtCmd.Output()
+	checkedOut := make(map[string]bool)
+	for _, wt := range parseWorktreeList(string(wtOut)) {
+		if wt.Branch != "" {
+			checkedOut[wt.Branch] = true
+		}
+	}
+
 	cmd := exec.Command("git", "-C", repoDir, "branch", "--merged", mainBranch, "--format=%(refname:short)")
 	out, err := cmd.Output()
 	if err != nil {
@@ -163,6 +174,11 @@ func scanMergedBranches(repoDir string) ([]Item, error) {
 	for scanner.Scan() {
 		branch := strings.TrimSpace(scanner.Text())
 		if branch == "" || branch == mainBranch || branch == "main" || branch == "master" {
+			continue
+		}
+		// Skip branches currently checked out in a worktree — git branch -d
+		// would refuse to delete them anyway, but this avoids confusing errors.
+		if checkedOut[branch] {
 			continue
 		}
 		items = append(items, Item{
@@ -233,7 +249,15 @@ func ExecuteWorktree(repoDir string, item Item) error {
 	for _, wt := range worktrees {
 		if wt.Branch == item.Detail {
 			rmCmd := exec.Command("git", "-C", repoDir, "worktree", "remove", wt.Path)
-			return rmCmd.Run()
+			if err := rmCmd.Run(); err != nil {
+				return err
+			}
+			// Clean up the bertrand worktree marker so the session can be
+			// collected by scanDoneSessions on the next cleanup run.
+			if item.SessionName != "" {
+				os.Remove(session.WorktreePath(item.SessionName))
+			}
+			return nil
 		}
 	}
 	return fmt.Errorf("worktree for branch %s not found", item.Detail)
