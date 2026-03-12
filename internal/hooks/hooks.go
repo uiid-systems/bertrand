@@ -129,6 +129,7 @@ input="$(cat)"
 # Extract branch name from tool output — best effort
 branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branch //')"
 [ -z "$branch" ] && branch="unknown"
+esc_branch="$(printf '%s' "$branch" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
 # Write worktree marker file
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
@@ -137,8 +138,8 @@ printf '%s' "$branch" > "$HOME/.bertrand/sessions/$name/worktree"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
