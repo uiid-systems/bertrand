@@ -174,6 +174,10 @@ func StatuslineScript() string {
 # Bertrand statusline wrapper
 # In a bertrand session: renders bertrand's own statusline
 # Otherwise: delegates to the user's original statusline tool
+#
+# Session detection uses BERTRAND_PID → ~/.bertrand/tmp/<pid> lookup
+# (same pattern as all bertrand hook scripts). BERTRAND_SESSION is used
+# as an optimization when available.
 FALLBACK_FILE="$HOME/.bertrand/statusline-fallback"
 if [ -f "$FALLBACK_FILE" ]; then
   FALLBACK="$(cat "$FALLBACK_FILE")"
@@ -182,7 +186,15 @@ else
 fi
 input="$(cat)"
 
-if [ -z "$BERTRAND_SESSION" ]; then
+# Resolve session name via PID lookup (primary) or env var (fallback)
+name=""
+BERTRAND_PID="${BERTRAND_PID:-}"
+if [ -n "$BERTRAND_PID" ]; then
+  name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)"
+fi
+[ -z "$name" ] && name="${BERTRAND_SESSION:-}"
+
+if [ -z "$name" ]; then
   # Not in a bertrand session — pass through to fallback
   if command -v "$FALLBACK" >/dev/null 2>&1; then
     printf '%s' "$input" | "$FALLBACK"
@@ -207,7 +219,7 @@ c_ctx_crit=$'\033[38;5;203m' # red — context critical
 c_rst=$'\033[0m'
 
 # Session state
-state_file="$HOME/.bertrand/sessions/$BERTRAND_SESSION/state.json"
+state_file="$HOME/.bertrand/sessions/$name/state.json"
 status=""
 if [ -f "$state_file" ]; then
   if [ "$HAS_JQ" -eq 1 ]; then
@@ -223,25 +235,23 @@ case "$status" in
   *)       dot="" ;;
 esac
 
-# Sibling count
+# Sibling count — scan state files for other active sessions
 siblings=0
 if [ -d "$HOME/.bertrand/sessions" ]; then
   for d in "$HOME/.bertrand/sessions"/*/state.json; do
     [ -f "$d" ] || continue
-    sess_name="$(dirname "$d")"
-    sess_name="${sess_name##*/}"
-    # Skip self; only count sessions with a parent project matching ours
-    [ "$sess_name" = "$BERTRAND_SESSION" ] && continue
-    # Check if process is alive
+    sess_dir="$(dirname "$d")"
+    sess_name="${sess_dir##*/}"
+    [ "$sess_name" = "$name" ] && continue
     if [ "$HAS_JQ" -eq 1 ]; then
-      pid="$(jq -r '.pid // 0' "$d" 2>/dev/null)"
+      spid="$(jq -r '.pid // 0' "$d" 2>/dev/null)"
       s="$(jq -r '.status // ""' "$d" 2>/dev/null)"
     else
-      pid="$(grep -o '"pid"[[:space:]]*:[[:space:]]*[0-9]*' "$d" | head -1 | sed 's/.*:[[:space:]]*//')"
+      spid="$(grep -o '"pid"[[:space:]]*:[[:space:]]*[0-9]*' "$d" | head -1 | sed 's/.*:[[:space:]]*//')"
       s="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$d" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
     fi
     [ "$s" = "done" ] && continue
-    [ -n "$pid" ] && [ "$pid" != "0" ] && kill -0 "$pid" 2>/dev/null && siblings=$((siblings + 1))
+    [ -n "$spid" ] && [ "$spid" != "0" ] && kill -0 "$spid" 2>/dev/null && siblings=$((siblings + 1))
   done
 fi
 
@@ -278,7 +288,7 @@ fi
 
 # ── Render ──
 # Line 1: session name + status + siblings
-printf '%s%s%s' "$c_name" "$BERTRAND_SESSION" "$c_rst"
+printf '%s%s%s' "$c_name" "$name" "$c_rst"
 [ -n "$dot" ] && printf '  %s' "$dot"
 if [ "$siblings" -gt 0 ]; then
   s_label="siblings"
