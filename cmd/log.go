@@ -66,6 +66,8 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 				summary = s
 			} else if t, ok := e.Meta["tool"]; ok {
 				summary = t
+			} else if br, ok := e.Meta["branch"]; ok {
+				summary = br
 			} else if cid, ok := e.Meta["claude_id"]; ok {
 				if len(cid) > 8 {
 					cid = cid[:8]
@@ -326,6 +328,10 @@ func eventConnectorColor(event string) int {
 		return 214 // orange
 	case "permission.resolve":
 		return 78 // green
+	case "worktree.entered":
+		return 78 // green
+	case "worktree.exited":
+		return 241 // dim
 	default:
 		return 241
 	}
@@ -337,6 +343,8 @@ func eventDetailColor(event string) int {
 		return 252 // bright for question text
 	case "claude.started":
 		return 241 // dim for claude_id
+	case "worktree.entered", "worktree.exited":
+		return 241 // dim
 	default:
 		return 241
 	}
@@ -362,6 +370,10 @@ func eventLabel(event string) string {
 		return "permission requested"
 	case "permission.resolve":
 		return "permission resolved"
+	case "worktree.entered":
+		return "entered worktree"
+	case "worktree.exited":
+		return "exited worktree"
 	default:
 		return event
 	}

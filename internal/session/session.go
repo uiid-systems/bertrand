@@ -61,6 +61,18 @@ func ReadSummary(name string) string {
 	return string(data)
 }
 
+// WorktreePath returns the path to a session's worktree marker file.
+func WorktreePath(name string) string { return filepath.Join(SessionDir(name), "worktree") }
+
+// ReadWorktree returns the worktree branch name if the session is in a worktree.
+func ReadWorktree(name string) string {
+	data, err := os.ReadFile(WorktreePath(name))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 type State struct {
 	Session   string    `json:"session"`
 	Status    string    `json:"status"`
@@ -434,6 +446,15 @@ func LogDigest(name string) string {
 			if tool != "" {
 				lines = append(lines, fmt.Sprintf("- %s permission: %s", ts, tool))
 			}
+		case "worktree.entered":
+			branch := e.Meta["branch"]
+			if branch != "" {
+				lines = append(lines, fmt.Sprintf("- %s entered worktree (%s)", ts, branch))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s entered worktree", ts))
+			}
+		case "worktree.exited":
+			lines = append(lines, fmt.Sprintf("- %s exited worktree", ts))
 		}
 	}
 
@@ -469,7 +490,12 @@ func SiblingSummaries(name string) string {
 		if len(summary) > 60 {
 			summary = summary[:57] + "..."
 		}
-		lines = append(lines, fmt.Sprintf("- %s: %s — %q", s.Session, s.Status, summary))
+		wt := ReadWorktree(s.Session)
+		if wt != "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s (worktree: %s) — %q", s.Session, s.Status, wt, summary))
+		} else {
+			lines = append(lines, fmt.Sprintf("- %s: %s — %q", s.Session, s.Status, summary))
+		}
 	}
 
 	if len(lines) == 0 {
