@@ -38,6 +38,7 @@ type LaunchModel struct {
 	isResume bool
 	quitting bool
 	deleted  []string
+	width    int
 }
 
 func NewLaunchModel(sessions []session.State) LaunchModel {
@@ -139,6 +140,9 @@ func (m *LaunchModel) transitionToSession(project string) tea.Cmd {
 
 func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		// Confirm delete mode (session step only)
 		if m.mode == modeConfirmDelete {
@@ -327,6 +331,11 @@ func (m LaunchModel) View() string {
 
 	var b strings.Builder
 	b.WriteString(Logo())
+	sb := StatusBarData{}
+	if m.step == stepSession {
+		sb.SessionName = m.project
+	}
+	b.WriteString(StatusBar(sb, m.width))
 
 	if m.step == stepSession {
 		b.WriteString(fmt.Sprintf("  %s\n", projectLabelStyle.Render(m.project+"/")))

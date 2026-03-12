@@ -25,6 +25,7 @@ type ListModel struct {
 	cursor   int
 	chosen   string
 	quitting bool
+	width    int
 }
 
 func NewListModel(sessions []session.State) ListModel {
@@ -37,6 +38,9 @@ func (m ListModel) Init() tea.Cmd { return nil }
 
 func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -66,7 +70,7 @@ func (m ListModel) View() string {
 		return dimStyle.Render("No active sessions.\n")
 	}
 
-	s := "Sessions:\n\n"
+	s := "\n" + StatusBar(StatusBarData{}, m.width) + "\nSessions:\n\n"
 	for i, sess := range m.sessions {
 		isSelected := i == m.cursor
 

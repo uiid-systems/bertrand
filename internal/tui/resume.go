@@ -19,11 +19,13 @@ type ResumeOption struct {
 
 // ResumeModel lets the user pick a Claude conversation to resume or start fresh.
 type ResumeModel struct {
-	name     string
-	options  []ResumeOption
-	cursor   int
-	chosen   bool
-	quitting bool
+	name      string
+	options   []ResumeOption
+	cursor    int
+	chosen    bool
+	quitting  bool
+	StatusBar StatusBarData
+	width     int
 }
 
 // NewResumeModel creates the resume picker. Options should be ordered oldest→newest.
@@ -55,6 +57,9 @@ func (m ResumeModel) Init() tea.Cmd { return nil }
 
 func (m ResumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		totalItems := len(m.options) + 1 // +1 for "Start fresh"
 		switch msg.String() {
@@ -83,6 +88,8 @@ func (m ResumeModel) View() string {
 	}
 
 	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(StatusBar(m.StatusBar, m.width))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  \033[38;5;252mResuming \033[1m%s\033[0m\n\n", m.name))
 
