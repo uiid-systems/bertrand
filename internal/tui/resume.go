@@ -24,8 +24,7 @@ type ResumeModel struct {
 	cursor    int
 	chosen    bool
 	quitting  bool
-	StatusBar StatusBarData
-	width     int
+	width int
 }
 
 // NewResumeModel creates the resume picker. Options should be ordered oldest→newest.
@@ -82,15 +81,28 @@ func (m ResumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if m == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh%dm", h, m)
+}
+
 func (m ResumeModel) View() string {
 	if m.quitting || m.chosen {
 		return ""
 	}
 
 	var b strings.Builder
-	b.WriteString("\n")
-	b.WriteString(StatusBar(m.StatusBar, m.width))
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("  \033[38;5;252mResuming \033[1m%s\033[0m\n\n", m.name))
 
 	// "Start fresh" option
@@ -112,7 +124,7 @@ func (m ResumeModel) View() string {
 		cursorIdx := listIdx          // position in cursor space (0 = fresh)
 
 		ts := opt.StartedAt.Local().Format("Jan 2 15:04")
-		dur := formatStatusDuration(opt.Duration)
+		dur := formatDuration(opt.Duration)
 
 		label := opt.LastQuestion
 		if label == "" {

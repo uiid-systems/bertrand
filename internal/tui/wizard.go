@@ -186,7 +186,7 @@ func (m WizardModel) View() string {
 	if m.showLogo {
 		s = Logo()
 	}
-	s += "\n" + StatusBar(StatusBarData{}, m.width)
+	s += "\n"
 
 	switch m.step {
 	case stepTerminal:

@@ -21,8 +21,7 @@ type ExitModel struct {
 	cursor    int
 	choice    ExitChoice
 	chosen    bool
-	StatusBar StatusBarData
-	width     int
+	width int
 }
 
 func NewExitModel(name string) ExitModel {
@@ -73,9 +72,7 @@ func (m ExitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ExitModel) View() string {
 	var b strings.Builder
-	b.WriteString("\n")
-	b.WriteString(StatusBar(m.StatusBar, m.width))
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 	b.WriteString(promptStyle.Render(fmt.Sprintf("  Session %s has ended.", m.name)))
 	b.WriteString("\n")
 	b.WriteString(promptStyle.Render("  What would you like to do?"))

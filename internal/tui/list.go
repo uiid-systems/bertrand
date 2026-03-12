@@ -70,7 +70,7 @@ func (m ListModel) View() string {
 		return dimStyle.Render("No active sessions.\n")
 	}
 
-	s := "\n" + StatusBar(StatusBarData{}, m.width) + "\nSessions:\n\n"
+	s := "\nSessions:\n\n"
 	for i, sess := range m.sessions {
 		isSelected := i == m.cursor
 
