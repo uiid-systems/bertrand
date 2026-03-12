@@ -10,7 +10,7 @@ When a session needs your attention, Hammerspoon focuses the terminal window and
 
 ## Prerequisites
 
-- **Claude Code** (with `--append-system-prompt` and hooks support)
+- **[Claude Code](https://code.claude.com/docs/en/overview)** (with `--append-system-prompt` and hooks support)
 - **[Hammerspoon](https://www.hammerspoon.org/)** (optional, for focus queue and window management)
 - **[Warp](https://www.warp.dev/)** terminal (currently the only supported terminal for window tracking)
 
