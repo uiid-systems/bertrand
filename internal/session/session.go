@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -372,6 +373,7 @@ func ConversationSegments(name string) []ConversationSegment {
 }
 
 // LogDigest reads log.jsonl and returns a compact timeline string for contract injection.
+// Permission events are collapsed into tool work summaries and consecutive duplicates are merged.
 func LogDigest(name string) string {
 	logPath := filepath.Join(SessionDir(name), "log.jsonl")
 	f, err := os.Open(logPath)
@@ -380,34 +382,53 @@ func LogDigest(name string) string {
 	}
 	defer f.Close()
 
-	var lines []string
-	var firstTS, lastTS time.Time
-	eventCount := 0
-
+	// First pass: collect all events
+	type digestEntry struct {
+		Event string
+		TS    time.Time
+		Meta  map[string]string
+	}
+	var events []digestEntry
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		var e LogEvent
 		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
-			// Try legacy State format
-			var s State
-			if err := json.Unmarshal(scanner.Bytes(), &s); err != nil {
-				continue
-			}
-			// Skip legacy state entries for digest
 			continue
 		}
-
 		if e.Event == "" {
 			continue
 		}
+		events = append(events, digestEntry{Event: e.Event, TS: e.TS, Meta: e.Meta})
+	}
 
-		eventCount++
-		if firstTS.IsZero() {
-			firstTS = e.TS
-		}
-		lastTS = e.TS
+	if len(events) == 0 {
+		return ""
+	}
 
+	// Second pass: compact and format
+	var lines []string
+	firstTS := events[0].TS
+	lastTS := events[len(events)-1].TS
+	eventCount := len(events)
+	var prevEvent string
+
+	i := 0
+	for i < len(events) {
+		e := events[i]
 		ts := e.TS.Format("15:04")
+
+		// Skip permission events — they'll be collected as tool work below
+		if e.Event == "permission.request" || e.Event == "permission.resolve" {
+			i++
+			continue
+		}
+
+		// Deduplicate consecutive identical events
+		if e.Event == prevEvent && e.Event != "session.block" {
+			i++
+			continue
+		}
+		prevEvent = e.Event
 
 		switch e.Event {
 		case "session.started":
@@ -427,24 +448,38 @@ func LogDigest(name string) string {
 			if len(q) > 80 {
 				q = q[:77] + "..."
 			}
+			// Look ahead for the answer in the paired session.resume
+			answer := ""
+			for j := i + 1; j < len(events); j++ {
+				if events[j].Event == "session.resume" {
+					if a, ok := events[j].Meta["answer"]; ok && a != "" {
+						answer = a
+						if len(answer) > 80 {
+							answer = answer[:77] + "..."
+						}
+					}
+					break
+				}
+				if events[j].Event == "session.block" {
+					break
+				}
+			}
 			if q != "" {
 				lines = append(lines, fmt.Sprintf("- %s blocked: %q", ts, q))
 			} else {
 				lines = append(lines, fmt.Sprintf("- %s blocked", ts))
 			}
+			if answer != "" {
+				lines = append(lines, fmt.Sprintf("  → %s", answer))
+			}
 		case "session.resume":
-			lines = append(lines, fmt.Sprintf("- %s user responded", ts))
+			// Skip standalone resume lines — answer is shown with the block above
 		case "session.end":
 			summary := e.Meta["summary"]
 			if summary != "" && summary != "Session ended" {
 				lines = append(lines, fmt.Sprintf("- %s ended: %q", ts, summary))
 			} else {
 				lines = append(lines, fmt.Sprintf("- %s ended", ts))
-			}
-		case "permission.request":
-			tool := e.Meta["tool"]
-			if tool != "" {
-				lines = append(lines, fmt.Sprintf("- %s permission: %s", ts, tool))
 			}
 		case "worktree.entered":
 			branch := e.Meta["branch"]
@@ -456,6 +491,32 @@ func LogDigest(name string) string {
 		case "worktree.exited":
 			lines = append(lines, fmt.Sprintf("- %s exited worktree", ts))
 		}
+
+		// Collect following permission events as tool work summary
+		if e.Event != "session.block" {
+			toolCounts := map[string]int{}
+			j := i + 1
+			for j < len(events) {
+				ej := events[j]
+				if ej.Event == "permission.request" || ej.Event == "permission.resolve" {
+					if ej.Event == "permission.resolve" {
+						tool := ej.Meta["tool"]
+						if tool == "" {
+							tool = "unknown"
+						}
+						toolCounts[tool]++
+					}
+					j++
+					continue
+				}
+				break
+			}
+			if len(toolCounts) > 0 {
+				lines = append(lines, fmt.Sprintf("  [%s]", formatDigestToolCounts(toolCounts)))
+			}
+		}
+
+		i++
 	}
 
 	if len(lines) == 0 {
@@ -466,6 +527,29 @@ func LogDigest(name string) string {
 	header := fmt.Sprintf("## Session Timeline (%d events, %s)", eventCount, duration)
 
 	return header + "\n" + strings.Join(lines, "\n")
+}
+
+// formatDigestToolCounts formats tool counts for contract digest (e.g., "8× Bash, 2× Edit").
+func formatDigestToolCounts(counts map[string]int) string {
+	type tc struct {
+		name  string
+		count int
+	}
+	var items []tc
+	for name, count := range counts {
+		items = append(items, tc{name, count})
+	}
+	sort.Slice(items, func(a, b int) bool {
+		if items[a].count != items[b].count {
+			return items[a].count > items[b].count
+		}
+		return items[a].name < items[b].name
+	})
+	var parts []string
+	for _, item := range items {
+		parts = append(parts, fmt.Sprintf("%d× %s", item.count, item.name))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // SiblingSummaries returns a formatted string of sibling session states
