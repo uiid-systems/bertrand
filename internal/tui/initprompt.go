@@ -54,7 +54,7 @@ func (m InitPromptModel) View() string {
 	}
 
 	s := Logo()
-	s += "\n" + StatusBar(StatusBarData{}, m.width)
+	s += "\n"
 	s += promptStyle.Render("  Bertrand needs to be initialized before first use.") + "\n"
 	s += promptStyle.Render("  Run setup now?") + "\n\n"
 	s += renderOptions(initOptions, m.cursor)

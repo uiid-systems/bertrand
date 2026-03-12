@@ -331,12 +331,7 @@ func (m LaunchModel) View() string {
 
 	var b strings.Builder
 	b.WriteString(Logo())
-	sb := StatusBarData{}
-	if m.step == stepSession {
-		sb.SessionName = m.project
-	}
 	b.WriteString("\n")
-	b.WriteString(StatusBar(sb, m.width))
 
 	if m.step == stepSession {
 		b.WriteString(fmt.Sprintf("  %s\n", projectLabelStyle.Render(m.project+"/")))
