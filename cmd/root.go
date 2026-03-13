@@ -10,12 +10,12 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/uiid-systems/bertrand/internal/contract"
 	"github.com/uiid-systems/bertrand/internal/hooks"
+	"github.com/uiid-systems/bertrand/internal/schema"
 	"github.com/uiid-systems/bertrand/internal/session"
 	"github.com/uiid-systems/bertrand/internal/tui"
 )
@@ -203,7 +203,6 @@ func runSession(name, verb string) error {
 }
 
 func runSessionInner(name, verb, initialClaudeID string) error {
-	sessionStart := time.Now()
 	pid := os.Getpid()
 
 	if err := session.RegisterPID(pid, name); err != nil {
@@ -212,7 +211,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	if err := session.WriteState(name, session.StatusWorking, "Session "+verb, pid); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
-	session.AppendEvent(name, "session."+verb, map[string]string{"pid": fmt.Sprintf("%d", pid)})
+	session.AppendEvent(name, "session."+verb, &schema.SessionStartedMeta{PID: fmt.Sprintf("%d", pid)})
 
 	// Write registration marker for Hammerspoon window tracking
 	regFile := filepath.Join(session.BaseDir(), "tmp", regFilename(name))
@@ -234,7 +233,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 				summary = "Session ended"
 			}
 			session.WriteState(name, session.StatusDone, summary, pid)
-			session.AppendEvent(name, "session.end", map[string]string{"summary": summary})
+			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 			os.Remove(session.WorktreePath(name))
@@ -296,11 +295,11 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			"WARP_DISABLE_AUTO_TITLE=true",
 		)
 
-		session.AppendEvent(name, "claude.started", map[string]string{"claude_id": claudeID})
+		session.AppendEvent(name, "claude.started", &schema.ClaudeIDMeta{ClaudeID: claudeID})
 
 		claudeCmd.Run()
 
-		session.AppendEvent(name, "claude.ended", map[string]string{"claude_id": claudeID})
+		session.AppendEvent(name, "claude.ended", &schema.ClaudeIDMeta{ClaudeID: claudeID})
 
 		// If signal handler already ran, we're done
 		if forceCleaned {
@@ -335,7 +334,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 
 		case tui.ExitDiscard:
 			// Write end event and capture timeline before deleting session data
-			session.AppendEvent(name, "session.end", map[string]string{"summary": "Session discarded"})
+			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: "Session discarded"})
 			timeline := sessionTimeline(name)
 			session.CleanupPID(pid)
 			os.Remove(filepath.Join(session.SessionDir(name), "pending"))

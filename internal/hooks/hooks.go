@@ -34,8 +34,8 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 esc_summary="$(printf '%s' "$summary" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -53,8 +53,8 @@ bertrand update --name "$name" --status working --summary "Resumed after input"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -80,8 +80,8 @@ printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -109,8 +109,8 @@ rm -f "$HOME/.bertrand/sessions/$name/pending"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -138,8 +138,8 @@ printf '%s' "$branch" > "$HOME/.bertrand/sessions/$name/worktree"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -160,8 +160,8 @@ rm -f "$HOME/.bertrand/sessions/$name/worktree"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 

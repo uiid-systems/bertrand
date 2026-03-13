@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/uiid-systems/bertrand/schema/events.schema.json",
+  "title": "Bertrand Log Event",
+  "description": "Schema for bertrand session log events (log.jsonl). Each line is one event.",
+  "type": "object",
+  "required": ["event", "session", "ts"],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "description": "Schema version. Absent = v0 (legacy), 1 = current.",
+      "default": 0
+    },
+    "event": {
+      "type": "string",
+      "description": "Event type discriminator."
+    },
+    "session": {
+      "type": "string",
+      "description": "Session name in project/session format."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp in ISO 8601 format."
+    },
+    "meta": {
+      "type": "object",
+      "description": "Event-specific metadata. Shape depends on event type."
+    }
+  },
+  "$defs": {
+    "claude_id": {
+      "type": "string",
+      "description": "UUID v4 identifying a Claude conversation segment."
+    },
+    "events": {
+      "oneOf": [
+        {
+          "title": "session.started",
+          "description": "Session launched for the first time.",
+          "properties": {
+            "event": { "const": "session.started" },
+            "meta": {
+              "type": "object",
+              "required": ["pid"],
+              "properties": {
+                "pid": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "title": "session.resumed",
+          "description": "Existing session resumed.",
+          "properties": {
+            "event": { "const": "session.resumed" },
+            "meta": {
+              "type": "object",
+              "required": ["pid"],
+              "properties": {
+                "pid": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "title": "session.end",
+          "description": "Session ended.",
+          "properties": {
+            "event": { "const": "session.end" },
+            "meta": {
+              "type": "object",
+              "required": ["summary"],
+              "properties": {
+                "summary": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "title": "claude.started",
+          "description": "Claude conversation started.",
+          "properties": {
+            "event": { "const": "claude.started" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "claude.ended",
+          "description": "Claude conversation ended.",
+          "properties": {
+            "event": { "const": "claude.ended" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "session.block",
+          "description": "Session blocked waiting for user input (AskUserQuestion).",
+          "properties": {
+            "event": { "const": "session.block" },
+            "meta": {
+              "type": "object",
+              "required": ["question", "claude_id"],
+              "properties": {
+                "question": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "session.resume",
+          "description": "User responded, session resumed from block.",
+          "properties": {
+            "event": { "const": "session.resume" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "permission.request",
+          "description": "Tool requires user permission.",
+          "properties": {
+            "event": { "const": "permission.request" },
+            "meta": {
+              "type": "object",
+              "required": ["tool", "claude_id"],
+              "properties": {
+                "tool": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "permission.resolve",
+          "description": "Tool permission resolved (approved or denied).",
+          "properties": {
+            "event": { "const": "permission.resolve" },
+            "meta": {
+              "type": "object",
+              "required": ["tool", "claude_id"],
+              "properties": {
+                "tool": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "worktree.entered",
+          "description": "Session entered a git worktree.",
+          "properties": {
+            "event": { "const": "worktree.entered" },
+            "meta": {
+              "type": "object",
+              "required": ["branch", "claude_id"],
+              "properties": {
+                "branch": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "worktree.exited",
+          "description": "Session exited a git worktree.",
+          "properties": {
+            "event": { "const": "worktree.exited" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "gh.pr.created",
+          "description": "Pull request created via gh CLI.",
+          "properties": {
+            "event": { "const": "gh.pr.created" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "pr_number": { "type": "string" },
+                "pr_url": { "type": "string" },
+                "branch": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "gh.pr.merged",
+          "description": "Pull request merged via gh CLI.",
+          "properties": {
+            "event": { "const": "gh.pr.merged" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "pr_number": { "type": "string" },
+                "branch": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "linear.issue.read",
+          "description": "Linear issue read via MCP tool.",
+          "properties": {
+            "event": { "const": "linear.issue.read" },
+            "meta": {
+              "type": "object",
+              "required": ["claude_id"],
+              "properties": {
+                "issue_id": { "type": "string" },
+                "issue_title": { "type": "string" },
+                "tool_name": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        },
+        {
+          "title": "context.snapshot",
+          "description": "Context window usage snapshot from statusline.",
+          "properties": {
+            "event": { "const": "context.snapshot" },
+            "meta": {
+              "type": "object",
+              "required": ["model", "claude_id"],
+              "properties": {
+                "model": { "type": "string" },
+                "input_tokens": { "type": "string" },
+                "cache_creation_tokens": { "type": "string" },
+                "cache_read_tokens": { "type": "string" },
+                "context_window_size": { "type": "string" },
+                "remaining_pct": { "type": "string" },
+                "claude_id": { "$ref": "#/$defs/claude_id" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
