@@ -37,7 +37,7 @@ type unifiedEntry struct {
 	Summary string
 }
 
-func readUnifiedLog(name string) ([]unifiedEntry, error) {
+func readTypedLog(name string) ([]*schema.TypedEvent, error) {
 	path := filepath.Join(session.SessionDir(name), "log.jsonl")
 	f, err := os.Open(path)
 	if err != nil {
@@ -45,13 +45,25 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 	}
 	defer f.Close()
 
-	var entries []unifiedEntry
+	var events []*schema.TypedEvent
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		te, err := schema.ParseEvent(scanner.Bytes())
 		if err != nil {
 			continue
 		}
+		events = append(events, te)
+	}
+	return events, scanner.Err()
+}
+
+func readUnifiedLog(name string) ([]unifiedEntry, error) {
+	events, err := readTypedLog(name)
+	if err != nil {
+		return nil, err
+	}
+	var entries []unifiedEntry
+	for _, te := range events {
 		entries = append(entries, unifiedEntry{
 			Event:   te.Event,
 			Session: te.Session,
@@ -59,7 +71,7 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 			Summary: te.MetaSummary(),
 		})
 	}
-	return entries, scanner.Err()
+	return entries, nil
 }
 
 func runLog(cmd *cobra.Command, args []string) error {
@@ -161,17 +173,29 @@ func showAllSessions() error {
 }
 
 func showSessionLog(name string) error {
-	log, err := readUnifiedLog(name)
+	typedEvents, err := readTypedLog(name)
 	if err != nil {
 		return fmt.Errorf("session %q: %w", name, err)
 	}
 
-	if len(log) == 0 {
+	if len(typedEvents) == 0 {
 		fmt.Printf("No log entries for %s.\n", name)
 		return nil
 	}
 
+	// Convert to unified entries for display
+	var log []unifiedEntry
+	for _, te := range typedEvents {
+		log = append(log, unifiedEntry{
+			Event:   te.Event,
+			Session: te.Session,
+			TS:      te.TS,
+			Summary: te.MetaSummary(),
+		})
+	}
+
 	if jsonOutput {
+		timing := schema.ComputeTimings(typedEvents)
 		for _, entry := range log {
 			data, _ := json.Marshal(map[string]interface{}{
 				"event":   entry.Event,
@@ -181,17 +205,27 @@ func showSessionLog(name string) error {
 			})
 			fmt.Println(string(data))
 		}
+		// Append timing summary as final JSON line
+		data, _ := json.Marshal(map[string]interface{}{
+			"_type":            "timing_summary",
+			"total_claude_work_s": int(timing.TotalClaudeWork.Seconds()),
+			"total_user_wait_s":  int(timing.TotalUserWait.Seconds()),
+			"segments":           len(timing.Segments),
+		})
+		fmt.Println(string(data))
 		return nil
 	}
 
+	timing := schema.ComputeTimings(typedEvents)
 	fmt.Printf("\033[1m%s\033[0m\n", name)
-	fmt.Print(renderTimeline(log))
+	fmt.Print(renderTimeline(log, timing))
 	return nil
 }
 
 // renderTimeline formats log entries as a vertical pipe timeline.
 // Used by both `bertrand log <session>` and the exit screen.
-func renderTimeline(entries []unifiedEntry) string {
+// timing is optional — pass nil to skip timing display in footer.
+func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -270,7 +304,22 @@ func renderTimeline(entries []unifiedEntry) string {
 	if interactions > 0 {
 		b.WriteString(fmt.Sprintf("  %d interactions", interactions))
 	}
-	b.WriteString(fmt.Sprintf("  %s\033[0m\n", formatDuration(last.Sub(first))))
+	b.WriteString(fmt.Sprintf("  %s", formatDuration(last.Sub(first))))
+
+	// Timing breakdown
+	if timing != nil && (timing.TotalClaudeWork > 0 || timing.TotalUserWait > 0) {
+		b.WriteString(fmt.Sprintf("  │  claude %s", formatDuration(timing.TotalClaudeWork)))
+		if timing.TotalUserWait > 0 {
+			b.WriteString(fmt.Sprintf("  user %s", formatDuration(timing.TotalUserWait)))
+		}
+		total := timing.TotalClaudeWork + timing.TotalUserWait
+		if total > 0 {
+			pct := float64(timing.TotalClaudeWork) / float64(total) * 100
+			b.WriteString(fmt.Sprintf("  (%.0f%% active)", pct))
+		}
+	}
+
+	b.WriteString("\033[0m\n")
 
 	return b.String()
 }
