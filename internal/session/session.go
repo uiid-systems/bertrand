@@ -374,6 +374,7 @@ func LogDigest(name string) string {
 	defer f.Close()
 
 	var lines []string
+	var allEvents []*schema.TypedEvent
 	var firstTS, lastTS time.Time
 	eventCount := 0
 
@@ -383,6 +384,8 @@ func LogDigest(name string) string {
 		if err != nil {
 			continue
 		}
+
+		allEvents = append(allEvents, te)
 
 		// Skip legacy state entries for digest
 		if strings.HasPrefix(te.Event, "state.") {
@@ -460,6 +463,18 @@ func LogDigest(name string) string {
 
 	duration := lastTS.Sub(firstTS).Round(time.Second)
 	header := fmt.Sprintf("## Session Timeline (%d events, %s)", eventCount, duration)
+
+	// Add timing breakdown if available
+	timing := schema.ComputeTimings(allEvents)
+	if timing.TotalClaudeWork > 0 || timing.TotalUserWait > 0 {
+		total := timing.TotalClaudeWork + timing.TotalUserWait
+		if total > 0 {
+			pct := float64(timing.TotalClaudeWork) / float64(total) * 100
+			lines = append(lines, fmt.Sprintf("- Timing: claude %s, user %s (%.0f%% active)",
+				timing.TotalClaudeWork.Round(time.Second),
+				timing.TotalUserWait.Round(time.Second), pct))
+		}
+	}
 
 	return header + "\n" + strings.Join(lines, "\n")
 }

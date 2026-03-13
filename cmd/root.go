@@ -57,11 +57,21 @@ func printDiscardMessage(name string, timeline string) {
 
 // sessionTimeline reads the session log and renders a pipe timeline.
 func sessionTimeline(name string) string {
-	entries, err := readUnifiedLog(name)
-	if err != nil || len(entries) == 0 {
+	typedEvents, err := readTypedLog(name)
+	if err != nil || len(typedEvents) == 0 {
 		return ""
 	}
-	return renderTimeline(entries)
+	var entries []unifiedEntry
+	for _, te := range typedEvents {
+		entries = append(entries, unifiedEntry{
+			Event:   te.Event,
+			Session: te.Session,
+			TS:      te.TS,
+			Summary: te.MetaSummary(),
+		})
+	}
+	timing := schema.ComputeTimings(typedEvents)
+	return renderTimeline(entries, timing)
 }
 
 
