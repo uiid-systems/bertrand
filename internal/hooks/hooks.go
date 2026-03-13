@@ -301,6 +301,41 @@ if [ -d "$HOME/.bertrand/sessions" ]; then
   done
 fi
 
+# Session stats (precomputed by bertrand)
+stats_file="$HOME/.bertrand/sessions/$name/stats.json"
+duration=""
+convs=""
+if [ -f "$stats_file" ]; then
+  if [ "$HAS_JQ" -eq 1 ]; then
+    started_at="$(jq -r '.started_at // ""' "$stats_file" 2>/dev/null)"
+    convs="$(jq -r '.conversations // 0' "$stats_file" 2>/dev/null)"
+  else
+    started_at=""
+    convs=""
+  fi
+  if [ -n "$started_at" ] && [ "$started_at" != "null" ]; then
+    # Compute duration from started_at to now
+    clean_ts="${started_at%%.*}"  # strip fractional seconds
+    clean_ts="${clean_ts%Z}"       # strip trailing Z
+    start_epoch="$(date -u -jf '%Y-%m-%dT%H:%M:%S' "$clean_ts" +%s 2>/dev/null)"
+    if [ -n "$start_epoch" ]; then
+      now_epoch="$(date +%s)"
+      elapsed=$((now_epoch - start_epoch))
+      [ "$elapsed" -lt 0 ] && elapsed=0
+      if [ "$elapsed" -ge 3600 ]; then
+        hours=$((elapsed / 3600))
+        mins=$(( (elapsed % 3600) / 60 ))
+        duration="${hours}h ${mins}m"
+      elif [ "$elapsed" -ge 60 ]; then
+        mins=$((elapsed / 60))
+        duration="${mins}m"
+      else
+        duration="${elapsed}s"
+      fi
+    fi
+  fi
+fi
+
 # Claude JSON data
 if [ "$HAS_JQ" -eq 1 ]; then
   model="$(echo "$input" | jq -r '.model.display_name // "Claude"' 2>/dev/null)"
@@ -377,10 +412,14 @@ if [ "$siblings" -gt 0 ]; then
   printf '  %s%d %s%s' "$c_dim" "$siblings" "$s_label" "$c_rst"
 fi
 
-# Line 2: model + context
+# Line 2: model + context + duration + conversations
 printf '\n%s%s%s' "$c_val" "$model" "$c_rst"
 if [ -n "$ctx_pct" ]; then
   printf '  %sctx %s%s%%%s' "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
+fi
+[ -n "$duration" ] && printf '  %s%s%s' "$c_dim" "$duration" "$c_rst"
+if [ -n "$convs" ] && [ "$convs" -gt 1 ] 2>/dev/null; then
+  printf '  %sconv %s%s' "$c_dim" "$convs" "$c_rst"
 fi
 printf '\n'
 `
