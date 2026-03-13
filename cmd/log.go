@@ -197,16 +197,7 @@ func showSessionLog(name string) error {
 		return nil
 	}
 
-	// Convert to unified entries for display
-	var log []unifiedEntry
-	for _, te := range typedEvents {
-		log = append(log, unifiedEntry{
-			Event:   te.Event,
-			Session: te.Session,
-			TS:      te.TS,
-			Summary: te.MetaSummary(),
-		})
-	}
+	log, _ := readUnifiedLog(name)
 
 	if jsonOutput {
 		timing := schema.ComputeTimings(typedEvents)
@@ -232,7 +223,7 @@ func showSessionLog(name string) error {
 
 	timing := schema.ComputeTimings(typedEvents)
 	fmt.Printf("\033[1m%s\033[0m\n", name)
-	fmt.Print(renderTimeline(log, timing))
+	fmt.Print(renderTimeline(compactTimeline(log), timing))
 	return nil
 }
 
@@ -338,6 +329,103 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 	return b.String()
 }
 
+// compactTimeline collapses noisy event sequences into a more readable timeline:
+//   - Consecutive permission.request/permission.resolve pairs are collapsed into
+//     a single "tool work" summary (e.g., "8× Bash, 2× Edit")
+//   - Consecutive duplicate events (same event type) are deduplicated
+//   - context.snapshot events are dropped entirely
+func compactTimeline(entries []unifiedEntry) []unifiedEntry {
+	var result []unifiedEntry
+
+	i := 0
+	for i < len(entries) {
+		entry := entries[i]
+
+		// Drop context snapshots
+		if entry.Event == "context.snapshot" {
+			i++
+			continue
+		}
+
+		// Collapse permission pairs into tool work summaries
+		if entry.Event == "permission.request" {
+			toolCounts := make(map[string]int)
+			firstTS := entry.TS
+			var lastTS time.Time
+			j := i
+			for j < len(entries) {
+				e := entries[j]
+				if e.Event == "permission.request" {
+					tool := e.Summary
+					if tool == "" {
+						tool = "unknown"
+					}
+					toolCounts[tool]++
+					lastTS = e.TS
+					j++
+				} else if e.Event == "permission.resolve" {
+					lastTS = e.TS
+					j++
+				} else {
+					break
+				}
+			}
+			// Build summary like "3× Bash, 1× Edit"
+			type toolCount struct {
+				tool  string
+				count int
+			}
+			var sorted []toolCount
+			for tool, count := range toolCounts {
+				sorted = append(sorted, toolCount{tool, count})
+			}
+			// Sort by count descending for readability
+			for a := 0; a < len(sorted); a++ {
+				for b := a + 1; b < len(sorted); b++ {
+					if sorted[b].count > sorted[a].count {
+						sorted[a], sorted[b] = sorted[b], sorted[a]
+					}
+				}
+			}
+			var parts []string
+			for _, tc := range sorted {
+				if tc.count > 1 {
+					parts = append(parts, fmt.Sprintf("%d× %s", tc.count, tc.tool))
+				} else {
+					parts = append(parts, tc.tool)
+				}
+			}
+			summary := strings.Join(parts, ", ")
+			// Use the midpoint timestamp for display
+			ts := firstTS
+			if !lastTS.IsZero() {
+				ts = firstTS.Add(lastTS.Sub(firstTS) / 2)
+			}
+			result = append(result, unifiedEntry{
+				Event:   "tool.work",
+				Session: entry.Session,
+				TS:      ts,
+				Summary: summary,
+			})
+			i = j
+			continue
+		}
+
+		// Dedup consecutive identical events
+		if len(result) > 0 && result[len(result)-1].Event == entry.Event {
+			// Keep the later one (update timestamp), skip the earlier
+			result[len(result)-1] = entry
+			i++
+			continue
+		}
+
+		result = append(result, entry)
+		i++
+	}
+
+	return result
+}
+
 func eventConnectorColor(event string) int {
 	switch event {
 	case "session.started", "session.resumed", "session.resume", "state.working":
@@ -362,6 +450,8 @@ func eventConnectorColor(event string) int {
 		return 78 // green
 	case "linear.issue.read":
 		return 141 // purple
+	case "tool.work":
+		return 78 // green
 	case "context.snapshot":
 		return 241 // dim
 	default:
@@ -381,6 +471,8 @@ func eventDetailColor(event string) int {
 		return 252 // bright for PR info
 	case "linear.issue.read":
 		return 252 // bright for issue info
+	case "tool.work":
+		return 241 // dim for tool summary
 	default:
 		return 241
 	}
@@ -416,6 +508,8 @@ func eventLabel(event string) string {
 		return "PR merged"
 	case "linear.issue.read":
 		return "linear"
+	case "tool.work":
+		return "tool work"
 	case "context.snapshot":
 		return "context"
 	default:

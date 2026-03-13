@@ -55,23 +55,18 @@ func printDiscardMessage(name string, timeline string) {
 	fmt.Println()
 }
 
-// sessionTimeline reads the session log and renders a pipe timeline.
+// sessionTimeline reads the session log and renders a compacted pipe timeline.
 func sessionTimeline(name string) string {
 	typedEvents, err := readTypedLog(name)
 	if err != nil || len(typedEvents) == 0 {
 		return ""
 	}
-	var entries []unifiedEntry
-	for _, te := range typedEvents {
-		entries = append(entries, unifiedEntry{
-			Event:   te.Event,
-			Session: te.Session,
-			TS:      te.TS,
-			Summary: te.MetaSummary(),
-		})
+	entries, _ := readUnifiedLog(name)
+	if len(entries) == 0 {
+		return ""
 	}
 	timing := schema.ComputeTimings(typedEvents)
-	return renderTimeline(entries, timing)
+	return renderTimeline(compactTimeline(entries), timing)
 }
 
 
@@ -234,6 +229,19 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 
 	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m %s\033[0m\n\n", name, verb)
 
+	// cleanupFiles removes transient per-session files (PID, pending marker,
+	// worktree marker) and the shared contract when no sessions remain.
+	cleanupFiles := func() {
+		session.CleanupPID(pid)
+		os.Remove(filepath.Join(session.SessionDir(name), "pending"))
+		os.Remove(session.WorktreePath(name))
+
+		active, _ := session.ActiveSessions()
+		if len(active) == 0 {
+			os.Remove(session.ContractPath())
+		}
+	}
+
 	// forceCleaned tracks whether a signal forced cleanup (skip exit menu)
 	var forceCleaned bool
 	var cleanupOnce sync.Once
@@ -244,14 +252,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			}
 			session.WriteState(name, session.StatusDone, summary, pid)
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
-			session.CleanupPID(pid)
-			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
-			os.Remove(session.WorktreePath(name))
-
-			active, _ := session.ActiveSessions()
-			if len(active) == 0 {
-				os.Remove(session.ContractPath())
-			}
+			cleanupFiles()
 		})
 	}
 
@@ -347,14 +348,8 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			// Write end event and capture timeline before deleting session data
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: "Session discarded"})
 			timeline := sessionTimeline(name)
-			session.CleanupPID(pid)
-			os.Remove(filepath.Join(session.SessionDir(name), "pending"))
-			os.Remove(session.WorktreePath(name))
+			cleanupFiles()
 			session.DeleteSession(name)
-			active, _ := session.ActiveSessions()
-			if len(active) == 0 {
-				os.Remove(session.ContractPath())
-			}
 			printDiscardMessage(name, timeline)
 			return nil
 
