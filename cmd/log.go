@@ -21,7 +21,21 @@ var logCmd = &cobra.Command{
 	Use:   "log [session]",
 	Short: "Show session activity logs",
 	Long:  "Without arguments, shows a summary of all sessions. With a session name, shows the full timeline.",
-	RunE:  runLog,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		sessions, err := session.ListSessions()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var names []string
+		for _, s := range sessions {
+			names = append(names, s.Session+"\t"+s.Summary)
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	},
+	RunE: runLog,
 }
 
 func init() {
