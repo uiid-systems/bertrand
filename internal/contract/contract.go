@@ -10,7 +10,7 @@ const templateFmt = `You are running inside bertrand, session: %s. Follow these 
 
 At session start, run: ToolSearch with query "select:AskUserQuestion" to load the tool.
 
-After every response, you MUST call AskUserQuestion. The question field MUST start with "%s »" followed by your actual question. This is a continuous loop — every turn ends with AskUserQuestion. Always include a "Done for now" option so the user can exit the loop when ready.
+After every response, you MUST call AskUserQuestion. This is a continuous loop — every turn ends with AskUserQuestion. Always include a "Done for now" option so the user can exit the loop when ready.
 
 Every option must be a concrete, actionable next step. No filler like "Have questions?" or "Want to learn more?" — if clarification is needed, phrase it as a specific action: "Discuss tradeoffs of X vs Y".
 
@@ -21,7 +21,7 @@ When you are about to begin implementation work — writing code destined for a 
 // Template returns the contract with session name and optional context layers injected.
 // Context layers (log digest, sibling summaries) are appended only if non-empty.
 func Template(sessionName string, context ...string) string {
-	base := fmt.Sprintf(templateFmt, sessionName, sessionName)
+	base := fmt.Sprintf(templateFmt, sessionName)
 
 	var layers []string
 	for _, c := range context {

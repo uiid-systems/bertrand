@@ -83,34 +83,6 @@ type State struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// Stats holds precomputed session metrics for the statusline.
-// Written to stats.json in the session directory.
-type Stats struct {
-	StartedAt     time.Time `json:"started_at"`
-	Conversations int       `json:"conversations"`
-}
-
-// WriteStats writes stats.json for the given session.
-func WriteStats(name string, stats Stats) error {
-	dir := SessionDir(name)
-	data, err := json.MarshalIndent(stats, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "stats.json"), append(data, '\n'), 0644)
-}
-
-// ReadStats reads stats.json for the given session.
-func ReadStats(name string) (Stats, error) {
-	var s Stats
-	data, err := os.ReadFile(filepath.Join(SessionDir(name), "stats.json"))
-	if err != nil {
-		return s, err
-	}
-	err = json.Unmarshal(data, &s)
-	return s, err
-}
-
 // AppendEvent writes a typed event to both the per-session and global log.
 // The meta parameter should be a typed struct from the schema package
 // (e.g., *schema.SessionStartedMeta, *schema.ClaudeIDMeta).
