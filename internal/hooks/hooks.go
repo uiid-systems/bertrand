@@ -358,30 +358,32 @@ fi
 [ -z "$worktree" ] && worktree="$(cat "$HOME/.bertrand/sessions/$name/worktree" 2>/dev/null)"
 
 # ── Render ──
+sep="${c_dim} │ ${c_rst}"
+
 # Line 1: session name + status dot + siblings
 printf '%s%s%s' "$c_name" "$name" "$c_rst"
-[ -n "$dot" ] && printf ' %s' "$dot"
+[ -n "$dot" ] && printf '%s%s' "$sep" "$dot"
 if [ "$siblings" -gt 0 ]; then
   s_label="siblings"
   [ "$siblings" -eq 1 ] && s_label="sibling"
-  printf '  %s%d %s%s' "$c_dim" "$siblings" "$s_label" "$c_rst"
+  printf '%s%s%d %s%s' "$sep" "$c_dim" "$siblings" "$s_label" "$c_rst"
 fi
 
 # Line 2: project + branch/worktree + diff
 printf '\n'
 [ -n "$project" ] && printf '%s%s%s' "$c_val" "$project" "$c_rst"
 if [ -n "$worktree" ]; then
-  printf '  %s⎇ %s%s' "$c_branch" "$worktree" "$c_rst"
+  printf '%s%s⎇ %s%s' "$sep" "$c_branch" "$worktree" "$c_rst"
 elif [ -n "$branch" ]; then
-  printf '  %s⎇ %s%s' "$c_branch" "$branch" "$c_rst"
+  printf '%s%s⎇ %s%s' "$sep" "$c_branch" "$branch" "$c_rst"
 fi
-[ -n "$diff_stat" ] && printf '  %s' "$diff_stat"
+[ -n "$diff_stat" ] && printf '%s%s' "$sep" "$diff_stat"
 
 # Line 3: model + context
 printf '\n'
 [ -n "$model" ] && printf '%s%s%s' "$c_val" "$model" "$c_rst"
 if [ -n "$ctx_pct" ]; then
-  printf '  %sctx %s%s%%%s' "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
+  printf '%s%sctx %s%s%%%s' "$sep" "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
 fi
 printf '\n'
 `
