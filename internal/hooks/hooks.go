@@ -262,6 +262,9 @@ c_val=$'\033[38;5;252m'      # light gray — values
 c_branch=$'\033[38;5;147m'   # lavender — branch name
 c_add=$'\033[38;5;120m'      # green — additions
 c_del=$'\033[38;5;203m'      # red — deletions
+c_ctx=$'\033[38;5;158m'      # mint — context ok
+c_ctx_warn=$'\033[38;5;215m' # peach — context warning
+c_ctx_crit=$'\033[38;5;203m' # red — context critical
 c_rst=$'\033[0m'
 
 # Session state
@@ -321,6 +324,32 @@ if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/n
   fi
 fi
 
+# Claude JSON data — model + context
+model=""
+ctx_pct=""
+if [ "$HAS_JQ" -eq 1 ]; then
+  model="$(echo "$input" | jq -r '.model.display_name // ""' 2>/dev/null)"
+  ctx_size="$(echo "$input" | jq -r '.context_window.context_window_size // 0' 2>/dev/null)"
+  usage="$(echo "$input" | jq '.context_window.current_usage' 2>/dev/null)"
+  if [ "$usage" != "null" ] && [ -n "$usage" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
+    tokens="$(echo "$usage" | jq '(.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null)"
+    if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
+      used_pct=$((tokens * 100 / ctx_size))
+      remaining=$((100 - used_pct))
+      [ "$remaining" -lt 0 ] && remaining=0
+      [ "$remaining" -gt 100 ] && remaining=100
+      ctx_pct="$remaining"
+      if [ "$remaining" -le 20 ]; then
+        ctx_color="$c_ctx_crit"
+      elif [ "$remaining" -le 40 ]; then
+        ctx_color="$c_ctx_warn"
+      else
+        ctx_color="$c_ctx"
+      fi
+    fi
+  fi
+fi
+
 # Worktree detection (from Claude's JSON or bertrand marker)
 worktree=""
 if [ "$HAS_JQ" -eq 1 ]; then
@@ -347,6 +376,13 @@ elif [ -n "$branch" ]; then
   printf '  %s⎇ %s%s' "$c_branch" "$branch" "$c_rst"
 fi
 [ -n "$diff_stat" ] && printf '  %s' "$diff_stat"
+
+# Line 3: model + context
+printf '\n'
+[ -n "$model" ] && printf '%s%s%s' "$c_val" "$model" "$c_rst"
+if [ -n "$ctx_pct" ]; then
+  printf '  %sctx %s%s%%%s' "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
+fi
 printf '\n'
 `
 }
