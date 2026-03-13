@@ -165,6 +165,78 @@ printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claud
 `
 }
 
+// GhCommandScript returns the hook script that detects gh CLI commands
+// (pr create, pr merge) from PostToolUse Bash events and logs them.
+func GhCommandScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse Bash → detect gh CLI commands
+BERTRAND_PID="${BERTRAND_PID:-}"
+[ -z "$BERTRAND_PID" ] && exit 0
+
+name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+# Only process Bash tool calls
+[ "$tool" != "Bash" ] && exit 0
+
+# Extract the command from tool_input
+cmd="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+
+case "$cmd" in
+  gh\ pr\ create*|gh\ pr\ create)
+    # Try to extract PR URL from the tool response
+    pr_url="$(printf '%s' "$input" | grep -oE 'https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)"
+    pr_number="$(printf '%s' "$pr_url" | grep -oE '[0-9]+$')"
+    branch="$(printf '%s' "$input" | grep -o '"branch"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"branch"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+    [ -z "$pr_number" ] && pr_number=""
+    [ -z "$pr_url" ] && pr_url=""
+    [ -z "$branch" ] && branch=""
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    ;;
+  gh\ pr\ merge*)
+    pr_number="$(printf '%s' "$cmd" | grep -oE '[0-9]+' | head -1)"
+    branch=""
+    [ -z "$pr_number" ] && pr_number=""
+    printf '{"v":1,"event":"gh.pr.merged","session":"%s","ts":"%s","meta":{"pr_number":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+    printf '{"v":1,"event":"gh.pr.merged","session":"%s","ts":"%s","meta":{"pr_number":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    ;;
+esac
+`
+}
+
+// LinearReadScript returns the hook script that logs Linear MCP tool usage.
+func LinearReadScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse mcp__claude_ai_Linear__* → log Linear issue reads
+BERTRAND_PID="${BERTRAND_PID:-}"
+[ -z "$BERTRAND_PID" ] && exit 0
+
+name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+# Extract issue ID and title from the response (best effort)
+issue_id="$(printf '%s' "$input" | grep -o '"id":"[A-Z]*-[0-9]*"' | head -1 | sed 's/"id":"//;s/"$//')"
+issue_title="$(printf '%s' "$input" | grep -o '"title":"[^"]*"' | head -1 | sed 's/"title":"//;s/"$//')"
+[ -z "$issue_id" ] && issue_id=""
+esc_title="$(printf '%s' "$issue_title" | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-80)"
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
 // StatuslineScript returns the statusline wrapper script.
 // When BERTRAND_SESSION is set, it renders a session header line before
 // delegating to the user's original statusline command (e.g. ccstatusline).
@@ -286,6 +358,41 @@ if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
   fi
 fi
 
+# ── Context snapshot (throttled) ──
+if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
+  snap_marker="$HOME/.bertrand/sessions/$name/.last-ctx-snap"
+  should_log=1
+  if [ -f "$snap_marker" ]; then
+    last_epoch="$(cat "$snap_marker" 2>/dev/null)"
+    now_epoch="$(date +%s)"
+    if [ -n "$last_epoch" ] && [ $((now_epoch - last_epoch)) -lt 60 ]; then
+      should_log=0
+    fi
+  fi
+  if [ "$should_log" -eq 1 ]; then
+    date +%s > "$snap_marker"
+    snap_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    cid="${BERTRAND_CLAUDE_ID:-}"
+    # Extract individual token counts for the snapshot
+    if [ "$HAS_JQ" -eq 1 ]; then
+      snap_input="$(echo "$usage" | jq '(.input_tokens // 0)' 2>/dev/null)"
+      snap_cache_create="$(echo "$usage" | jq '(.cache_creation_input_tokens // 0)' 2>/dev/null)"
+      snap_cache_read="$(echo "$usage" | jq '(.cache_read_input_tokens // 0)' 2>/dev/null)"
+    else
+      snap_input="$tokens"
+      snap_cache_create="0"
+      snap_cache_read="0"
+    fi
+    snap_remaining="${ctx_pct:-0}"
+    printf '{"v":1,"event":"context.snapshot","session":"%s","ts":"%s","meta":{"model":"%s","input_tokens":"%s","cache_creation_tokens":"%s","cache_read_tokens":"%s","context_window_size":"%s","remaining_pct":"%s","claude_id":"%s"}}\n' \
+      "$name" "$snap_ts" "$model" "$snap_input" "$snap_cache_create" "$snap_cache_read" "$ctx_size" "$snap_remaining" "$cid" \
+      >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+    printf '{"v":1,"event":"context.snapshot","session":"%s","ts":"%s","meta":{"model":"%s","input_tokens":"%s","cache_creation_tokens":"%s","cache_read_tokens":"%s","context_window_size":"%s","remaining_pct":"%s","claude_id":"%s"}}\n' \
+      "$name" "$snap_ts" "$model" "$snap_input" "$snap_cache_create" "$snap_cache_read" "$ctx_size" "$snap_remaining" "$cid" \
+      >> "$HOME/.bertrand/log.jsonl"
+  fi
+fi
+
 # ── Render ──
 # Line 1: session name + status + siblings
 printf '%s%s%s' "$c_name" "$name" "$c_rst"
@@ -315,6 +422,8 @@ func hooksFingerprint() string {
 	h.Write([]byte(PermissionDoneScript()))
 	h.Write([]byte(WorktreeEnteredScript()))
 	h.Write([]byte(WorktreeExitedScript()))
+	h.Write([]byte(GhCommandScript()))
+	h.Write([]byte(LinearReadScript()))
 	h.Write([]byte(StatuslineScript()))
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
@@ -343,6 +452,8 @@ func InstallHooks() (string, error) {
 		"on-permission-done.sh":   PermissionDoneScript(),
 		"on-worktree-entered.sh":  WorktreeEnteredScript(),
 		"on-worktree-exited.sh":   WorktreeExitedScript(),
+		"on-gh-command.sh":        GhCommandScript(),
+		"on-linear-read.sh":       LinearReadScript(),
 		"statusline.sh":           StatuslineScript(),
 	}
 
@@ -444,6 +555,46 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-worktree-exited.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "Bash",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-gh-command.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "mcp__claude_ai_Linear__get_issue",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-linear-read.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "mcp__claude_ai_Linear__save_issue",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-linear-read.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "mcp__claude_ai_Linear__list_issues",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-linear-read.sh"),
 						Timeout: 5,
 					},
 				},
