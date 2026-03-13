@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/uiid-systems/bertrand/internal/schema"
 )
 
 // Status constants for session state.
@@ -81,23 +83,15 @@ type State struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// LogEvent is a structured event for the session log.
-type LogEvent struct {
-	Event   string            `json:"event"`
-	Session string            `json:"session"`
-	TS      time.Time         `json:"ts"`
-	Meta    map[string]string `json:"meta,omitempty"`
-}
-
-// AppendEvent writes a structured event to both the per-session and global log.
-func AppendEvent(name, event string, meta map[string]string) error {
-	e := LogEvent{
-		Event:   event,
-		Session: name,
-		TS:      time.Now().UTC(),
-		Meta:    meta,
+// AppendEvent writes a typed event to both the per-session and global log.
+// The meta parameter should be a typed struct from the schema package
+// (e.g., *schema.SessionStartedMeta, *schema.ClaudeIDMeta).
+func AppendEvent(name, event string, meta any) error {
+	ev, err := schema.NewEvent(event, name, meta)
+	if err != nil {
+		return err
 	}
-	line, err := json.Marshal(e)
+	line, err := json.Marshal(ev)
 	if err != nil {
 		return err
 	}
@@ -329,39 +323,38 @@ func ConversationSegments(name string) []ConversationSegment {
 	defer f.Close()
 
 	var segments []ConversationSegment
-	var currentIdx int = -1 // index of active conversation segment
+	var currentIdx int = -1
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var e LogEvent
-		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+		te, err := schema.ParseEvent(scanner.Bytes())
+		if err != nil {
 			continue
 		}
 
-		switch e.Event {
+		switch te.Event {
 		case "claude.started":
-			claudeID := e.Meta["claude_id"]
+			claudeID := te.MetaClaudeID()
 			if claudeID == "" {
 				continue
 			}
 			currentIdx = len(segments)
 			segments = append(segments, ConversationSegment{
 				ClaudeID:  claudeID,
-				StartedAt: e.TS,
+				StartedAt: te.TS,
 			})
 		case "claude.ended":
 			if currentIdx >= 0 && currentIdx < len(segments) {
-				segments[currentIdx].EndedAt = e.TS
+				segments[currentIdx].EndedAt = te.TS
 			}
 			currentIdx = -1
 		default:
-			// Attribute all other events to the current conversation
 			if currentIdx >= 0 && currentIdx < len(segments) {
 				segments[currentIdx].EventCount++
-				segments[currentIdx].EndedAt = e.TS
-				if e.Event == "session.block" {
-					if q, ok := e.Meta["question"]; ok {
-						segments[currentIdx].LastQuestion = q
+				segments[currentIdx].EndedAt = te.TS
+				if te.Event == "session.block" {
+					if m, ok := te.TypedMeta.(*schema.SessionBlockMeta); ok {
+						segments[currentIdx].LastQuestion = m.Question
 					}
 				}
 			}
@@ -386,36 +379,31 @@ func LogDigest(name string) string {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var e LogEvent
-		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
-			// Try legacy State format
-			var s State
-			if err := json.Unmarshal(scanner.Bytes(), &s); err != nil {
-				continue
-			}
-			// Skip legacy state entries for digest
+		te, err := schema.ParseEvent(scanner.Bytes())
+		if err != nil {
 			continue
 		}
 
-		if e.Event == "" {
+		// Skip legacy state entries for digest
+		if strings.HasPrefix(te.Event, "state.") {
 			continue
 		}
 
 		eventCount++
 		if firstTS.IsZero() {
-			firstTS = e.TS
+			firstTS = te.TS
 		}
-		lastTS = e.TS
+		lastTS = te.TS
 
-		ts := e.TS.Format("15:04")
+		ts := te.TS.Format("15:04")
 
-		switch e.Event {
+		switch te.Event {
 		case "session.started":
 			lines = append(lines, fmt.Sprintf("- %s session started", ts))
 		case "session.resumed":
 			lines = append(lines, fmt.Sprintf("- %s session resumed", ts))
 		case "claude.started":
-			id := e.Meta["claude_id"]
+			id := te.MetaClaudeID()
 			if len(id) > 8 {
 				id = id[:8]
 			}
@@ -423,7 +411,7 @@ func LogDigest(name string) string {
 		case "claude.ended":
 			lines = append(lines, fmt.Sprintf("- %s claude conversation ended", ts))
 		case "session.block":
-			q := e.Meta["question"]
+			q := te.MetaSummary()
 			if len(q) > 80 {
 				q = q[:77] + "..."
 			}
@@ -435,19 +423,19 @@ func LogDigest(name string) string {
 		case "session.resume":
 			lines = append(lines, fmt.Sprintf("- %s user responded", ts))
 		case "session.end":
-			summary := e.Meta["summary"]
+			summary := te.MetaSummary()
 			if summary != "" && summary != "Session ended" {
 				lines = append(lines, fmt.Sprintf("- %s ended: %q", ts, summary))
 			} else {
 				lines = append(lines, fmt.Sprintf("- %s ended", ts))
 			}
 		case "permission.request":
-			tool := e.Meta["tool"]
+			tool := te.MetaSummary()
 			if tool != "" {
 				lines = append(lines, fmt.Sprintf("- %s permission: %s", ts, tool))
 			}
 		case "worktree.entered":
-			branch := e.Meta["branch"]
+			branch := te.MetaSummary()
 			if branch != "" {
 				lines = append(lines, fmt.Sprintf("- %s entered worktree (%s)", ts, branch))
 			} else {
@@ -455,6 +443,14 @@ func LogDigest(name string) string {
 			}
 		case "worktree.exited":
 			lines = append(lines, fmt.Sprintf("- %s exited worktree", ts))
+		case "gh.pr.created":
+			lines = append(lines, fmt.Sprintf("- %s PR created: %s", ts, te.MetaSummary()))
+		case "gh.pr.merged":
+			lines = append(lines, fmt.Sprintf("- %s PR merged: %s", ts, te.MetaSummary()))
+		case "linear.issue.read":
+			lines = append(lines, fmt.Sprintf("- %s linear: %s", ts, te.MetaSummary()))
+		case "context.snapshot":
+			// Skip context snapshots in digest — too noisy
 		}
 	}
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/uiid-systems/bertrand/internal/schema"
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
@@ -28,13 +29,12 @@ func init() {
 	rootCmd.AddCommand(logCmd)
 }
 
-// unifiedEntry normalizes both old State entries and new LogEvent entries.
+// unifiedEntry normalizes all log formats into a display-ready structure.
 type unifiedEntry struct {
-	Event   string            // e.g., "session.block", "permission.request", or legacy "state.working"
+	Event   string
 	Session string
 	TS      time.Time
 	Summary string
-	Meta    map[string]string
 }
 
 func readUnifiedLog(name string) ([]unifiedEntry, error) {
@@ -48,52 +48,16 @@ func readUnifiedLog(name string) ([]unifiedEntry, error) {
 	var entries []unifiedEntry
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var raw map[string]interface{}
-		if err := json.Unmarshal(scanner.Bytes(), &raw); err != nil {
+		te, err := schema.ParseEvent(scanner.Bytes())
+		if err != nil {
 			continue
 		}
-
-		if _, hasEvent := raw["event"]; hasEvent {
-			// New LogEvent format
-			var e session.LogEvent
-			if json.Unmarshal(scanner.Bytes(), &e) != nil {
-				continue
-			}
-			summary := ""
-			if q, ok := e.Meta["question"]; ok {
-				summary = q
-			} else if s, ok := e.Meta["summary"]; ok {
-				summary = s
-			} else if t, ok := e.Meta["tool"]; ok {
-				summary = t
-			} else if br, ok := e.Meta["branch"]; ok {
-				summary = br
-			} else if cid, ok := e.Meta["claude_id"]; ok {
-				if len(cid) > 8 {
-					cid = cid[:8]
-				}
-				summary = cid
-			}
-			entries = append(entries, unifiedEntry{
-				Event:   e.Event,
-				Session: e.Session,
-				TS:      e.TS,
-				Summary: summary,
-				Meta:    e.Meta,
-			})
-		} else {
-			// Legacy State format
-			var s session.State
-			if json.Unmarshal(scanner.Bytes(), &s) != nil {
-				continue
-			}
-			entries = append(entries, unifiedEntry{
-				Event:   "state." + s.Status,
-				Session: s.Session,
-				TS:      s.Timestamp,
-				Summary: s.Summary,
-			})
-		}
+		entries = append(entries, unifiedEntry{
+			Event:   te.Event,
+			Session: te.Session,
+			TS:      te.TS,
+			Summary: te.MetaSummary(),
+		})
 	}
 	return entries, scanner.Err()
 }
@@ -214,7 +178,6 @@ func showSessionLog(name string) error {
 				"session": entry.Session,
 				"ts":      entry.TS,
 				"summary": entry.Summary,
-				"meta":    entry.Meta,
 			})
 			fmt.Println(string(data))
 		}
@@ -332,6 +295,12 @@ func eventConnectorColor(event string) int {
 		return 78 // green
 	case "worktree.exited":
 		return 241 // dim
+	case "gh.pr.created", "gh.pr.merged":
+		return 78 // green
+	case "linear.issue.read":
+		return 141 // purple
+	case "context.snapshot":
+		return 241 // dim
 	default:
 		return 241
 	}
@@ -345,6 +314,10 @@ func eventDetailColor(event string) int {
 		return 241 // dim for claude_id
 	case "worktree.entered", "worktree.exited":
 		return 241 // dim
+	case "gh.pr.created", "gh.pr.merged":
+		return 252 // bright for PR info
+	case "linear.issue.read":
+		return 252 // bright for issue info
 	default:
 		return 241
 	}
@@ -374,6 +347,14 @@ func eventLabel(event string) string {
 		return "entered worktree"
 	case "worktree.exited":
 		return "exited worktree"
+	case "gh.pr.created":
+		return "PR created"
+	case "gh.pr.merged":
+		return "PR merged"
+	case "linear.issue.read":
+		return "linear"
+	case "context.snapshot":
+		return "context"
 	default:
 		return event
 	}
