@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -279,13 +278,6 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		return layers
 	}
 
-	// Initialize session stats
-	stats, err := session.ReadStats(name)
-	if err != nil {
-		// New session — set start time
-		stats = session.Stats{StartedAt: time.Now().UTC()}
-	}
-
 	// Launch Claude — loop supports "Resume conversation" from exit menu
 	var resumeClaudeID string // set when user picks "Resume" from exit menu or resume picker
 	if initialClaudeID != "" {
@@ -315,9 +307,6 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		)
 
 		session.AppendEvent(name, "claude.started", &schema.ClaudeIDMeta{ClaudeID: claudeID})
-
-		stats.Conversations++
-		session.WriteStats(name, stats)
 
 		claudeCmd.Run()
 

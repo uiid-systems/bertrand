@@ -259,9 +259,9 @@ c_status=$'\033[38;5;78m'    # green — working
 c_blocked=$'\033[38;5;214m'  # orange — blocked
 c_dim=$'\033[38;5;241m'      # gray — labels/separators
 c_val=$'\033[38;5;252m'      # light gray — values
-c_ctx=$'\033[38;5;158m'      # mint — context ok
-c_ctx_warn=$'\033[38;5;215m' # peach — context warning
-c_ctx_crit=$'\033[38;5;203m' # red — context critical
+c_branch=$'\033[38;5;147m'   # lavender — branch name
+c_add=$'\033[38;5;120m'      # green — additions
+c_del=$'\033[38;5;203m'      # red — deletions
 c_rst=$'\033[0m'
 
 # Session state
@@ -276,8 +276,8 @@ if [ -f "$state_file" ]; then
 fi
 
 case "$status" in
-  working) dot="${c_status}● working${c_rst}" ;;
-  blocked) dot="${c_blocked}● blocked${c_rst}" ;;
+  working) dot="${c_status}●${c_rst}" ;;
+  blocked) dot="${c_blocked}●${c_rst}" ;;
   *)       dot="" ;;
 esac
 
@@ -301,126 +301,52 @@ if [ -d "$HOME/.bertrand/sessions" ]; then
   done
 fi
 
-# Session stats (precomputed by bertrand)
-stats_file="$HOME/.bertrand/sessions/$name/stats.json"
-duration=""
-convs=""
-if [ -f "$stats_file" ]; then
-  if [ "$HAS_JQ" -eq 1 ]; then
-    started_at="$(jq -r '.started_at // ""' "$stats_file" 2>/dev/null)"
-    convs="$(jq -r '.conversations // 0' "$stats_file" 2>/dev/null)"
-  else
-    started_at=""
-    convs=""
-  fi
-  if [ -n "$started_at" ] && [ "$started_at" != "null" ]; then
-    # Compute duration from started_at to now
-    clean_ts="${started_at%%.*}"  # strip fractional seconds
-    clean_ts="${clean_ts%Z}"       # strip trailing Z
-    start_epoch="$(date -u -jf '%Y-%m-%dT%H:%M:%S' "$clean_ts" +%s 2>/dev/null)"
-    if [ -n "$start_epoch" ]; then
-      now_epoch="$(date +%s)"
-      elapsed=$((now_epoch - start_epoch))
-      [ "$elapsed" -lt 0 ] && elapsed=0
-      if [ "$elapsed" -ge 3600 ]; then
-        hours=$((elapsed / 3600))
-        mins=$(( (elapsed % 3600) / 60 ))
-        duration="${hours}h ${mins}m"
-      elif [ "$elapsed" -ge 60 ]; then
-        mins=$((elapsed / 60))
-        duration="${mins}m"
-      else
-        duration="${elapsed}s"
-      fi
-    fi
+# Git info
+branch=""
+project=""
+diff_stat=""
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  branch="$(git branch --show-current 2>/dev/null)"
+  project="$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null)"
+  # Diff summary: files changed, insertions, deletions
+  diff_raw="$(git diff --shortstat 2>/dev/null)"
+  if [ -n "$diff_raw" ]; then
+    files="$(echo "$diff_raw" | grep -o '[0-9]* file' | grep -o '[0-9]*')"
+    adds="$(echo "$diff_raw" | grep -o '[0-9]* insertion' | grep -o '[0-9]*')"
+    dels="$(echo "$diff_raw" | grep -o '[0-9]* deletion' | grep -o '[0-9]*')"
+    diff_stat=""
+    [ -n "$files" ] && diff_stat="${files}f"
+    [ -n "$adds" ] && diff_stat="${diff_stat:+$diff_stat }${c_add}+${adds}${c_rst}"
+    [ -n "$dels" ] && diff_stat="${diff_stat:+$diff_stat }${c_del}-${dels}${c_rst}"
   fi
 fi
 
-# Claude JSON data
+# Worktree detection (from Claude's JSON or bertrand marker)
+worktree=""
 if [ "$HAS_JQ" -eq 1 ]; then
-  model="$(echo "$input" | jq -r '.model.display_name // "Claude"' 2>/dev/null)"
-  ctx_size="$(echo "$input" | jq -r '.context_window.context_window_size // 200000' 2>/dev/null)"
-  usage="$(echo "$input" | jq '.context_window.current_usage' 2>/dev/null)"
-  if [ "$usage" != "null" ] && [ -n "$usage" ]; then
-    tokens="$(echo "$usage" | jq '(.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null)"
-  fi
-else
-  model="$(echo "$input" | grep -o '"display_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"display_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
-  [ -z "$model" ] && model="Claude"
-  tokens=""
+  worktree="$(echo "$input" | jq -r '.worktree.branch // ""' 2>/dev/null)"
 fi
-
-# Context remaining
-ctx_pct=""
-if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
-  used_pct=$((tokens * 100 / ctx_size))
-  remaining=$((100 - used_pct))
-  [ "$remaining" -lt 0 ] && remaining=0
-  [ "$remaining" -gt 100 ] && remaining=100
-  ctx_pct="$remaining"
-  if [ "$remaining" -le 20 ]; then
-    ctx_color="$c_ctx_crit"
-  elif [ "$remaining" -le 40 ]; then
-    ctx_color="$c_ctx_warn"
-  else
-    ctx_color="$c_ctx"
-  fi
-fi
-
-# ── Context snapshot (throttled) ──
-if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
-  snap_marker="$HOME/.bertrand/sessions/$name/.last-ctx-snap"
-  should_log=1
-  if [ -f "$snap_marker" ]; then
-    last_epoch="$(cat "$snap_marker" 2>/dev/null)"
-    now_epoch="$(date +%s)"
-    if [ -n "$last_epoch" ] && [ $((now_epoch - last_epoch)) -lt 60 ]; then
-      should_log=0
-    fi
-  fi
-  if [ "$should_log" -eq 1 ]; then
-    date +%s > "$snap_marker"
-    snap_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    cid="${BERTRAND_CLAUDE_ID:-}"
-    # Extract individual token counts for the snapshot
-    if [ "$HAS_JQ" -eq 1 ]; then
-      snap_input="$(echo "$usage" | jq '(.input_tokens // 0)' 2>/dev/null)"
-      snap_cache_create="$(echo "$usage" | jq '(.cache_creation_input_tokens // 0)' 2>/dev/null)"
-      snap_cache_read="$(echo "$usage" | jq '(.cache_read_input_tokens // 0)' 2>/dev/null)"
-    else
-      snap_input="$tokens"
-      snap_cache_create="0"
-      snap_cache_read="0"
-    fi
-    snap_remaining="${ctx_pct:-0}"
-    printf '{"v":1,"event":"context.snapshot","session":"%s","ts":"%s","meta":{"model":"%s","input_tokens":"%s","cache_creation_tokens":"%s","cache_read_tokens":"%s","context_window_size":"%s","remaining_pct":"%s","claude_id":"%s"}}\n' \
-      "$name" "$snap_ts" "$model" "$snap_input" "$snap_cache_create" "$snap_cache_read" "$ctx_size" "$snap_remaining" "$cid" \
-      >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-    printf '{"v":1,"event":"context.snapshot","session":"%s","ts":"%s","meta":{"model":"%s","input_tokens":"%s","cache_creation_tokens":"%s","cache_read_tokens":"%s","context_window_size":"%s","remaining_pct":"%s","claude_id":"%s"}}\n' \
-      "$name" "$snap_ts" "$model" "$snap_input" "$snap_cache_create" "$snap_cache_read" "$ctx_size" "$snap_remaining" "$cid" \
-      >> "$HOME/.bertrand/log.jsonl"
-  fi
-fi
+[ -z "$worktree" ] && worktree="$(cat "$HOME/.bertrand/sessions/$name/worktree" 2>/dev/null)"
 
 # ── Render ──
-# Line 1: session name + status + siblings
+# Line 1: session name + status dot + siblings
 printf '%s%s%s' "$c_name" "$name" "$c_rst"
-[ -n "$dot" ] && printf '  %s' "$dot"
+[ -n "$dot" ] && printf ' %s' "$dot"
 if [ "$siblings" -gt 0 ]; then
   s_label="siblings"
   [ "$siblings" -eq 1 ] && s_label="sibling"
   printf '  %s%d %s%s' "$c_dim" "$siblings" "$s_label" "$c_rst"
 fi
 
-# Line 2: model + context + duration + conversations
-printf '\n%s%s%s' "$c_val" "$model" "$c_rst"
-if [ -n "$ctx_pct" ]; then
-  printf '  %sctx %s%s%%%s' "$c_dim" "$ctx_color" "$ctx_pct" "$c_rst"
+# Line 2: project + branch/worktree + diff
+printf '\n'
+[ -n "$project" ] && printf '%s%s%s' "$c_val" "$project" "$c_rst"
+if [ -n "$worktree" ]; then
+  printf '  %s⎇ %s%s' "$c_branch" "$worktree" "$c_rst"
+elif [ -n "$branch" ]; then
+  printf '  %s⎇ %s%s' "$c_branch" "$branch" "$c_rst"
 fi
-[ -n "$duration" ] && printf '  %s%s%s' "$c_dim" "$duration" "$c_rst"
-if [ -n "$convs" ] && [ "$convs" -gt 1 ] 2>/dev/null; then
-  printf '  %sconv %s%s' "$c_dim" "$convs" "$c_rst"
-fi
+[ -n "$diff_stat" ] && printf '  %s' "$diff_stat"
 printf '\n'
 `
 }
