@@ -62,7 +62,7 @@ func runInitWizard(showLogo bool) error {
 	if err := hooks.InjectSettings(); err != nil {
 		return fmt.Errorf("failed to configure Claude Code hooks: %w", err)
 	}
-	fmt.Printf("%s %s\n", check, label("Claude Code hooks + statusline configured"))
+	fmt.Printf("%s %s\n", check, label("Claude Code hooks configured"))
 
 	// Write config (merge: preserve existing keys, add missing defaults)
 	configPath := filepath.Join(session.BaseDir(), "config.yaml")

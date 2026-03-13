@@ -288,12 +288,13 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 
 		var claudeCmd *exec.Cmd
 		var claudeID string
+		statuslineSettings := hooks.StatuslineSettingsJSON()
 		if resumeClaudeID != "" {
 			claudeID = resumeClaudeID
-			claudeCmd = exec.Command("claude", "--resume", claudeID, "--append-system-prompt", tmpl)
+			claudeCmd = exec.Command("claude", "--resume", claudeID, "--settings", statuslineSettings, "--append-system-prompt", tmpl)
 		} else {
 			claudeID = session.NewClaudeID()
-			claudeCmd = exec.Command("claude", "--session-id", claudeID, "--append-system-prompt", tmpl)
+			claudeCmd = exec.Command("claude", "--session-id", claudeID, "--settings", statuslineSettings, "--append-system-prompt", tmpl)
 		}
 		claudeCmd.Stdin = os.Stdin
 		claudeCmd.Stdout = os.Stdout

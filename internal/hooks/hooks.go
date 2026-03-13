@@ -243,38 +243,12 @@ printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"iss
 // When not in a bertrand session, it passes through to the fallback directly.
 func StatuslineScript() string {
 	return `#!/usr/bin/env bash
-# Bertrand statusline wrapper
-# In a bertrand session: renders bertrand's own statusline
-# Otherwise: delegates to the user's original statusline tool
-#
-# Session detection uses BERTRAND_PID → ~/.bertrand/tmp/<pid> lookup
-# (same pattern as all bertrand hook scripts). BERTRAND_SESSION is used
-# as an optimization when available.
-FALLBACK_FILE="$HOME/.bertrand/statusline-fallback"
-if [ -f "$FALLBACK_FILE" ]; then
-  FALLBACK="$(cat "$FALLBACK_FILE")"
-else
-  FALLBACK="${BERTRAND_STATUSLINE_FALLBACK:-ccstatusline}"
-fi
+# Bertrand session statusline
+# Invoked via --settings flag, so this only runs in bertrand sessions.
+# Reads Claude's JSON context on stdin, renders session info.
 input="$(cat)"
-
-# Resolve session name via PID lookup (primary) or env var (fallback)
-name=""
-BERTRAND_PID="${BERTRAND_PID:-}"
-if [ -n "$BERTRAND_PID" ]; then
-  name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)"
-fi
-[ -z "$name" ] && name="${BERTRAND_SESSION:-}"
-
-if [ -z "$name" ]; then
-  # Not in a bertrand session — pass through to fallback
-  if command -v "$FALLBACK" >/dev/null 2>&1; then
-    printf '%s' "$input" | "$FALLBACK"
-  fi
-  exit 0
-fi
-
-# ── Bertrand session statusline ──
+name="${BERTRAND_SESSION:-}"
+[ -z "$name" ] && exit 0
 
 HAS_JQ=0
 command -v jq >/dev/null 2>&1 && HAS_JQ=1
@@ -410,6 +384,13 @@ if [ -n "$ctx_pct" ]; then
 fi
 printf '\n'
 `
+}
+
+// StatuslineSettingsJSON returns a JSON string suitable for claude's --settings flag.
+// This scopes the statusline override to the current session without modifying global settings.
+func StatuslineSettingsJSON() string {
+	cmd := filepath.Join(session.BaseDir(), "hooks", "statusline.sh")
+	return fmt.Sprintf(`{"statusLine":{"type":"command","command":"%s","padding":0}}`, cmd)
 }
 
 // hooksFingerprint returns a SHA-256 hash of all hook script contents.
@@ -654,23 +635,6 @@ func InjectSettings() error {
 	}
 	settings["hooks"] = existingHooks
 
-	// Configure statusline to use bertrand's wrapper.
-	// Save the user's current statusline command as the fallback.
-	statuslineCmd := filepath.Join(hooksDir, "statusline.sh")
-	existingStatusLine, _ := settings["statusLine"].(map[string]interface{})
-	if existingStatusLine != nil {
-		if cmd, ok := existingStatusLine["command"].(string); ok && cmd != statuslineCmd {
-			// Save the user's original statusline command as the fallback
-			fallbackPath := filepath.Join(session.BaseDir(), "statusline-fallback")
-			os.WriteFile(fallbackPath, []byte(cmd), 0644)
-		}
-	}
-	settings["statusLine"] = map[string]interface{}{
-		"command": statuslineCmd,
-		"padding": 0,
-		"type":    "command",
-	}
-
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -743,19 +707,6 @@ func RemoveSettings() error {
 		settings["hooks"] = existingHooks
 	}
 
-	// Restore original statusline if bertrand's wrapper is configured
-	if sl, ok := settings["statusLine"].(map[string]interface{}); ok {
-		if cmd, ok := sl["command"].(string); ok && strings.Contains(cmd, ".bertrand/hooks/statusline.sh") {
-			fallbackPath := filepath.Join(session.BaseDir(), "statusline-fallback")
-			if fallback, err := os.ReadFile(fallbackPath); err == nil {
-				sl["command"] = strings.TrimSpace(string(fallback))
-				settings["statusLine"] = sl
-				os.Remove(fallbackPath)
-			} else {
-				delete(settings, "statusLine")
-			}
-		}
-	}
 
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
