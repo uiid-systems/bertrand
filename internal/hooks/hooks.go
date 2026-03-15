@@ -30,6 +30,12 @@ summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertran
 
 bertrand update --name "$name" --status blocked --summary "$summary"
 
+# Wave badge + notification (skip if wsh not available)
+if command -v wsh &>/dev/null; then
+  wsh badge message-question --color '#e0b956' --priority 20 --beep
+  wsh notify -t "Bertrand" "$name is waiting for input"
+fi
+
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
@@ -49,6 +55,11 @@ name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
 [ -z "$name" ] && exit 0
 
 bertrand update --name "$name" --status working --summary "Resumed after input"
+
+# Wave badge clear (skip if wsh not available)
+if command -v wsh &>/dev/null; then
+  wsh badge --clear
+fi
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -76,6 +87,12 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 # Write pending marker — this hook only fires for real permission prompts
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
+
+# Wave badge + notification (priority 25 > blocked's 20, skip if wsh not available)
+if command -v wsh &>/dev/null; then
+  wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
+  wsh notify -t "Bertrand" "$name needs permission"
+fi
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -111,6 +128,32 @@ ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
 printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
+// DoneScript returns the hook script for the Stop event.
+// Sets a green check badge and writes done status.
+func DoneScript() string {
+	return `#!/usr/bin/env bash
+# Hook: Stop → mark session as done
+BERTRAND_PID="${BERTRAND_PID:-}"
+[ -z "$BERTRAND_PID" ] && exit 0
+
+name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+[ -z "$name" ] && exit 0
+
+bertrand update --name "$name" --status done --summary "Session ended"
+
+# Wave badge (skip if wsh not available)
+if command -v wsh &>/dev/null; then
+  wsh badge check --color '#58c142' --priority 10
+fi
+
+# Log event
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"v":1,"event":"session.done","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"session.done","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -404,6 +447,7 @@ func hooksFingerprint() string {
 	h.Write([]byte(ResumedScript()))
 	h.Write([]byte(PermissionWaitScript()))
 	h.Write([]byte(PermissionDoneScript()))
+	h.Write([]byte(DoneScript()))
 	h.Write([]byte(WorktreeEnteredScript()))
 	h.Write([]byte(WorktreeExitedScript()))
 	h.Write([]byte(GhCommandScript()))
@@ -434,6 +478,7 @@ func InstallHooks() (string, error) {
 		"on-resumed.sh":           ResumedScript(),
 		"on-permission-wait.sh":   PermissionWaitScript(),
 		"on-permission-done.sh":   PermissionDoneScript(),
+		"on-done.sh":              DoneScript(),
 		"on-worktree-entered.sh":  WorktreeEnteredScript(),
 		"on-worktree-exited.sh":   WorktreeExitedScript(),
 		"on-gh-command.sh":        GhCommandScript(),
@@ -606,6 +651,18 @@ func InjectSettings() error {
 				},
 			},
 		},
+		"Stop": {
+			{
+				Matcher: "",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-done.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+		},
 	}
 
 	existingHooks, _ := settings["hooks"].(map[string]interface{})
@@ -673,7 +730,7 @@ func RemoveSettings() error {
 		return nil
 	}
 
-	for _, event := range []string{"PreToolUse", "PostToolUse", "PermissionRequest"} {
+	for _, event := range []string{"PreToolUse", "PostToolUse", "PermissionRequest", "Stop"} {
 		matchers, ok := existingHooks[event]
 		if !ok {
 			continue
