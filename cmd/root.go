@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/uiid-systems/bertrand/internal/contract"
 	"github.com/uiid-systems/bertrand/internal/hooks"
+	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 	"github.com/uiid-systems/bertrand/internal/schema"
 	"github.com/uiid-systems/bertrand/internal/server"
 	"github.com/uiid-systems/bertrand/internal/session"
@@ -52,16 +53,11 @@ func printDiscardMessage(name string, timeline string) {
 
 // sessionTimeline reads the session log and renders a compacted pipe timeline.
 func sessionTimeline(name string) string {
-	typedEvents, err := readTypedLog(name)
-	if err != nil || len(typedEvents) == 0 {
+	d, err := sessionlog.Digest(name)
+	if err != nil || len(d.Timeline) == 0 {
 		return ""
 	}
-	entries, _ := readUnifiedLog(name)
-	if len(entries) == 0 {
-		return ""
-	}
-	timing := schema.ComputeTimings(typedEvents)
-	return renderTimeline(compactTimeline(entries), timing)
+	return renderTimeline(d.Timeline, d.TimingRaw)
 }
 
 
@@ -286,7 +282,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	// Build context layers for contract injection
 	contextLayers := func() []string {
 		var layers []string
-		if digest := session.LogDigest(name); digest != "" {
+		if digest := sessionlog.ContractDigest(name); digest != "" {
 			layers = append(layers, digest)
 		}
 		if siblings := session.SiblingSummaries(name); siblings != "" {

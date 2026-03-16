@@ -1,9 +1,9 @@
 package server
 
 import (
-	"bufio"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/uiid-systems/bertrand/internal/schema"
+	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
@@ -110,38 +110,27 @@ func handleSessionState(w http.ResponseWriter, r *http.Request, name string) {
 }
 
 func handleSessionLog(w http.ResponseWriter, r *http.Request, name string) {
-	logPath := filepath.Join(session.SessionDir(name), "log.jsonl")
-	f, err := os.Open(logPath)
+	d, err := sessionlog.DigestWithOptions(name, sessionlog.DigestOptions{IncludeFullEvents: true})
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session log not found"})
+			return
+		}
+		// "no events" → return empty-ish digest as 404
+		if strings.Contains(err.Error(), "no events") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	defer f.Close()
 
-	var events []*schema.TypedEvent
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		te, err := schema.ParseEvent(scanner.Bytes())
-		if err != nil {
-			continue
-		}
-		events = append(events, te)
+	// Tail: return last 100 events (matches old handler behavior)
+	if len(d.Events) > 100 {
+		d.Events = d.Events[len(d.Events)-100:]
 	}
 
-	// Tail: return last 100 events by default
-	limit := 100
-	if len(events) > limit {
-		events = events[len(events)-limit:]
-	}
-
-	if events == nil {
-		events = []*schema.TypedEvent{}
-	}
-	writeJSON(w, http.StatusOK, events)
+	writeJSON(w, http.StatusOK, d)
 }
 
 func handleSessionFocus(w http.ResponseWriter, r *http.Request, name string) {

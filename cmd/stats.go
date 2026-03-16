@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/uiid-systems/bertrand/internal/schema"
+	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
@@ -48,36 +48,21 @@ type sessionMetrics struct {
 }
 
 func collectSessionMetrics(name string, state *session.State) *sessionMetrics {
-	events, err := readTypedLog(name)
-	if err != nil || len(events) == 0 {
+	d, err := sessionlog.Digest(name)
+	if err != nil {
 		return nil
 	}
 
-	m := &sessionMetrics{
-		name:   name,
-		status: state.Status,
+	return &sessionMetrics{
+		name:          name,
+		status:        state.Status,
+		duration:      d.EndedAt.Sub(d.StartedAt),
+		claudeWork:    time.Duration(d.Timing.ClaudeWorkS) * time.Second,
+		userWait:      time.Duration(d.Timing.UserWaitS) * time.Second,
+		conversations: d.Conversations,
+		prs:           d.PRs,
+		interactions:  d.Interactions,
 	}
-
-	first := events[0].TS
-	last := events[len(events)-1].TS
-	m.duration = last.Sub(first)
-
-	timing := schema.ComputeTimings(events)
-	m.claudeWork = timing.TotalClaudeWork
-	m.userWait = timing.TotalUserWait
-
-	for _, e := range events {
-		switch e.Event {
-		case "claude.started":
-			m.conversations++
-		case "gh.pr.created":
-			m.prs++
-		case "session.block", "state.blocked":
-			m.interactions++
-		}
-	}
-
-	return m
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
@@ -160,13 +145,13 @@ func showGlobalStats() error {
 		userPct = 100 - claudePct
 	}
 
-	fmt.Printf("  Total time     %s\n", formatDuration(totalDuration))
-	fmt.Printf("  Claude work    %s", formatDuration(totalClaude))
+	fmt.Printf("  Total time     %s\n", sessionlog.FormatDuration(totalDuration))
+	fmt.Printf("  Claude work    %s", sessionlog.FormatDuration(totalClaude))
 	if claudePct > 0 {
 		fmt.Printf(" (%d%%)", claudePct)
 	}
 	fmt.Println()
-	fmt.Printf("  User wait      %s", formatDuration(totalUser))
+	fmt.Printf("  User wait      %s", sessionlog.FormatDuration(totalUser))
 	if userPct > 0 {
 		fmt.Printf(" (%d%%)", userPct)
 	}
@@ -271,9 +256,9 @@ func showProjectStats(project string) error {
 
 		fmt.Printf("  %-*s  %8s  %8s  %8s  %5d  %3d\n",
 			maxName, short,
-			formatDuration(m.duration),
-			formatDuration(m.claudeWork),
-			formatDuration(m.userWait),
+			sessionlog.FormatDuration(m.duration),
+			sessionlog.FormatDuration(m.claudeWork),
+			sessionlog.FormatDuration(m.userWait),
 			m.conversations,
 			m.prs)
 	}
@@ -281,9 +266,9 @@ func showProjectStats(project string) error {
 	// Totals row
 	fmt.Printf("\n  %-*s  %8s  %8s  %8s  %5d  %3d\n",
 		maxName, "Total",
-		formatDuration(totalDuration),
-		formatDuration(totalClaude),
-		formatDuration(totalUser),
+		sessionlog.FormatDuration(totalDuration),
+		sessionlog.FormatDuration(totalClaude),
+		sessionlog.FormatDuration(totalUser),
 		totalConvs,
 		totalPRs)
 
