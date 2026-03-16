@@ -27,16 +27,18 @@ summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertran
 
 bertrand update --name "$name" --status blocked --summary "$summary"
 
-# Wave badge + notification (skip if wsh not available)
+# Wave badge + notification + focus (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
 
-  # Auto-focus: bring Wave to foreground and switch to this block (opt-in via config)
+  # Activate Wave (bring to foreground) if auto_focus is enabled
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
     osascript -e 'tell application "Wave" to activate' 2>/dev/null
-    wsh focusblock
   fi
+
+  # Always focus this block within the tab so the user lands here
+  wsh focusblock
 fi
 
 # Log event
@@ -50,15 +52,24 @@ printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"questio
 
 func ResumedScript() string {
 	return `#!/usr/bin/env bash
-# Hook: PostToolUse AskUserQuestion → mark session as working
+# Hook: PostToolUse AskUserQuestion → mark session as working, cycle focus to next blocked
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 bertrand update --name "$name" --status working --summary "Resumed after input"
 
-# Wave badge clear (skip if wsh not available)
+# Wave badge clear + focus cycling (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge --clear
+
+  # Cycle focus: find the next blocked session and focus its block
+  next="$(bertrand focus --next 2>/dev/null)"
+  if [ -n "$next" ]; then
+    # Activate Wave if auto_focus is enabled
+    if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+      osascript -e 'tell application "Wave" to activate' 2>/dev/null
+    fi
+  fi
 fi
 
 # Log event
@@ -85,11 +96,19 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 
-# Wave badge + notification (priority 25 > blocked's 20, skip if wsh not available)
+# Wave badge + notification + focus (priority 25 > blocked's 20, skip if wsh not available)
 # Skip AskUserQuestion — the blocked hook already handles that notification
 if command -v wsh &>/dev/null && [ "$tool" != "AskUserQuestion" ]; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
   wsh notify -t "$name" "Needs permission: $tool"
+
+  # Activate Wave if auto_focus is enabled
+  if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+    osascript -e 'tell application "Wave" to activate' 2>/dev/null
+  fi
+
+  # Always focus this block so the user lands on the permission prompt
+  wsh focusblock
 fi
 
 # Log event

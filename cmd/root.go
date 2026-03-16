@@ -230,9 +230,14 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	}
 	session.AppendEvent(name, "session."+verb, &schema.SessionStartedMeta{PID: fmt.Sprintf("%d", pid)})
 
-	// Set Wave block title (falls back to no-op if not in Wave)
+	// Set Wave block title and persist block ID for focus targeting
 	if wsh, err := exec.LookPath("wsh"); err == nil {
 		exec.Command(wsh, "setmeta", fmt.Sprintf("frame:title=%s", name)).Run()
+
+		// Write wave-block-id so bertrand focus can target this block
+		if blockID := os.Getenv("WAVETERM_BLOCKID"); blockID != "" {
+			os.WriteFile(filepath.Join(session.SessionDir(name), "wave-block-id"), []byte(blockID), 0644)
+		}
 
 		// Auto-start bertrand serve if not already running
 		ensureServeRunning()
@@ -244,6 +249,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	// worktree marker) and the shared contract when no sessions remain.
 	cleanupFiles := func() {
 		os.Remove(filepath.Join(session.SessionDir(name), "pending"))
+		os.Remove(filepath.Join(session.SessionDir(name), "wave-block-id"))
 		os.Remove(session.WorktreePath(name))
 
 		active, _ := session.ActiveSessions()
