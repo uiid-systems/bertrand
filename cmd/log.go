@@ -153,10 +153,8 @@ func showSessionLog(name string) error {
 		return nil
 	}
 
-	raw, _ := sessionlog.ReadEvents(name)
-	timing := schema.ComputeTimings(raw)
 	fmt.Printf("\033[1m%s\033[0m\n", name)
-	fmt.Print(renderTimeline(d.Timeline, timing))
+	fmt.Print(renderTimeline(d.Timeline, d.TimingRaw))
 	return nil
 }
 

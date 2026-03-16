@@ -3,6 +3,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -111,13 +112,24 @@ func handleSessionState(w http.ResponseWriter, r *http.Request, name string) {
 func handleSessionLog(w http.ResponseWriter, r *http.Request, name string) {
 	d, err := sessionlog.DigestWithOptions(name, sessionlog.DigestOptions{IncludeFullEvents: true})
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session log not found"})
+			return
+		}
+		// "no events" → return empty-ish digest as 404
+		if strings.Contains(err.Error(), "no events") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Tail: return last 100 events (matches old handler behavior)
+	if len(d.Events) > 100 {
+		d.Events = d.Events[len(d.Events)-100:]
+	}
+
 	writeJSON(w, http.StatusOK, d)
 }
 

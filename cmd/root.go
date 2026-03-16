@@ -57,9 +57,7 @@ func sessionTimeline(name string) string {
 	if err != nil || len(d.Timeline) == 0 {
 		return ""
 	}
-	raw, _ := sessionlog.ReadEvents(name)
-	timing := schema.ComputeTimings(raw)
-	return renderTimeline(d.Timeline, timing)
+	return renderTimeline(d.Timeline, d.TimingRaw)
 }
 
 

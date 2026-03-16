@@ -1,6 +1,10 @@
 package log
 
-import "time"
+import (
+	"time"
+
+	"github.com/uiid-systems/bertrand/internal/schema"
+)
 
 // EnrichedEvent is a log event with all display data pre-computed.
 type EnrichedEvent struct {
@@ -39,4 +43,8 @@ type SessionDigest struct {
 	ActivityByHour    map[int]int    `json:"activity_by_hour"`
 	EventDistribution map[string]int `json:"event_distribution"`
 	TimeDistribution  map[string]int `json:"time_distribution"`
+
+	// TimingRaw is the full timing summary for callers that need duration values.
+	// Excluded from JSON (use Timing for serialized output).
+	TimingRaw *schema.TimingSummary `json:"-"`
 }

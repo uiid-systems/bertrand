@@ -87,6 +87,7 @@ func DigestWithOptions(name string, opts DigestOptions) (*SessionDigest, error) 
 		ActivityByHour:    activityByHour,
 		EventDistribution: eventDist,
 		TimeDistribution:  timeDist,
+		TimingRaw:         timing,
 	}
 
 	if opts.IncludeFullEvents {
