@@ -242,6 +242,9 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		// Write wave-block-id so bertrand focus can target this block
 		if blockID := os.Getenv("WAVETERM_BLOCKID"); blockID != "" {
 			os.WriteFile(filepath.Join(session.SessionDir(name), "wave-block-id"), []byte(blockID), 0644)
+
+			// Register this block as the last active for return-focus tracking
+			exec.Command(wsh, "setmeta", "-b", "tab", fmt.Sprintf("bertrand:prev-focus=%s", blockID)).Run()
 		}
 
 		// Auto-start bertrand serve if not already running

@@ -62,12 +62,23 @@ bertrand update --name "$name" --status working --summary "Resumed after input"
 if command -v wsh &>/dev/null; then
   wsh badge --clear
 
+  # Read prev-focus BEFORE overwriting it — this is the block to return to
+  prev="$(wsh getmeta 'bertrand:prev-focus' -b tab --raw 2>/dev/null)"
+
+  # Now update prev-focus to this block (it's the last active bertrand block)
+  wsh setmeta -b tab "bertrand:prev-focus=${WAVETERM_BLOCKID:-}" 2>/dev/null
+
   # Cycle focus: find the next blocked session and focus its block
   next="$(bertrand focus --next 2>/dev/null)"
   if [ -n "$next" ]; then
     # Activate Wave if auto_focus is enabled
     if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
       osascript -e 'tell application "Wave" to activate' 2>/dev/null
+    fi
+  else
+    # No other blocked sessions — return focus to the last active bertrand block
+    if [ -n "$prev" ] && [ "$prev" != "null" ] && [ "$prev" != "${WAVETERM_BLOCKID:-}" ]; then
+      wsh focusblock -b "$prev" 2>/dev/null
     fi
   fi
 fi
@@ -123,7 +134,7 @@ printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"to
 // when any tool (except AskUserQuestion) completes via PostToolUse.
 func PermissionDoneScript() string {
 	return `#!/usr/bin/env bash
-# Hook: PostToolUse (all tools) → remove pending marker
+# Hook: PostToolUse (all tools) → remove pending marker + track focus
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
@@ -135,7 +146,23 @@ case "$tool" in
   AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
 esac
 
+had_pending=0
+[ -f "$HOME/.bertrand/sessions/$name/pending" ] && had_pending=1
 rm -f "$HOME/.bertrand/sessions/$name/pending"
+
+# Track this block as the last active bertrand block for return-focus
+if command -v wsh &>/dev/null; then
+  # Read prev-focus BEFORE overwriting — needed for permission return-focus
+  prev="$(wsh getmeta 'bertrand:prev-focus' -b tab --raw 2>/dev/null)"
+  wsh setmeta -b tab "bertrand:prev-focus=${WAVETERM_BLOCKID:-}" 2>/dev/null
+
+  # If this tool had a permission prompt, return focus to the last active block
+  if [ "$had_pending" -eq 1 ]; then
+    if [ -n "$prev" ] && [ "$prev" != "null" ] && [ "$prev" != "${WAVETERM_BLOCKID:-}" ]; then
+      wsh focusblock -b "$prev" 2>/dev/null
+    fi
+  fi
+fi
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
