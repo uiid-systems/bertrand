@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"github.com/uiid-systems/bertrand/internal/contract"
 	"github.com/uiid-systems/bertrand/internal/hooks"
 	"github.com/uiid-systems/bertrand/internal/schema"
+	"github.com/uiid-systems/bertrand/internal/server"
 	"github.com/uiid-systems/bertrand/internal/session"
 	"github.com/uiid-systems/bertrand/internal/tui"
 )
@@ -67,6 +69,27 @@ func isInitialized() bool {
 	configPath := filepath.Join(session.BaseDir(), "config.yaml")
 	_, err := os.Stat(configPath)
 	return err == nil
+}
+
+// ensureServeRunning starts bertrand serve as a detached background process
+// if the dashboard port is not already listening.
+func ensureServeRunning() {
+	addr := fmt.Sprintf("127.0.0.1:%d", server.DefaultPort)
+	conn, err := net.DialTimeout("tcp", addr, 200*1e6) // 200ms
+	if err == nil {
+		conn.Close()
+		return // already running
+	}
+
+	bin, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(bin, "serve")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Start()
 }
 
 var rootCmd = &cobra.Command{
@@ -210,6 +233,9 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	// Set Wave block title (falls back to no-op if not in Wave)
 	if wsh, err := exec.LookPath("wsh"); err == nil {
 		exec.Command(wsh, "setmeta", fmt.Sprintf("frame:title=%s", name)).Run()
+
+		// Auto-start bertrand serve if not already running
+		ensureServeRunning()
 	}
 
 	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m %s\033[0m\n\n", name, verb)

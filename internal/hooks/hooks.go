@@ -30,7 +30,7 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 # Wave badge + notification (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
-  wsh notify -t "Bertrand" "$name is waiting for input"
+  wsh notify -t "$name" "$summary"
 
   # Auto-focus: switch to this block when blocked (opt-in via config)
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
@@ -85,9 +85,10 @@ mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 
 # Wave badge + notification (priority 25 > blocked's 20, skip if wsh not available)
-if command -v wsh &>/dev/null; then
+# Skip AskUserQuestion — the blocked hook already handles that notification
+if command -v wsh &>/dev/null && [ "$tool" != "AskUserQuestion" ]; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
-  wsh notify -t "Bertrand" "$name needs permission"
+  wsh notify -t "$name" "Needs permission: $tool"
 fi
 
 # Log event
