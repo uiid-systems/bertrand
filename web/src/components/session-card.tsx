@@ -1,7 +1,9 @@
 import type { Session } from "@/lib/types"
 import { formatAgo } from "@/lib/format"
+import { focusSession } from "@/api/client"
 import { StatusDot } from "@/components/status-dot"
 import { LogDrawer } from "@/components/log-drawer"
+import { Button } from "@/components/ui/button"
 import {
   AccordionItem,
   AccordionTrigger,
@@ -22,6 +24,11 @@ export function SessionCard({ session }: { session: Session }) {
   const hasSummary =
     session.summary && session.summary !== "Session " + session.status
 
+  function handleFocus(e: React.MouseEvent) {
+    e.stopPropagation()
+    focusSession(project!, name!)
+  }
+
   return (
     <AccordionItem value={session.session}>
       <AccordionTrigger className="hover:no-underline">
@@ -34,6 +41,13 @@ export function SessionCard({ session }: { session: Session }) {
             {name}
           </div>
           <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={handleFocus}
+            >
+              focus
+            </Button>
             <span
               className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeColors[session.status]}`}
             >

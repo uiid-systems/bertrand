@@ -41,14 +41,17 @@ func New(port int) *http.ServeMux {
 				return
 			}
 		}
-		// Fall back to index.html for SPA routing
+		// Fall back to index.html for SPA routing; if no build exists, serve placeholder
 		index, err := fs.ReadFile(staticFS, "index.html")
 		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
+			index, err = fs.ReadFile(staticFiles, "static/placeholder.html")
+			if err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(index)
+		_, _ = w.Write(index)
 	})
 
 	return mux
