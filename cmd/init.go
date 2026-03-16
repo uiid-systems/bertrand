@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/uiid-systems/bertrand/internal/hooks"
+	"github.com/uiid-systems/bertrand/internal/server"
 	"github.com/uiid-systems/bertrand/internal/session"
 	"github.com/uiid-systems/bertrand/internal/tui"
 )
@@ -27,29 +29,51 @@ func init() {
 }
 
 func runInitWizard(showLogo bool) error {
-	var m tui.WizardModel
-	if showLogo {
-		m = tui.NewWizardModel()
-	} else {
-		m = tui.NewWizardModelNoLogo()
-	}
-	p := tea.NewProgram(m)
-	result, err := p.Run()
-	if err != nil {
-		return err
-	}
-
-	wizard := result.(tui.WizardModel)
-	if wizard.Quitting() {
-		return nil
-	}
-
-	choice := wizard.Choice()
-
 	check := "\033[38;5;78m✓\033[0m"
 	label := func(s string) string { return fmt.Sprintf("\033[38;5;252m%s\033[0m", s) }
 	path := func(s string) string { return fmt.Sprintf("\033[38;5;241m%s\033[0m", s) }
 	bold := func(s string) string { return fmt.Sprintf("\033[1;38;5;120m%s\033[0m", s) }
+	dim := func(s string) string { return fmt.Sprintf("\033[38;5;241m%s\033[0m", s) }
+
+	// Detect Wave Terminal
+	hasWave := false
+	if wsh, err := exec.LookPath("wsh"); err == nil {
+		hasWave = true
+		// Get version for display
+		out, _ := exec.Command(wsh, "version").Output()
+		ver := strings.TrimSpace(string(out))
+		if ver == "" {
+			ver = "detected"
+		}
+		if showLogo {
+			fmt.Println(tui.Logo())
+		}
+		fmt.Printf("%s %s %s\n", check, label("Wave Terminal"), dim("("+ver+")"))
+		fmt.Printf("  %s\n", dim("Hammerspoon: not required with Wave integration"))
+	}
+
+	var choice tui.WizardChoice
+
+	if !hasWave {
+		// Non-Wave path: run the existing TUI wizard for terminal/Hammerspoon setup
+		var m tui.WizardModel
+		if showLogo {
+			m = tui.NewWizardModel()
+		} else {
+			m = tui.NewWizardModelNoLogo()
+		}
+		p := tea.NewProgram(m)
+		result, err := p.Run()
+		if err != nil {
+			return err
+		}
+
+		wizard := result.(tui.WizardModel)
+		if wizard.Quitting() {
+			return nil
+		}
+		choice = wizard.Choice()
+	}
 
 	// Install hook scripts
 	hooksDir, err := hooks.InstallHooks()
@@ -64,7 +88,7 @@ func runInitWizard(showLogo bool) error {
 	}
 	fmt.Printf("%s %s\n", check, label("Claude Code hooks configured"))
 
-	// Write config (merge: preserve existing keys, add missing defaults)
+	// Write config
 	configPath := filepath.Join(session.BaseDir(), "config.yaml")
 	if err := os.MkdirAll(session.BaseDir(), 0755); err != nil {
 		return err
@@ -72,10 +96,41 @@ func runInitWizard(showLogo bool) error {
 	existing, _ := os.ReadFile(configPath)
 	existingStr := string(existing)
 
-	// Core keys always overwritten by wizard choice
-	lines := []string{
-		fmt.Sprintf("terminal: %s", choice.Terminal),
-		fmt.Sprintf("focus_queue: %v", choice.EnableFocusQueue),
+	var lines []string
+
+	if hasWave {
+		lines = append(lines, "terminal: wave")
+		lines = append(lines, "wave:")
+		lines = append(lines, "  enabled: true")
+
+		// Preserve auto_focus if already set, otherwise default false
+		if strings.Contains(existingStr, "auto_focus:") {
+			for _, line := range strings.Split(existingStr, "\n") {
+				if strings.Contains(line, "auto_focus:") {
+					lines = append(lines, "  "+strings.TrimSpace(line))
+					break
+				}
+			}
+		} else {
+			lines = append(lines, "  auto_focus: false")
+		}
+
+		// Preserve dashboard_port if set
+		if strings.Contains(existingStr, "dashboard_port:") {
+			for _, line := range strings.Split(existingStr, "\n") {
+				if strings.Contains(line, "dashboard_port:") {
+					lines = append(lines, "  "+strings.TrimSpace(line))
+					break
+				}
+			}
+		} else {
+			lines = append(lines, fmt.Sprintf("  dashboard_port: %d", server.DefaultPort))
+		}
+	} else {
+		lines = append(lines,
+			fmt.Sprintf("terminal: %s", choice.Terminal),
+			fmt.Sprintf("focus_queue: %v", choice.EnableFocusQueue),
+		)
 	}
 
 	// Optional keys: only add if not already present
@@ -87,7 +142,6 @@ func runInitWizard(showLogo bool) error {
 		if !strings.Contains(existingStr, key+":") {
 			lines = append(lines, fmt.Sprintf("%s: %s", key, val))
 		} else {
-			// Preserve the existing line
 			for _, line := range strings.Split(existingStr, "\n") {
 				if strings.HasPrefix(strings.TrimSpace(line), key+":") {
 					lines = append(lines, strings.TrimSpace(line))
@@ -110,9 +164,19 @@ func runInitWizard(showLogo bool) error {
 		fmt.Printf("%s %s %s\n", check, label("Shell completions written to"), path(compPath))
 	}
 
-	// Hammerspoon setup
-	if choice.EnableFocusQueue {
-		// Install Hammerspoon if not present
+	// Wave-specific: install widget config
+	if hasWave {
+		if err := installWaveWidget(); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s %v\n", label("Wave widget skipped:"), err)
+		} else {
+			home, _ := os.UserHomeDir()
+			fmt.Printf("%s %s %s\n", check, label("Wave widget config written to"),
+				path(filepath.Join(home, ".waveterm", "config", "widgets.json")))
+		}
+	}
+
+	// Non-Wave: Hammerspoon setup
+	if !hasWave && choice.EnableFocusQueue {
 		if _, err := os.Stat("/Applications/Hammerspoon.app"); os.IsNotExist(err) {
 			fmt.Printf("  %s\n", label("Hammerspoon not found, installing via Homebrew..."))
 			brewCmd := exec.Command("brew", "install", "--cask", "hammerspoon")
@@ -139,7 +203,6 @@ func runInitWizard(showLogo bool) error {
 		}
 		fmt.Printf("%s %s %s\n", check, label("Hammerspoon config written to"), path(luaPath))
 
-		// Auto-inject into init.lua
 		initLua := filepath.Join(hsPath, "init.lua")
 		content, err := os.ReadFile(initLua)
 		if err != nil && !os.IsNotExist(err) {
@@ -161,6 +224,45 @@ func runInitWizard(showLogo bool) error {
 
 	fmt.Printf("\n%s %s\n", bold("Ready."), label("Run: "+bold("bertrand")))
 	return nil
+}
+
+// installWaveWidget merges the bertrand-dashboard widget into ~/.waveterm/config/widgets.json.
+func installWaveWidget() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	widgetsPath := filepath.Join(home, ".waveterm", "config", "widgets.json")
+	if err := os.MkdirAll(filepath.Dir(widgetsPath), 0755); err != nil {
+		return err
+	}
+
+	// Read existing widgets
+	widgets := make(map[string]any)
+	if data, err := os.ReadFile(widgetsPath); err == nil {
+		json.Unmarshal(data, &widgets)
+	}
+
+	// Add/update bertrand-dashboard widget
+	widgets["bertrand-dashboard"] = map[string]any{
+		"icon":  "table-layout",
+		"label": "bertrand",
+		"color": "#e0b956",
+		"blockdef": map[string]any{
+			"meta": map[string]any{
+				"view":      "web",
+				"url":       fmt.Sprintf("http://127.0.0.1:%d", server.DefaultPort),
+				"pinnedurl": fmt.Sprintf("http://127.0.0.1:%d", server.DefaultPort),
+			},
+		},
+	}
+
+	data, err := json.MarshalIndent(widgets, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(widgetsPath, append(data, '\n'), 0644)
 }
 
 // installCompletions detects the user's shell and writes the completion script
@@ -196,7 +298,6 @@ func installCompletions() (string, error) {
 		return "", err
 	}
 
-	// Get the bertrand binary path (ourselves)
 	bin, err := os.Executable()
 	if err != nil {
 		return "", err
