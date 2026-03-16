@@ -1,5 +1,10 @@
 version: 2
 
+before:
+  hooks:
+    - cmd: pnpm --dir web install --frozen-lockfile
+    - cmd: pnpm --dir web build
+
 builds:
   - binary: bertrand
     goos:
