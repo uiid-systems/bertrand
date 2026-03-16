@@ -425,6 +425,35 @@ func SiblingSummaries(name string) string {
 	return "## Sibling Sessions\n" + strings.Join(lines, "\n")
 }
 
+// RecoverStaleSessions finds non-done sessions whose PID is no longer alive
+// and marks them as done, cleaning up transient files. Returns the names of
+// recovered sessions.
+func RecoverStaleSessions() []string {
+	sessions, err := ListSessions()
+	if err != nil {
+		return nil
+	}
+
+	var recovered []string
+	for _, s := range sessions {
+		if s.Status == StatusDone {
+			continue
+		}
+		if IsProcessAlive(s.PID) {
+			continue
+		}
+		// PID is dead — recover this session
+		WriteState(s.Session, StatusDone, "Recovered (stale)", s.PID)
+		dir := SessionDir(s.Session)
+		os.Remove(filepath.Join(dir, "pending"))
+		os.Remove(filepath.Join(dir, "wave-block-id"))
+		os.Remove(WorktreePath(s.Session))
+		CleanupPID(s.PID)
+		recovered = append(recovered, s.Session)
+	}
+	return recovered
+}
+
 // MigrateFlatSessions moves any flat (non-hierarchical) sessions into a
 // "legacy" project directory. Returns the number of sessions migrated.
 func MigrateFlatSessions() (int, error) {
