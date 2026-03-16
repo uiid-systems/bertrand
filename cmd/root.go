@@ -195,12 +195,15 @@ func launchInteractive() error {
 }
 
 func launchNewSession(name string) error {
-	project, sess, err := session.ParseName(name)
+	project, ticket, sess, err := session.ParseName(name)
 	if err != nil {
 		return err
 	}
 	if !validateNamePart(project) {
 		return fmt.Errorf("invalid project name %q — use lowercase letters, numbers, and hyphens", project)
+	}
+	if ticket != "" && !validateNamePart(ticket) {
+		return fmt.Errorf("invalid ticket name %q — use lowercase letters, numbers, and hyphens", ticket)
 	}
 	if !validateNamePart(sess) {
 		return fmt.Errorf("invalid session name %q — use ticket format (ENG-142-auth-refactor) or freeform (fix-navbar-spacing)", sess)
@@ -387,8 +390,8 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 }
 
 func resumeSession(name string) error {
-	// Validate project/session format
-	if _, _, err := session.ParseName(name); err != nil {
+	// Validate project/session or project/ticket/session format
+	if _, _, _, err := session.ParseName(name); err != nil {
 		// Accept flat names for CLI resume of legacy sessions
 		if !validateNamePart(name) {
 			return fmt.Errorf("invalid session name %q — use project/session format (e.g., bertrand/tinkering)", name)

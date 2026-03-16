@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -167,6 +168,77 @@ func TestListSessionsForProject(t *testing.T) {
 	}
 }
 
+func TestListSessionsForProject_ThreeLevel(t *testing.T) {
+	withTempBaseDir(t)
+
+	// 3-level sessions under a ticket
+	WriteState("proj/elky-49/taxonomy", StatusWorking, "a", 1)
+	WriteState("proj/elky-49/code-review", StatusDone, "b", 2)
+	// 2-level session directly under project
+	WriteState("proj/triage", StatusDone, "c", 3)
+
+	sessions, err := ListSessionsForProject("proj")
+	if err != nil {
+		t.Fatalf("ListSessionsForProject: %v", err)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(sessions))
+	}
+
+	// Check all names are present
+	names := map[string]bool{}
+	for _, s := range sessions {
+		names[s.Session] = true
+	}
+	for _, want := range []string{"proj/elky-49/taxonomy", "proj/elky-49/code-review", "proj/triage"} {
+		if !names[want] {
+			t.Errorf("expected session %q in results", want)
+		}
+	}
+}
+
+func TestListSessions_MixedDepths(t *testing.T) {
+	withTempBaseDir(t)
+
+	WriteState("proj/triage", StatusDone, "a", 1)
+	WriteState("proj/elky-49/taxonomy", StatusWorking, "b", 2)
+	WriteState("other/gamma", StatusDone, "c", 3)
+
+	sessions, err := ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(sessions))
+	}
+}
+
+func TestSiblingSummaries_TicketScoped(t *testing.T) {
+	withTempBaseDir(t)
+
+	WriteState("proj/elky-49/taxonomy", StatusWorking, "doing taxonomy", 1)
+	WriteState("proj/elky-49/code-review", StatusDone, "reviewed", 2)
+	WriteState("proj/triage", StatusDone, "triaged", 3)
+
+	// Siblings of a ticket session should only include same-ticket sessions
+	result := SiblingSummaries("proj/elky-49/taxonomy")
+	if result == "" {
+		t.Fatal("expected non-empty siblings")
+	}
+	if !strings.Contains(result, "code-review") {
+		t.Error("expected code-review in siblings")
+	}
+	if strings.Contains(result, "triage") {
+		t.Error("did not expect triage in ticket-scoped siblings")
+	}
+
+	// Siblings of a direct session should only include other direct sessions
+	result2 := SiblingSummaries("proj/triage")
+	if strings.Contains(result2, "taxonomy") {
+		t.Error("did not expect taxonomy in direct session siblings")
+	}
+}
+
 func TestActiveSessions(t *testing.T) {
 	withTempBaseDir(t)
 
@@ -294,25 +366,30 @@ func TestParseName(t *testing.T) {
 	tests := []struct {
 		input   string
 		project string
+		ticket  string
 		session string
 		wantErr bool
 	}{
-		{"proj/session", "proj", "session", false},
-		{"my-app/fix-bug", "my-app", "fix-bug", false},
-		{"flat-name", "", "", true},
-		{"a/b/c", "a", "b/c", false},
-		{"/session", "", "", true},
-		{"project/", "", "", true},
-		{"", "", "", true},
+		{"proj/session", "proj", "", "session", false},
+		{"my-app/fix-bug", "my-app", "", "fix-bug", false},
+		{"flat-name", "", "", "", true},
+		{"a/b/c", "a", "b", "c", false},
+		{"/session", "", "", "", true},
+		{"project/", "", "", "", true},
+		{"", "", "", "", true},
+		{"proj/ticket/session", "proj", "ticket", "session", false},
+		{"proj/elky-49/taxonomy", "proj", "elky-49", "taxonomy", false},
+		{"proj//session", "", "", "", true},
+		{"proj/ticket/", "", "", "", true},
 	}
 	for _, tt := range tests {
-		p, s, err := ParseName(tt.input)
+		p, tk, s, err := ParseName(tt.input)
 		if (err != nil) != tt.wantErr {
 			t.Errorf("ParseName(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 			continue
 		}
-		if p != tt.project || s != tt.session {
-			t.Errorf("ParseName(%q) = (%q, %q), want (%q, %q)", tt.input, p, s, tt.project, tt.session)
+		if p != tt.project || tk != tt.ticket || s != tt.session {
+			t.Errorf("ParseName(%q) = (%q, %q, %q), want (%q, %q, %q)", tt.input, p, tk, s, tt.project, tt.ticket, tt.session)
 		}
 	}
 }

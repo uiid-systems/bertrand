@@ -91,7 +91,7 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if name == "" || !strings.Contains(name, "/") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session name must be project/session"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session name must be project/session or project/ticket/session"})
 		return
 	}
 

@@ -23,6 +23,41 @@ function sortSessions(sessions: Session[]): Session[] {
   })
 }
 
+/** Parse a session name into { project, ticket, session } */
+function parseSessionName(name: string) {
+  const parts = name.split("/")
+  if (parts.length === 3) {
+    return { project: parts[0], ticket: parts[1], session: parts[2] }
+  }
+  return { project: parts[0], ticket: "", session: parts.slice(1).join("/") }
+}
+
+/** Group sessions by project, then by ticket within each project */
+function groupSessions(sessions: Session[]) {
+  const projects = new Map<
+    string,
+    { tickets: Map<string, Session[]>; direct: Session[] }
+  >()
+
+  for (const s of sessions) {
+    const { project, ticket } = parseSessionName(s.session)
+    if (!projects.has(project)) {
+      projects.set(project, { tickets: new Map(), direct: [] })
+    }
+    const group = projects.get(project)!
+    if (ticket) {
+      if (!group.tickets.has(ticket)) {
+        group.tickets.set(ticket, [])
+      }
+      group.tickets.get(ticket)!.push(s)
+    } else {
+      group.direct.push(s)
+    }
+  }
+
+  return projects
+}
+
 function Dashboard() {
   const { data: sessions, isLoading } = useSessions()
 
@@ -39,6 +74,7 @@ function Dashboard() {
 
   const sorted = sortSessions(sessions ?? [])
   const activeCount = sorted.filter((s) => s.status !== "done").length
+  const grouped = groupSessions(sorted)
 
   return (
     <>
@@ -49,11 +85,34 @@ function Dashboard() {
             no sessions
           </div>
         ) : (
-          <Accordion>
-            {sorted.map((s) => (
-              <SessionCard key={s.session} session={s} />
-            ))}
-          </Accordion>
+          Array.from(grouped.entries()).map(([project, group]) => (
+            <div key={project} className="mb-4">
+              <h2 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+                {project}/
+              </h2>
+              {Array.from(group.tickets.entries()).map(
+                ([ticket, ticketSessions]) => (
+                  <div key={ticket} className="ml-2">
+                    <h3 className="px-3 py-0.5 text-xs text-muted-foreground">
+                      {ticket}/
+                    </h3>
+                    <Accordion>
+                      {ticketSessions.map((s) => (
+                        <SessionCard key={s.session} session={s} />
+                      ))}
+                    </Accordion>
+                  </div>
+                ),
+              )}
+              {group.direct.length > 0 && (
+                <Accordion>
+                  {group.direct.map((s) => (
+                    <SessionCard key={s.session} session={s} />
+                  ))}
+                </Accordion>
+              )}
+            </div>
+          ))
         )}
       </div>
     </>
