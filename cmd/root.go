@@ -151,6 +151,15 @@ func launchInteractive() error {
 		fmt.Fprintf(os.Stderr, "warning: session migration incomplete: %v\n", err)
 	}
 
+	// Recover sessions whose PID died (crash, force-quit)
+	if recovered := session.RecoverStaleSessions(); len(recovered) > 0 {
+		noun := "session"
+		if len(recovered) > 1 {
+			noun = "sessions"
+		}
+		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mRecovered %d stale %s\033[0m\n", len(recovered), noun)
+	}
+
 	// Check for stale hooks and auto-reinstall
 	if hooks.HooksStale() {
 		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mHooks updated\033[0m\n")
