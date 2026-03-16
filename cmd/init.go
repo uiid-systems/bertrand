@@ -49,13 +49,12 @@ func runInitWizard(showLogo bool) error {
 			fmt.Println(tui.Logo())
 		}
 		fmt.Printf("%s %s %s\n", check, label("Wave Terminal"), dim("("+ver+")"))
-		fmt.Printf("  %s\n", dim("Hammerspoon: not required with Wave integration"))
 	}
 
 	var choice tui.WizardChoice
 
 	if !hasWave {
-		// Non-Wave path: run the existing TUI wizard for terminal/Hammerspoon setup
+		// Non-Wave path: run TUI wizard for terminal selection
 		var m tui.WizardModel
 		if showLogo {
 			m = tui.NewWizardModel()
@@ -127,28 +126,7 @@ func runInitWizard(showLogo bool) error {
 			lines = append(lines, fmt.Sprintf("  dashboard_port: %d", server.DefaultPort))
 		}
 	} else {
-		lines = append(lines,
-			fmt.Sprintf("terminal: %s", choice.Terminal),
-			fmt.Sprintf("focus_queue: %v", choice.EnableFocusQueue),
-		)
-	}
-
-	// Optional keys: only add if not already present
-	defaults := map[string]string{
-		"dim_all_windows": "true",
-		"dim_opacity":     "0.65",
-	}
-	for key, val := range defaults {
-		if !strings.Contains(existingStr, key+":") {
-			lines = append(lines, fmt.Sprintf("%s: %s", key, val))
-		} else {
-			for _, line := range strings.Split(existingStr, "\n") {
-				if strings.HasPrefix(strings.TrimSpace(line), key+":") {
-					lines = append(lines, strings.TrimSpace(line))
-					break
-				}
-			}
-		}
+		lines = append(lines, fmt.Sprintf("terminal: %s", choice.Terminal))
 	}
 
 	config := strings.Join(lines, "\n") + "\n"
@@ -172,53 +150,6 @@ func runInitWizard(showLogo bool) error {
 			home, _ := os.UserHomeDir()
 			fmt.Printf("%s %s %s\n", check, label("Wave widget config written to"),
 				path(filepath.Join(home, ".config", "waveterm", "widgets.json")))
-		}
-	}
-
-	// Non-Wave: Hammerspoon setup
-	if !hasWave && choice.EnableFocusQueue {
-		if _, err := os.Stat("/Applications/Hammerspoon.app"); os.IsNotExist(err) {
-			fmt.Printf("  %s\n", label("Hammerspoon not found, installing via Homebrew..."))
-			brewCmd := exec.Command("brew", "install", "--cask", "hammerspoon")
-			brewCmd.Stdout = os.Stdout
-			brewCmd.Stderr = os.Stderr
-			if err := brewCmd.Run(); err != nil {
-				return fmt.Errorf("failed to install Hammerspoon: %w", err)
-			}
-			fmt.Printf("%s %s\n", check, label("Hammerspoon installed"))
-		}
-		hsPath := choice.HammerspoonPath
-		if strings.HasPrefix(hsPath, "~") {
-			home, _ := os.UserHomeDir()
-			hsPath = filepath.Join(home, hsPath[1:])
-		}
-
-		if err := os.MkdirAll(hsPath, 0755); err != nil {
-			return fmt.Errorf("failed to create Hammerspoon config dir: %w", err)
-		}
-
-		luaPath := filepath.Join(hsPath, "bertrand.lua")
-		if err := os.WriteFile(luaPath, []byte(hooks.HammerspoonConfig()), 0644); err != nil {
-			return fmt.Errorf("failed to write Hammerspoon config: %w", err)
-		}
-		fmt.Printf("%s %s %s\n", check, label("Hammerspoon config written to"), path(luaPath))
-
-		initLua := filepath.Join(hsPath, "init.lua")
-		content, err := os.ReadFile(initLua)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if !strings.Contains(string(content), "bertrand") {
-			injection := "\n-- bertrand: focus queue\nlocal bertrand = require(\"bertrand\")\nbertrand.start()\n"
-			f, err := os.OpenFile(initLua, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to update init.lua: %w", err)
-			}
-			defer f.Close()
-			if _, err := f.WriteString(injection); err != nil {
-				return fmt.Errorf("failed to update init.lua: %w", err)
-			}
-			fmt.Printf("%s %s %s\n", check, label("Hammerspoon init.lua updated"), path(initLua))
 		}
 	}
 

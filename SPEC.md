@@ -18,23 +18,21 @@ The agent doesn't know about bertrand. Claude Code hooks detect when the agent c
 
 ### Components
 
-1. **`bertrand` binary** — Go CLI (cobra + bubbletea). Handles launch TUI, session state, hooks, and Hammerspoon integration.
+1. **`bertrand` binary** — Go CLI (cobra + bubbletea). Handles launch TUI, session state, and hooks.
 2. **Hook scripts** — Four bash scripts installed to `~/.bertrand/hooks/`:
    - `on-blocked.sh` / `on-resumed.sh` — Triggered on `AskUserQuestion` PreToolUse/PostToolUse to track blocked/working state.
    - `on-permission-wait.sh` / `on-permission-done.sh` — Catch-all PreToolUse/PostToolUse hooks that write a `pending` marker file for permission prompt detection.
 3. **Claude Code hooks config** — Entries in `~/.claude/settings.json` that wire tool calls to the hook scripts.
 4. **Contract** — System prompt appended via `--append-system-prompt` telling the agent to use `AskUserQuestion` for all human input, every turn, with actionable options and a "Done for now" escape.
-5. **Hammerspoon** (optional) — Lua config that watches session state files and manages a focus queue for terminal windows. Sends macOS notifications, plays sounds, and auto-focuses blocked sessions.
-
 ### State Flow
 
 ```
 User runs `bertrand` → Launch TUI → User names session → Wrapper creates session dir + state.json
 → Claude Code launches with contract + BERTRAND_PID env var
 → Agent uses AskUserQuestion → PreToolUse hook fires → state.json set to "blocked"
+→ Hook sends Wave notification + badge, activates Wave via osascript, focuses block
 → User responds → PostToolUse hook fires → state.json set to "working"
 → Agent calls a tool needing permission → catch-all PreToolUse writes `pending` marker
-→ After 1s debounce, Hammerspoon treats as blocked → focuses window, sends notification
 → User approves/denies → catch-all PostToolUse removes `pending` marker
 → User exits Claude → Wrapper writes "done" state + prints exit message
 ```
@@ -59,9 +57,9 @@ Hook scripts:
 
 The `on-blocked.sh` script parses the `tool_input` JSON from stdin to extract the question as the summary.
 
-### Permission Detection (Debounce)
+### Permission Detection
 
-When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch-all PreToolUse hook writes a `pending` file containing the tool name. Hammerspoon checks this file's mtime — only if it's been present for >1 second does it treat the session as blocked. This prevents auto-approved tools (which complete in milliseconds) from triggering false focus switches and notifications.
+When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch-all PreToolUse hook writes a `pending` file containing the tool name. The PostToolUse hook removes it when the tool completes.
 
 ---
 
@@ -71,12 +69,10 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 |---|---|
 | `bertrand` | Launch TUI: type a name for new session, or browse/resume existing sessions |
 | `bertrand <name>` | Resume a session by name directly (skips TUI) |
-| `bertrand init` | Setup wizard: select terminal, configure Hammerspoon, install hooks |
+| `bertrand init` | Setup wizard: detect Wave/select terminal, install hooks |
 | `bertrand list` | Interactive session picker (bubbletea TUI) |
 | `bertrand update` | Write session state (agent/hook-facing, hidden from `--help`) |
-| `bertrand arrange` | Interactive layout picker: tile or cascade windows (shortcut keys `t`/`c`) |
-| `bertrand arrange tile` | Tile windows directly without picker |
-| `bertrand arrange cascade` | Cascade windows directly without picker |
+| `bertrand focus <name>` | Focus a session's Wave terminal block |
 | `bertrand completion [bash\|zsh\|fish]` | Generate shell completions |
 
 ### Launch TUI (`bertrand`)
@@ -92,11 +88,11 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 ### Init Wizard (`bertrand init`)
 
 - Green gradient logo
-- Step-by-step: Select terminal → Enable focus queue? → Hammerspoon path
+- Detects Wave Terminal (auto-configures if present), otherwise prompts for terminal selection
 - Installs hook scripts to `~/.bertrand/hooks/`
 - Injects hooks into `~/.claude/settings.json` (preserves existing settings)
 - Writes `~/.bertrand/config.yaml`
-- If focus queue enabled: writes `~/.hammerspoon/bertrand.lua` and auto-injects into `init.lua`
+- Installs Wave widget config if applicable
 - Colored output: green ✓ checks, dimmed paths
 
 ---
@@ -109,7 +105,7 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 ├── main.go                          # Entry point with panic recovery
 ├── cmd/
 │   ├── root.go                      # Root command, launch TUI, session launch/resume
-│   ├── arrange.go                   # Window arrangement picker (tile/cascade with shortcuts)
+│   ├── focus.go                     # Focus a session's Wave block
 │   ├── init.go                      # Setup wizard command
 │   ├── list.go                      # Session picker command
 │   ├── update.go                    # State update command (hidden, agent-facing)
@@ -118,7 +114,7 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 │   ├── contract/
 │   │   └── contract.go              # System prompt template
 │   ├── hooks/
-│   │   └── hooks.go                 # Hook script generation, settings.json injection, Hammerspoon config
+│   │   └── hooks.go                 # Hook script generation, settings.json injection
 │   ├── session/
 │   │   └── session.go               # State read/write, PID management, directory scanning
 │   └── tui/
@@ -140,20 +136,12 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 │   ├── on-permission-wait.sh        # PreToolUse catch-all (pending marker)
 │   └── on-permission-done.sh        # PostToolUse catch-all (clear marker)
 ├── tmp/
-│   ├── <PID>                        # PID-to-session-name mapping files
-│   └── register-<session>           # Hammerspoon window registration markers
+│   └── <PID>                        # PID-to-session-name mapping files
 └── sessions/
     └── <session-name>/
         ├── state.json               # Current session state
         ├── log.jsonl                # Append-only event history
         └── pending                  # Permission wait marker (tool name, transient)
-```
-
-### Hammerspoon (`~/.hammerspoon/`)
-
-```
-├── bertrand.lua                     # Focus queue, notifications, window layout
-└── init.lua                         # Auto-injected: require("bertrand").start()
 ```
 
 ### state.json
@@ -197,28 +185,16 @@ exclusive and exactly one path must be chosen.
 
 ---
 
-## Hammerspoon Focus Queue
+## Focus Management (Wave)
 
-### How It Works
+Focus and notifications are handled directly by hook scripts using Wave's `wsh` CLI:
 
-- `hs.pathwatcher` on `~/.bertrand/` detects state file changes
-- 0.5-second polling timer as backup (pathwatcher doesn't always catch subdirectory changes)
-- Builds a queue of `blocked` sessions ordered by timestamp (FIFO)
-- When queue becomes non-empty: snapshot current frontmost app, focus the first blocked session's Warp window
-- When session transitions blocked → working: withdraw notification, focus next or restore snapshot
-- Sends macOS notifications with Warp icon and "Hero" sound
+- **`wsh badge`** — Sets a colored badge icon on the block tab when a session is blocked
+- **`wsh notify`** — Sends a Wave notification with session name and question summary
+- **`osascript`** — Activates the Wave app (OS-level focus steal) before focusing the block
+- **`wsh focusblock`** — Switches to the blocked session's block within the current tab
 
-### Window Registration
-
-- Wrapper writes `register-<session>` marker file to `~/.bertrand/tmp/`
-- Hammerspoon picks up the marker, maps the currently focused Warp window (or first unmapped Warp window) to the session name
-- Window-to-session mapping persists until the window is closed
-
-### Window Layout
-
-- **Tile**: Grid arrangement with 8px gaps, auto-calculated rows/cols based on screen size
-- **Cascade**: Staggered waterfall, 70% width, 75% height, 32px step offset
-- Triggered via signal files (`signal-tile`, `signal-cascade`), acknowledged via ack files
+Auto-focus (opt-in via `auto_focus: true` in config) brings Wave to the foreground and focuses the blocked block automatically. Without it, only badge + notification fire.
 
 ---
 
@@ -232,8 +208,8 @@ exclusive and exactly one path must be chosen.
 6. **PID-based session lookup.** Wrapper sets `BERTRAND_PID` env var. Hook scripts + `~/.bertrand/tmp/<PID>` files map PIDs to session names.
 7. **Stale session recovery.** If a session directory exists but its PID is dead, the wrapper recovers it automatically.
 8. **Resume = fresh Claude instance.** Bertrand "resume" restarts state tracking, doesn't use Claude's `--resume` (session UUIDs don't map to bertrand names).
-9. **Hammerspoon is optional.** Core CLI works without it. Installed via `bertrand init` setup wizard.
-10. **Permission detection via debounced pending markers.** Catch-all hooks write a `pending` file; Hammerspoon only acts after 1 second to avoid false positives from auto-approved tools.
+9. **Focus management via Wave hooks.** No external tools needed — `wsh` + `osascript` handle notifications, badges, and focus steal directly from hook scripts.
+10. **Permission detection via pending markers.** Catch-all hooks write a `pending` file; PostToolUse removes it when the tool completes.
 
 ---
 
