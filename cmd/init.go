@@ -171,7 +171,7 @@ func runInitWizard(showLogo bool) error {
 		} else {
 			home, _ := os.UserHomeDir()
 			fmt.Printf("%s %s %s\n", check, label("Wave widget config written to"),
-				path(filepath.Join(home, ".waveterm", "config", "widgets.json")))
+				path(filepath.Join(home, ".config", "waveterm", "widgets.json")))
 		}
 	}
 
@@ -226,14 +226,14 @@ func runInitWizard(showLogo bool) error {
 	return nil
 }
 
-// installWaveWidget merges the bertrand-dashboard widget into ~/.waveterm/config/widgets.json.
+// installWaveWidget merges the bertrand-dashboard widget into ~/.config/waveterm/widgets.json.
 func installWaveWidget() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
 
-	widgetsPath := filepath.Join(home, ".waveterm", "config", "widgets.json")
+	widgetsPath := filepath.Join(home, ".config", "waveterm", "widgets.json")
 	if err := os.MkdirAll(filepath.Dir(widgetsPath), 0755); err != nil {
 		return err
 	}
@@ -246,9 +246,10 @@ func installWaveWidget() error {
 
 	// Add/update bertrand-dashboard widget
 	widgets["bertrand-dashboard"] = map[string]any{
-		"icon":  "table-layout",
-		"label": "bertrand",
-		"color": "#e0b956",
+		"icon":        "table-layout",
+		"label":       "bertrand",
+		"description": "Session dashboard — status, logs, and focus switching",
+		"color":       "#e0b956",
 		"blockdef": map[string]any{
 			"meta": map[string]any{
 				"view":      "web",
