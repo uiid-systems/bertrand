@@ -32,8 +32,9 @@ if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
 
-  # Auto-focus: switch to this block when blocked (opt-in via config)
+  # Auto-focus: bring Wave to foreground and switch to this block (opt-in via config)
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+    osascript -e 'tell application "Wave" to activate' 2>/dev/null
     wsh focusblock
   fi
 fi
