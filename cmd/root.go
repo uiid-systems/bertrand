@@ -395,20 +395,24 @@ func resumeSession(name string) error {
 		return fmt.Errorf("session %q is still active (pid %d)", name, s.PID)
 	}
 
-	// Check for previous Claude conversations to offer resume picker
+	// Check for previous Claude conversations to offer resume picker.
+	// Filter out empty conversations (no user interaction) — these can't be resumed.
 	segments := session.ConversationSegments(name)
-	if len(segments) > 0 {
-		var opts []tui.ResumeOption
-		for _, seg := range segments {
-			opts = append(opts, tui.ResumeOption{
-				ClaudeID:     seg.ClaudeID,
-				StartedAt:    seg.StartedAt,
-				LastQuestion: seg.LastQuestion,
-				EventCount:   seg.EventCount,
-				Duration:     seg.EndedAt.Sub(seg.StartedAt),
-			})
+	var opts []tui.ResumeOption
+	for _, seg := range segments {
+		if seg.EventCount == 0 {
+			continue
 		}
+		opts = append(opts, tui.ResumeOption{
+			ClaudeID:     seg.ClaudeID,
+			StartedAt:    seg.StartedAt,
+			LastQuestion: seg.LastQuestion,
+			EventCount:   seg.EventCount,
+			Duration:     seg.EndedAt.Sub(seg.StartedAt),
+		})
+	}
 
+	if len(opts) > 0 {
 		m := tui.NewResumeModel(name, opts)
 
 		p := tea.NewProgram(m)
