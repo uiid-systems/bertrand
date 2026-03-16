@@ -261,6 +261,57 @@ function metaSummary(te) {
   return '';
 }
 
+function sessionHTML(s) {
+  const parts = s.session.split('/');
+  const project = parts[0];
+  const name = parts.slice(1).join('/');
+  const ago = formatAgo(s.timestamp);
+  const hasSummary = s.summary && s.summary !== 'Session ' + s.status;
+  const isOpen = openDrawer === s.session;
+
+  return `
+    <div class="session-row" onclick="toggleLog('${s.session}')">
+      <div class="status-dot ${s.status}"></div>
+      <div class="session-name"><span class="project">${project}/</span>${name}</div>
+      <div class="session-meta">
+        <span class="badge ${s.status}">${s.status}</span>
+        <span>${ago}</span>
+      </div>
+    </div>
+    ${hasSummary ? `<div class="session-summary">${escapeHtml(s.summary)}</div>` : ''}
+    <div class="log-drawer ${isOpen ? 'open' : ''}" id="log-${CSS.escape(s.session)}">
+      <div class="log-content" id="log-content-${CSS.escape(s.session)}">loading...</div>
+    </div>
+  `;
+}
+
+function updateSession(node, s) {
+  const ago = formatAgo(s.timestamp);
+  const hasSummary = s.summary && s.summary !== 'Session ' + s.status;
+
+  const dot = node.querySelector('.status-dot');
+  if (dot) dot.className = 'status-dot ' + s.status;
+
+  const badge = node.querySelector('.badge');
+  if (badge) { badge.className = 'badge ' + s.status; badge.textContent = s.status; }
+
+  const agoEl = node.querySelector('.session-meta span:last-child');
+  if (agoEl) agoEl.textContent = ago;
+
+  let summaryEl = node.querySelector('.session-summary');
+  if (hasSummary) {
+    if (summaryEl) { summaryEl.innerHTML = escapeHtml(s.summary); }
+    else {
+      summaryEl = document.createElement('div');
+      summaryEl.className = 'session-summary';
+      summaryEl.innerHTML = escapeHtml(s.summary);
+      node.querySelector('.session-row').after(summaryEl);
+    }
+  } else if (summaryEl) {
+    summaryEl.remove();
+  }
+}
+
 function renderSessions(sessions) {
   const el = document.getElementById('sessions');
 
@@ -282,33 +333,37 @@ function renderSessions(sessions) {
   document.getElementById('header-meta').textContent =
     sessions.length + ' sessions' + (activeCount ? ', ' + activeCount + ' active' : '');
 
-  el.innerHTML = sessions.map(s => {
-    const parts = s.session.split('/');
-    const project = parts[0];
-    const name = parts.slice(1).join('/');
-    const elapsed = formatDuration(Date.now() - new Date(s.timestamp).getTime());
-    const ago = formatAgo(s.timestamp);
-    const isOpen = openDrawer === s.session;
+  // Remove stale placeholder
+  const placeholder = el.querySelector('.empty');
+  if (placeholder) placeholder.remove();
 
-    return `
-      <div class="session" data-name="${s.session}">
-        <div class="session-row" onclick="toggleLog('${s.session}')">
-          <div class="status-dot ${s.status}"></div>
-          <div class="session-name"><span class="project">${project}/</span>${name}</div>
-          <div class="session-meta">
-            <span class="badge ${s.status}">${s.status}</span>
-            <span>${ago}</span>
-          </div>
-        </div>
-        ${s.summary && s.summary !== 'Session ' + s.status ? `<div class="session-summary">${escapeHtml(s.summary)}</div>` : ''}
-        <div class="log-drawer ${isOpen ? 'open' : ''}" id="log-${CSS.escape(s.session)}">
-          <div class="log-content" id="log-content-${CSS.escape(s.session)}">loading...</div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  // Build set of current session names
+  const currentNames = new Set(sessions.map(s => s.session));
 
-  // Re-fetch open drawer log
+  // Remove sessions no longer present
+  el.querySelectorAll('.session[data-name]').forEach(node => {
+    if (!currentNames.has(node.dataset.name)) node.remove();
+  });
+
+  // Update existing or create new session elements
+  sessions.forEach((s, i) => {
+    let node = el.querySelector(`.session[data-name="${CSS.escape(s.session)}"]`);
+
+    if (node) {
+      updateSession(node, s);
+    } else {
+      node = document.createElement('div');
+      node.className = 'session';
+      node.dataset.name = s.session;
+      node.innerHTML = sessionHTML(s);
+      el.appendChild(node);
+    }
+
+    // Ensure sort order matches
+    if (el.children[i] !== node) el.insertBefore(node, el.children[i]);
+  });
+
+  // Re-fetch open drawer log content (drawer itself stays open)
   if (openDrawer) fetchLog(openDrawer);
 }
 
