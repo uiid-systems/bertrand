@@ -114,19 +114,6 @@ func sessionsForProject(sessions []session.State, project string) []session.Stat
 	return result
 }
 
-// sessionSuffix returns the portion of a session name after the project prefix.
-// For "proj/fix-bug" → "fix-bug", for "proj/elky-49/taxonomy" → "elky-49/taxonomy".
-func sessionSuffix(fullName string) string {
-	_, ticket, sess, err := session.ParseName(fullName)
-	if err != nil {
-		return fullName
-	}
-	if ticket != "" {
-		return ticket + "/" + sess
-	}
-	return sess
-}
-
 // projectEntries derives ticket groups and direct sessions for a project.
 // Ticket groups are identified by sessions with a non-empty ticket part.
 func projectEntries(sessions []session.State, project string) (tickets []listItem, directSessions []session.State) {
@@ -402,7 +389,15 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, cmd
 						}
 						// Full ticket/session → create 3-level session
-						m.chosen = m.project + "/" + ticket + "/" + sess
+						fullName := m.project + "/" + ticket + "/" + sess
+						for _, s := range m.sessions {
+							if s.Session == fullName {
+								m.chosen = fullName
+								m.isResume = true
+								return m, tea.Quit
+							}
+						}
+						m.chosen = fullName
 						m.isResume = false
 						return m, tea.Quit
 					}
