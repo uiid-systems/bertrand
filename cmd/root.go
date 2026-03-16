@@ -397,22 +397,27 @@ func resumeSession(name string) error {
 
 	// Check for previous Claude conversations to offer resume picker.
 	// Filter out empty conversations (no user interaction) — these can't be resumed.
-	segments := session.ConversationSegments(name)
-	var opts []tui.ResumeOption
-	for _, seg := range segments {
-		if seg.EventCount == 0 {
-			continue
+	// Loop to support discard — after discarding, re-show the picker.
+	for {
+		segments := session.ConversationSegments(name)
+		var opts []tui.ResumeOption
+		for _, seg := range segments {
+			if seg.EventCount == 0 {
+				continue
+			}
+			opts = append(opts, tui.ResumeOption{
+				ClaudeID:     seg.ClaudeID,
+				StartedAt:    seg.StartedAt,
+				LastQuestion: seg.LastQuestion,
+				EventCount:   seg.EventCount,
+				Duration:     seg.EndedAt.Sub(seg.StartedAt),
+			})
 		}
-		opts = append(opts, tui.ResumeOption{
-			ClaudeID:     seg.ClaudeID,
-			StartedAt:    seg.StartedAt,
-			LastQuestion: seg.LastQuestion,
-			EventCount:   seg.EventCount,
-			Duration:     seg.EndedAt.Sub(seg.StartedAt),
-		})
-	}
 
-	if len(opts) > 0 {
+		if len(opts) == 0 {
+			break
+		}
+
 		m := tui.NewResumeModel(name, opts)
 
 		p := tea.NewProgram(m)
@@ -426,9 +431,18 @@ func resumeSession(name string) error {
 			return nil
 		}
 
+		if resume.Discarded() {
+			if claudeID := resume.DiscardedClaudeID(); claudeID != "" {
+				session.DiscardConversation(name, claudeID)
+				fmt.Printf("\033[38;5;208m✕\033[0m \033[38;5;252mConversation discarded\033[0m\n")
+				continue // re-show picker
+			}
+		}
+
 		if claudeID := resume.SelectedClaudeID(); claudeID != "" {
 			return runSessionWithResume(name, claudeID)
 		}
+		break
 	}
 
 	return runSession(name, "resumed")
