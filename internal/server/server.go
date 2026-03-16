@@ -2,8 +2,10 @@ package server
 
 import (
 	"bufio"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,13 +16,23 @@ import (
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
+//go:embed static
+var staticFiles embed.FS
+
 const DefaultPort = 7779
 
 func New(port int) *http.ServeMux {
 	mux := http.NewServeMux()
+
+	// API routes
 	mux.HandleFunc("GET /sessions", handleSessions)
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
+
+	// Dashboard SPA
+	staticFS, _ := fs.Sub(staticFiles, "static")
+	mux.Handle("GET /", http.FileServer(http.FS(staticFS)))
+
 	return mux
 }
 

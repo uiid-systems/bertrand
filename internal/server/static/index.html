@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bertrand</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --surface: #262637;
+  --border: #333348;
+  --text: #cdd6f4;
+  --text-dim: #6c7086;
+  --green: #58c142;
+  --yellow: #e0b956;
+  --red: #ff6b35;
+  --blue: #89b4fa;
+  --purple: #b4befe;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header h1 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.header .meta {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.sessions {
+  padding: 8px;
+}
+
+.session {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.session:hover {
+  background: var(--surface);
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.working { background: var(--green); }
+.status-dot.blocked { background: var(--yellow); animation: pulse 2s infinite; }
+.status-dot.done { background: var(--text-dim); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.session-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-name .project {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.session-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.badge.working { background: rgba(88, 193, 66, 0.15); color: var(--green); }
+.badge.blocked { background: rgba(224, 185, 86, 0.15); color: var(--yellow); }
+.badge.done { background: rgba(108, 112, 134, 0.15); color: var(--text-dim); }
+
+.session-summary {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 4px;
+  padding-left: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-drawer {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.log-drawer.open {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.log-content {
+  padding: 8px 12px 8px 18px;
+  font-size: 12px;
+}
+
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text-dim);
+}
+
+.log-entry .ts {
+  flex-shrink: 0;
+  width: 40px;
+}
+
+.log-entry .event {
+  flex-shrink: 0;
+  width: 100px;
+}
+
+.log-entry .event.started, .log-entry .event.resumed { color: var(--green); }
+.log-entry .event.blocked { color: var(--yellow); }
+.log-entry .event.ended { color: var(--text-dim); }
+.log-entry .event.permission { color: var(--red); }
+.log-entry .event.pr, .log-entry .event.worktree { color: var(--blue); }
+.log-entry .event.linear { color: var(--purple); }
+
+.log-entry .detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>bertrand</h1>
+  <div class="meta" id="header-meta"></div>
+</div>
+
+<div class="sessions" id="sessions">
+  <div class="empty">loading...</div>
+</div>
+
+<script>
+const API = window.location.origin;
+let openDrawer = null;
+let logCache = {};
+
+function formatDuration(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? h + 'h' + rm + 'm' : h + 'h';
+}
+
+function formatAgo(ts) {
+  const d = Date.now() - new Date(ts).getTime();
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d / 3600000) + 'h ago';
+  return Math.floor(d / 86400000) + 'd ago';
+}
+
+function eventLabel(event) {
+  const map = {
+    'session.started': 'started',
+    'session.resumed': 'resumed',
+    'session.resume': 'resumed',
+    'session.block': 'blocked',
+    'session.end': 'ended',
+    'claude.started': 'claude start',
+    'claude.ended': 'claude end',
+    'permission.request': 'permission',
+    'permission.resolve': 'approved',
+    'worktree.entered': 'worktree',
+    'worktree.exited': 'worktree exit',
+    'gh.pr.created': 'PR created',
+    'gh.pr.merged': 'PR merged',
+    'linear.issue.read': 'linear',
+    'context.snapshot': 'context',
+  };
+  return map[event] || event;
+}
+
+function eventClass(event) {
+  if (event.includes('start') || event === 'session.resume') return 'started';
+  if (event === 'session.resumed') return 'resumed';
+  if (event.includes('block')) return 'blocked';
+  if (event.includes('end') || event.includes('done')) return 'ended';
+  if (event.includes('permission')) return 'permission';
+  if (event.includes('pr.') || event.includes('worktree')) return 'pr';
+  if (event.includes('linear')) return 'linear';
+  return '';
+}
+
+function metaSummary(te) {
+  if (!te.TypedMeta) return '';
+  const m = te.TypedMeta;
+  if (m.question) return m.question;
+  if (m.summary) return m.summary;
+  if (m.tool) return m.tool;
+  if (m.branch) return m.branch;
+  if (m.url) return m.url;
+  if (m.claude_id) return m.claude_id.substring(0, 8);
+  return '';
+}
+
+function renderSessions(sessions) {
+  const el = document.getElementById('sessions');
+
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = '<div class="empty">no sessions</div>';
+    return;
+  }
+
+  // Sort: active first (blocked, working), then done; within groups by timestamp desc
+  const order = { blocked: 0, working: 1, done: 2 };
+  sessions.sort((a, b) => {
+    const oa = order[a.status] ?? 1;
+    const ob = order[b.status] ?? 1;
+    if (oa !== ob) return oa - ob;
+    return new Date(b.timestamp) - new Date(a.timestamp);
+  });
+
+  const activeCount = sessions.filter(s => s.status !== 'done').length;
+  document.getElementById('header-meta').textContent =
+    sessions.length + ' sessions' + (activeCount ? ', ' + activeCount + ' active' : '');
+
+  el.innerHTML = sessions.map(s => {
+    const parts = s.session.split('/');
+    const project = parts[0];
+    const name = parts.slice(1).join('/');
+    const elapsed = formatDuration(Date.now() - new Date(s.timestamp).getTime());
+    const ago = formatAgo(s.timestamp);
+    const isOpen = openDrawer === s.session;
+
+    return `
+      <div class="session" data-name="${s.session}">
+        <div class="session-row" onclick="toggleLog('${s.session}')">
+          <div class="status-dot ${s.status}"></div>
+          <div class="session-name"><span class="project">${project}/</span>${name}</div>
+          <div class="session-meta">
+            <span class="badge ${s.status}">${s.status}</span>
+            <span>${ago}</span>
+          </div>
+        </div>
+        ${s.summary && s.summary !== 'Session ' + s.status ? `<div class="session-summary">${escapeHtml(s.summary)}</div>` : ''}
+        <div class="log-drawer ${isOpen ? 'open' : ''}" id="log-${CSS.escape(s.session)}">
+          <div class="log-content" id="log-content-${CSS.escape(s.session)}">loading...</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Re-fetch open drawer log
+  if (openDrawer) fetchLog(openDrawer);
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function toggleLog(name) {
+  if (openDrawer === name) {
+    openDrawer = null;
+    const drawer = document.getElementById('log-' + CSS.escape(name));
+    if (drawer) drawer.classList.remove('open');
+    return;
+  }
+
+  // Close previous
+  if (openDrawer) {
+    const prev = document.getElementById('log-' + CSS.escape(openDrawer));
+    if (prev) prev.classList.remove('open');
+  }
+
+  openDrawer = name;
+  const drawer = document.getElementById('log-' + CSS.escape(name));
+  if (drawer) {
+    drawer.classList.add('open');
+    fetchLog(name);
+  }
+}
+
+async function fetchLog(name) {
+  const contentEl = document.getElementById('log-content-' + CSS.escape(name));
+  if (!contentEl) return;
+
+  try {
+    const res = await fetch(API + '/sessions/' + name + '/log');
+    const events = await res.json();
+
+    if (!events || events.length === 0) {
+      contentEl.innerHTML = '<span style="color:var(--text-dim)">no log entries</span>';
+      return;
+    }
+
+    // Skip context.snapshot, show last 50
+    const filtered = events.filter(e => e.Event !== 'context.snapshot').slice(-50);
+
+    contentEl.innerHTML = filtered.map(e => {
+      const ts = new Date(e.TS).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const label = eventLabel(e.Event);
+      const cls = eventClass(e.Event);
+      const detail = metaSummary(e);
+      return `<div class="log-entry">
+        <span class="ts">${ts}</span>
+        <span class="event ${cls}">${label}</span>
+        <span class="detail">${escapeHtml(detail)}</span>
+      </div>`;
+    }).join('');
+
+    // Add focus button for active sessions
+    contentEl.innerHTML += `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <button onclick="focusSession('${name}')" style="
+          background:var(--surface);border:1px solid var(--border);color:var(--text);
+          padding:4px 12px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px;
+        ">focus</button>
+      </div>`;
+  } catch (err) {
+    contentEl.innerHTML = '<span style="color:var(--red)">failed to load log</span>';
+  }
+}
+
+async function focusSession(name) {
+  try {
+    await fetch(API + '/sessions/' + name + '/focus', { method: 'POST' });
+  } catch (err) {
+    // silently fail — user may not be in Wave
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch(API + '/sessions');
+    const sessions = await res.json();
+    renderSessions(sessions);
+  } catch (err) {
+    document.getElementById('sessions').innerHTML =
+      '<div class="empty">connection lost</div>';
+  }
+}
+
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
