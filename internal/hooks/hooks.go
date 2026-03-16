@@ -15,10 +15,7 @@ import (
 func BlockedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → mark session as blocked
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
@@ -48,10 +45,7 @@ printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"questio
 func ResumedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as working
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 bertrand update --name "$name" --status working --summary "Resumed after input"
@@ -75,10 +69,7 @@ printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"claude
 func PermissionWaitScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PermissionRequest (all tools) → write pending marker for real permission prompts
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
@@ -107,10 +98,7 @@ printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"to
 func PermissionDoneScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse (all tools) → remove pending marker
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
@@ -136,10 +124,7 @@ printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"to
 func DoneScript() string {
 	return `#!/usr/bin/env bash
 # Hook: Stop → mark session as done
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 bertrand update --name "$name" --status done --summary "Session ended"
@@ -162,10 +147,7 @@ printf '{"v":1,"event":"session.done","session":"%s","ts":"%s","meta":{"claude_i
 func WorktreeEnteredScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse EnterWorktree → write worktree marker
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
@@ -191,10 +173,7 @@ printf '{"v":1,"event":"worktree.entered","session":"%s","ts":"%s","meta":{"bran
 func WorktreeExitedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse ExitWorktree → remove worktree marker
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 # Remove worktree marker
@@ -213,10 +192,7 @@ printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claud
 func GhCommandScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse Bash → detect gh CLI commands
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
@@ -258,10 +234,7 @@ esac
 func LinearReadScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse mcp__claude_ai_Linear__* → log Linear issue reads
-BERTRAND_PID="${BERTRAND_PID:-}"
-[ -z "$BERTRAND_PID" ] && exit 0
-
-name="$(cat "$HOME/.bertrand/tmp/$BERTRAND_PID" 2>/dev/null)" || exit 0
+name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"

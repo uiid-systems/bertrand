@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -30,12 +29,6 @@ func validateNamePart(part string) bool {
 	return ticketPattern.MatchString(part) || freeformPattern.MatchString(part)
 }
 
-// regFilename returns a safe filename for the Hammerspoon registration marker.
-// Replaces "/" with "___" since filenames can't contain slashes.
-// Uses triple underscore to avoid collision with valid hyphens in names.
-func regFilename(name string) string {
-	return "register-" + strings.ReplaceAll(name, "/", "___")
-}
 
 func printSaveMessage(name string, timeline string) {
 	fmt.Print(tui.Goodbye())
@@ -201,8 +194,7 @@ func runSessionWithResume(name, claudeID string) error {
 }
 
 // runSession is the shared core for launching and resuming sessions.
-// It handles PID registration, Hammerspoon registration, signal trapping,
-// subprocess lifecycle, exit menu, and cleanup.
+// It handles signal trapping, subprocess lifecycle, exit menu, and cleanup.
 func runSession(name, verb string) error {
 	return runSessionInner(name, verb, "")
 }
@@ -210,29 +202,21 @@ func runSession(name, verb string) error {
 func runSessionInner(name, verb, initialClaudeID string) error {
 	pid := os.Getpid()
 
-	if err := session.RegisterPID(pid, name); err != nil {
-		return fmt.Errorf("failed to register PID: %w", err)
-	}
 	if err := session.WriteState(name, session.StatusWorking, "Session "+verb, pid); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 	session.AppendEvent(name, "session."+verb, &schema.SessionStartedMeta{PID: fmt.Sprintf("%d", pid)})
 
-	// Write registration marker for Hammerspoon window tracking
-	regFile := filepath.Join(session.BaseDir(), "tmp", regFilename(name))
-	if err := os.WriteFile(regFile, []byte(name), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to write registration marker: %v\n", err)
+	// Set Wave block title (falls back to no-op if not in Wave)
+	if wsh, err := exec.LookPath("wsh"); err == nil {
+		exec.Command(wsh, "setmeta", fmt.Sprintf("frame:title=%s", name)).Run()
 	}
-
-	// Set Warp tab/window title to session name
-	fmt.Printf("\033]0;bertrand: %s\007", name)
 
 	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m %s\033[0m\n\n", name, verb)
 
-	// cleanupFiles removes transient per-session files (PID, pending marker,
+	// cleanupFiles removes transient per-session files (pending marker,
 	// worktree marker) and the shared contract when no sessions remain.
 	cleanupFiles := func() {
-		session.CleanupPID(pid)
 		os.Remove(filepath.Join(session.SessionDir(name), "pending"))
 		os.Remove(session.WorktreePath(name))
 
@@ -304,7 +288,6 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			fmt.Sprintf("BERTRAND_PID=%d", pid),
 			fmt.Sprintf("BERTRAND_CLAUDE_ID=%s", claudeID),
 			fmt.Sprintf("BERTRAND_SESSION=%s", name),
-			"WARP_DISABLE_AUTO_TITLE=true",
 		)
 
 		session.AppendEvent(name, "claude.started", &schema.ClaudeIDMeta{ClaudeID: claudeID})
