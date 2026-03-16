@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 )
 
 // ResumeOption represents a Claude conversation that can be resumed.
@@ -99,20 +100,6 @@ func (m ResumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dh%dm", h, m)
-}
 
 func (m ResumeModel) View() string {
 	if m.quitting || m.chosen {
@@ -142,7 +129,7 @@ func (m ResumeModel) View() string {
 		cursorIdx := listIdx          // position in cursor space (0 = fresh)
 
 		ts := opt.StartedAt.Local().Format("Jan 2 15:04")
-		dur := formatDuration(opt.Duration)
+		dur := sessionlog.FormatDuration(opt.Duration)
 
 		label := opt.LastQuestion
 		if label == "" {

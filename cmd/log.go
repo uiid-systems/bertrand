@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 	"github.com/uiid-systems/bertrand/internal/schema"
 	"github.com/uiid-systems/bertrand/internal/session"
 )
@@ -43,51 +41,6 @@ func init() {
 	rootCmd.AddCommand(logCmd)
 }
 
-// unifiedEntry normalizes all log formats into a display-ready structure.
-type unifiedEntry struct {
-	Event   string
-	Session string
-	TS      time.Time
-	Summary string
-}
-
-func readTypedLog(name string) ([]*schema.TypedEvent, error) {
-	path := filepath.Join(session.SessionDir(name), "log.jsonl")
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var events []*schema.TypedEvent
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		te, err := schema.ParseEvent(scanner.Bytes())
-		if err != nil {
-			continue
-		}
-		events = append(events, te)
-	}
-	return events, scanner.Err()
-}
-
-func readUnifiedLog(name string) ([]unifiedEntry, error) {
-	events, err := readTypedLog(name)
-	if err != nil {
-		return nil, err
-	}
-	var entries []unifiedEntry
-	for _, te := range events {
-		entries = append(entries, unifiedEntry{
-			Event:   te.Event,
-			Session: te.Session,
-			TS:      te.TS,
-			Summary: te.MetaSummary(),
-		})
-	}
-	return entries, nil
-}
-
 func runLog(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		return showSessionLog(args[0])
@@ -115,29 +68,18 @@ func showAllSessions() error {
 	var summaries []sessionSummary
 
 	for _, s := range allSessions {
-		log, err := readUnifiedLog(s.Session)
-		if err != nil || len(log) == 0 {
+		d, err := sessionlog.Digest(s.Session)
+		if err != nil {
 			continue
 		}
-
-		interactions := 0
-		for _, entry := range log {
-			if entry.Event == "session.block" || entry.Event == "state.blocked" {
-				interactions++
-			}
-		}
-
-		first := log[0].TS
-		last := log[len(log)-1].TS
 
 		summaries = append(summaries, sessionSummary{
 			name:         s.Session,
 			status:       s.Status,
-			events:       len(log),
-			interactions: interactions,
-			duration:     last.Sub(first),
-			lastActivity: last,
-			lastSummary:  log[len(log)-1].Summary,
+			events:       d.EventCount,
+			interactions: d.Interactions,
+			duration:     d.EndedAt.Sub(d.StartedAt),
+			lastActivity: d.EndedAt,
 		})
 	}
 
@@ -153,11 +95,11 @@ func showAllSessions() error {
 	if jsonOutput {
 		for _, s := range summaries {
 			data, _ := json.Marshal(map[string]interface{}{
-				"session":      s.name,
-				"status":       s.status,
-				"events":       s.events,
-				"interactions": s.interactions,
-				"duration_s":   int(s.duration.Seconds()),
+				"session":       s.name,
+				"status":        s.status,
+				"events":        s.events,
+				"interactions":  s.interactions,
+				"duration_s":    int(s.duration.Seconds()),
 				"last_activity": s.lastActivity,
 			})
 			fmt.Println(string(data))
@@ -176,8 +118,8 @@ func showAllSessions() error {
 			statusIcon = "\033[90m●\033[0m"
 		}
 
-		dur := formatDuration(s.duration)
-		ago := formatAgo(s.lastActivity)
+		dur := sessionlog.FormatDuration(s.duration)
+		ago := sessionlog.FormatAgo(s.lastActivity)
 
 		fmt.Printf("%s %-28s %s  %d events  %d interactions  %s ago\n",
 			statusIcon, s.name, dur, s.events, s.interactions, ago)
@@ -187,21 +129,13 @@ func showAllSessions() error {
 }
 
 func showSessionLog(name string) error {
-	typedEvents, err := readTypedLog(name)
+	d, err := sessionlog.DigestWithOptions(name, sessionlog.DigestOptions{IncludeFullEvents: true})
 	if err != nil {
 		return fmt.Errorf("session %q: %w", name, err)
 	}
 
-	if len(typedEvents) == 0 {
-		fmt.Printf("No log entries for %s.\n", name)
-		return nil
-	}
-
-	log, _ := readUnifiedLog(name)
-
 	if jsonOutput {
-		timing := schema.ComputeTimings(typedEvents)
-		for _, entry := range log {
+		for _, entry := range d.Events {
 			data, _ := json.Marshal(map[string]interface{}{
 				"event":   entry.Event,
 				"session": entry.Session,
@@ -212,25 +146,25 @@ func showSessionLog(name string) error {
 		}
 		// Append timing summary as final JSON line
 		data, _ := json.Marshal(map[string]interface{}{
-			"_type":            "timing_summary",
-			"total_claude_work_s": int(timing.TotalClaudeWork.Seconds()),
-			"total_user_wait_s":  int(timing.TotalUserWait.Seconds()),
-			"segments":           len(timing.Segments),
+			"_type":               "timing_summary",
+			"total_claude_work_s": d.Timing.ClaudeWorkS,
+			"total_user_wait_s":   d.Timing.UserWaitS,
 		})
 		fmt.Println(string(data))
 		return nil
 	}
 
-	timing := schema.ComputeTimings(typedEvents)
+	raw, _ := sessionlog.ReadEvents(name)
+	timing := schema.ComputeTimings(raw)
 	fmt.Printf("\033[1m%s\033[0m\n", name)
-	fmt.Print(renderTimeline(compactTimeline(log), timing))
+	fmt.Print(renderTimeline(d.Timeline, timing))
 	return nil
 }
 
-// renderTimeline formats log entries as a vertical pipe timeline.
+// renderTimeline formats enriched events as a vertical pipe timeline.
 // Used by both `bertrand log <session>` and the exit screen.
 // timing is optional — pass nil to skip timing display in footer.
-func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string {
+func renderTimeline(entries []sessionlog.EnrichedEvent, timing *schema.TimingSummary) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -240,7 +174,7 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 	last := entries[len(entries)-1].TS
 
 	b.WriteString(fmt.Sprintf("\033[38;5;241mStarted %s  Duration %s\033[0m\n\n",
-		first.Local().Format("Jan 2 15:04"), formatDuration(last.Sub(first))))
+		first.Local().Format("Jan 2 15:04"), sessionlog.FormatDuration(last.Sub(first))))
 
 	for i, entry := range entries {
 		isFirst := i == 0
@@ -257,11 +191,10 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 		}
 
 		// Color the connector based on event type
-		connectorColor := eventConnectorColor(entry.Event)
-		coloredConnector := fmt.Sprintf("\033[38;5;%dm%s\033[0m", connectorColor, connector)
+		info := sessionlog.Lookup(entry.Event)
+		coloredConnector := fmt.Sprintf("\033[38;5;%dm%s\033[0m", info.ColorANSI, connector)
 
 		ts := entry.TS.Local().Format("15:04")
-		label := eventLabel(entry.Event)
 
 		// Build the detail text
 		detail := ""
@@ -278,17 +211,17 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 		if i > 0 {
 			d := entry.TS.Sub(entries[i-1].TS)
 			if d > 5*time.Second {
-				gap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", formatDuration(d))
+				gap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", sessionlog.FormatDuration(d))
 			}
 		}
 
 		// Format: "  HH:MM  ├ label  detail  +gap"
 		if detail != "" {
 			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m  \033[38;5;%dm%s\033[0m%s\n",
-				ts, coloredConnector, label, eventDetailColor(entry.Event), detail, gap))
+				ts, coloredConnector, entry.Label, info.DetailANSI, detail, gap))
 		} else {
 			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m%s\n",
-				ts, coloredConnector, label, gap))
+				ts, coloredConnector, entry.Label, gap))
 		}
 
 		// Draw a pipe between entries (except after last)
@@ -309,13 +242,13 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 	if interactions > 0 {
 		b.WriteString(fmt.Sprintf("  %d interactions", interactions))
 	}
-	b.WriteString(fmt.Sprintf("  %s", formatDuration(last.Sub(first))))
+	b.WriteString(fmt.Sprintf("  %s", sessionlog.FormatDuration(last.Sub(first))))
 
 	// Timing breakdown
 	if timing != nil && (timing.TotalClaudeWork > 0 || timing.TotalUserWait > 0) {
-		b.WriteString(fmt.Sprintf("  │  claude %s", formatDuration(timing.TotalClaudeWork)))
+		b.WriteString(fmt.Sprintf("  │  claude %s", sessionlog.FormatDuration(timing.TotalClaudeWork)))
 		if timing.TotalUserWait > 0 {
-			b.WriteString(fmt.Sprintf("  user %s", formatDuration(timing.TotalUserWait)))
+			b.WriteString(fmt.Sprintf("  user %s", sessionlog.FormatDuration(timing.TotalUserWait)))
 		}
 		total := timing.TotalClaudeWork + timing.TotalUserWait
 		if total > 0 {
@@ -327,221 +260,4 @@ func renderTimeline(entries []unifiedEntry, timing *schema.TimingSummary) string
 	b.WriteString("\033[0m\n")
 
 	return b.String()
-}
-
-// compactTimeline collapses noisy event sequences into a more readable timeline:
-//   - Consecutive permission.request/permission.resolve pairs are collapsed into
-//     a single "tool work" summary (e.g., "8× Bash, 2× Edit")
-//   - Consecutive duplicate events (same event type) are deduplicated
-//   - context.snapshot events are dropped entirely
-func compactTimeline(entries []unifiedEntry) []unifiedEntry {
-	var result []unifiedEntry
-
-	i := 0
-	for i < len(entries) {
-		entry := entries[i]
-
-		// Drop context snapshots
-		if entry.Event == "context.snapshot" {
-			i++
-			continue
-		}
-
-		// Collapse permission pairs into tool work summaries
-		if entry.Event == "permission.request" {
-			toolCounts := make(map[string]int)
-			firstTS := entry.TS
-			var lastTS time.Time
-			j := i
-			for j < len(entries) {
-				e := entries[j]
-				if e.Event == "permission.request" {
-					tool := e.Summary
-					if tool == "" {
-						tool = "unknown"
-					}
-					toolCounts[tool]++
-					lastTS = e.TS
-					j++
-				} else if e.Event == "permission.resolve" {
-					lastTS = e.TS
-					j++
-				} else {
-					break
-				}
-			}
-			// Build summary like "3× Bash, 1× Edit"
-			type toolCount struct {
-				tool  string
-				count int
-			}
-			var sorted []toolCount
-			for tool, count := range toolCounts {
-				sorted = append(sorted, toolCount{tool, count})
-			}
-			// Sort by count descending for readability
-			for a := 0; a < len(sorted); a++ {
-				for b := a + 1; b < len(sorted); b++ {
-					if sorted[b].count > sorted[a].count {
-						sorted[a], sorted[b] = sorted[b], sorted[a]
-					}
-				}
-			}
-			var parts []string
-			for _, tc := range sorted {
-				if tc.count > 1 {
-					parts = append(parts, fmt.Sprintf("%d× %s", tc.count, tc.tool))
-				} else {
-					parts = append(parts, tc.tool)
-				}
-			}
-			summary := strings.Join(parts, ", ")
-			// Use the midpoint timestamp for display
-			ts := firstTS
-			if !lastTS.IsZero() {
-				ts = firstTS.Add(lastTS.Sub(firstTS) / 2)
-			}
-			result = append(result, unifiedEntry{
-				Event:   "tool.work",
-				Session: entry.Session,
-				TS:      ts,
-				Summary: summary,
-			})
-			i = j
-			continue
-		}
-
-		// Dedup consecutive identical events
-		if len(result) > 0 && result[len(result)-1].Event == entry.Event {
-			// Keep the later one (update timestamp), skip the earlier
-			result[len(result)-1] = entry
-			i++
-			continue
-		}
-
-		result = append(result, entry)
-		i++
-	}
-
-	return result
-}
-
-func eventConnectorColor(event string) int {
-	switch event {
-	case "session.started", "session.resumed", "session.resume", "state.working":
-		return 78 // green
-	case "claude.started":
-		return 78 // green
-	case "claude.ended":
-		return 241 // dim
-	case "session.block", "state.blocked":
-		return 214 // orange
-	case "session.end", "state.done":
-		return 241 // dim
-	case "permission.request":
-		return 214 // orange
-	case "permission.resolve":
-		return 78 // green
-	case "worktree.entered":
-		return 78 // green
-	case "worktree.exited":
-		return 241 // dim
-	case "gh.pr.created", "gh.pr.merged":
-		return 78 // green
-	case "linear.issue.read":
-		return 141 // purple
-	case "tool.work":
-		return 78 // green
-	case "context.snapshot":
-		return 241 // dim
-	default:
-		return 241
-	}
-}
-
-func eventDetailColor(event string) int {
-	switch event {
-	case "session.block", "state.blocked":
-		return 252 // bright for question text
-	case "claude.started":
-		return 241 // dim for claude_id
-	case "worktree.entered", "worktree.exited":
-		return 241 // dim
-	case "gh.pr.created", "gh.pr.merged":
-		return 252 // bright for PR info
-	case "linear.issue.read":
-		return 252 // bright for issue info
-	case "tool.work":
-		return 241 // dim for tool summary
-	default:
-		return 241
-	}
-}
-
-func eventLabel(event string) string {
-	switch event {
-	case "session.started":
-		return "started"
-	case "session.resumed":
-		return "resumed"
-	case "session.resume", "state.working":
-		return "resumed"
-	case "claude.started":
-		return "claude started"
-	case "claude.ended":
-		return "claude ended"
-	case "session.block", "state.blocked":
-		return "blocked"
-	case "session.end", "state.done":
-		return "ended"
-	case "permission.request":
-		return "permission requested"
-	case "permission.resolve":
-		return "permission resolved"
-	case "worktree.entered":
-		return "entered worktree"
-	case "worktree.exited":
-		return "exited worktree"
-	case "gh.pr.created":
-		return "PR created"
-	case "gh.pr.merged":
-		return "PR merged"
-	case "linear.issue.read":
-		return "linear"
-	case "tool.work":
-		return "tool work"
-	case "context.snapshot":
-		return "context"
-	default:
-		return event
-	}
-}
-
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dh%dm", h, m)
-}
-
-func formatAgo(t time.Time) string {
-	d := time.Since(t)
-	if d < time.Minute {
-		return "just now"
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
