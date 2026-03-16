@@ -62,7 +62,6 @@ func showAllSessions() error {
 		interactions int
 		duration     time.Duration
 		lastActivity time.Time
-		lastSummary  string
 	}
 
 	var summaries []sessionSummary

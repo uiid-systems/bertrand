@@ -44,7 +44,6 @@ func (m WizardModel) Quitting() bool       { return m.quitting }
 
 var (
 	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("120"))
-	checkStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	optionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	cursorStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("114"))
 	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
