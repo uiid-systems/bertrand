@@ -143,4 +143,5 @@ var EventNames = []string{
 	"gh.pr.merged",
 	"linear.issue.read",
 	"context.snapshot",
+	"claude.discarded",
 }

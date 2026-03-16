@@ -314,6 +314,7 @@ type ConversationSegment struct {
 // Events between claude.started and claude.ended are attributed to that conversation.
 // Events from hooks (like session.block) don't carry claude_id, so we track the
 // "current" conversation and attribute interleaved events to it.
+// Conversations marked with claude.discarded are excluded from results.
 func ConversationSegments(name string) []ConversationSegment {
 	logPath := filepath.Join(SessionDir(name), "log.jsonl")
 	f, err := os.Open(logPath)
@@ -324,6 +325,7 @@ func ConversationSegments(name string) []ConversationSegment {
 
 	var segments []ConversationSegment
 	var currentIdx int = -1
+	discarded := make(map[string]bool)
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -348,6 +350,10 @@ func ConversationSegments(name string) []ConversationSegment {
 				segments[currentIdx].EndedAt = te.TS
 			}
 			currentIdx = -1
+		case "claude.discarded":
+			if id := te.MetaClaudeID(); id != "" {
+				discarded[id] = true
+			}
 		default:
 			if currentIdx >= 0 && currentIdx < len(segments) {
 				segments[currentIdx].EventCount++
@@ -361,7 +367,25 @@ func ConversationSegments(name string) []ConversationSegment {
 		}
 	}
 
+	// Filter out discarded conversations
+	if len(discarded) > 0 {
+		filtered := segments[:0]
+		for _, seg := range segments {
+			if !discarded[seg.ClaudeID] {
+				filtered = append(filtered, seg)
+			}
+		}
+		segments = filtered
+	}
+
 	return segments
+}
+
+// DiscardConversation marks a Claude conversation as discarded by appending
+// a claude.discarded event. The conversation data remains in the log but
+// is excluded from ConversationSegments results.
+func DiscardConversation(name, claudeID string) error {
+	return AppendEvent(name, "claude.discarded", &schema.ClaudeIDMeta{ClaudeID: claudeID})
 }
 
 // LogDigest reads log.jsonl and returns a compact timeline string for contract injection.
@@ -452,6 +476,12 @@ func LogDigest(name string) string {
 			lines = append(lines, fmt.Sprintf("- %s PR merged: %s", ts, te.MetaSummary()))
 		case "linear.issue.read":
 			lines = append(lines, fmt.Sprintf("- %s linear: %s", ts, te.MetaSummary()))
+		case "claude.discarded":
+			id := te.MetaClaudeID()
+			if len(id) > 8 {
+				id = id[:8]
+			}
+			lines = append(lines, fmt.Sprintf("- %s claude conversation discarded (%s)", ts, id))
 		case "context.snapshot":
 			// Skip context snapshots in digest — too noisy
 		}

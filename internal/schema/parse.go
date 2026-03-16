@@ -72,7 +72,7 @@ func parseMeta(event string, raw json.RawMessage) (any, error) {
 	case "session.end":
 		var m SessionEndMeta
 		return &m, json.Unmarshal(raw, &m)
-	case "claude.started", "claude.ended", "session.resume", "worktree.exited":
+	case "claude.started", "claude.ended", "claude.discarded", "session.resume", "worktree.exited":
 		var m ClaudeIDMeta
 		return &m, json.Unmarshal(raw, &m)
 	case "session.block":

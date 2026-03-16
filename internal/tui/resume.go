@@ -17,13 +17,14 @@ type ResumeOption struct {
 	Duration     time.Duration
 }
 
-// ResumeModel lets the user pick a Claude conversation to resume or start fresh.
+// ResumeModel lets the user pick a Claude conversation to resume, discard, or start fresh.
 type ResumeModel struct {
 	name      string
 	options   []ResumeOption
 	cursor    int
 	chosen    bool
 	quitting  bool
+	discarded bool
 	width int
 }
 
@@ -38,6 +39,9 @@ func (m ResumeModel) Chosen() bool { return m.chosen }
 // Quitting returns true if the user quit without choosing.
 func (m ResumeModel) Quitting() bool { return m.quitting }
 
+// Discarded returns true if the user chose to discard a conversation.
+func (m ResumeModel) Discarded() bool { return m.discarded }
+
 // SelectedClaudeID returns the Claude conversation ID to resume,
 // or "" if the user chose "Start fresh".
 func (m ResumeModel) SelectedClaudeID() string {
@@ -49,6 +53,14 @@ func (m ResumeModel) SelectedClaudeID() string {
 		return ""
 	}
 	// Display is reversed (newest first), so cursor 1 = options[len-1]
+	return m.options[len(m.options)-m.cursor].ClaudeID
+}
+
+// DiscardedClaudeID returns the Claude conversation ID to discard.
+func (m ResumeModel) DiscardedClaudeID() string {
+	if !m.discarded || m.cursor == 0 {
+		return ""
+	}
 	return m.options[len(m.options)-m.cursor].ClaudeID
 }
 
@@ -76,6 +88,12 @@ func (m ResumeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.chosen = true
 			return m, tea.Quit
+		case "d":
+			// Discard only works on conversation segments, not "Start fresh"
+			if m.cursor > 0 {
+				m.discarded = true
+				return m, tea.Quit
+			}
 		}
 	}
 	return m, nil
@@ -143,7 +161,7 @@ func (m ResumeModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString("  \033[38;5;241m↑↓ navigate • enter select • esc quit\033[0m\n")
+	b.WriteString("  \033[38;5;241m↑↓ navigate • enter select • d discard • esc quit\033[0m\n")
 	return b.String()
 }
 
