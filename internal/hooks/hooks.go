@@ -31,6 +31,11 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "Bertrand" "$name is waiting for input"
+
+  # Auto-focus: switch to this block when blocked (opt-in via config)
+  if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+    wsh focusblock
+  fi
 fi
 
 # Log event
