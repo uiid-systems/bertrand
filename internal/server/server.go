@@ -29,9 +29,27 @@ func New(port int) *http.ServeMux {
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
 
-	// Dashboard SPA
-	staticFS, _ := fs.Sub(staticFiles, "static")
-	mux.Handle("GET /", http.FileServer(http.FS(staticFS)))
+	// Dashboard SPA — serve Vite build output, fall back to index.html for client-side routing
+	staticFS, _ := fs.Sub(staticFiles, "static/dist")
+	fileServer := http.FileServer(http.FS(staticFS))
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		// Try the actual file first
+		if r.URL.Path != "/" {
+			f, err := fs.Stat(staticFS, strings.TrimPrefix(r.URL.Path, "/"))
+			if err == nil && !f.IsDir() {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Fall back to index.html for SPA routing
+		index, err := fs.ReadFile(staticFS, "index.html")
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(index)
+	})
 
 	return mux
 }

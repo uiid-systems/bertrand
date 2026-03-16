@@ -6,3 +6,8 @@ bertrand
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Web
+web/node_modules/
+internal/server/static/dist/
+web/src/routeTree.gen.ts
