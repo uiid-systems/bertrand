@@ -2,7 +2,7 @@ import { useSessionLog } from "@/hooks/useSessionLog"
 import { eventLabel, eventClass, metaSummary } from "@/lib/format"
 import { focusSession } from "@/api/client"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 
 const eventColorClasses: Record<string, string> = {
   started: "text-[var(--status-working)]",
@@ -23,7 +23,8 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
     .filter((e) => e.Event !== "context.snapshot")
     .slice(-50)
 
-  function handleFocus() {
+  function handleFocus(e: React.MouseEvent) {
+    e.stopPropagation()
     void focusSession(project!, session!)
   }
 
@@ -61,9 +62,13 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
             )
           })}
           <div className="mt-2 border-t border-border pt-2">
-            <Button variant="outline" size="xs" onClick={handleFocus}>
+            <button
+              type="button"
+              className={buttonVariants({ variant: "outline", size: "xs" })}
+              onClick={handleFocus}
+            >
               focus
-            </Button>
+            </button>
           </div>
         </>
       )}
