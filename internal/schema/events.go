@@ -62,8 +62,14 @@ type SessionEndMeta struct {
 }
 
 // ClaudeIDMeta is shared metadata for events that only carry a claude_id.
-// Used by: claude.started, claude.ended, session.resume, worktree.exited.
+// Used by: claude.started, claude.ended, worktree.exited.
 type ClaudeIDMeta struct {
+	ClaudeID string `json:"claude_id"`
+}
+
+// SessionUserResumeMeta is metadata for session.resume events (user responded).
+type SessionUserResumeMeta struct {
+	Answer   string `json:"answer,omitempty"`
 	ClaudeID string `json:"claude_id"`
 }
 

@@ -14,8 +14,8 @@ type EventInfo struct {
 var Catalog = map[string]EventInfo{
 	"session.started": {Label: "started", Category: "lifecycle", Color: "var(--green)", ColorANSI: 78, DetailANSI: 241},
 	"session.resumed": {Label: "resumed", Category: "lifecycle", Color: "var(--green)", ColorANSI: 78, DetailANSI: 241},
-	"session.resume":  {Label: "resumed", Category: "lifecycle", Color: "var(--green)", ColorANSI: 78, DetailANSI: 241},
-	"session.block":   {Label: "blocked", Category: "interaction", Color: "var(--orange)", ColorANSI: 214, DetailANSI: 252},
+	"session.resume":  {Label: "user responded", Category: "interaction", Color: "var(--green)", ColorANSI: 78, DetailANSI: 252},
+	"session.block":   {Label: "prompted", Category: "interaction", Color: "var(--orange)", ColorANSI: 214, DetailANSI: 252},
 	"session.end":     {Label: "ended", Category: "lifecycle", Color: "var(--dim)", ColorANSI: 241, DetailANSI: 241},
 
 	"claude.started":   {Label: "claude started", Category: "lifecycle", Color: "var(--green)", ColorANSI: 78, DetailANSI: 241},

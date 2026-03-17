@@ -156,20 +156,8 @@ func WriteState(name, status, summary string, pid int) error {
 		return err
 	}
 
-	// Write state.json
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), append(data, '\n'), 0644); err != nil {
-		return err
-	}
-
-	// Append to log.jsonl
-	line, _ := json.Marshal(s)
-	f, err := os.OpenFile(filepath.Join(dir, "log.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", line)
-	return err
+	// Write state.json (the only state file — events go through AppendEvent)
+	return os.WriteFile(filepath.Join(dir, "state.json"), append(data, '\n'), 0644)
 }
 
 func ReadState(name string) (*State, error) {

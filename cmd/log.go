@@ -162,6 +162,51 @@ func showSessionLog(name string) error {
 	return nil
 }
 
+// conversationSegment groups enriched events that belong to a single Claude conversation.
+type conversationSegment struct {
+	claudeID string
+	events   []sessionlog.EnrichedEvent
+}
+
+// splitByConversation groups timeline events into conversation segments.
+// Each segment represents one Claude conversation run. Events like session.started
+// and session.resumed are absorbed into the segment of the claude.started that follows.
+func splitByConversation(entries []sessionlog.EnrichedEvent) []conversationSegment {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	var segments []conversationSegment
+	var pending []sessionlog.EnrichedEvent // events buffered before a claude.started
+
+	for _, entry := range entries {
+		if entry.Event == "claude.started" {
+			// Start a new segment, pulling in any buffered preamble events
+			seg := conversationSegment{claudeID: entry.ClaudeID}
+			seg.events = append(seg.events, pending...)
+			seg.events = append(seg.events, entry)
+			segments = append(segments, seg)
+			pending = nil
+			continue
+		}
+
+		if len(segments) == 0 {
+			// Buffer events before first claude.started
+			pending = append(pending, entry)
+		} else {
+			// Append to current segment
+			segments[len(segments)-1].events = append(segments[len(segments)-1].events, entry)
+		}
+	}
+
+	// If there were only buffered events and no claude.started, make a single segment
+	if len(segments) == 0 && len(pending) > 0 {
+		segments = append(segments, conversationSegment{events: pending})
+	}
+
+	return segments
+}
+
 // renderTimeline formats enriched events as a vertical pipe timeline.
 // Used by both `bertrand log <session>` and the exit screen.
 // timing is optional — pass nil to skip timing display in footer.
@@ -170,16 +215,124 @@ func renderTimeline(entries []sessionlog.EnrichedEvent, timing *schema.TimingSum
 		return ""
 	}
 
+	segments := splitByConversation(entries)
+
+	// If there's only one segment, render flat (no conversation headers)
+	singleSegment := len(segments) == 1
+
 	var b strings.Builder
 	first := entries[0].TS
 	last := entries[len(entries)-1].TS
 
-	b.WriteString(fmt.Sprintf("\033[38;5;241mStarted %s  Duration %s\033[0m\n\n",
+	b.WriteString(fmt.Sprintf("\033[38;5;241mStarted %s  Duration %s\033[0m\n",
 		first.Local().Format("Jan 2 15:04"), sessionlog.FormatDuration(last.Sub(first))))
 
-	for i, entry := range entries {
+	var prevSegEnd time.Time
+	for _, seg := range segments {
+		if len(seg.events) == 0 {
+			continue
+		}
+
+		segFirst := seg.events[0].TS
+		segLast := seg.events[len(seg.events)-1].TS
+
+		// Conversation header (skip for single-segment timelines)
+		if !singleSegment {
+			b.WriteString("\n")
+
+			// Gap from previous segment
+			gap := ""
+			if !prevSegEnd.IsZero() {
+				d := segFirst.Sub(prevSegEnd)
+				if d > 5*time.Second {
+					gap = fmt.Sprintf("  \033[38;5;241m+%s\033[0m", sessionlog.FormatDuration(d))
+				}
+			}
+
+			// Header with date and conversation ID
+			date := segFirst.Local().Format("Jan 2")
+			dur := sessionlog.FormatDuration(segLast.Sub(segFirst))
+			cid := seg.claudeID
+			if len(cid) > 8 {
+				cid = cid[:8]
+			}
+			if cid != "" {
+				b.WriteString(fmt.Sprintf("  \033[38;5;252m%s\033[0m  \033[38;5;241m%s  %s\033[0m%s\n\n",
+					date, cid, dur, gap))
+			} else {
+				b.WriteString(fmt.Sprintf("  \033[38;5;252m%s\033[0m  \033[38;5;241m%s\033[0m%s\n\n",
+					date, dur, gap))
+			}
+		} else {
+			b.WriteString("\n")
+		}
+
+		renderSegmentEvents(&b, seg.events)
+		prevSegEnd = segLast
+	}
+
+	// Footer — prominent stats table
+	eventCount := len(entries)
+	interactions := 0
+	conversations := 0
+	for _, e := range entries {
+		switch e.Event {
+		case "session.block", "state.blocked":
+			interactions++
+		case "claude.started":
+			conversations++
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString("  \033[38;5;241m─────────────────────────────────────────\033[0m\n")
+
+	// Row 1: events, interactions, conversations
+	var stats []string
+	stats = append(stats, fmt.Sprintf("\033[38;5;252m%d\033[38;5;241m events", eventCount))
+	if interactions > 0 {
+		stats = append(stats, fmt.Sprintf("\033[38;5;252m%d\033[38;5;241m interactions", interactions))
+	}
+	if conversations > 1 {
+		stats = append(stats, fmt.Sprintf("\033[38;5;252m%d\033[38;5;241m conversations", conversations))
+	}
+	b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m\n", strings.Join(stats, "  ")))
+
+	// Row 2: timing breakdown
+	if timing != nil && (timing.TotalClaudeWork > 0 || timing.TotalUserWait > 0) {
+		total := timing.TotalClaudeWork + timing.TotalUserWait
+		pctStr := ""
+		if total > 0 {
+			pct := float64(timing.TotalClaudeWork) / float64(total) * 100
+			pctStr = fmt.Sprintf("  \033[38;5;78m%.0f%% active\033[0m", pct)
+		}
+		b.WriteString(fmt.Sprintf("  \033[38;5;241mclaude \033[38;5;252m%s\033[38;5;241m  user \033[38;5;252m%s\033[0m%s\n",
+			sessionlog.FormatDuration(timing.TotalClaudeWork),
+			sessionlog.FormatDuration(timing.TotalUserWait),
+			pctStr))
+	} else {
+		b.WriteString(fmt.Sprintf("  \033[38;5;241mduration \033[38;5;252m%s\033[0m\n", sessionlog.FormatDuration(last.Sub(first))))
+	}
+
+	return b.String()
+}
+
+// renderSegmentEvents renders a single conversation's events with ┌├└ connectors.
+// Q&A pairs (session.block → session.resume) are rendered as coupled pairs.
+func renderSegmentEvents(b *strings.Builder, events []sessionlog.EnrichedEvent) {
+	for i, entry := range events {
 		isFirst := i == 0
-		isLast := i == len(entries)-1
+
+		// Skip session.resume — rendered inline with the preceding session.block
+		if entry.Event == "session.resume" && i > 0 && events[i-1].Event == "session.block" {
+			continue
+		}
+
+		// Check if this is the last visible event (account for inline-rendered answers)
+		isLast := i == len(events)-1
+		if !isLast && i+1 == len(events)-1 && events[i+1].Event == "session.resume" && entry.Event == "session.block" {
+			isLast = true // next event will be rendered inline, so this is effectively last
+		}
 
 		// Connector character
 		var connector string
@@ -198,26 +351,48 @@ func renderTimeline(entries []sessionlog.EnrichedEvent, timing *schema.TimingSum
 		ts := entry.TS.Local().Format("15:04")
 
 		// Build the detail text
-		detail := ""
-		if entry.Summary != "" {
-			detail = entry.Summary
-			if len(detail) > 60 {
-				detail = detail[:57] + "..."
-			}
-			detail = strings.ReplaceAll(detail, "\n", " ")
-		}
+		detail := formatDetail(entry.Summary)
 
 		// Gap indicator
 		gap := ""
 		if i > 0 {
-			d := entry.TS.Sub(entries[i-1].TS)
+			d := entry.TS.Sub(events[i-1].TS)
 			if d > 5*time.Second {
 				gap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", sessionlog.FormatDuration(d))
 			}
 		}
 
-		// Format: "  HH:MM  ├ label  detail  +gap"
-		if detail != "" {
+		// Render the event line
+		if entry.Event == "session.block" {
+			// Q&A: label + gap on primary line, question (italic/dim) + answer as sub-lines
+			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m%s\n",
+				ts, coloredConnector, entry.Label, gap))
+
+			pipeColor := 238
+
+			// Question sub-line (italic, dimmed)
+			if detail != "" {
+				b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m  \033[3;38;5;245m%s\033[0m\n",
+					pipeColor, detail))
+			}
+
+			// Answer sub-line (from paired session.resume)
+			if i+1 < len(events) && events[i+1].Event == "session.resume" {
+				answer := formatDetail(events[i+1].Summary)
+				answerGap := ""
+				d := events[i+1].TS.Sub(entry.TS)
+				if d > 5*time.Second {
+					answerGap = fmt.Sprintf(" \033[38;5;241m+%s\033[0m", sessionlog.FormatDuration(d))
+				}
+				if answer != "" {
+					b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m  \033[38;5;252m%s\033[0m%s\n",
+						pipeColor, answer, answerGap))
+				} else if answerGap != "" {
+					b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m  \033[38;5;241mresponded\033[0m%s\n",
+						pipeColor, answerGap))
+				}
+			}
+		} else if detail != "" {
 			b.WriteString(fmt.Sprintf("  \033[38;5;241m%s\033[0m  %s \033[38;5;252m%s\033[0m  \033[38;5;%dm%s\033[0m%s\n",
 				ts, coloredConnector, entry.Label, info.DetailANSI, detail, gap))
 		} else {
@@ -226,39 +401,23 @@ func renderTimeline(entries []sessionlog.EnrichedEvent, timing *schema.TimingSum
 		}
 
 		// Draw a pipe between entries (except after last)
-		if !isLast {
+		// Also check if the next event is a session.resume that was rendered inline
+		nextIdx := i + 1
+		if nextIdx < len(events) && events[nextIdx].Event == "session.resume" && entry.Event == "session.block" {
+			nextIdx++ // skip the inline-rendered answer
+		}
+		if nextIdx < len(events) {
 			b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m\n", 238))
 		}
 	}
+}
 
-	// Footer with stats
-	eventCount := len(entries)
-	interactions := 0
-	for _, e := range entries {
-		if e.Event == "session.block" || e.Event == "state.blocked" {
-			interactions++
-		}
+func formatDetail(s string) string {
+	if s == "" {
+		return ""
 	}
-	b.WriteString(fmt.Sprintf("\n\033[38;5;241m  %d events", eventCount))
-	if interactions > 0 {
-		b.WriteString(fmt.Sprintf("  %d interactions", interactions))
+	if len(s) > 60 {
+		s = s[:57] + "..."
 	}
-	b.WriteString(fmt.Sprintf("  %s", sessionlog.FormatDuration(last.Sub(first))))
-
-	// Timing breakdown
-	if timing != nil && (timing.TotalClaudeWork > 0 || timing.TotalUserWait > 0) {
-		b.WriteString(fmt.Sprintf("  │  claude %s", sessionlog.FormatDuration(timing.TotalClaudeWork)))
-		if timing.TotalUserWait > 0 {
-			b.WriteString(fmt.Sprintf("  user %s", sessionlog.FormatDuration(timing.TotalUserWait)))
-		}
-		total := timing.TotalClaudeWork + timing.TotalUserWait
-		if total > 0 {
-			pct := float64(timing.TotalClaudeWork) / float64(total) * 100
-			b.WriteString(fmt.Sprintf("  (%.0f%% active)", pct))
-		}
-	}
-
-	b.WriteString("\033[0m\n")
-
-	return b.String()
+	return strings.ReplaceAll(s, "\n", " ")
 }
