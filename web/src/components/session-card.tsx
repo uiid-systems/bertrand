@@ -1,8 +1,9 @@
-import type { Session } from "@/lib/types"
+import type { Session, SessionStatus } from "@/lib/types"
 import { formatAgo } from "@/lib/format"
 import { focusSession } from "@/api/client"
 import { StatusDot } from "@/components/status-dot"
 import { LogDrawer } from "@/components/log-drawer"
+import { Checkbox } from "@/components/checkbox"
 import { Button } from "@/components/ui/button"
 import {
   AccordionItem,
@@ -10,7 +11,7 @@ import {
   AccordionContent,
 } from "@/components/ui/accordion"
 
-const badgeColors: Record<string, string> = {
+const badgeColors: Record<SessionStatus, string> = {
   working: "bg-[var(--status-working)]/15 text-[var(--status-working)]",
   blocked: "bg-[var(--status-blocked)]/15 text-[var(--status-blocked)]",
   prompting: "bg-[var(--status-prompting)]/15 text-[var(--status-prompting)]",
@@ -39,34 +40,16 @@ export function SessionCard({
     focusSession(session.session)
   }
 
-  function handleCheck(e: React.MouseEvent | React.KeyboardEvent) {
-    e.stopPropagation()
-    onSelect?.(session.session, !selected)
-  }
-
   return (
     <AccordionItem value={session.session}>
       <AccordionTrigger className="hover:no-underline">
         <div className="flex flex-1 items-center gap-2.5">
           {onSelect && (
-            <div
-              role="checkbox"
-              aria-checked={!!selected}
-              tabIndex={0}
-              onClick={handleCheck}
-              onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleCheck(e) } }}
-              className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
-                selected
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-muted-foreground/40"
-              }`}
-            >
-              {selected && (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </div>
+            <Checkbox
+              checked={!!selected}
+              onChange={(checked) => onSelect(session.session, checked)}
+              label={`Select session ${name}`}
+            />
           )}
           <StatusDot status={session.status} />
           <div className="min-w-0 flex-1 truncate font-semibold">

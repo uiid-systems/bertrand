@@ -1,36 +1,30 @@
 import type { Session, TypedEvent } from "@/lib/types"
 
-export async function fetchSessions(): Promise<Session[]> {
-  const res = await fetch("/sessions")
-  if (!res.ok) throw new Error(res.statusText)
-  return res.json()
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (res.headers.get("content-type")?.includes("application/json")) {
+    return res.json()
+  }
+  return undefined as T
 }
 
-export async function fetchSessionLog(
-  sessionName: string,
-): Promise<TypedEvent[]> {
-  const res = await fetch(`/sessions/${sessionName}/log`)
-  if (!res.ok) throw new Error(res.statusText)
-  return res.json()
+export function fetchSessions(): Promise<Session[]> {
+  return apiFetch("/sessions")
 }
 
-export async function focusSession(
-  sessionName: string,
-): Promise<void> {
-  const res = await fetch(`/sessions/${sessionName}/focus`, { method: "POST" })
-  if (!res.ok) throw new Error(res.statusText)
+export function fetchSessionLog(sessionName: string): Promise<TypedEvent[]> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/log`)
 }
 
-export async function archiveSession(
-  sessionName: string,
-): Promise<void> {
-  const res = await fetch(`/sessions/${sessionName}/archive`, { method: "POST" })
-  if (!res.ok) throw new Error(res.statusText)
+export function focusSession(sessionName: string): Promise<void> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/focus`, { method: "POST" })
 }
 
-export async function deleteSession(
-  sessionName: string,
-): Promise<void> {
-  const res = await fetch(`/sessions/${sessionName}/delete`, { method: "POST" })
-  if (!res.ok) throw new Error(res.statusText)
+export function archiveSession(sessionName: string): Promise<void> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/archive`, { method: "POST" })
+}
+
+export function deleteSession(sessionName: string): Promise<void> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/delete`, { method: "POST" })
 }

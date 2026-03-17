@@ -2,10 +2,11 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useSessions } from "@/hooks/useSessions"
 import { SessionCard } from "@/components/session-card"
+import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { archiveSession, deleteSession } from "@/api/client"
-import type { Session } from "@/lib/types"
+import type { Session, SessionStatus } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -13,7 +14,7 @@ export const Route = createFileRoute("/")({
 
 type FilterTab = "live" | "paused" | "archived" | "all"
 
-const STATUS_ORDER: Record<string, number> = {
+const STATUS_ORDER: Record<SessionStatus, number> = {
   blocked: 0,
   prompting: 1,
   working: 2,
@@ -21,7 +22,7 @@ const STATUS_ORDER: Record<string, number> = {
   archived: 4,
 }
 
-function isLive(status: string) {
+function isLive(status: SessionStatus) {
   return status === "working" || status === "blocked" || status === "prompting"
 }
 
@@ -83,7 +84,7 @@ function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
 }
 
 function Dashboard() {
-  const { data: sessions, isLoading, refetch } = useSessions()
+  const { data: sessions, isLoading, isError, refetch } = useSessions()
   const [tab, setTab] = useState<FilterTab>("live")
   function changeTab(t: FilterTab) {
     setTab(t)
@@ -148,12 +149,16 @@ function Dashboard() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || isError) {
     return (
       <>
         <Header counts={counts} tab={tab} onTab={changeTab} />
         <div className="p-10 text-center text-muted-foreground">
-          loading...
+          {isError ? (
+            <span className="text-destructive">failed to load sessions</span>
+          ) : (
+            "loading..."
+          )}
         </div>
       </>
     )
@@ -165,24 +170,11 @@ function Dashboard() {
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
-          <div
-            role="checkbox"
-            aria-checked={selectedInView.length === sorted.length && sorted.length > 0}
-            tabIndex={0}
-            onClick={handleSelectAll}
-            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleSelectAll() } }}
-            className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
-              selectedInView.length === sorted.length && sorted.length > 0
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-muted-foreground/40"
-            }`}
-          >
-            {selectedInView.length === sorted.length && sorted.length > 0 && (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
-          </div>
+          <Checkbox
+            checked={selectedInView.length === sorted.length && sorted.length > 0}
+            onChange={() => handleSelectAll()}
+            label="Select all sessions"
+          />
           <span className="text-xs text-muted-foreground">
             {selectedInView.length > 0
               ? `${selectedInView.length} selected`

@@ -13,7 +13,7 @@ const eventColorClasses: Record<string, string> = {
 }
 
 export function LogDrawer({ sessionName }: { sessionName: string }) {
-  const { data: events } = useSessionLog(sessionName, true)
+  const { data: events, isError } = useSessionLog(sessionName, true)
 
   const filtered = (events ?? [])
     .filter((e) => e.Event !== "context.snapshot")
@@ -21,10 +21,12 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
 
   return (
     <div className="max-h-[400px] overflow-y-auto px-3 pb-2 pt-1 text-xs">
-      {filtered.length === 0 ? (
+      {isError ? (
+        <span className="text-destructive">failed to load log</span>
+      ) : filtered.length === 0 ? (
         <span className="text-muted-foreground">no log entries</span>
       ) : (
-        filtered.map((e, i) => {
+        filtered.map((e) => {
           const ts = new Date(e.TS).toLocaleTimeString("en-US", {
             hour: "2-digit",
             minute: "2-digit",
@@ -36,7 +38,7 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
 
           return (
             <div
-              key={i}
+              key={`${e.TS}-${e.Event}`}
               className="flex gap-2 py-0.5 text-muted-foreground"
             >
               <span className="w-10 shrink-0">{ts}</span>
