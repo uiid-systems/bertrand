@@ -37,15 +37,24 @@ func ContractPath() string { return filepath.Join(BaseDir(), "contract.md") }
 // filepath.Join handles both cases naturally.
 func SessionDir(name string) string { return filepath.Join(SessionsDir(), name) }
 
-// ParseName splits a "project/session" name into its parts.
-// Splits on the first "/" only, so "a/b/c" parses as project="a", session="b/c".
-// Returns an error if the name doesn't contain at least one slash.
-func ParseName(name string) (project, session string, err error) {
-	parts := strings.SplitN(name, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("session name must be project/session, got %q", name)
+// ParseName splits a session name into its parts.
+// Supports both "project/session" and "project/ticket/session".
+func ParseName(name string) (project, ticket, session string, err error) {
+	parts := strings.SplitN(name, "/", 3)
+	switch len(parts) {
+	case 3:
+		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			return "", "", "", fmt.Errorf("session name must be project/session or project/ticket/session, got %q", name)
+		}
+		return parts[0], parts[1], parts[2], nil
+	case 2:
+		if parts[0] == "" || parts[1] == "" {
+			return "", "", "", fmt.Errorf("session name must be project/session or project/ticket/session, got %q", name)
+		}
+		return parts[0], "", parts[1], nil
+	default:
+		return "", "", "", fmt.Errorf("session name must be project/session or project/ticket/session, got %q", name)
 	}
-	return parts[0], parts[1], nil
 }
 
 // SummaryPath returns the path to a session's exit summary hint file.
@@ -211,6 +220,8 @@ func ListProjects() ([]string, error) {
 }
 
 // ListSessionsForProject returns all sessions within a given project.
+// Supports both 2-level (project/session) and 3-level (project/ticket/session) layouts.
+// A directory with state.json is a session; a directory without it is a ticket group.
 func ListSessionsForProject(project string) ([]State, error) {
 	dir := filepath.Join(SessionsDir(), project)
 	entries, err := os.ReadDir(dir)
@@ -227,12 +238,34 @@ func ListSessionsForProject(project string) ([]State, error) {
 		if !e.IsDir() || name == "" || name[0] == '.' {
 			continue
 		}
-		fullName := project + "/" + name
-		s, err := ReadState(fullName)
+		entryPath := filepath.Join(dir, name)
+		// Check if this entry is a direct session (has state.json)
+		if _, err := os.Stat(filepath.Join(entryPath, "state.json")); err == nil {
+			fullName := project + "/" + name
+			s, err := ReadState(fullName)
+			if err != nil {
+				continue
+			}
+			sessions = append(sessions, *s)
+			continue
+		}
+		// Otherwise it might be a ticket group — scan its children
+		subEntries, err := os.ReadDir(entryPath)
 		if err != nil {
 			continue
 		}
-		sessions = append(sessions, *s)
+		for _, sub := range subEntries {
+			subName := sub.Name()
+			if !sub.IsDir() || subName == "" || subName[0] == '.' {
+				continue
+			}
+			fullName := project + "/" + name + "/" + subName
+			s, err := ReadState(fullName)
+			if err != nil {
+				continue
+			}
+			sessions = append(sessions, *s)
+		}
 	}
 	return sessions, nil
 }
@@ -388,24 +421,35 @@ func DiscardConversation(name, claudeID string) error {
 	return AppendEvent(name, "claude.discarded", &schema.ClaudeIDMeta{ClaudeID: claudeID})
 }
 
-// SiblingSummaries returns a formatted string of sibling session states
-// within the same project, excluding the given session.
+// SiblingSummaries returns a formatted string of sibling session states.
+// For 3-level sessions (project/ticket/session), siblings are scoped to the ticket.
+// For 2-level sessions (project/session), siblings are other sessions directly under the project.
 func SiblingSummaries(name string) string {
-	project, _, err := ParseName(name)
+	project, ticket, _, err := ParseName(name)
 	if err != nil {
 		return ""
 	}
 
-	siblings, err := ListSessionsForProject(project)
+	allSessions, err := ListSessionsForProject(project)
 	if err != nil {
 		return ""
 	}
 
 	var lines []string
-	for _, s := range siblings {
+	for _, s := range allSessions {
 		if s.Session == name {
 			continue
 		}
+		// Scope siblings: if we have a ticket, only show sessions under the same ticket.
+		// If no ticket, only show other 2-level sessions (no ticket).
+		_, sibTicket, _, sibErr := ParseName(s.Session)
+		if sibErr != nil {
+			continue
+		}
+		if ticket != sibTicket {
+			continue
+		}
+
 		summary := s.Summary
 		if len(summary) > 60 {
 			summary = summary[:57] + "..."

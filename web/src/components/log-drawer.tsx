@@ -13,9 +13,7 @@ const eventColorClasses: Record<string, string> = {
 }
 
 export function LogDrawer({ sessionName }: { sessionName: string }) {
-  const [project, ...rest] = sessionName.split("/")
-  const session = rest.join("/")
-  const { data: events } = useSessionLog(project!, session!, true)
+  const { data: events } = useSessionLog(sessionName, true)
 
   const filtered = (events ?? [])
     .filter((e) => e.Event !== "context.snapshot")

@@ -26,7 +26,7 @@ export function SessionCard({ session }: { session: Session }) {
 
   function handleFocus(e: React.MouseEvent) {
     e.stopPropagation()
-    focusSession(project!, name!)
+    focusSession(session.session)
   }
 
   return (

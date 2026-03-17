@@ -7,18 +7,16 @@ export async function fetchSessions(): Promise<Session[]> {
 }
 
 export async function fetchSessionLog(
-  project: string,
-  session: string,
+  sessionName: string,
 ): Promise<TypedEvent[]> {
-  const res = await fetch(`/sessions/${project}/${session}/log`)
+  const res = await fetch(`/sessions/${sessionName}/log`)
   if (!res.ok) throw new Error(res.statusText)
   return res.json()
 }
 
 export async function focusSession(
-  project: string,
-  session: string,
+  sessionName: string,
 ): Promise<void> {
-  const res = await fetch(`/sessions/${project}/${session}/focus`, { method: "POST" })
+  const res = await fetch(`/sessions/${sessionName}/focus`, { method: "POST" })
   if (!res.ok) throw new Error(res.statusText)
 }
