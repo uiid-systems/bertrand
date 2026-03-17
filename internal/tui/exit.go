@@ -11,7 +11,8 @@ import (
 type ExitChoice int
 
 const (
-	ExitSave    ExitChoice = iota // Save session
+	ExitSave    ExitChoice = iota // Save session (paused)
+	ExitArchive                   // Archive session (finished)
 	ExitDiscard                   // Discard session data
 	ExitResume                    // Resume the Claude conversation
 )
@@ -37,7 +38,8 @@ var exitOptions = []struct {
 	label string
 	desc  string
 }{
-	{"Save and exit", "End session and show timeline"},
+	{"Save and exit", "Pause session — resume later"},
+	{"Archive and exit", "Mark as finished — eligible for cleanup"},
 	{"Discard and exit", "Delete all session data permanently"},
 	{"Resume conversation", "Continue where Claude left off"},
 }

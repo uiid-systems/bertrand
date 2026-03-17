@@ -168,7 +168,14 @@ func launchInteractive() error {
 		}
 	}
 
-	sessions, _ := session.ListSessions()
+	allSessions, _ := session.ListSessions()
+	// Hide archived sessions from the launch TUI
+	var sessions []session.State
+	for _, s := range allSessions {
+		if s.Status != session.StatusArchived {
+			sessions = append(sessions, s)
+		}
+	}
 
 	m := tui.NewLaunchModel(sessions)
 	p := tea.NewProgram(m)
@@ -367,6 +374,17 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		switch exit.Choice() {
 		case tui.ExitSave:
 			cleanup("Session ended")
+			printSaveMessage(name, sessionTimeline(name))
+			return nil
+
+		case tui.ExitArchive:
+			summary := session.ReadSummary(name)
+			if summary == "" {
+				summary = "Session archived"
+			}
+			session.WriteState(name, session.StatusArchived, summary, pid)
+			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
+			cleanupFiles()
 			printSaveMessage(name, sessionTimeline(name))
 			return nil
 
