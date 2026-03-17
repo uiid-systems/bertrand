@@ -85,6 +85,12 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 	} else if strings.HasSuffix(rest, "/focus") {
 		name = strings.TrimSuffix(rest, "/focus")
 		action = "focus"
+	} else if strings.HasSuffix(rest, "/archive") {
+		name = strings.TrimSuffix(rest, "/archive")
+		action = "archive"
+	} else if strings.HasSuffix(rest, "/delete") {
+		name = strings.TrimSuffix(rest, "/delete")
+		action = "delete"
 	} else {
 		name = rest
 		action = "state"
@@ -108,6 +114,18 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		handleSessionFocus(w, r, name)
+	case "archive":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		handleSessionArchive(w, r, name)
+	case "delete":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		handleSessionDelete(w, r, name)
 	case "state":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -183,6 +201,48 @@ func handleSessionFocus(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+func handleSessionArchive(w http.ResponseWriter, r *http.Request, name string) {
+	s, err := session.ReadState(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if session.IsLive(s.Status) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot archive live session"})
+		return
+	}
+	if err := session.WriteState(name, session.StatusArchived, s.Summary, s.PID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+func handleSessionDelete(w http.ResponseWriter, r *http.Request, name string) {
+	s, err := session.ReadState(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if session.IsLive(s.Status) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot delete live session"})
+		return
+	}
+	if err := session.DeleteSession(name); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 

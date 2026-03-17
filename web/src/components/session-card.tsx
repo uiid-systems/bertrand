@@ -13,10 +13,20 @@ import {
 const badgeColors: Record<string, string> = {
   working: "bg-[var(--status-working)]/15 text-[var(--status-working)]",
   blocked: "bg-[var(--status-blocked)]/15 text-[var(--status-blocked)]",
-  done: "bg-muted-foreground/15 text-muted-foreground",
+  prompting: "bg-[var(--status-prompting)]/15 text-[var(--status-prompting)]",
+  paused: "bg-muted-foreground/15 text-muted-foreground",
+  archived: "bg-muted-foreground/10 text-muted-foreground/60",
 }
 
-export function SessionCard({ session }: { session: Session }) {
+export function SessionCard({
+  session,
+  selected,
+  onSelect,
+}: {
+  session: Session
+  selected?: boolean
+  onSelect?: (name: string, checked: boolean) => void
+}) {
   const parts = session.session.split("/")
   const project = parts[0]
   const name = parts.slice(1).join("/")
@@ -29,10 +39,31 @@ export function SessionCard({ session }: { session: Session }) {
     focusSession(session.session)
   }
 
+  function handleCheck(e: React.MouseEvent) {
+    e.stopPropagation()
+    onSelect?.(session.session, !selected)
+  }
+
   return (
     <AccordionItem value={session.session}>
       <AccordionTrigger className="hover:no-underline">
         <div className="flex flex-1 items-center gap-2.5">
+          {onSelect && (
+            <div
+              onClick={handleCheck}
+              className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
+                selected
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-muted-foreground/40"
+              }`}
+            >
+              {selected && (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </div>
+          )}
           <StatusDot status={session.status} />
           <div className="min-w-0 flex-1 truncate font-semibold">
             <span className="font-normal text-muted-foreground">
