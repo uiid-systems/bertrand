@@ -91,7 +91,7 @@ answer=""
 resp="$(printf '%s' "$input" | sed -n 's/.*"tool_response"[[:space:]]*:[[:space:]]*"//p' | sed 's/"[[:space:]]*[,}].*//')"
 if [ -n "$resp" ]; then
   # Extract answer values from escaped format: =\"answer\"
-  answer="$(printf '%s' "$resp" | grep -oE '=\\"[^\\]*\\"' | sed 's/^=\\"//' | sed 's/\\"$//' | paste -sd ', ' - | cut -c1-120)"
+  answer="$(printf '%s' "$resp" | grep -oE '=\\"[^\\]*\\"' | sed 's/^=\\"//' | sed 's/\\"$//' | paste -sd ', ' - | tr -d '\n' | cut -c1-120)"
 fi
 
 # Wave badge clear + focus cycling (skip if wsh not available)
