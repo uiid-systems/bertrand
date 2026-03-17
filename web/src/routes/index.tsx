@@ -85,6 +85,11 @@ function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
 function Dashboard() {
   const { data: sessions, isLoading, refetch } = useSessions()
   const [tab, setTab] = useState<FilterTab>("live")
+  function changeTab(t: FilterTab) {
+    setTab(t)
+    setSelected(new Set())
+    setConfirming(null)
+  }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
   const [busy, setBusy] = useState(false)
@@ -130,7 +135,11 @@ function Dashboard() {
     setBusy(true)
     try {
       const fn = action === "archive" ? archiveSession : deleteSession
-      await Promise.all(selectedInView.map((name) => fn(name)))
+      const results = await Promise.allSettled(selectedInView.map((name) => fn(name)))
+      const failed = results.filter((r) => r.status === "rejected").length
+      if (failed > 0) {
+        console.error(`${failed}/${results.length} ${action} operations failed`)
+      }
       setSelected(new Set())
       setConfirming(null)
       refetch()
@@ -142,7 +151,7 @@ function Dashboard() {
   if (isLoading) {
     return (
       <>
-        <Header counts={counts} tab={tab} onTab={setTab} />
+        <Header counts={counts} tab={tab} onTab={changeTab} />
         <div className="p-10 text-center text-muted-foreground">
           loading...
         </div>
@@ -152,12 +161,16 @@ function Dashboard() {
 
   return (
     <>
-      <Header counts={counts} tab={tab} onTab={setTab} />
+      <Header counts={counts} tab={tab} onTab={changeTab} />
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
           <div
+            role="checkbox"
+            aria-checked={selectedInView.length === sorted.length && sorted.length > 0}
+            tabIndex={0}
             onClick={handleSelectAll}
+            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleSelectAll() } }}
             className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
               selectedInView.length === sorted.length && sorted.length > 0
                 ? "border-primary bg-primary text-primary-foreground"

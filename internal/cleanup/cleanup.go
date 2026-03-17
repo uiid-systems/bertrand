@@ -52,7 +52,7 @@ func Scan(repoDir string) (*Plan, error) {
 		plan.Branches = branches
 	}
 
-	sessions, err := scanDoneSessions()
+	sessions, err := scanArchivedSessions()
 	if err == nil {
 		plan.Sessions = sessions
 	}
@@ -207,7 +207,7 @@ func detectMainBranch(repoDir string) string {
 	return "master"
 }
 
-func scanDoneSessions() ([]Item, error) {
+func scanArchivedSessions() ([]Item, error) {
 	all, err := session.ListSessions()
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func ExecuteWorktree(repoDir string, item Item) error {
 				return err
 			}
 			// Clean up the bertrand worktree marker so the session can be
-			// collected by scanDoneSessions on the next cleanup run.
+			// collected by scanArchivedSessions on the next cleanup run.
 			if item.SessionName != "" {
 				os.Remove(session.WorktreePath(item.SessionName))
 			}

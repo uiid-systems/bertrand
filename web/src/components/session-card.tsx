@@ -39,7 +39,7 @@ export function SessionCard({
     focusSession(session.session)
   }
 
-  function handleCheck(e: React.MouseEvent) {
+  function handleCheck(e: React.MouseEvent | React.KeyboardEvent) {
     e.stopPropagation()
     onSelect?.(session.session, !selected)
   }
@@ -50,7 +50,11 @@ export function SessionCard({
         <div className="flex flex-1 items-center gap-2.5">
           {onSelect && (
             <div
+              role="checkbox"
+              aria-checked={!!selected}
+              tabIndex={0}
               onClick={handleCheck}
+              onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleCheck(e) } }}
               className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
                 selected
                   ? "border-primary bg-primary text-primary-foreground"
