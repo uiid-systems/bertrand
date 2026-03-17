@@ -191,6 +191,15 @@ func launchInteractive() error {
 		session.DeleteSession(name)
 	}
 
+	// Process any archives
+	for _, name := range launch.Archived() {
+		state, err := session.ReadState(name)
+		if err != nil {
+			continue
+		}
+		session.WriteState(name, session.StatusArchived, state.Summary, state.PID)
+	}
+
 	if launch.Quitting() || launch.Chosen() == "" {
 		return nil
 	}

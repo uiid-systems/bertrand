@@ -16,6 +16,7 @@ const (
 	modeInput launchMode = iota
 	modeList
 	modeConfirmDelete
+	modeConfirmArchive
 )
 
 type launchStep int
@@ -48,6 +49,7 @@ type LaunchModel struct {
 	isResume  bool
 	quitting  bool
 	deleted   []string
+	archived  []string
 	width     int
 }
 
@@ -157,7 +159,8 @@ func sessionsForTicket(sessions []session.State, project, ticket string) []sessi
 func (m LaunchModel) Chosen() string   { return m.chosen }
 func (m LaunchModel) IsResume() bool    { return m.isResume }
 func (m LaunchModel) Quitting() bool    { return m.quitting }
-func (m LaunchModel) Deleted() []string { return m.deleted }
+func (m LaunchModel) Deleted() []string  { return m.deleted }
+func (m LaunchModel) Archived() []string { return m.archived }
 
 func (m LaunchModel) Init() tea.Cmd {
 	return textinput.Blink
@@ -290,6 +293,60 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Confirm archive mode
+		if m.mode == modeConfirmArchive {
+			switch msg.String() {
+			case "enter", "y":
+				if m.step == stepSession {
+					idx := m.cursor
+					if idx < len(m.listItems) && !m.listItems[idx].isTicket {
+						fullName := m.project + "/" + m.listItems[idx].name
+						m.archived = append(m.archived, fullName)
+						m.listItems = append(m.listItems[:idx], m.listItems[idx+1:]...)
+						m.items = append(m.items[:idx], m.items[idx+1:]...)
+						for i, s := range m.states {
+							if s.Session == fullName {
+								m.states = append(m.states[:i], m.states[i+1:]...)
+								break
+							}
+						}
+						for i, s := range m.sessions {
+							if s.Session == fullName {
+								m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+								break
+							}
+						}
+					}
+				} else if m.step == stepTicket {
+					idx := m.cursor
+					if idx < len(m.states) {
+						name := m.states[idx].Session
+						m.archived = append(m.archived, name)
+						m.states = append(m.states[:idx], m.states[idx+1:]...)
+						m.items = append(m.items[:idx], m.items[idx+1:]...)
+						for i, s := range m.sessions {
+							if s.Session == name {
+								m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+								break
+							}
+						}
+					}
+				}
+				if m.cursor >= len(m.items) && m.cursor > 0 {
+					m.cursor--
+				}
+				if len(m.items) == 0 {
+					m.mode = modeInput
+					m.input.Focus()
+					return m, textinput.Blink
+				}
+				m.mode = modeList
+			default:
+				m.mode = modeList
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			m.quitting = true
@@ -333,6 +390,27 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.step == stepTicket && m.cursor < len(m.states) {
 					m.mode = modeConfirmDelete
 					return m, nil
+				}
+			}
+
+		case "a":
+			if m.mode == modeList {
+				if m.step == stepSession && m.cursor < len(m.listItems) && !m.listItems[m.cursor].isTicket {
+					// Only allow archiving non-live, non-archived sessions
+					for _, s := range m.states {
+						_, _, sess, _ := session.ParseName(s.Session)
+						if sess == m.listItems[m.cursor].name && !session.IsLive(s.Status) && s.Status != session.StatusArchived {
+							m.mode = modeConfirmArchive
+							return m, nil
+						}
+					}
+				}
+				if m.step == stepTicket && m.cursor < len(m.states) {
+					s := m.states[m.cursor]
+					if !session.IsLive(s.Status) && s.Status != session.StatusArchived {
+						m.mode = modeConfirmArchive
+						return m, nil
+					}
 				}
 			}
 
@@ -503,6 +581,8 @@ var (
 	dividerStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	dangerStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	dangerDimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
+	archiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	archiveDimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("172"))
 	projectLabelStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
 )
 
@@ -616,11 +696,22 @@ func (m LaunchModel) renderMixedList(b *strings.Builder) {
 				}
 			}
 
+			isArchiving := m.mode == modeConfirmArchive && i == m.cursor
+
 			if isDeleting {
 				b.WriteString(fmt.Sprintf("  %s %s  %s\n",
 					dangerStyle.Render("✕"),
 					dangerStyle.Render(item.name),
 					dangerDimStyle.Render("delete? enter to confirm · any key to cancel"),
+				))
+				continue
+			}
+
+			if isArchiving {
+				b.WriteString(fmt.Sprintf("  %s %s  %s\n",
+					archiveStyle.Render("▪"),
+					archiveStyle.Render(item.name),
+					archiveDimStyle.Render("archive? enter to confirm · any key to cancel"),
 				))
 				continue
 			}
@@ -679,11 +770,22 @@ func (m LaunchModel) renderSessionList(b *strings.Builder) {
 		isSelected := m.mode == modeList && i == m.cursor
 		isDeleting := m.mode == modeConfirmDelete && i == m.cursor
 
+		isArchiving := m.mode == modeConfirmArchive && i == m.cursor
+
 		if isDeleting {
 			b.WriteString(fmt.Sprintf("  %s %s  %s\n",
 				dangerStyle.Render("✕"),
 				dangerStyle.Render(sessName),
 				dangerDimStyle.Render("delete? enter to confirm · any key to cancel"),
+			))
+			continue
+		}
+
+		if isArchiving {
+			b.WriteString(fmt.Sprintf("  %s %s  %s\n",
+				archiveStyle.Render("▪"),
+				archiveStyle.Render(sessName),
+				archiveDimStyle.Render("archive? enter to confirm · any key to cancel"),
 			))
 			continue
 		}
@@ -731,12 +833,12 @@ func (m LaunchModel) hints() string {
 		return "  enter create project"
 	case stepSession:
 		if len(m.listItems) > 0 {
-			return "  enter select · ↑↓ browse · tab switch · d delete · esc back"
+			return "  enter select · ↑↓ browse · tab switch · a archive · d delete · esc back"
 		}
 		return "  enter start · esc back"
 	case stepTicket:
 		if len(m.states) > 0 {
-			return "  enter start · ↑↓ browse · tab switch · d delete · esc back"
+			return "  enter start · ↑↓ browse · tab switch · a archive · d delete · esc back"
 		}
 		return "  enter start · esc back"
 	}
