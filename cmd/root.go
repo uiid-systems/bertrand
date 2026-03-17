@@ -168,7 +168,14 @@ func launchInteractive() error {
 		}
 	}
 
-	sessions, _ := session.ListSessions()
+	allSessions, _ := session.ListSessions()
+	// Hide archived sessions from the launch TUI
+	var sessions []session.State
+	for _, s := range allSessions {
+		if s.Status != session.StatusArchived {
+			sessions = append(sessions, s)
+		}
+	}
 
 	m := tui.NewLaunchModel(sessions)
 	p := tea.NewProgram(m)
@@ -211,7 +218,7 @@ func launchNewSession(name string) error {
 
 	// Check for existing active session with same name
 	if s, err := session.ReadState(name); err == nil {
-		if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
+		if session.IsLive(s.Status) && session.IsProcessAlive(s.PID) {
 			return fmt.Errorf("session %q is already active (pid %d)", name, s.PID)
 		}
 	}
@@ -277,7 +284,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			if summary == "" {
 				summary = "Session ended"
 			}
-			session.WriteState(name, session.StatusDone, summary, pid)
+			session.WriteState(name, session.StatusPaused, summary, pid)
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
 			cleanupFiles()
 		})
@@ -370,6 +377,17 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			printSaveMessage(name, sessionTimeline(name))
 			return nil
 
+		case tui.ExitArchive:
+			summary := session.ReadSummary(name)
+			if summary == "" {
+				summary = "Session archived"
+			}
+			session.WriteState(name, session.StatusArchived, summary, pid)
+			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
+			cleanupFiles()
+			printSaveMessage(name, sessionTimeline(name))
+			return nil
+
 		case tui.ExitDiscard:
 			// Write end event and capture timeline before deleting session data
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: "Session discarded"})
@@ -408,7 +426,7 @@ func resumeSession(name string) error {
 		return fmt.Errorf("session %q not found", name)
 	}
 
-	if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
+	if session.IsLive(s.Status) && session.IsProcessAlive(s.PID) {
 		return fmt.Errorf("session %q is still active (pid %d)", name, s.PID)
 	}
 

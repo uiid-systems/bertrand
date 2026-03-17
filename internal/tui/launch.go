@@ -497,7 +497,9 @@ var (
 	sessionSummaryDim    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	statusWorkingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	statusBlockedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	statusPromptingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
 	statusDoneStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	statusArchivedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
 	dividerStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	dangerStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	dangerDimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
@@ -637,8 +639,12 @@ func (m LaunchModel) renderMixedList(b *strings.Builder) {
 					status = statusWorkingStyle.Render("● working")
 				case session.StatusBlocked:
 					status = statusBlockedStyle.Render("● blocked")
-				case session.StatusDone:
-					status = statusDoneStyle.Render("● done")
+				case session.StatusPrompting:
+					status = statusPromptingStyle.Render("● prompting")
+				case session.StatusPaused:
+					status = statusDoneStyle.Render("● paused")
+				case session.StatusArchived:
+					status = statusArchivedStyle.Render("○ archived")
 				}
 			}
 
@@ -695,8 +701,12 @@ func (m LaunchModel) renderSessionList(b *strings.Builder) {
 			status = statusWorkingStyle.Render("● working")
 		case session.StatusBlocked:
 			status = statusBlockedStyle.Render("● blocked")
-		case session.StatusDone:
-			status = statusDoneStyle.Render("● done")
+		case session.StatusPrompting:
+			status = statusPromptingStyle.Render("● prompting")
+		case session.StatusPaused:
+			status = statusDoneStyle.Render("● paused")
+		case session.StatusArchived:
+			status = statusArchivedStyle.Render("○ archived")
 		}
 
 		b.WriteString(fmt.Sprintf("%s%s  %s\n", prefix, nameStyle.Render(sessName), status))

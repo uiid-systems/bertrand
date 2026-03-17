@@ -1,4 +1,4 @@
-export type SessionStatus = "working" | "blocked" | "done"
+export type SessionStatus = "working" | "blocked" | "prompting" | "paused" | "archived"
 
 export interface Session {
   session: string

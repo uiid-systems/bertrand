@@ -16,10 +16,17 @@ import (
 
 // Status constants for session state.
 const (
-	StatusWorking = "working"
-	StatusBlocked = "blocked"
-	StatusDone    = "done"
+	StatusWorking   = "working"
+	StatusBlocked   = "blocked"
+	StatusPrompting = "prompting"
+	StatusPaused    = "paused"
+	StatusArchived  = "archived"
 )
+
+// IsLive returns true if the status represents a running Claude process.
+func IsLive(status string) bool {
+	return status == StatusWorking || status == StatusBlocked || status == StatusPrompting
+}
 
 func BaseDir() string {
 	home, err := os.UserHomeDir()
@@ -176,6 +183,10 @@ func ReadState(name string) (*State, error) {
 	}
 	// Normalize: path-derived name is always authoritative
 	s.Session = name
+	// Migration compat: treat legacy "done" as "paused"
+	if s.Status == "done" {
+		s.Status = StatusPaused
+	}
 	return &s, nil
 }
 
@@ -281,7 +292,7 @@ func ActiveSessions() ([]State, error) {
 	}
 	var active []State
 	for _, s := range all {
-		if s.Status != StatusDone {
+		if IsLive(s.Status) {
 			active = append(active, s)
 		}
 	}
@@ -480,14 +491,14 @@ func RecoverStaleSessions() []string {
 
 	var recovered []string
 	for _, s := range sessions {
-		if s.Status == StatusDone {
+		if !IsLive(s.Status) {
 			continue
 		}
 		if IsProcessAlive(s.PID) {
 			continue
 		}
 		// PID is dead — recover this session
-		WriteState(s.Session, StatusDone, "Recovered (stale)", s.PID)
+		WriteState(s.Session, StatusPaused, "Recovered (stale)", s.PID)
 		dir := SessionDir(s.Session)
 		os.Remove(filepath.Join(dir, "pending"))
 		os.Remove(filepath.Join(dir, "wave-block-id"))

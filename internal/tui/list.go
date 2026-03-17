@@ -14,9 +14,11 @@ var (
 	summaryDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	summarySelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	statusColors = map[string]lipgloss.Color{
-		session.StatusWorking: lipgloss.Color("82"),
-		session.StatusBlocked: lipgloss.Color("214"),
-		session.StatusDone:    lipgloss.Color("241"),
+		session.StatusWorking:   lipgloss.Color("82"),
+		session.StatusBlocked:   lipgloss.Color("214"),
+		session.StatusPrompting: lipgloss.Color("81"),
+		session.StatusPaused:    lipgloss.Color("241"),
+		session.StatusArchived:  lipgloss.Color("239"),
 	}
 )
 

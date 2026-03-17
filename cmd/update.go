@@ -24,7 +24,7 @@ var updateCmd = &cobra.Command{
 
 func init() {
 	updateCmd.Flags().StringVar(&updateName, "name", "", "Session name")
-	updateCmd.Flags().StringVar(&updateStatus, "status", "", "Session status (working, blocked, done)")
+	updateCmd.Flags().StringVar(&updateStatus, "status", "", "Session status (working, blocked, prompting, paused, archived)")
 	updateCmd.Flags().StringVar(&updateSummary, "summary", "", "Short description of current state")
 	rootCmd.AddCommand(updateCmd)
 }

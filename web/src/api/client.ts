@@ -20,3 +20,17 @@ export async function focusSession(
   const res = await fetch(`/sessions/${sessionName}/focus`, { method: "POST" })
   if (!res.ok) throw new Error(res.statusText)
 }
+
+export async function archiveSession(
+  sessionName: string,
+): Promise<void> {
+  const res = await fetch(`/sessions/${sessionName}/archive`, { method: "POST" })
+  if (!res.ok) throw new Error(res.statusText)
+}
+
+export async function deleteSession(
+  sessionName: string,
+): Promise<void> {
+  const res = await fetch(`/sessions/${sessionName}/delete`, { method: "POST" })
+  if (!res.ok) throw new Error(res.statusText)
+}

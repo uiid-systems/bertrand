@@ -126,7 +126,7 @@ func TestListSessions(t *testing.T) {
 	// Create sessions under projects
 	WriteState("proj/alpha", StatusWorking, "a", 1)
 	WriteState("proj/beta", StatusBlocked, "b", 2)
-	WriteState("other/gamma", StatusDone, "c", 3)
+	WriteState("other/gamma", StatusPaused, "c", 3)
 
 	sessions, err = ListSessions()
 	if err != nil {
@@ -157,7 +157,7 @@ func TestListSessionsForProject(t *testing.T) {
 
 	WriteState("proj/alpha", StatusWorking, "a", 1)
 	WriteState("proj/beta", StatusBlocked, "b", 2)
-	WriteState("other/gamma", StatusDone, "c", 3)
+	WriteState("other/gamma", StatusPaused, "c", 3)
 
 	sessions, err := ListSessionsForProject("proj")
 	if err != nil {
@@ -173,9 +173,9 @@ func TestListSessionsForProject_ThreeLevel(t *testing.T) {
 
 	// 3-level sessions under a ticket
 	WriteState("proj/elky-49/taxonomy", StatusWorking, "a", 1)
-	WriteState("proj/elky-49/code-review", StatusDone, "b", 2)
+	WriteState("proj/elky-49/code-review", StatusPaused, "b", 2)
 	// 2-level session directly under project
-	WriteState("proj/triage", StatusDone, "c", 3)
+	WriteState("proj/triage", StatusPaused, "c", 3)
 
 	sessions, err := ListSessionsForProject("proj")
 	if err != nil {
@@ -200,9 +200,9 @@ func TestListSessionsForProject_ThreeLevel(t *testing.T) {
 func TestListSessions_MixedDepths(t *testing.T) {
 	withTempBaseDir(t)
 
-	WriteState("proj/triage", StatusDone, "a", 1)
+	WriteState("proj/triage", StatusPaused, "a", 1)
 	WriteState("proj/elky-49/taxonomy", StatusWorking, "b", 2)
-	WriteState("other/gamma", StatusDone, "c", 3)
+	WriteState("other/gamma", StatusPaused, "c", 3)
 
 	sessions, err := ListSessions()
 	if err != nil {
@@ -217,8 +217,8 @@ func TestSiblingSummaries_TicketScoped(t *testing.T) {
 	withTempBaseDir(t)
 
 	WriteState("proj/elky-49/taxonomy", StatusWorking, "doing taxonomy", 1)
-	WriteState("proj/elky-49/code-review", StatusDone, "reviewed", 2)
-	WriteState("proj/triage", StatusDone, "triaged", 3)
+	WriteState("proj/elky-49/code-review", StatusPaused, "reviewed", 2)
+	WriteState("proj/triage", StatusPaused, "triaged", 3)
 
 	// Siblings of a ticket session should only include same-ticket sessions
 	result := SiblingSummaries("proj/elky-49/taxonomy")
@@ -244,7 +244,7 @@ func TestActiveSessions(t *testing.T) {
 
 	WriteState("proj/active-1", StatusWorking, "a", 1)
 	WriteState("proj/active-2", StatusBlocked, "b", 2)
-	WriteState("proj/finished", StatusDone, "c", 3)
+	WriteState("proj/finished", StatusPaused, "c", 3)
 
 	active, err := ActiveSessions()
 	if err != nil {
@@ -254,7 +254,7 @@ func TestActiveSessions(t *testing.T) {
 		t.Errorf("expected 2 active sessions, got %d", len(active))
 	}
 	for _, s := range active {
-		if s.Status == StatusDone {
+		if s.Status == StatusPaused {
 			t.Error("ActiveSessions returned a done session")
 		}
 	}
@@ -263,7 +263,7 @@ func TestActiveSessions(t *testing.T) {
 func TestDeleteSession(t *testing.T) {
 	withTempBaseDir(t)
 
-	WriteState("proj/to-delete", StatusDone, "bye", 1)
+	WriteState("proj/to-delete", StatusPaused, "bye", 1)
 
 	if err := DeleteSession("proj/to-delete"); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
