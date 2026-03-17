@@ -15,6 +15,7 @@ type EnrichedEvent struct {
 	Label    string    `json:"label"`
 	Category string    `json:"category"`
 	Color    string    `json:"color"`
+	ClaudeID string    `json:"claude_id,omitempty"`
 	Meta     any       `json:"meta,omitempty"`
 }
 

@@ -72,8 +72,11 @@ func parseMeta(event string, raw json.RawMessage) (any, error) {
 	case "session.end":
 		var m SessionEndMeta
 		return &m, json.Unmarshal(raw, &m)
-	case "claude.started", "claude.ended", "claude.discarded", "session.resume", "worktree.exited":
+	case "claude.started", "claude.ended", "claude.discarded", "worktree.exited":
 		var m ClaudeIDMeta
+		return &m, json.Unmarshal(raw, &m)
+	case "session.resume":
+		var m SessionUserResumeMeta
 		return &m, json.Unmarshal(raw, &m)
 	case "session.block":
 		var m SessionBlockMeta
@@ -145,6 +148,8 @@ func (te *TypedEvent) MetaClaudeID() string {
 	switch m := te.TypedMeta.(type) {
 	case *ClaudeIDMeta:
 		return m.ClaudeID
+	case *SessionUserResumeMeta:
+		return m.ClaudeID
 	case *SessionBlockMeta:
 		return m.ClaudeID
 	case *PermissionMeta:
@@ -172,6 +177,8 @@ func (te *TypedEvent) MetaSummary() string {
 	switch m := te.TypedMeta.(type) {
 	case *SessionBlockMeta:
 		return m.Question
+	case *SessionUserResumeMeta:
+		return m.Answer
 	case *SessionEndMeta:
 		return m.Summary
 	case *PermissionMeta:

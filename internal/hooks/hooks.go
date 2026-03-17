@@ -81,7 +81,18 @@ func ResumedScript() string {
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
+input="$(cat)"
+
 bertrand update --name "$name" --status prompting --summary "Resumed after input"
+
+# Extract user answer from tool_response (best effort)
+# Format in JSON: "tool_response":"User has answered your questions: \"q\"=\"a, b\". ..."
+answer=""
+resp="$(printf '%s' "$input" | sed -n 's/.*"tool_response"[[:space:]]*:[[:space:]]*"//p' | sed 's/"[[:space:]]*[,}].*//')"
+if [ -n "$resp" ]; then
+  # Extract answer values from escaped format: =\"answer\"
+  answer="$(printf '%s' "$resp" | grep -oE '=\\"[^\\]*\\"' | sed 's/^=\\"//' | sed 's/\\"$//' | paste -sd ', ' - | cut -c1-120)"
+fi
 
 # Wave badge clear + focus cycling (skip if wsh not available)
 if command -v wsh &>/dev/null; then
@@ -111,8 +122,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 

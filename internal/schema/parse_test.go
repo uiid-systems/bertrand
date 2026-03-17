@@ -26,8 +26,17 @@ func TestParseHookOutput(t *testing.T) {
 			line:      `{"event":"session.resume","session":"bertrand/testing-locally","ts":"2026-03-13T02:42:10Z","meta":{"claude_id":"55d5ab5b-945b-4608-b190-8dbd1da92f95"}}`,
 			wantEvent: "session.resume",
 			wantMeta: func(te *TypedEvent) bool {
-				m, ok := te.TypedMeta.(*ClaudeIDMeta)
+				m, ok := te.TypedMeta.(*SessionUserResumeMeta)
 				return ok && m.ClaudeID == "55d5ab5b-945b-4608-b190-8dbd1da92f95"
+			},
+		},
+		{
+			name:      "session.resume with answer",
+			line:      `{"v":1,"event":"session.resume","session":"bertrand/testing","ts":"2026-03-16T01:00:00Z","meta":{"answer":"Fix duplicates, Group by conversation","claude_id":"abc-123"}}`,
+			wantEvent: "session.resume",
+			wantMeta: func(te *TypedEvent) bool {
+				m, ok := te.TypedMeta.(*SessionUserResumeMeta)
+				return ok && m.Answer == "Fix duplicates, Group by conversation" && m.ClaudeID == "abc-123"
 			},
 		},
 		{

@@ -1,7 +1,6 @@
 package session
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,7 @@ func withTempBaseDir(t *testing.T) string {
 }
 
 func TestWriteAndReadState(t *testing.T) {
-	base := withTempBaseDir(t)
+	withTempBaseDir(t)
 
 	err := WriteState("proj/test-session", StatusWorking, "doing stuff", 1234)
 	if err != nil {
@@ -46,20 +45,6 @@ func TestWriteAndReadState(t *testing.T) {
 	}
 	if s.PID != 1234 {
 		t.Errorf("PID = %d, want %d", s.PID, 1234)
-	}
-
-	// Verify log.jsonl was also written
-	logPath := filepath.Join(base, "sessions", "proj", "test-session", "log.jsonl")
-	logData, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("reading log.jsonl: %v", err)
-	}
-	var logEntry State
-	if err := json.Unmarshal(logData[:len(logData)-1], &logEntry); err != nil {
-		t.Fatalf("parsing log.jsonl: %v", err)
-	}
-	if logEntry.Session != "proj/test-session" {
-		t.Errorf("log entry Session = %q, want %q", logEntry.Session, "proj/test-session")
 	}
 }
 

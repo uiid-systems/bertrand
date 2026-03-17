@@ -42,6 +42,7 @@ func Enrich(te *schema.TypedEvent) EnrichedEvent {
 		Label:    info.Label,
 		Category: info.Category,
 		Color:    info.Color,
+		ClaudeID: te.MetaClaudeID(),
 		Meta:     te.TypedMeta,
 	}
 }
