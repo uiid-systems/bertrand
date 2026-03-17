@@ -20,6 +20,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install -g pnpm
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
