@@ -50,13 +50,38 @@ printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"questio
 `
 }
 
+// WorkingScript returns the hook script that flips prompting → working
+// on any PreToolUse (catch-all). This fires when Claude starts executing
+// after the user answered at the text prompt.
+func WorkingScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PreToolUse (catch-all) → flip prompting to working
+name="${BERTRAND_SESSION:-}"
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+# AskUserQuestion has its own PreToolUse hook (blocked), skip it here
+[ "$tool" = "AskUserQuestion" ] && exit 0
+
+# Only flip if currently prompting
+state_file="$HOME/.bertrand/sessions/$name/state.json"
+[ ! -f "$state_file" ] && exit 0
+status="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_file" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+[ "$status" != "prompting" ] && exit 0
+
+bertrand update --name "$name" --status working --summary "Working"
+`
+}
+
 func ResumedScript() string {
 	return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as working, cycle focus to next blocked
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
-bertrand update --name "$name" --status working --summary "Resumed after input"
+bertrand update --name "$name" --status prompting --summary "Resumed after input"
 
 # Wave badge clear + focus cycling (skip if wsh not available)
 if command -v wsh &>/dev/null; then
@@ -176,11 +201,11 @@ printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"to
 // Sets a green check badge and writes done status.
 func DoneScript() string {
 	return `#!/usr/bin/env bash
-# Hook: Stop → mark session as done
+# Hook: Stop → mark session as paused
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
-bertrand update --name "$name" --status done --summary "Session ended"
+bertrand update --name "$name" --status paused --summary "Session ended"
 
 # Wave badge (skip if wsh not available)
 if command -v wsh &>/dev/null; then
@@ -190,8 +215,8 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"session.done","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"session.done","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"session.paused","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"session.paused","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -348,9 +373,12 @@ if [ -f "$state_file" ]; then
 fi
 
 case "$status" in
-  working) dot="${c_status}●${c_rst}" ;;
-  blocked) dot="${c_blocked}●${c_rst}" ;;
-  *)       dot="" ;;
+  working)   dot="${c_status}●${c_rst}" ;;
+  blocked)   dot="${c_blocked}●${c_rst}" ;;
+  prompting) dot="${c_val}●${c_rst}" ;;
+  paused)    dot="${c_dim}●${c_rst}" ;;
+  archived)  dot="${c_dim}○${c_rst}" ;;
+  *)         dot="" ;;
 esac
 
 # Sibling count — scan state files for other active sessions
@@ -368,7 +396,7 @@ if [ -d "$HOME/.bertrand/sessions" ]; then
       spid="$(grep -o '"pid"[[:space:]]*:[[:space:]]*[0-9]*' "$d" | head -1 | sed 's/.*:[[:space:]]*//')"
       s="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$d" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
     fi
-    [ "$s" = "done" ] && continue
+    [ "$s" = "paused" ] || [ "$s" = "archived" ] || [ "$s" = "done" ] && continue
     [ -n "$spid" ] && [ "$spid" != "0" ] && kill -0 "$spid" 2>/dev/null && siblings=$((siblings + 1))
   done
 fi
@@ -470,6 +498,7 @@ func StatuslineSettingsJSON() string {
 func hooksFingerprint() string {
 	h := sha256.New()
 	h.Write([]byte(BlockedScript()))
+	h.Write([]byte(WorkingScript()))
 	h.Write([]byte(ResumedScript()))
 	h.Write([]byte(PermissionWaitScript()))
 	h.Write([]byte(PermissionDoneScript()))
@@ -501,6 +530,7 @@ func InstallHooks() (string, error) {
 
 	scripts := map[string]string{
 		"on-blocked.sh":           BlockedScript(),
+		"on-working.sh":           WorkingScript(),
 		"on-resumed.sh":           ResumedScript(),
 		"on-permission-wait.sh":   PermissionWaitScript(),
 		"on-permission-done.sh":   PermissionDoneScript(),
@@ -578,6 +608,16 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-blocked.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-working.sh"),
 						Timeout: 5,
 					},
 				},

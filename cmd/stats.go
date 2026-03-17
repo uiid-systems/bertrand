@@ -93,7 +93,7 @@ func showGlobalStats() error {
 				continue
 			}
 			allMetrics = append(allMetrics, m)
-			if s.Status != session.StatusDone {
+			if session.IsLive(s.Status) {
 				activeCount++
 			}
 		}
@@ -178,7 +178,7 @@ func showProjectStats(project string) error {
 			continue
 		}
 		metrics = append(metrics, m)
-		if s.Status != session.StatusDone {
+		if session.IsLive(s.Status) {
 			activeCount++
 		}
 	}

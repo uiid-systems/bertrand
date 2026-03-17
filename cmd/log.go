@@ -113,8 +113,12 @@ func showAllSessions() error {
 			statusIcon = "\033[32m●\033[0m"
 		case "blocked":
 			statusIcon = "\033[33m●\033[0m"
-		case "done":
+		case "prompting":
+			statusIcon = "\033[36m●\033[0m"
+		case "paused":
 			statusIcon = "\033[90m●\033[0m"
+		case "archived":
+			statusIcon = "\033[90m○\033[0m"
 		}
 
 		dur := sessionlog.FormatDuration(s.duration)

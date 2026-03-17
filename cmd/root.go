@@ -211,7 +211,7 @@ func launchNewSession(name string) error {
 
 	// Check for existing active session with same name
 	if s, err := session.ReadState(name); err == nil {
-		if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
+		if session.IsLive(s.Status) && session.IsProcessAlive(s.PID) {
 			return fmt.Errorf("session %q is already active (pid %d)", name, s.PID)
 		}
 	}
@@ -277,7 +277,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			if summary == "" {
 				summary = "Session ended"
 			}
-			session.WriteState(name, session.StatusDone, summary, pid)
+			session.WriteState(name, session.StatusPaused, summary, pid)
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
 			cleanupFiles()
 		})
@@ -408,7 +408,7 @@ func resumeSession(name string) error {
 		return fmt.Errorf("session %q not found", name)
 	}
 
-	if s.Status != session.StatusDone && session.IsProcessAlive(s.PID) {
+	if session.IsLive(s.Status) && session.IsProcessAlive(s.PID) {
 		return fmt.Errorf("session %q is still active (pid %d)", name, s.PID)
 	}
 

@@ -100,8 +100,8 @@ func scanWorktrees(repoDir string) ([]Item, error) {
 		// Check if a session owns this worktree
 		s, hasSession := branchToSession[wt.Branch]
 
-		// Only flag worktrees whose session is done or has no session at all
-		if hasSession && s.Status != session.StatusDone {
+		// Only flag worktrees whose session is archived or has no session at all
+		if hasSession && s.Status != session.StatusArchived {
 			continue
 		}
 
@@ -215,7 +215,7 @@ func scanDoneSessions() ([]Item, error) {
 
 	var items []Item
 	for _, s := range all {
-		if s.Status != session.StatusDone {
+		if s.Status != session.StatusArchived {
 			continue
 		}
 		// Skip sessions that still have a live worktree marker
