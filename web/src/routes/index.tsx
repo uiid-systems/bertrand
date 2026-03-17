@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useSessions } from "@/hooks/useSessions"
+import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
 import { SessionCard } from "@/components/session-card"
 import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
-import { archiveSession, deleteSession } from "@/api/client"
 import type { Session, SessionStatus } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
@@ -84,7 +84,11 @@ function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
 }
 
 function Dashboard() {
-  const { data: sessions, isLoading, isError, refetch } = useSessions()
+  const { data: sessions, isLoading, isError } = useSessions()
+  const bulkArchive = useBulkArchive()
+  const bulkDelete = useBulkDelete()
+  const busy = bulkArchive.isPending || bulkDelete.isPending
+
   const [tab, setTab] = useState<FilterTab>("live")
   function changeTab(t: FilterTab) {
     setTab(t)
@@ -93,7 +97,6 @@ function Dashboard() {
   }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const all = sessions ?? []
   const filtered = filterSessions(all, tab)
@@ -132,21 +135,14 @@ function Dashboard() {
     setConfirming(null)
   }
 
-  async function handleBulkAction(action: "archive" | "delete") {
-    setBusy(true)
-    try {
-      const fn = action === "archive" ? archiveSession : deleteSession
-      const results = await Promise.allSettled(selectedInView.map((name) => fn(name)))
-      const failed = results.filter((r) => r.status === "rejected").length
-      if (failed > 0) {
-        console.error(`${failed}/${results.length} ${action} operations failed`)
-      }
-      setSelected(new Set())
-      setConfirming(null)
-      refetch()
-    } finally {
-      setBusy(false)
-    }
+  function handleBulkAction(action: "archive" | "delete") {
+    const mutation = action === "archive" ? bulkArchive : bulkDelete
+    mutation.mutate(selectedInView, {
+      onSuccess: () => {
+        setSelected(new Set())
+        setConfirming(null)
+      },
+    })
   }
 
   if (isLoading || isError) {
