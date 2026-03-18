@@ -48,10 +48,10 @@ type LaunchModel struct {
 	chosen    string
 	isResume  bool
 	quitting  bool
-	deleted      []string
-	archived     []string
-	bulkTargets  []string // session names for bulk archive/delete operations
-	width        int
+	deleted     []string
+	archived    []string
+	bulkTargets []string // session names for bulk archive/delete operations
+	width       int
 }
 
 func NewLaunchModel(sessions []session.State) LaunchModel {
@@ -238,70 +238,19 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		return m, nil
 	case tea.KeyMsg:
-		// Confirm delete mode
-		if m.mode == modeConfirmDelete {
+		// Confirm delete/archive mode
+		if m.mode == modeConfirmDelete || m.mode == modeConfirmArchive {
+			isArchive := m.mode == modeConfirmArchive
 			switch msg.String() {
 			case "enter", "y":
-				if len(m.bulkTargets) > 0 {
-					// Bulk delete: process all targets
-					m.deleted = append(m.deleted, m.bulkTargets...)
-					m.removeSessionsFromUI(m.bulkTargets)
-					m.bulkTargets = nil
-				} else if m.step == stepSession {
-					idx := m.cursor
-					if idx < len(m.listItems) && !m.listItems[idx].isTicket {
-						fullName := m.project + "/" + m.listItems[idx].name
-						m.deleted = append(m.deleted, fullName)
-						m.removeSessionsFromUI([]string{fullName})
-					}
-				} else if m.step == stepTicket {
-					idx := m.cursor
-					if idx < len(m.states) {
-						name := m.states[idx].Session
-						m.deleted = append(m.deleted, name)
-						m.removeSessionsFromUI([]string{name})
-					}
+				names := m.resolveConfirmTargets()
+				if isArchive {
+					m.archived = append(m.archived, names...)
+				} else {
+					m.deleted = append(m.deleted, names...)
 				}
-				if m.cursor >= len(m.items) && m.cursor > 0 {
-					m.cursor--
-				}
-				if len(m.items) == 0 {
-					m.mode = modeInput
-					m.input.Focus()
-					return m, textinput.Blink
-				}
-				m.mode = modeList
-			default:
+				m.removeSessionsFromUI(names)
 				m.bulkTargets = nil
-				m.mode = modeList
-			}
-			return m, nil
-		}
-
-		// Confirm archive mode
-		if m.mode == modeConfirmArchive {
-			switch msg.String() {
-			case "enter", "y":
-				if len(m.bulkTargets) > 0 {
-					// Bulk archive: process all targets
-					m.archived = append(m.archived, m.bulkTargets...)
-					m.removeSessionsFromUI(m.bulkTargets)
-					m.bulkTargets = nil
-				} else if m.step == stepSession {
-					idx := m.cursor
-					if idx < len(m.listItems) && !m.listItems[idx].isTicket {
-						fullName := m.project + "/" + m.listItems[idx].name
-						m.archived = append(m.archived, fullName)
-						m.removeSessionsFromUI([]string{fullName})
-					}
-				} else if m.step == stepTicket {
-					idx := m.cursor
-					if idx < len(m.states) {
-						name := m.states[idx].Session
-						m.archived = append(m.archived, name)
-						m.removeSessionsFromUI([]string{name})
-					}
-				}
 				if m.cursor >= len(m.items) && m.cursor > 0 {
 					m.cursor--
 				}
@@ -356,7 +305,7 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == modeList {
 				if m.step == stepProject && m.cursor < len(m.items) {
 					// Bulk delete all sessions in this project — block if any are live
-					targets := m.collectProjectSessions(m.items[m.cursor])
+					targets := sessionsForProject(m.sessions, m.items[m.cursor])
 					if len(targets) > 0 && !m.hasLiveSessions(targets) {
 						m.bulkTargets = sessionNames(targets)
 						m.mode = modeConfirmDelete
@@ -387,7 +336,7 @@ func (m LaunchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == modeList {
 				if m.step == stepProject && m.cursor < len(m.items) {
 					// Bulk archive all eligible sessions in this project
-					targets := m.collectArchivable(m.collectProjectSessions(m.items[m.cursor]))
+					targets := m.collectArchivable(sessionsForProject(m.sessions, m.items[m.cursor]))
 					if len(targets) > 0 {
 						m.bulkTargets = sessionNames(targets)
 						m.mode = modeConfirmArchive
@@ -585,7 +534,7 @@ func (m *LaunchModel) removeSessionsFromUI(names []string) {
 	}
 
 	// Remove from states
-	filtered := m.states[:0]
+	var filtered []session.State
 	for _, s := range m.states {
 		if !nameSet[s.Session] {
 			filtered = append(filtered, s)
@@ -594,7 +543,7 @@ func (m *LaunchModel) removeSessionsFromUI(names []string) {
 	m.states = filtered
 
 	// Remove from master sessions
-	filteredAll := m.sessions[:0]
+	var filteredAll []session.State
 	for _, s := range m.sessions {
 		if !nameSet[s.Session] {
 			filteredAll = append(filteredAll, s)
@@ -632,9 +581,25 @@ func (m *LaunchModel) removeSessionsFromUI(names []string) {
 	}
 }
 
-// collectProjectSessions returns all sessions belonging to a project.
-func (m *LaunchModel) collectProjectSessions(project string) []session.State {
-	return sessionsForProject(m.sessions, project)
+// resolveConfirmTargets returns the session names targeted by the current confirmation.
+// For bulk operations it returns bulkTargets; for single-session confirms it resolves
+// the name from the cursor position.
+func (m *LaunchModel) resolveConfirmTargets() []string {
+	if len(m.bulkTargets) > 0 {
+		return m.bulkTargets
+	}
+	if m.step == stepSession {
+		idx := m.cursor
+		if idx < len(m.listItems) && !m.listItems[idx].isTicket {
+			return []string{m.project + "/" + m.listItems[idx].name}
+		}
+	} else if m.step == stepTicket {
+		idx := m.cursor
+		if idx < len(m.states) {
+			return []string{m.states[idx].Session}
+		}
+	}
+	return nil
 }
 
 // collectArchivable filters sessions to only those eligible for archiving (non-live, non-archived).

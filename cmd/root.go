@@ -203,7 +203,9 @@ func launchInteractive() error {
 
 	// Process any deletions
 	for _, name := range launch.Deleted() {
-		session.DeleteSession(name)
+		if err := session.DeleteSession(name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to delete session %s: %v\n", name, err)
+		}
 	}
 	// Clean up empty parent directories after deletions
 	for _, name := range launch.Deleted() {
