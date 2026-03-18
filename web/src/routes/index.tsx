@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
+import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
 import { SessionCard } from "@/components/session-card"
@@ -12,7 +13,8 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 })
 
-type FilterTab = "live" | "paused" | "archived" | "all"
+const FILTER_TABS = ["live", "paused", "archived", "all"] as const
+type FilterTab = (typeof FILTER_TABS)[number]
 
 const STATUS_ORDER: Record<SessionStatus, number> = {
   blocked: 0,
@@ -89,7 +91,10 @@ function Dashboard() {
   const bulkDelete = useBulkDelete()
   const busy = bulkArchive.isPending || bulkDelete.isPending
 
-  const [tab, setTab] = useState<FilterTab>("live")
+  const [tab, setTab] = useQueryState(
+    "tab",
+    parseAsStringLiteral(FILTER_TABS).withDefault("live"),
+  )
   function changeTab(t: FilterTab) {
     setTab(t)
     setSelected(new Set())
