@@ -1,10 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchSessions } from "@/api/client"
+import { sessionQueries } from "@/api/queries"
 
 export function useSessions() {
-  return useQuery({
-    queryKey: ["sessions"],
-    queryFn: fetchSessions,
-    refetchInterval: 2000,
-  })
+  return useQuery(sessionQueries.list())
 }

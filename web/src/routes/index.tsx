@@ -1,19 +1,23 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
+import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
+import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
 import { SessionCard } from "@/components/session-card"
+import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
-import { archiveSession, deleteSession } from "@/api/client"
-import type { Session } from "@/lib/types"
+import { parseSessionName } from "@/lib/sessions"
+import type { Session, SessionStatus } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
 })
 
-type FilterTab = "live" | "paused" | "archived" | "all"
+const FILTER_TABS = ["live", "paused", "archived", "all"] as const
+type FilterTab = (typeof FILTER_TABS)[number]
 
-const STATUS_ORDER: Record<string, number> = {
+const STATUS_ORDER: Record<SessionStatus, number> = {
   blocked: 0,
   prompting: 1,
   working: 2,
@@ -21,7 +25,7 @@ const STATUS_ORDER: Record<string, number> = {
   archived: 4,
 }
 
-function isLive(status: string) {
+function isLive(status: SessionStatus) {
   return status === "working" || status === "blocked" || status === "prompting"
 }
 
@@ -32,15 +36,6 @@ function sortSessions(sessions: Session[]): Session[] {
     if (oa !== ob) return oa - ob
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   })
-}
-
-/** Parse a session name into { project, ticket, session } */
-function parseSessionName(name: string) {
-  const parts = name.split("/")
-  if (parts.length === 3) {
-    return { project: parts[0], ticket: parts[1], session: parts[2] }
-  }
-  return { project: parts[0], ticket: "", session: parts.slice(1).join("/") }
 }
 
 /** Group sessions by project, then by ticket within each project */
@@ -83,8 +78,15 @@ function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
 }
 
 function Dashboard() {
-  const { data: sessions, isLoading, refetch } = useSessions()
-  const [tab, setTab] = useState<FilterTab>("live")
+  const { data: sessions, isLoading, isError } = useSessions()
+  const bulkArchive = useBulkArchive()
+  const bulkDelete = useBulkDelete()
+  const busy = bulkArchive.isPending || bulkDelete.isPending
+
+  const [tab, setTab] = useQueryState(
+    "tab",
+    parseAsStringLiteral(FILTER_TABS).withDefault("live"),
+  )
   function changeTab(t: FilterTab) {
     setTab(t)
     setSelected(new Set())
@@ -92,19 +94,26 @@ function Dashboard() {
   }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const all = sessions ?? []
-  const filtered = filterSessions(all, tab)
-  const sorted = sortSessions(filtered)
-  const grouped = groupSessions(sorted)
 
-  const counts: Record<FilterTab, number> = {
-    live: all.filter((s) => isLive(s.status)).length,
-    paused: all.filter((s) => s.status === "paused").length,
-    archived: all.filter((s) => s.status === "archived").length,
-    all: all.length,
-  }
+  const counts = useMemo(() => {
+    const c = { live: 0, paused: 0, archived: 0, all: 0 }
+    for (const s of all) {
+      if (isLive(s.status)) c.live++
+      else if (s.status === "paused") c.paused++
+      else if (s.status === "archived") c.archived++
+      c.all++
+    }
+    return c as Record<FilterTab, number>
+  }, [all])
+
+  const sorted = useMemo(
+    () => sortSessions(filterSessions(all, tab)),
+    [all, tab],
+  )
+
+  const grouped = useMemo(() => groupSessions(sorted), [sorted])
 
   // Only show bulk actions for non-live tabs
   const showBulk = tab !== "live" && tab !== "all"
@@ -131,29 +140,26 @@ function Dashboard() {
     setConfirming(null)
   }
 
-  async function handleBulkAction(action: "archive" | "delete") {
-    setBusy(true)
-    try {
-      const fn = action === "archive" ? archiveSession : deleteSession
-      const results = await Promise.allSettled(selectedInView.map((name) => fn(name)))
-      const failed = results.filter((r) => r.status === "rejected").length
-      if (failed > 0) {
-        console.error(`${failed}/${results.length} ${action} operations failed`)
-      }
-      setSelected(new Set())
-      setConfirming(null)
-      refetch()
-    } finally {
-      setBusy(false)
-    }
+  function handleBulkAction(action: "archive" | "delete") {
+    const mutation = action === "archive" ? bulkArchive : bulkDelete
+    mutation.mutate(selectedInView, {
+      onSuccess: () => {
+        setSelected(new Set())
+        setConfirming(null)
+      },
+    })
   }
 
-  if (isLoading) {
+  if (isLoading || isError) {
     return (
       <>
         <Header counts={counts} tab={tab} onTab={changeTab} />
         <div className="p-10 text-center text-muted-foreground">
-          loading...
+          {isError ? (
+            <span className="text-destructive">failed to load sessions</span>
+          ) : (
+            "loading..."
+          )}
         </div>
       </>
     )
@@ -165,24 +171,11 @@ function Dashboard() {
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
-          <div
-            role="checkbox"
-            aria-checked={selectedInView.length === sorted.length && sorted.length > 0}
-            tabIndex={0}
-            onClick={handleSelectAll}
-            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleSelectAll() } }}
-            className={`flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border ${
-              selectedInView.length === sorted.length && sorted.length > 0
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-muted-foreground/40"
-            }`}
-          >
-            {selectedInView.length === sorted.length && sorted.length > 0 && (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
-          </div>
+          <Checkbox
+            checked={selectedInView.length === sorted.length && sorted.length > 0}
+            onChange={() => handleSelectAll()}
+            label="Select all sessions"
+          />
           <span className="text-xs text-muted-foreground">
             {selectedInView.length > 0
               ? `${selectedInView.length} selected`
