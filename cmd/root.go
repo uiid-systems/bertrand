@@ -61,6 +61,21 @@ func sessionTimeline(name string) string {
 }
 
 
+// cleanEmptyParents walks up from the deleted session directory and removes
+// empty parent directories up to (but not including) the sessions root.
+func cleanEmptyParents(deletedPath string) {
+	sessionsRoot := session.SessionsDir()
+	dir := filepath.Dir(deletedPath)
+	for dir != sessionsRoot && dir != "." && dir != "/" {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		os.Remove(dir)
+		dir = filepath.Dir(dir)
+	}
+}
+
 func isInitialized() bool {
 	configPath := filepath.Join(session.BaseDir(), "config.yaml")
 	_, err := os.Stat(configPath)
@@ -188,7 +203,22 @@ func launchInteractive() error {
 
 	// Process any deletions
 	for _, name := range launch.Deleted() {
-		session.DeleteSession(name)
+		if err := session.DeleteSession(name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to delete session %s: %v\n", name, err)
+		}
+	}
+	// Clean up empty parent directories after deletions
+	for _, name := range launch.Deleted() {
+		cleanEmptyParents(session.SessionDir(name))
+	}
+
+	// Process any archives
+	for _, name := range launch.Archived() {
+		state, err := session.ReadState(name)
+		if err != nil {
+			continue
+		}
+		session.WriteState(name, session.StatusArchived, state.Summary, state.PID)
 	}
 
 	if launch.Quitting() || launch.Chosen() == "" {
