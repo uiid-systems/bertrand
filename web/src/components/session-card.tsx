@@ -1,5 +1,6 @@
 import type { Session, SessionStatus } from "@/lib/types"
 import { formatAgo } from "@/lib/format"
+import { parseSessionName } from "@/lib/sessions"
 import { focusSession } from "@/api/client"
 import { StatusDot } from "@/components/status-dot"
 import { LogDrawer } from "@/components/log-drawer"
@@ -28,9 +29,9 @@ export function SessionCard({
   selected?: boolean
   onSelect?: (name: string, checked: boolean) => void
 }) {
-  const parts = session.session.split("/")
-  const project = parts[0]
-  const name = parts.slice(1).join("/")
+  const parsed = parseSessionName(session.session)
+  const project = parsed.project
+  const name = parsed.ticket ? `${parsed.ticket}/${parsed.session}` : parsed.session
   const ago = formatAgo(session.timestamp)
   const hasSummary =
     session.summary && session.summary !== "Session " + session.status
