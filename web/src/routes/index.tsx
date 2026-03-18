@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
@@ -7,6 +7,7 @@ import { SessionCard } from "@/components/session-card"
 import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
+import { parseSessionName } from "@/lib/sessions"
 import type { Session, SessionStatus } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
@@ -35,15 +36,6 @@ function sortSessions(sessions: Session[]): Session[] {
     if (oa !== ob) return oa - ob
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   })
-}
-
-/** Parse a session name into { project, ticket, session } */
-function parseSessionName(name: string) {
-  const parts = name.split("/")
-  if (parts.length === 3) {
-    return { project: parts[0], ticket: parts[1], session: parts[2] }
-  }
-  return { project: parts[0], ticket: "", session: parts.slice(1).join("/") }
 }
 
 /** Group sessions by project, then by ticket within each project */
@@ -104,16 +96,24 @@ function Dashboard() {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
 
   const all = sessions ?? []
-  const filtered = filterSessions(all, tab)
-  const sorted = sortSessions(filtered)
-  const grouped = groupSessions(sorted)
 
-  const counts: Record<FilterTab, number> = {
-    live: all.filter((s) => isLive(s.status)).length,
-    paused: all.filter((s) => s.status === "paused").length,
-    archived: all.filter((s) => s.status === "archived").length,
-    all: all.length,
-  }
+  const counts = useMemo(() => {
+    const c = { live: 0, paused: 0, archived: 0, all: 0 }
+    for (const s of all) {
+      if (isLive(s.status)) c.live++
+      else if (s.status === "paused") c.paused++
+      else if (s.status === "archived") c.archived++
+      c.all++
+    }
+    return c as Record<FilterTab, number>
+  }, [all])
+
+  const sorted = useMemo(
+    () => sortSessions(filterSessions(all, tab)),
+    [all, tab],
+  )
+
+  const grouped = useMemo(() => groupSessions(sorted), [sorted])
 
   // Only show bulk actions for non-live tabs
   const showBulk = tab !== "live" && tab !== "all"

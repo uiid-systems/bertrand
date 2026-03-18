@@ -50,8 +50,8 @@ export type EventColorClass =
   | ""
 
 export function eventClass(event: string): EventColorClass {
-  if (event.includes("start") || event === "session.resume") return "started"
-  if (event === "session.resumed") return "resumed"
+  if (event === "session.resumed" || event === "session.resume") return "resumed"
+  if (event.includes("start") || event.includes("resume")) return "started"
   if (event.includes("block")) return "blocked"
   if (event.includes("end") || event.includes("done")) return "ended"
   if (event.includes("permission")) return "permission"
