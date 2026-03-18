@@ -4,7 +4,6 @@ import { fetchSessions, fetchSessionLog } from "./client"
 export const sessionKeys = {
   all: ["sessions"] as const,
   list: () => [...sessionKeys.all, "list"] as const,
-  detail: (name: string) => [...sessionKeys.all, name] as const,
   log: (name: string) => [...sessionKeys.all, name, "log"] as const,
 }
 

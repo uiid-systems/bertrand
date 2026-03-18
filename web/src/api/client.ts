@@ -3,10 +3,12 @@ import type { Session, TypedEvent } from "@/lib/types"
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  if (res.headers.get("content-type")?.includes("application/json")) {
-    return res.json()
-  }
-  return undefined as T
+  return res.json()
+}
+
+async function apiPost(path: string): Promise<void> {
+  const res = await fetch(path, { method: "POST" })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
 export function fetchSessions(): Promise<Session[]> {
@@ -18,13 +20,13 @@ export function fetchSessionLog(sessionName: string): Promise<TypedEvent[]> {
 }
 
 export function focusSession(sessionName: string): Promise<void> {
-  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/focus`, { method: "POST" })
+  return apiPost(`/sessions/${encodeURIComponent(sessionName)}/focus`)
 }
 
 export function archiveSession(sessionName: string): Promise<void> {
-  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/archive`, { method: "POST" })
+  return apiPost(`/sessions/${encodeURIComponent(sessionName)}/archive`)
 }
 
 export function deleteSession(sessionName: string): Promise<void> {
-  return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/delete`, { method: "POST" })
+  return apiPost(`/sessions/${encodeURIComponent(sessionName)}/delete`)
 }

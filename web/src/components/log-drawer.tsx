@@ -26,7 +26,7 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
       ) : filtered.length === 0 ? (
         <span className="text-muted-foreground">no log entries</span>
       ) : (
-        filtered.map((e) => {
+        filtered.map((e, i) => {
           const ts = new Date(e.TS).toLocaleTimeString("en-US", {
             hour: "2-digit",
             minute: "2-digit",
@@ -38,7 +38,7 @@ export function LogDrawer({ sessionName }: { sessionName: string }) {
 
           return (
             <div
-              key={`${e.TS}-${e.Event}`}
+              key={`${e.TS}-${e.Event}-${i}`}
               className="flex gap-2 py-0.5 text-muted-foreground"
             >
               <span className="w-10 shrink-0">{ts}</span>
