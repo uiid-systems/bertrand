@@ -1,10 +1,13 @@
 import { useState, useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
 import { useSessionStore } from "@/store/session-store"
+import type { ViewMode } from "@/store/session-store"
 import { SessionCard } from "@/components/session-card"
+import { SearchInput } from "@/components/search-input"
+import { StatusChips } from "@/components/status-chips"
+import { ViewSwitcher } from "@/components/view-switcher"
 import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
@@ -22,9 +25,6 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 })
 
-const FILTER_TABS = ["live", "paused", "archived", "all"] as const
-type FilterTab = (typeof FILTER_TABS)[number]
-
 const STATUS_ORDER: Record<SessionStatus, number> = {
   blocked: 0,
   prompting: 1,
@@ -33,8 +33,12 @@ const STATUS_ORDER: Record<SessionStatus, number> = {
   archived: 4,
 }
 
-function isLive(status: SessionStatus) {
-  return status === "working" || status === "blocked" || status === "prompting"
+const STATUS_LABELS: Record<SessionStatus, string> = {
+  blocked: "blocked",
+  prompting: "prompting",
+  working: "working",
+  paused: "paused",
+  archived: "archived",
 }
 
 function sortSessions(sessions: Session[]): Session[] {
@@ -46,17 +50,21 @@ function sortSessions(sessions: Session[]): Session[] {
   })
 }
 
+function sortByTime(sessions: Session[]): Session[] {
+  return [...sessions].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  )
+}
+
 /** Group sessions by ticket. Sessions without a ticket land in "direct". */
-function groupSessions(sessions: Session[]) {
+function groupByTicket(sessions: Session[]) {
   const tickets = new Map<string, Session[]>()
   const direct: Session[] = []
 
   for (const s of sessions) {
     const { ticket } = parseSessionName(s.session)
     if (ticket) {
-      if (!tickets.has(ticket)) {
-        tickets.set(ticket, [])
-      }
+      if (!tickets.has(ticket)) tickets.set(ticket, [])
       tickets.get(ticket)!.push(s)
     } else {
       direct.push(s)
@@ -66,17 +74,31 @@ function groupSessions(sessions: Session[]) {
   return { tickets, direct }
 }
 
-function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
-  switch (tab) {
-    case "live":
-      return sessions.filter((s) => isLive(s.status))
-    case "paused":
-      return sessions.filter((s) => s.status === "paused")
-    case "archived":
-      return sessions.filter((s) => s.status === "archived")
-    case "all":
-      return sessions
+/** Group sessions by status. */
+function groupByStatus(sessions: Session[]) {
+  const groups = new Map<SessionStatus, Session[]>()
+
+  for (const s of sessions) {
+    if (!groups.has(s.status)) groups.set(s.status, [])
+    groups.get(s.status)!.push(s)
   }
+
+  // Sort groups by status order
+  const sorted = new Map(
+    [...groups.entries()].sort(
+      ([a], [b]) => (STATUS_ORDER[a] ?? 99) - (STATUS_ORDER[b] ?? 99),
+    ),
+  )
+
+  return sorted
+}
+
+function matchesSearch(session: Session, query: string): boolean {
+  const q = query.toLowerCase()
+  return (
+    session.session.toLowerCase().includes(q) ||
+    session.summary.toLowerCase().includes(q)
+  )
 }
 
 function Dashboard() {
@@ -87,16 +109,10 @@ function Dashboard() {
 
   const selectedProject = useSessionStore((s) => s.selectedProject)
   const setSelectedProject = useSessionStore((s) => s.setSelectedProject)
+  const searchQuery = useSessionStore((s) => s.searchQuery)
+  const statusFilters = useSessionStore((s) => s.statusFilters)
+  const viewMode = useSessionStore((s) => s.viewMode)
 
-  const [tab, setTab] = useQueryState(
-    "tab",
-    parseAsStringLiteral(FILTER_TABS).withDefault("live"),
-  )
-  function changeTab(t: FilterTab) {
-    setTab(t)
-    setSelected(new Set())
-    setConfirming(null)
-  }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
 
@@ -122,7 +138,7 @@ function Dashboard() {
       : projects[0] ?? null
 
   /** Sessions filtered to the active project */
-  const all = useMemo(
+  const projectFiltered = useMemo(
     () =>
       effectiveProject
         ? parsed.filter((e) => e.parsed.project === effectiveProject).map((e) => e.session)
@@ -130,26 +146,49 @@ function Dashboard() {
     [parsed, effectiveProject, allSessions],
   )
 
-  const counts = useMemo(() => {
-    const c = { live: 0, paused: 0, archived: 0, all: 0 }
-    for (const s of all) {
-      if (isLive(s.status)) c.live++
-      else if (s.status === "paused") c.paused++
-      else if (s.status === "archived") c.archived++
-      c.all++
+  /** Per-status counts (before search/status filtering, but after project filter) */
+  const statusCounts = useMemo(() => {
+    const c: Record<SessionStatus, number> = {
+      working: 0,
+      blocked: 0,
+      prompting: 0,
+      paused: 0,
+      archived: 0,
     }
-    return c as Record<FilterTab, number>
-  }, [all])
+    for (const s of projectFiltered) c[s.status]++
+    return c
+  }, [projectFiltered])
 
-  const sorted = useMemo(
-    () => sortSessions(filterSessions(all, tab)),
-    [all, tab],
+  /** Apply status filters */
+  const statusFiltered = useMemo(
+    () =>
+      statusFilters.size > 0
+        ? projectFiltered.filter((s) => statusFilters.has(s.status))
+        : projectFiltered,
+    [projectFiltered, statusFilters],
   )
 
-  const grouped = useMemo(() => groupSessions(sorted), [sorted])
+  /** Apply search filter */
+  const searchFiltered = useMemo(
+    () =>
+      searchQuery.trim()
+        ? statusFiltered.filter((s) => matchesSearch(s, searchQuery.trim()))
+        : statusFiltered,
+    [statusFiltered, searchQuery],
+  )
 
-  // Only show bulk actions for non-live tabs
-  const showBulk = tab !== "live" && tab !== "all"
+  /** Sort based on view mode */
+  const sorted = useMemo(
+    () => (viewMode === "recent" ? sortByTime(searchFiltered) : sortSessions(searchFiltered)),
+    [searchFiltered, viewMode],
+  )
+
+  // Bulk actions available when filtering to non-live statuses
+  const hasOnlyBulkable =
+    statusFilters.size > 0 &&
+    [...statusFilters].every((s) => s === "paused" || s === "archived")
+  const showBulk = hasOnlyBulkable
+  const canArchive = statusFilters.has("paused") && !statusFilters.has("archived")
   const selectedInView = [...selected].filter((n) =>
     sorted.some((s) => s.session === n),
   )
@@ -190,9 +229,7 @@ function Dashboard() {
           projects={projects}
           selectedProject={effectiveProject}
           onProject={setSelectedProject}
-          counts={counts}
-          tab={tab}
-          onTab={changeTab}
+          statusCounts={statusCounts}
         />
         <div className="p-10 text-center text-muted-foreground">
           {isError ? (
@@ -211,9 +248,7 @@ function Dashboard() {
         projects={projects}
         selectedProject={selectedProject}
         onProject={setSelectedProject}
-        counts={counts}
-        tab={tab}
-        onTab={changeTab}
+        statusCounts={statusCounts}
       />
 
       {showBulk && sorted.length > 0 && (
@@ -231,7 +266,7 @@ function Dashboard() {
 
           {selectedInView.length > 0 && !confirming && (
             <div className="ml-auto flex gap-1.5">
-              {tab === "paused" && (
+              {canArchive && (
                 <Button
                   variant="secondary"
                   size="xs"
@@ -281,44 +316,106 @@ function Dashboard() {
       <div className="p-2">
         {sorted.length === 0 ? (
           <div className="p-10 text-center text-muted-foreground">
-            no {tab === "all" ? "" : tab + " "}sessions
+            {searchQuery.trim() ? "no matching sessions" : "no sessions"}
           </div>
         ) : (
-          <>
-            {Array.from(grouped.tickets.entries()).map(
-              ([ticket, ticketSessions]) => (
-                <div key={ticket} className="mb-2">
-                  <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
-                    {ticket}/
-                  </h3>
-                  <Accordion>
-                    {ticketSessions.map((s) => (
-                      <SessionCard
-                        key={s.session}
-                        session={s}
-                        selected={selected.has(s.session)}
-                        onSelect={showBulk ? handleSelect : undefined}
-                      />
-                    ))}
-                  </Accordion>
-                </div>
-              ),
-            )}
-            {grouped.direct.length > 0 && (
-              <Accordion>
-                {grouped.direct.map((s) => (
-                  <SessionCard
-                    key={s.session}
-                    session={s}
-                    selected={selected.has(s.session)}
-                    onSelect={showBulk ? handleSelect : undefined}
-                  />
-                ))}
-              </Accordion>
-            )}
-          </>
+          <SessionList
+            sessions={sorted}
+            viewMode={viewMode}
+            selected={selected}
+            onSelect={showBulk ? handleSelect : undefined}
+          />
         )}
       </div>
+    </>
+  )
+}
+
+function SessionList({
+  sessions,
+  viewMode,
+  selected,
+  onSelect,
+}: {
+  sessions: Session[]
+  viewMode: ViewMode
+  selected: Set<string>
+  onSelect?: (name: string, checked: boolean) => void
+}) {
+  if (viewMode === "recent") {
+    return (
+      <Accordion>
+        {sessions.map((s) => (
+          <SessionCard
+            key={s.session}
+            session={s}
+            selected={selected.has(s.session)}
+            onSelect={onSelect}
+          />
+        ))}
+      </Accordion>
+    )
+  }
+
+  if (viewMode === "status") {
+    const groups = groupByStatus(sessions)
+    return (
+      <>
+        {Array.from(groups.entries()).map(([status, statusSessions]) => (
+          <div key={status} className="mb-2">
+            <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+              {STATUS_LABELS[status]}
+              <span className="ml-1 opacity-60">{statusSessions.length}</span>
+            </h3>
+            <Accordion>
+              {statusSessions.map((s) => (
+                <SessionCard
+                  key={s.session}
+                  session={s}
+                  selected={selected.has(s.session)}
+                  onSelect={onSelect}
+                />
+              ))}
+            </Accordion>
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  // viewMode === "ticket"
+  const { tickets, direct } = groupByTicket(sessions)
+  return (
+    <>
+      {Array.from(tickets.entries()).map(([ticket, ticketSessions]) => (
+        <div key={ticket} className="mb-2">
+          <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+            {ticket}/
+          </h3>
+          <Accordion>
+            {ticketSessions.map((s) => (
+              <SessionCard
+                key={s.session}
+                session={s}
+                selected={selected.has(s.session)}
+                onSelect={onSelect}
+              />
+            ))}
+          </Accordion>
+        </div>
+      ))}
+      {direct.length > 0 && (
+        <Accordion>
+          {direct.map((s) => (
+            <SessionCard
+              key={s.session}
+              session={s}
+              selected={selected.has(s.session)}
+              onSelect={onSelect}
+            />
+          ))}
+        </Accordion>
+      )}
     </>
   )
 }
@@ -327,60 +424,38 @@ function Header({
   projects,
   selectedProject,
   onProject,
-  counts,
-  tab,
-  onTab,
+  statusCounts,
 }: {
   projects: string[]
   selectedProject: string | null
   onProject: (project: string | null) => void
-  counts: Record<FilterTab, number>
-  tab: FilterTab
-  onTab: (t: FilterTab) => void
+  statusCounts: Record<SessionStatus, number>
 }) {
-  const tabs: { key: FilterTab; label: string }[] = [
-    { key: "live", label: "live" },
-    { key: "paused", label: "paused" },
-    { key: "archived", label: "archived" },
-    { key: "all", label: "all" },
-  ]
-
   return (
-    <div className="flex items-center justify-between border-b border-border px-4 py-3">
-      <Select
-        value={selectedProject ?? ""}
-        onValueChange={(val) => onProject(val || null)}
-      >
-        <SelectTrigger size="sm" className="min-w-0 w-auto border-none shadow-none bg-transparent font-semibold text-sm">
-          <SelectValue placeholder="project" />
-        </SelectTrigger>
-        <SelectPopup>
-          {projects.map((p) => (
-            <SelectItem key={p} value={p}>
-              {p}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-      <div className="flex items-center gap-1">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => onTab(t.key)}
-            className={`rounded px-2 py-0.5 text-xs transition-colors ${
-              tab === t.key
-                ? "bg-accent text-accent-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-            {counts[t.key] > 0 && (
-              <span className="ml-1 text-[10px] opacity-60">
-                {counts[t.key]}
-              </span>
-            )}
-          </button>
-        ))}
+    <div className="border-b border-border">
+      <div className="flex items-center justify-between px-4 py-3">
+        <Select
+          value={selectedProject ?? ""}
+          onValueChange={(val) => onProject(val || null)}
+        >
+          <SelectTrigger size="sm" className="min-w-0 w-auto border-none shadow-none bg-transparent font-semibold text-sm">
+            <SelectValue placeholder="project" />
+          </SelectTrigger>
+          <SelectPopup>
+            {projects.map((p) => (
+              <SelectItem key={p} value={p}>
+                {p}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+        <div className="w-48">
+          <SearchInput />
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-4 pb-2">
+        <StatusChips counts={statusCounts} />
+        <ViewSwitcher />
       </div>
     </div>
   )
