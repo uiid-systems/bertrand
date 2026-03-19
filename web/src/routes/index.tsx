@@ -1,12 +1,20 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
+import { useSessionStore } from "@/store/session-store"
 import { SessionCard } from "@/components/session-card"
 import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select"
 import { parseSessionName } from "@/lib/sessions"
 import type { Session, SessionStatus } from "@/lib/types"
 
@@ -83,6 +91,9 @@ function Dashboard() {
   const bulkDelete = useBulkDelete()
   const busy = bulkArchive.isPending || bulkDelete.isPending
 
+  const selectedProject = useSessionStore((s) => s.selectedProject)
+  const setSelectedProject = useSessionStore((s) => s.setSelectedProject)
+
   const [tab, setTab] = useQueryState(
     "tab",
     parseAsStringLiteral(FILTER_TABS).withDefault("live"),
@@ -95,7 +106,34 @@ function Dashboard() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
 
-  const all = sessions ?? []
+  const allSessions = sessions ?? []
+
+  /** Distinct project names derived from session data */
+  const projects = useMemo(() => {
+    const set = new Set<string>()
+    for (const s of allSessions) {
+      set.add(parseSessionName(s.session).project)
+    }
+    return Array.from(set).sort()
+  }, [allSessions])
+
+  // Auto-select first project if none selected or current selection no longer exists
+  useEffect(() => {
+    if (projects.length > 0 && (!selectedProject || !projects.includes(selectedProject))) {
+      setSelectedProject(projects[0]!)
+    }
+  }, [projects, selectedProject, setSelectedProject])
+
+  /** Sessions filtered to the active project */
+  const all = useMemo(
+    () =>
+      selectedProject
+        ? allSessions.filter(
+            (s) => parseSessionName(s.session).project === selectedProject,
+          )
+        : allSessions,
+    [allSessions, selectedProject],
+  )
 
   const counts = useMemo(() => {
     const c = { live: 0, paused: 0, archived: 0, all: 0 }
@@ -153,7 +191,14 @@ function Dashboard() {
   if (isLoading || isError) {
     return (
       <>
-        <Header counts={counts} tab={tab} onTab={changeTab} />
+        <Header
+          projects={projects}
+          selectedProject={selectedProject}
+          onProject={setSelectedProject}
+          counts={counts}
+          tab={tab}
+          onTab={changeTab}
+        />
         <div className="p-10 text-center text-muted-foreground">
           {isError ? (
             <span className="text-destructive">failed to load sessions</span>
@@ -167,7 +212,14 @@ function Dashboard() {
 
   return (
     <>
-      <Header counts={counts} tab={tab} onTab={changeTab} />
+      <Header
+        projects={projects}
+        selectedProject={selectedProject}
+        onProject={setSelectedProject}
+        counts={counts}
+        tab={tab}
+        onTab={changeTab}
+      />
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -282,10 +334,16 @@ function Dashboard() {
 }
 
 function Header({
+  projects,
+  selectedProject,
+  onProject,
   counts,
   tab,
   onTab,
 }: {
+  projects: string[]
+  selectedProject: string | null
+  onProject: (project: string | null) => void
   counts: Record<FilterTab, number>
   tab: FilterTab
   onTab: (t: FilterTab) => void
@@ -299,7 +357,21 @@ function Header({
 
   return (
     <div className="flex items-center justify-between border-b border-border px-4 py-3">
-      <h1 className="text-sm font-semibold">bertrand</h1>
+      <Select
+        value={selectedProject ?? ""}
+        onValueChange={(val) => onProject(val || null)}
+      >
+        <SelectTrigger size="sm" className="min-w-0 w-auto border-none shadow-none bg-transparent font-semibold text-sm">
+          <SelectValue placeholder="project" />
+        </SelectTrigger>
+        <SelectPopup>
+          {projects.map((p) => (
+            <SelectItem key={p} value={p}>
+              {p}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
       <div className="flex items-center gap-1">
         {tabs.map((t) => (
           <button

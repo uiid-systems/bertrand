@@ -11,6 +11,8 @@
   },
   "iconLibrary": "hugeicons",
   "rtl": false,
+  "menuColor": "default",
+  "menuAccent": "subtle",
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils",
@@ -18,7 +20,10 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "menuColor": "default",
-  "menuAccent": "subtle",
-  "registries": {}
+  "registries": {
+    "@coss": "https://coss.com/ui/r/{name}.json",
+    "@47ng": "https://nuqs.dev/r/{name}.json",
+    "@ibelick": "https://motion-primitives.com/c/{name}.json",
+    "@shadcnstudio": "https://shadcnstudio.com/r/{name}.json"
+  }
 }
