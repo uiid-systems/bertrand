@@ -387,7 +387,8 @@ func renderSegmentEvents(b *strings.Builder, events []sessionlog.EnrichedEvent) 
 				if answer != "" {
 					b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m  \033[38;5;252m%s\033[0m%s\n",
 						pipeColor, answer, answerGap))
-				} else if answerGap != "" {
+				} else if answerGap != "" && d > time.Minute {
+					// Only show "responded" sub-line when there was a meaningful wait
 					b.WriteString(fmt.Sprintf("         \033[38;5;%dm│\033[0m  \033[38;5;241mresponded\033[0m%s\n",
 						pipeColor, answerGap))
 				}

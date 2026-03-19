@@ -140,13 +140,27 @@ name="${BERTRAND_SESSION:-}"
 input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
+# AskUserQuestion has its own hook (blocked) — skip permission pipeline entirely
+[ "$tool" = "AskUserQuestion" ] && exit 0
+
+# Extract detail from tool_input for richer timeline
+detail=""
+case "$tool" in
+  Bash)
+    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+  Edit|Write|Read)
+    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+esac
+esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+
 # Write pending marker — this hook only fires for real permission prompts
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 
 # Wave badge + notification + focus (priority 25 > blocked's 20, skip if wsh not available)
-# Skip AskUserQuestion — the blocked hook already handles that notification
-if command -v wsh &>/dev/null && [ "$tool" != "AskUserQuestion" ]; then
+if command -v wsh &>/dev/null; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
   wsh notify -t "$name" "Needs permission: $tool"
 
@@ -162,8 +176,8 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -182,6 +196,18 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 case "$tool" in
   AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
 esac
+
+# Extract detail from tool_input for richer timeline
+detail=""
+case "$tool" in
+  Bash)
+    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+  Edit|Write|Read)
+    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+esac
+esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
 had_pending=0
 [ -f "$HOME/.bertrand/sessions/$name/pending" ] && had_pending=1
@@ -204,8 +230,8 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 

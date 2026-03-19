@@ -7,8 +7,8 @@ import (
 
 func TestLookup_Known(t *testing.T) {
 	info := Lookup("session.started")
-	if info.Label != "started" {
-		t.Errorf("expected label 'started', got %q", info.Label)
+	if info.Label != "bertrand started" {
+		t.Errorf("expected label 'bertrand started', got %q", info.Label)
 	}
 	if info.ColorANSI != 78 {
 		t.Errorf("expected ColorANSI 78, got %d", info.ColorANSI)
