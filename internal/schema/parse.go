@@ -182,6 +182,9 @@ func (te *TypedEvent) MetaSummary() string {
 	case *SessionEndMeta:
 		return m.Summary
 	case *PermissionMeta:
+		if m.Detail != "" {
+			return m.Detail
+		}
 		return m.Tool
 	case *WorktreeEnteredMeta:
 		return m.Branch

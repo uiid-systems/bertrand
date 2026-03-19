@@ -82,6 +82,7 @@ type SessionBlockMeta struct {
 // PermissionMeta is metadata for permission.request and permission.resolve events.
 type PermissionMeta struct {
 	Tool     string `json:"tool"`
+	Detail   string `json:"detail,omitempty"`
 	ClaudeID string `json:"claude_id"`
 }
 
