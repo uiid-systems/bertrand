@@ -160,9 +160,11 @@ func repairQAPairs(events []EnrichedEvent) []EnrichedEvent {
 	// Rebuild the event list with resumes relocated
 	// First, collect events without relocated resumes
 	var filtered []EnrichedEvent
-	pendingInserts := make(map[int]EnrichedEvent) // block index → resume to insert after
+	// A block may have multiple resumes targeting it (e.g. duplicate claude_id),
+	// so use a slice per block index.
+	pendingInserts := make(map[int][]EnrichedEvent) // block index → resumes to insert after
 	for ri, bi := range relocate {
-		pendingInserts[bi] = events[ri]
+		pendingInserts[bi] = append(pendingInserts[bi], events[ri])
 	}
 
 	for i, e := range events {
@@ -170,9 +172,9 @@ func repairQAPairs(events []EnrichedEvent) []EnrichedEvent {
 			continue // skip — will be inserted after its block
 		}
 		filtered = append(filtered, e)
-		// Check if a resume should be inserted after this block
-		if resume, ok := pendingInserts[i]; ok {
-			filtered = append(filtered, resume)
+		// Check if resumes should be inserted after this block
+		if resumes, ok := pendingInserts[i]; ok {
+			filtered = append(filtered, resumes...)
 		}
 	}
 

@@ -128,6 +128,24 @@ printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer
 `
 }
 
+// extractDetailSnippet returns a shell snippet that extracts a detail string
+// from the hook's $input JSON based on the tool name in $tool.
+// Shared by PermissionWaitScript and PermissionDoneScript.
+func extractDetailSnippet() string {
+	return `# Extract detail from tool_input for richer timeline
+detail=""
+case "$tool" in
+  Bash)
+    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+  Edit|Write|Read)
+    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    ;;
+esac
+esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+`
+}
+
 // PermissionWaitScript returns the hook script that writes a pending marker
 // when a real permission dialog is shown (PermissionRequest event). This only
 // fires when the user is actually prompted — auto-approved tools never trigger it.
@@ -143,18 +161,7 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 # AskUserQuestion has its own hook (blocked) — skip permission pipeline entirely
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
-# Extract detail from tool_input for richer timeline
-detail=""
-case "$tool" in
-  Bash)
-    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
-    ;;
-  Edit|Write|Read)
-    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
-    ;;
-esac
-esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-
+` + extractDetailSnippet() + `
 # Write pending marker — this hook only fires for real permission prompts
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
@@ -197,18 +204,7 @@ case "$tool" in
   AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
 esac
 
-# Extract detail from tool_input for richer timeline
-detail=""
-case "$tool" in
-  Bash)
-    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
-    ;;
-  Edit|Write|Read)
-    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
-    ;;
-esac
-esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-
+` + extractDetailSnippet() + `
 had_pending=0
 [ -f "$HOME/.bertrand/sessions/$name/pending" ] && had_pending=1
 rm -f "$HOME/.bertrand/sessions/$name/pending"
