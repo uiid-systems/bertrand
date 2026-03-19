@@ -114,6 +114,18 @@ func runInitWizard(showLogo bool) error {
 			lines = append(lines, "  auto_focus: false")
 		}
 
+		// Preserve focus_delay_ms if set
+		if strings.Contains(existingStr, "focus_delay_ms:") {
+			for _, line := range strings.Split(existingStr, "\n") {
+				if strings.Contains(line, "focus_delay_ms:") {
+					lines = append(lines, "  "+strings.TrimSpace(line))
+					break
+				}
+			}
+		} else {
+			lines = append(lines, "  focus_delay_ms: 1000")
+		}
+
 		// Preserve dashboard_port if set
 		if strings.Contains(existingStr, "dashboard_port:") {
 			for _, line := range strings.Split(existingStr, "\n") {

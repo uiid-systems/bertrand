@@ -32,6 +32,11 @@ if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
 
+  # Read focus delay from config (default 1000ms)
+  _delay_ms="$(grep 'focus_delay_ms:' "$HOME/.bertrand/config.yaml" 2>/dev/null | grep -o '[0-9]*')"
+  [ -z "$_delay_ms" ] && _delay_ms=1000
+  [ "$_delay_ms" -gt 0 ] 2>/dev/null && sleep "$(awk "BEGIN{printf \"%.3f\", $_delay_ms/1000}")"
+
   # Activate Wave (bring to foreground) if auto_focus is enabled
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
     osascript -e 'tell application "Wave" to activate' 2>/dev/null
@@ -107,6 +112,11 @@ if command -v wsh &>/dev/null; then
   # Cycle focus: find the next blocked session and focus its block
   next="$(bertrand focus --next 2>/dev/null)"
   if [ -n "$next" ]; then
+    # Read focus delay from config (default 1000ms)
+    _delay_ms="$(grep 'focus_delay_ms:' "$HOME/.bertrand/config.yaml" 2>/dev/null | grep -o '[0-9]*')"
+    [ -z "$_delay_ms" ] && _delay_ms=1000
+    [ "$_delay_ms" -gt 0 ] 2>/dev/null && sleep "$(awk "BEGIN{printf \"%.3f\", $_delay_ms/1000}")"
+
     # Activate Wave if auto_focus is enabled
     if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
       osascript -e 'tell application "Wave" to activate' 2>/dev/null
@@ -149,6 +159,11 @@ printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 if command -v wsh &>/dev/null && [ "$tool" != "AskUserQuestion" ]; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
   wsh notify -t "$name" "Needs permission: $tool"
+
+  # Read focus delay from config (default 1000ms)
+  _delay_ms="$(grep 'focus_delay_ms:' "$HOME/.bertrand/config.yaml" 2>/dev/null | grep -o '[0-9]*')"
+  [ -z "$_delay_ms" ] && _delay_ms=1000
+  [ "$_delay_ms" -gt 0 ] 2>/dev/null && sleep "$(awk "BEGIN{printf \"%.3f\", $_delay_ms/1000}")"
 
   # Activate Wave if auto_focus is enabled
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
@@ -620,7 +635,7 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-blocked.sh"),
-						Timeout: 5,
+						Timeout: 10,
 					},
 				},
 			},
@@ -642,7 +657,7 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-resumed.sh"),
-						Timeout: 5,
+						Timeout: 10,
 					},
 				},
 			},
@@ -724,7 +739,7 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-permission-wait.sh"),
-						Timeout: 5,
+						Timeout: 10,
 					},
 				},
 			},
