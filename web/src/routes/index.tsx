@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
@@ -102,31 +102,32 @@ function Dashboard() {
 
   const allSessions = sessions ?? []
 
+  /** Parse once, derive everything from the result */
+  const parsed = useMemo(
+    () => allSessions.map((s) => ({ session: s, parsed: parseSessionName(s.session) })),
+    [allSessions],
+  )
+
   /** Distinct project names derived from session data */
   const projects = useMemo(() => {
     const set = new Set<string>()
-    for (const s of allSessions) {
-      set.add(parseSessionName(s.session).project)
-    }
+    for (const { parsed: p } of parsed) set.add(p.project)
     return Array.from(set).sort()
-  }, [allSessions])
+  }, [parsed])
 
-  // Auto-select first project if none selected or current selection no longer exists
-  useEffect(() => {
-    if (projects.length > 0 && (!selectedProject || !projects.includes(selectedProject))) {
-      setSelectedProject(projects[0]!)
-    }
-  }, [projects, selectedProject, setSelectedProject])
+  /** Fall back to first project if selection is stale or empty */
+  const effectiveProject =
+    selectedProject && projects.includes(selectedProject)
+      ? selectedProject
+      : projects[0] ?? null
 
   /** Sessions filtered to the active project */
   const all = useMemo(
     () =>
-      selectedProject
-        ? allSessions.filter(
-            (s) => parseSessionName(s.session).project === selectedProject,
-          )
+      effectiveProject
+        ? parsed.filter((e) => e.parsed.project === effectiveProject).map((e) => e.session)
         : allSessions,
-    [allSessions, selectedProject],
+    [parsed, effectiveProject, allSessions],
   )
 
   const counts = useMemo(() => {
@@ -187,7 +188,7 @@ function Dashboard() {
       <>
         <Header
           projects={projects}
-          selectedProject={selectedProject}
+          selectedProject={effectiveProject}
           onProject={setSelectedProject}
           counts={counts}
           tab={tab}
