@@ -30,8 +30,7 @@ export function SessionCard({
   onSelect?: (name: string, checked: boolean) => void
 }) {
   const parsed = parseSessionName(session.session)
-  const project = parsed.project
-  const name = parsed.ticket ? `${parsed.ticket}/${parsed.session}` : parsed.session
+  const name = parsed.session
   const ago = formatAgo(session.timestamp)
   const hasSummary =
     session.summary && session.summary !== "Session " + session.status
@@ -54,9 +53,6 @@ export function SessionCard({
           )}
           <StatusDot status={session.status} />
           <div className="min-w-0 flex-1 truncate font-semibold">
-            <span className="font-normal text-muted-foreground">
-              {project}/
-            </span>
             {name}
           </div>
           <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">

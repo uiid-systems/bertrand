@@ -3,10 +3,18 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useQueryState, parseAsStringLiteral } from "nuqs"
 import { useSessions } from "@/hooks/useSessions"
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations"
+import { useSessionStore } from "@/store/session-store"
 import { SessionCard } from "@/components/session-card"
 import { Checkbox } from "@/components/checkbox"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select"
 import { parseSessionName } from "@/lib/sessions"
 import type { Session, SessionStatus } from "@/lib/types"
 
@@ -38,30 +46,24 @@ function sortSessions(sessions: Session[]): Session[] {
   })
 }
 
-/** Group sessions by project, then by ticket within each project */
+/** Group sessions by ticket. Sessions without a ticket land in "direct". */
 function groupSessions(sessions: Session[]) {
-  const projects = new Map<
-    string,
-    { tickets: Map<string, Session[]>; direct: Session[] }
-  >()
+  const tickets = new Map<string, Session[]>()
+  const direct: Session[] = []
 
   for (const s of sessions) {
-    const { project, ticket } = parseSessionName(s.session)
-    if (!projects.has(project)) {
-      projects.set(project, { tickets: new Map(), direct: [] })
-    }
-    const group = projects.get(project)!
+    const { ticket } = parseSessionName(s.session)
     if (ticket) {
-      if (!group.tickets.has(ticket)) {
-        group.tickets.set(ticket, [])
+      if (!tickets.has(ticket)) {
+        tickets.set(ticket, [])
       }
-      group.tickets.get(ticket)!.push(s)
+      tickets.get(ticket)!.push(s)
     } else {
-      group.direct.push(s)
+      direct.push(s)
     }
   }
 
-  return projects
+  return { tickets, direct }
 }
 
 function filterSessions(sessions: Session[], tab: FilterTab): Session[] {
@@ -83,6 +85,9 @@ function Dashboard() {
   const bulkDelete = useBulkDelete()
   const busy = bulkArchive.isPending || bulkDelete.isPending
 
+  const selectedProject = useSessionStore((s) => s.selectedProject)
+  const setSelectedProject = useSessionStore((s) => s.setSelectedProject)
+
   const [tab, setTab] = useQueryState(
     "tab",
     parseAsStringLiteral(FILTER_TABS).withDefault("live"),
@@ -95,7 +100,35 @@ function Dashboard() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null)
 
-  const all = sessions ?? []
+  const allSessions = sessions ?? []
+
+  /** Parse once, derive everything from the result */
+  const parsed = useMemo(
+    () => allSessions.map((s) => ({ session: s, parsed: parseSessionName(s.session) })),
+    [allSessions],
+  )
+
+  /** Distinct project names derived from session data */
+  const projects = useMemo(() => {
+    const set = new Set<string>()
+    for (const { parsed: p } of parsed) set.add(p.project)
+    return Array.from(set).sort()
+  }, [parsed])
+
+  /** Fall back to first project if selection is stale or empty */
+  const effectiveProject =
+    selectedProject && projects.includes(selectedProject)
+      ? selectedProject
+      : projects[0] ?? null
+
+  /** Sessions filtered to the active project */
+  const all = useMemo(
+    () =>
+      effectiveProject
+        ? parsed.filter((e) => e.parsed.project === effectiveProject).map((e) => e.session)
+        : allSessions,
+    [parsed, effectiveProject, allSessions],
+  )
 
   const counts = useMemo(() => {
     const c = { live: 0, paused: 0, archived: 0, all: 0 }
@@ -153,7 +186,14 @@ function Dashboard() {
   if (isLoading || isError) {
     return (
       <>
-        <Header counts={counts} tab={tab} onTab={changeTab} />
+        <Header
+          projects={projects}
+          selectedProject={effectiveProject}
+          onProject={setSelectedProject}
+          counts={counts}
+          tab={tab}
+          onTab={changeTab}
+        />
         <div className="p-10 text-center text-muted-foreground">
           {isError ? (
             <span className="text-destructive">failed to load sessions</span>
@@ -167,7 +207,14 @@ function Dashboard() {
 
   return (
     <>
-      <Header counts={counts} tab={tab} onTab={changeTab} />
+      <Header
+        projects={projects}
+        selectedProject={selectedProject}
+        onProject={setSelectedProject}
+        counts={counts}
+        tab={tab}
+        onTab={changeTab}
+      />
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -237,44 +284,39 @@ function Dashboard() {
             no {tab === "all" ? "" : tab + " "}sessions
           </div>
         ) : (
-          Array.from(grouped.entries()).map(([project, group]) => (
-            <div key={project} className="mb-4">
-              <h2 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
-                {project}/
-              </h2>
-              {Array.from(group.tickets.entries()).map(
-                ([ticket, ticketSessions]) => (
-                  <div key={ticket} className="ml-2">
-                    <h3 className="px-3 py-0.5 text-xs text-muted-foreground">
-                      {ticket}/
-                    </h3>
-                    <Accordion>
-                      {ticketSessions.map((s) => (
-                        <SessionCard
-                          key={s.session}
-                          session={s}
-                          selected={selected.has(s.session)}
-                          onSelect={showBulk ? handleSelect : undefined}
-                        />
-                      ))}
-                    </Accordion>
-                  </div>
-                ),
-              )}
-              {group.direct.length > 0 && (
-                <Accordion>
-                  {group.direct.map((s) => (
-                    <SessionCard
-                      key={s.session}
-                      session={s}
-                      selected={selected.has(s.session)}
-                      onSelect={showBulk ? handleSelect : undefined}
-                    />
-                  ))}
-                </Accordion>
-              )}
-            </div>
-          ))
+          <>
+            {Array.from(grouped.tickets.entries()).map(
+              ([ticket, ticketSessions]) => (
+                <div key={ticket} className="mb-2">
+                  <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    {ticket}/
+                  </h3>
+                  <Accordion>
+                    {ticketSessions.map((s) => (
+                      <SessionCard
+                        key={s.session}
+                        session={s}
+                        selected={selected.has(s.session)}
+                        onSelect={showBulk ? handleSelect : undefined}
+                      />
+                    ))}
+                  </Accordion>
+                </div>
+              ),
+            )}
+            {grouped.direct.length > 0 && (
+              <Accordion>
+                {grouped.direct.map((s) => (
+                  <SessionCard
+                    key={s.session}
+                    session={s}
+                    selected={selected.has(s.session)}
+                    onSelect={showBulk ? handleSelect : undefined}
+                  />
+                ))}
+              </Accordion>
+            )}
+          </>
         )}
       </div>
     </>
@@ -282,10 +324,16 @@ function Dashboard() {
 }
 
 function Header({
+  projects,
+  selectedProject,
+  onProject,
   counts,
   tab,
   onTab,
 }: {
+  projects: string[]
+  selectedProject: string | null
+  onProject: (project: string | null) => void
   counts: Record<FilterTab, number>
   tab: FilterTab
   onTab: (t: FilterTab) => void
@@ -299,7 +347,21 @@ function Header({
 
   return (
     <div className="flex items-center justify-between border-b border-border px-4 py-3">
-      <h1 className="text-sm font-semibold">bertrand</h1>
+      <Select
+        value={selectedProject ?? ""}
+        onValueChange={(val) => onProject(val || null)}
+      >
+        <SelectTrigger size="sm" className="min-w-0 w-auto border-none shadow-none bg-transparent font-semibold text-sm">
+          <SelectValue placeholder="project" />
+        </SelectTrigger>
+        <SelectPopup>
+          {projects.map((p) => (
+            <SelectItem key={p} value={p}>
+              {p}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
       <div className="flex items-center gap-1">
         {tabs.map((t) => (
           <button

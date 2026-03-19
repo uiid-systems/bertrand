@@ -20,7 +20,8 @@
     "nuqs": "^2.8.9",
     "react": "^19",
     "react-dom": "^19",
-    "tailwind-merge": "^2"
+    "tailwind-merge": "^2",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",
