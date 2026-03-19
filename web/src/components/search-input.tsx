@@ -8,8 +8,8 @@ export function SearchInput() {
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
-    setLocal(searchQuery)
-  }, [searchQuery])
+    return () => clearTimeout(timerRef.current)
+  }, [])
 
   function handleChange(value: string) {
     setLocal(value)
