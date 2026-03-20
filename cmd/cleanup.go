@@ -25,7 +25,7 @@ var cleanupCmd = &cobra.Command{
 
 func init() {
 	cleanupCmd.Flags().BoolVar(&cleanupDryRun, "dry-run", false, "Show what would be cleaned without removing anything")
-	cleanupCmd.Flags().BoolVar(&cleanupForce, "force", false, "Skip confirmation prompt")
+	cleanupCmd.Flags().BoolVar(&cleanupForce, "force", false, "Skip confirmation and remove dirty worktrees")
 	rootCmd.AddCommand(cleanupCmd)
 }
 
@@ -66,13 +66,14 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	return executePlan(repoDir, plan)
+	return executePlan(repoDir, plan, cleanupForce)
 }
 
 func printPlan(plan *cleanup.Plan) {
 	x := "\033[38;5;196m✗\033[0m"
 	dim := func(s string) string { return fmt.Sprintf("\033[38;5;241m%s\033[0m", s) }
 	label := func(s string) string { return fmt.Sprintf("\033[38;5;252m%s\033[0m", s) }
+	warn := func(s string) string { return fmt.Sprintf("\033[38;5;214m%s\033[0m", s) }
 
 	if len(plan.Worktrees) > 0 {
 		fmt.Printf("%s\n", label("Stale worktrees:"))
@@ -82,7 +83,14 @@ func printPlan(plan *cleanup.Plan) {
 			if item.SessionName != "" {
 				session = fmt.Sprintf(" %s", dim(fmt.Sprintf("(%s — done %s)", item.SessionName, age)))
 			}
-			fmt.Printf("  %s %s %s%s\n", x, label(item.Name), dim(item.Detail), session)
+			flags := ""
+			if item.Dirty {
+				flags += fmt.Sprintf(" %s", warn("dirty"))
+			}
+			if item.Merged {
+				flags += fmt.Sprintf(" %s", dim("[merged]"))
+			}
+			fmt.Printf("  %s %s %s%s%s\n", x, label(item.Name), dim(item.Detail), session, flags)
 		}
 		fmt.Println()
 	}
@@ -109,15 +117,22 @@ func printPlan(plan *cleanup.Plan) {
 	}
 }
 
-func executePlan(repoDir string, plan *cleanup.Plan) error {
+func executePlan(repoDir string, plan *cleanup.Plan, force bool) error {
 	check := "\033[38;5;78m✓\033[0m"
 	fail := "\033[38;5;196m✗\033[0m"
+	skip := "\033[38;5;214m⚠\033[0m"
 	label := func(s string) string { return fmt.Sprintf("\033[38;5;252m%s\033[0m", s) }
 
 	var errors []string
+	skipped := 0
 
 	for _, item := range plan.Worktrees {
-		if err := cleanup.ExecuteWorktree(repoDir, item); err != nil {
+		if item.Dirty && !force {
+			fmt.Printf("  %s %s %s\n", skip, label("worktree "+item.Name), "skipped (dirty — use --force to override)")
+			skipped++
+			continue
+		}
+		if err := cleanup.ExecuteWorktree(repoDir, item, force); err != nil {
 			fmt.Printf("  %s %s %s\n", fail, label("worktree "+item.Name), err)
 			errors = append(errors, fmt.Sprintf("worktree %s: %v", item.Name, err))
 		} else {
@@ -144,12 +159,16 @@ func executePlan(repoDir string, plan *cleanup.Plan) error {
 	}
 
 	fmt.Println()
+	cleaned := plan.Total() - len(errors) - skipped
+	if skipped > 0 {
+		fmt.Printf("\033[38;5;214m⚠\033[0m \033[38;5;252m%d items skipped (dirty worktrees)\033[0m\n", skipped)
+	}
 	if len(errors) > 0 {
 		fmt.Printf("\033[38;5;214m⚠\033[0m \033[38;5;252m%d of %d items failed\033[0m\n", len(errors), plan.Total())
 		return fmt.Errorf("%d items failed to clean up", len(errors))
 	}
 
-	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mCleaned up %d items\033[0m\n", plan.Total())
+	fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mCleaned up %d items\033[0m\n", cleaned)
 	return nil
 }
 
