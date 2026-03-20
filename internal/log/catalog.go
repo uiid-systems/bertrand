@@ -34,6 +34,8 @@ var Catalog = map[string]EventInfo{
 
 	"linear.issue.read": {Label: "linear", Category: "integration", Color: "var(--purple)", ColorANSI: 141, DetailANSI: 252},
 
+	"user.prompt": {Label: "user message", Category: "interaction", Color: "var(--blue)", ColorANSI: 111, DetailANSI: 252},
+
 	"context.snapshot": {Label: "context", Category: "context", Color: "var(--dim)", ColorANSI: 241, DetailANSI: 241, Skip: true},
 
 	// Legacy state entries

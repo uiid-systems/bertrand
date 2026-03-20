@@ -8,6 +8,7 @@ import {
   MessageQuestionIcon,
   GitBranchIcon,
   TaskDaily01Icon,
+  UserIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 
@@ -44,7 +45,7 @@ function cleanWorkSummary(s: string): string {
 // ---------------------------------------------------------------------------
 
 export interface TimelineSegment {
-  type: "qa" | "pr" | "linear" | "worktree" | "work" | "lifecycle"
+  type: "qa" | "prompt" | "pr" | "linear" | "worktree" | "work" | "lifecycle"
   ts: string
   events: [EnrichedEvent, ...EnrichedEvent[]]
 }
@@ -98,6 +99,13 @@ export function buildSegments(input: EnrichedEvent[]): TimelineSegment[] {
       }
       out.push({ type: "qa", ts: cur.ts, events: pair })
       i = j
+      continue
+    }
+
+    // --- User free-text prompt ---
+    if (cur.event === "user.prompt") {
+      out.push({ type: "prompt", ts: cur.ts, events: [cur] })
+      i++
       continue
     }
 
@@ -238,6 +246,20 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
             responded
           </div>
         ) : null}
+      </div>
+    </Row>
+  )
+}
+
+function PromptSegment({ segment }: { segment: TimelineSegment }) {
+  const e = segment.events[0]
+  const m = getMeta(e)
+  const prompt = m.prompt || e.summary || ""
+
+  return (
+    <Row ts={segment.ts} icon={UserIcon} iconColor="text-[var(--event-blue)]" pad>
+      <div className="border-l-2 border-[var(--event-blue)]/50 pl-2.5 text-foreground/80 leading-snug font-sans">
+        {prompt}
       </div>
     </Row>
   )
@@ -425,6 +447,8 @@ export function TimelineSegmentView({
   switch (segment.type) {
     case "qa":
       return <QASegment segment={segment} />
+    case "prompt":
+      return <PromptSegment segment={segment} />
     case "pr":
       return <PrSegment segment={segment} repoBase={repoBase} />
     case "linear":

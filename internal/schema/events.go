@@ -115,6 +115,12 @@ type LinearIssueReadMeta struct {
 	ClaudeID   string `json:"claude_id"`
 }
 
+// UserPromptMeta is metadata for user.prompt events (free-text user messages).
+type UserPromptMeta struct {
+	Prompt   string `json:"prompt"`
+	ClaudeID string `json:"claude_id"`
+}
+
 // ContextSnapshotMeta is metadata for context.snapshot events.
 type ContextSnapshotMeta struct {
 	Model               string `json:"model"`
@@ -151,4 +157,5 @@ var EventNames = []string{
 	"linear.issue.read",
 	"context.snapshot",
 	"claude.discarded",
+	"user.prompt",
 }
