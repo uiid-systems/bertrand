@@ -46,7 +46,10 @@ export function SessionCard({
   }
 
   return (
-    <AccordionItem value={session.session}>
+    <AccordionItem
+      value={session.session}
+      className={session.focused ? "ring-1 ring-[var(--status-working)]/30" : undefined}
+    >
       <AccordionTrigger className="hover:no-underline">
         <div className="flex flex-1 items-center gap-1.5 @sm:gap-2">
           {onSelect && (

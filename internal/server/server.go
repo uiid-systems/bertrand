@@ -57,16 +57,24 @@ func New(port int) *http.ServeMux {
 	return mux
 }
 
+// sessionWithFocus extends State with a focused flag for the API response.
+type sessionWithFocus struct {
+	session.State
+	Focused bool `json:"focused"`
+}
+
 func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := session.ListSessions()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if sessions == nil {
-		sessions = []session.State{}
+	focused := session.ReadFocused()
+	out := make([]sessionWithFocus, len(sessions))
+	for i, s := range sessions {
+		out[i] = sessionWithFocus{State: s, Focused: s.Session == focused}
 	}
-	writeJSON(w, http.StatusOK, sessions)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func handleSessionRoute(w http.ResponseWriter, r *http.Request) {

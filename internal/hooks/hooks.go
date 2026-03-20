@@ -57,6 +57,9 @@ if command -v wsh &>/dev/null; then
 
   # Always focus this block within the tab so the user lands here
   wsh focusblock
+
+  # Write focus marker for dashboard
+  printf '%s' "$name" > "$HOME/.bertrand/focused"
 fi
 
 # Log event
