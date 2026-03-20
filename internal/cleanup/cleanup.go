@@ -19,6 +19,8 @@ type Item struct {
 	Detail      string // extra info (e.g. branch name, PR number)
 	Age         time.Duration
 	SessionName string // associated session, if any
+	Dirty       bool   // worktree has uncommitted changes
+	Merged      bool   // worktree branch is merged into main
 }
 
 // Plan holds all items to clean up, grouped by kind.
@@ -90,6 +92,8 @@ func scanWorktrees(repoDir string) ([]Item, error) {
 		}
 	}
 
+	mainBranch := detectMainBranch(repoDir)
+
 	var items []Item
 	for _, wt := range worktrees {
 		// Skip the main worktree (no branch or it's the repo root)
@@ -100,8 +104,11 @@ func scanWorktrees(repoDir string) ([]Item, error) {
 		// Check if a session owns this worktree
 		s, hasSession := branchToSession[wt.Branch]
 
-		// Only flag worktrees whose session is archived or has no session at all
-		if hasSession && s.Status != session.StatusArchived {
+		// Check if the branch is merged into main
+		merged := isBranchMerged(repoDir, wt.Branch, mainBranch)
+
+		// Flag worktrees whose session is archived, has no session, or whose branch is merged
+		if hasSession && s.Status != session.StatusArchived && !merged {
 			continue
 		}
 
@@ -109,6 +116,8 @@ func scanWorktrees(repoDir string) ([]Item, error) {
 			Kind:   "worktree",
 			Name:   filepath.Base(wt.Path),
 			Detail: wt.Branch,
+			Merged: merged,
+			Dirty:  isWorktreeDirty(wt.Path),
 		}
 		if hasSession {
 			item.SessionName = s.Session
@@ -118,6 +127,20 @@ func scanWorktrees(repoDir string) ([]Item, error) {
 	}
 
 	return items, nil
+}
+
+func isWorktreeDirty(path string) bool {
+	cmd := exec.Command("git", "-C", path, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+
+func isBranchMerged(repoDir, branch, mainBranch string) bool {
+	cmd := exec.Command("git", "-C", repoDir, "merge-base", "--is-ancestor", branch, mainBranch)
+	return cmd.Run() == nil
 }
 
 func parseWorktreeList(output string) []worktreeInfo {
@@ -169,6 +192,9 @@ func scanMergedBranches(repoDir string) ([]Item, error) {
 		return nil, err
 	}
 
+	// Track local branches we've already added
+	seen := make(map[string]bool)
+
 	var items []Item
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
@@ -181,11 +207,39 @@ func scanMergedBranches(repoDir string) ([]Item, error) {
 		if checkedOut[branch] {
 			continue
 		}
+		seen[branch] = true
 		items = append(items, Item{
 			Kind:   "branch",
 			Name:   branch,
 			Detail: fmt.Sprintf("merged into %s", mainBranch),
 		})
+	}
+
+	// Scan remote merged branches
+	remoteCmd := exec.Command("git", "-C", repoDir, "branch", "-r", "--merged", mainBranch, "--format=%(refname:short)")
+	remoteOut, err := remoteCmd.Output()
+	if err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(remoteOut)))
+		for scanner.Scan() {
+			ref := strings.TrimSpace(scanner.Text())
+			if ref == "" || !strings.HasPrefix(ref, "origin/") {
+				continue
+			}
+			branch := strings.TrimPrefix(ref, "origin/")
+			if branch == mainBranch || branch == "main" || branch == "master" || branch == "HEAD" {
+				continue
+			}
+			// Skip if we already have a local branch for this — the remote
+			// will be cleaned up when ExecuteBranch deletes the local one.
+			if seen[branch] {
+				continue
+			}
+			items = append(items, Item{
+				Kind:   "branch",
+				Name:   branch,
+				Detail: fmt.Sprintf("remote, merged into %s", mainBranch),
+			})
+		}
 	}
 
 	return items, nil
@@ -237,7 +291,7 @@ func scanArchivedSessions() ([]Item, error) {
 }
 
 // ExecuteWorktree removes a stale git worktree.
-func ExecuteWorktree(repoDir string, item Item) error {
+func ExecuteWorktree(repoDir string, item Item, force bool) error {
 	// Find the full worktree path
 	cmd := exec.Command("git", "-C", repoDir, "worktree", "list", "--porcelain")
 	out, err := cmd.Output()
@@ -248,7 +302,12 @@ func ExecuteWorktree(repoDir string, item Item) error {
 	worktrees := parseWorktreeList(string(out))
 	for _, wt := range worktrees {
 		if wt.Branch == item.Detail {
-			rmCmd := exec.Command("git", "-C", repoDir, "worktree", "remove", wt.Path)
+			args := []string{"-C", repoDir, "worktree", "remove"}
+			if force {
+				args = append(args, "--force")
+			}
+			args = append(args, wt.Path)
+			rmCmd := exec.Command("git", args...)
 			if err := rmCmd.Run(); err != nil {
 				return err
 			}
@@ -263,10 +322,22 @@ func ExecuteWorktree(repoDir string, item Item) error {
 	return fmt.Errorf("worktree for branch %s not found", item.Detail)
 }
 
-// ExecuteBranch deletes a merged local branch.
+// ExecuteBranch deletes a merged branch (local and remote).
 func ExecuteBranch(repoDir string, item Item) error {
-	cmd := exec.Command("git", "-C", repoDir, "branch", "-d", item.Name)
-	return cmd.Run()
+	remoteOnly := strings.HasPrefix(item.Detail, "remote,")
+
+	if !remoteOnly {
+		cmd := exec.Command("git", "-C", repoDir, "branch", "-d", item.Name)
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+
+	// Also delete the remote branch, silently skip if it doesn't exist
+	delRemote := exec.Command("git", "-C", repoDir, "push", "origin", "--delete", item.Name)
+	_ = delRemote.Run()
+
+	return nil
 }
 
 // ExecuteSession deletes session data.
