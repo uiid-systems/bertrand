@@ -271,8 +271,8 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
           {question}
         </div>
         {answer ? (
-          <div className="pl-3 leading-snug max-w-[75ch] font-sans italic text-muted-foreground">
-            {answer}
+          <div className="pl-3 leading-snug max-w-[75ch] font-sans text-muted-foreground/80">
+            → {answer}
           </div>
         ) : resume ? (
           <div className="pl-3 text-muted-foreground/40 text-[11px]">
@@ -415,12 +415,25 @@ function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
 }
 
 function WorkSegment({ segment }: { segment: TimelineSegment }) {
-  const summaries = segment.events
-    .map((e) => cleanWorkSummary(e.summary))
-    .filter(Boolean)
+  // Collect all tool names, deduplicate with counts
+  const toolCounts = new Map<string, number>()
+  for (const e of segment.events) {
+    const cleaned = cleanWorkSummary(e.summary)
+    if (!cleaned) continue
+    // Split "2× Bash, Edit" into individual tools with counts
+    for (const part of cleaned.split(", ")) {
+      const countMatch = part.match(/^(\d+)×\s*(.+)$/)
+      const name = countMatch?.[2] ?? part
+      const count = countMatch ? parseInt(countMatch[1], 10) : 1
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + count)
+    }
+  }
+
   const display =
-    summaries.length > 0
-      ? summaries.join(", ")
+    toolCounts.size > 0
+      ? [...toolCounts.entries()]
+          .map(([name, count]) => (count > 1 ? `${count}× ${name}` : name))
+          .join(", ")
       : `${segment.events.length} tool operations`
 
   return (
