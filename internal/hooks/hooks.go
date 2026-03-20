@@ -106,27 +106,45 @@ input="$(cat)"
 
 bertrand update --name "$name" --status prompting --summary "Resumed after input"
 
-# Extract user answer from tool_response.answers (JSON object)
-# PostToolUse input structure: {"tool_response": {"answers": {"question": "answer"}}, ...}
+# Extract user answer + notes from PostToolUse payload (python3 for reliable JSON parsing)
+# tool_response is a string like: "User has answered your questions: \"q\"=\"a\". ..."
+# tool_input.answers is a dict like: {"question": "answer"} (filled by permission component)
 answer=""
 if command -v python3 &>/dev/null; then
   answer="$(printf '%s' "$input" | python3 -c "
-import json, sys
+import json, sys, re
 try:
     d = json.load(sys.stdin)
-    # tool_response is a JSON object with an 'answers' dict
-    tr = d.get('tool_response', {})
-    if isinstance(tr, dict):
-        ans = tr.get('answers', {})
-        if ans:
-            print(', '.join(str(v) for v in ans.values())[:200])
-            sys.exit(0)
-    # Fallback: tool_input also has answers
+    # Method 1: tool_input.answers (structured data from permission component)
     ti = d.get('tool_input', {})
     if isinstance(ti, dict):
         ans = ti.get('answers', {})
-        if ans:
+        if isinstance(ans, dict) and ans:
             print(', '.join(str(v) for v in ans.values())[:200])
+            sys.exit(0)
+    # Method 2: tool_response as dict with answers
+    tr = d.get('tool_response', {})
+    if isinstance(tr, dict):
+        ans = tr.get('answers', {})
+        if isinstance(ans, dict) and ans:
+            print(', '.join(str(v) for v in ans.values())[:200])
+            sys.exit(0)
+    # Method 3: tool_response as string — parse answer from formatted text
+    if isinstance(tr, str):
+        # Extract answers from '\"question\"=\"answer\"' patterns
+        vals = re.findall(r'\"=\"([^\"]*?)\"', tr)
+        if not vals:
+            # Try unescaped: "question"="answer"
+            vals = re.findall(r'\"=\"([^\"]*)\"', tr)
+        # Also capture user notes if present
+        notes = ''
+        nm = re.search(r'user notes:\s*(.+?)(?:\.\s*You can now|\s*$)', tr, re.DOTALL)
+        if nm:
+            notes = nm.group(1).strip()
+        parts = [v for v in vals if v] + ([notes] if notes else [])
+        if parts:
+            print(', '.join(parts)[:200])
+            sys.exit(0)
 except Exception:
     pass
 " 2>/dev/null)"
@@ -160,12 +178,20 @@ if command -v wsh &>/dev/null; then
   fi
 fi
 
-# Log event
+# Log event — use python3 for JSON-safe escaping (handles newlines, control chars)
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/log.jsonl"
+if command -v python3 &>/dev/null; then
+  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$answer" | python3 -c "
+import json, sys, os
+a = sys.stdin.read()
+obj = {'v':1,'event':'session.resume','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'answer':a,'claude_id':os.environ['CID']}}
+print(json.dumps(obj, ensure_ascii=False))
+" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
+else
+  esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
+fi
 `
 }
 
@@ -369,11 +395,15 @@ case "$cmd" in
     pr_url="$(printf '%s' "$input" | grep -oE 'https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)"
     pr_number="$(printf '%s' "$pr_url" | grep -oE '[0-9]+$')"
     branch="$(printf '%s' "$input" | grep -o '"branch"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"branch"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+    # Extract PR title from --title flag in the command
+    pr_title="$(printf '%s' "$cmd" | sed -n 's/.*--title[[:space:]]*"\([^"]*\)".*/\1/p' | cut -c1-120)"
     [ -z "$pr_number" ] && pr_number=""
     [ -z "$pr_url" ] && pr_url=""
     [ -z "$branch" ] && branch=""
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    [ -z "$pr_title" ] && pr_title=""
+    esc_title="$(printf '%s' "$pr_title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/log.jsonl"
     ;;
   gh\ pr\ merge*)
     pr_number="$(printf '%s' "$cmd" | grep -oE '[0-9]+' | head -1)"
@@ -406,6 +436,47 @@ ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
 printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
+// UserPromptScript returns the hook script that captures free-text user messages.
+// Fires on UserPromptSubmit — when the user types a message outside the AskUserQuestion loop.
+func UserPromptScript() string {
+	return `#!/usr/bin/env bash
+# Hook: UserPromptSubmit → capture free-text user message
+name="${BERTRAND_SESSION:-}"
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+
+# Extract prompt text from the hook input JSON
+prompt=""
+if command -v python3 &>/dev/null; then
+  prompt="$(printf '%s' "$input" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    p = d.get('prompt', '')
+    if p:
+        print(p[:200])
+except Exception:
+    pass
+" 2>/dev/null)"
+fi
+
+[ -z "$prompt" ] && exit 0
+
+# Log event — use python3 for JSON-safe escaping
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+if command -v python3 &>/dev/null; then
+  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$prompt" | python3 -c "
+import json, sys, os
+p = sys.stdin.read()
+obj = {'v':1,'event':'user.prompt','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'prompt':p,'claude_id':os.environ['CID']}}
+print(json.dumps(obj, ensure_ascii=False))
+" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
+fi
 `
 }
 
@@ -586,6 +657,7 @@ func hooksFingerprint() string {
 	h.Write([]byte(WorktreeExitedScript()))
 	h.Write([]byte(GhCommandScript()))
 	h.Write([]byte(LinearReadScript()))
+	h.Write([]byte(UserPromptScript()))
 	h.Write([]byte(StatuslineScript()))
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
@@ -619,6 +691,7 @@ func InstallHooks() (string, error) {
 		"on-worktree-exited.sh":   WorktreeExitedScript(),
 		"on-gh-command.sh":        GhCommandScript(),
 		"on-linear-read.sh":       LinearReadScript(),
+		"on-user-prompt.sh":       UserPromptScript(),
 		"statusline.sh":           StatuslineScript(),
 	}
 
@@ -797,6 +870,18 @@ func InjectSettings() error {
 				},
 			},
 		},
+		"UserPromptSubmit": {
+			{
+				Matcher: "",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-user-prompt.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+		},
 		"Stop": {
 			{
 				Matcher: "",
@@ -876,7 +961,7 @@ func RemoveSettings() error {
 		return nil
 	}
 
-	for _, event := range []string{"PreToolUse", "PostToolUse", "PermissionRequest", "Stop"} {
+	for _, event := range []string{"PreToolUse", "PostToolUse", "PermissionRequest", "UserPromptSubmit", "Stop"} {
 		matchers, ok := existingHooks[event]
 		if !ok {
 			continue

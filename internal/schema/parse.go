@@ -99,6 +99,9 @@ func parseMeta(event string, raw json.RawMessage) (any, error) {
 	case "context.snapshot":
 		var m ContextSnapshotMeta
 		return &m, json.Unmarshal(raw, &m)
+	case "user.prompt":
+		var m UserPromptMeta
+		return &m, json.Unmarshal(raw, &m)
 	default:
 		// Unknown event type — preserve raw meta as map for forward compat.
 		var m map[string]string
@@ -164,6 +167,8 @@ func (te *TypedEvent) MetaClaudeID() string {
 		return m.ClaudeID
 	case *ContextSnapshotMeta:
 		return m.ClaudeID
+	case *UserPromptMeta:
+		return m.ClaudeID
 	case map[string]string:
 		return m["claude_id"]
 	default:
@@ -200,6 +205,8 @@ func (te *TypedEvent) MetaSummary() string {
 			return m.IssueID + ": " + m.IssueTitle
 		}
 		return m.IssueID
+	case *UserPromptMeta:
+		return m.Prompt
 	case *ContextSnapshotMeta:
 		return m.Model + " " + m.RemainingPct + "%"
 	case *ClaudeIDMeta:

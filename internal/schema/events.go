@@ -97,6 +97,7 @@ type GhPrCreatedMeta struct {
 	PRNumber string `json:"pr_number,omitempty"`
 	PRURL    string `json:"pr_url,omitempty"`
 	Branch   string `json:"branch,omitempty"`
+	PRTitle  string `json:"pr_title,omitempty"`
 	ClaudeID string `json:"claude_id"`
 }
 
@@ -113,6 +114,12 @@ type LinearIssueReadMeta struct {
 	IssueTitle string `json:"issue_title,omitempty"`
 	ToolName   string `json:"tool_name,omitempty"`
 	ClaudeID   string `json:"claude_id"`
+}
+
+// UserPromptMeta is metadata for user.prompt events (free-text user messages).
+type UserPromptMeta struct {
+	Prompt   string `json:"prompt"`
+	ClaudeID string `json:"claude_id"`
 }
 
 // ContextSnapshotMeta is metadata for context.snapshot events.
@@ -151,4 +158,5 @@ var EventNames = []string{
 	"linear.issue.read",
 	"context.snapshot",
 	"claude.discarded",
+	"user.prompt",
 }

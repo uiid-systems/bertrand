@@ -96,6 +96,7 @@
   --event-green: oklch(0.65 0.2 145);
   --event-orange: oklch(0.75 0.15 80);
   --event-purple: oklch(0.65 0.15 300);
+  --event-blue: oklch(0.65 0.15 240);
   --event-dim: oklch(0.45 0.01 250);
   --radius: 0.45rem;
 }

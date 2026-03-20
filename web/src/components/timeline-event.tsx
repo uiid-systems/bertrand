@@ -8,6 +8,7 @@ import {
   MessageQuestionIcon,
   GitBranchIcon,
   TaskDaily01Icon,
+  UserIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 
@@ -28,14 +29,47 @@ function getMeta(e: EnrichedEvent): Record<string, string> {
 }
 
 /**
- * Strip "AskUserQuestion" from a tool.work summary.
+ * Parse an MCP tool name into a human-readable server label.
+ * e.g. "mcp__claude_ai_Linear__get_issue" → "Linear"
+ * e.g. "mcp__local-mcp__list_agents" → "local-mcp"
+ * e.g. "mcp__shadcn__get_add_command_for_items" → "shadcn"
+ * Returns null for non-MCP tools.
+ */
+function parseMcpServer(toolName: string): string | null {
+  const match = toolName.match(/^mcp__(.+?)__/)
+  if (!match?.[1]) return null
+  const alias = match[1]
+  // claude.ai servers: "claude_ai_Linear" → "Linear"
+  const cloudMatch = alias.match(/^claude_ai_(.+)$/)
+  return cloudMatch?.[1] ?? alias
+}
+
+/**
+ * Clean a tool name for display — collapse MCP names to server label.
+ * e.g. "mcp__claude_ai_Linear__get_issue" → "Linear"
+ * e.g. "Bash" → "Bash"
+ */
+function displayToolName(toolName: string): string {
+  return parseMcpServer(toolName) ?? toolName
+}
+
+/**
+ * Strip "AskUserQuestion" from a tool.work summary and collapse MCP tool names.
  * e.g. "AskUserQuestion, Edit" → "Edit"
- * e.g. "AskUserQuestion" → ""
+ * e.g. "2× mcp__claude_ai_Linear__get_issue, Bash" → "2× Linear, Bash"
  */
 function cleanWorkSummary(s: string): string {
   return s
     .split(", ")
     .filter((part) => part !== "AskUserQuestion")
+    .map((part) => {
+      // Handle "N× tool" format
+      const countMatch = part.match(/^(\d+×\s*)(.+)$/)
+      if (countMatch?.[2]) {
+        return countMatch[1] + displayToolName(countMatch[2])
+      }
+      return displayToolName(part)
+    })
     .join(", ")
 }
 
@@ -44,7 +78,7 @@ function cleanWorkSummary(s: string): string {
 // ---------------------------------------------------------------------------
 
 export interface TimelineSegment {
-  type: "qa" | "pr" | "linear" | "worktree" | "work" | "lifecycle"
+  type: "qa" | "prompt" | "pr" | "linear" | "worktree" | "work" | "lifecycle"
   ts: string
   events: [EnrichedEvent, ...EnrichedEvent[]]
 }
@@ -98,6 +132,13 @@ export function buildSegments(input: EnrichedEvent[]): TimelineSegment[] {
       }
       out.push({ type: "qa", ts: cur.ts, events: pair })
       i = j
+      continue
+    }
+
+    // --- User free-text prompt ---
+    if (cur.event === "user.prompt") {
+      out.push({ type: "prompt", ts: cur.ts, events: [cur] })
+      i++
       continue
     }
 
@@ -243,6 +284,20 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
   )
 }
 
+function PromptSegment({ segment }: { segment: TimelineSegment }) {
+  const e = segment.events[0]
+  const m = getMeta(e)
+  const prompt = m.prompt || e.summary || ""
+
+  return (
+    <Row ts={segment.ts} icon={UserIcon} iconColor="text-[var(--event-blue)]" pad>
+      <div className="border-l-2 border-[var(--event-blue)]/50 pl-2.5 text-foreground/80 leading-snug font-sans">
+        {prompt}
+      </div>
+    </Row>
+  )
+}
+
 function PrSegment({
   segment,
   repoBase,
@@ -262,6 +317,8 @@ function PrSegment({
   const icon = isMerged ? GitMergeIcon : GitPullRequestIcon
   const color = isMerged ? "text-[var(--event-purple)]" : "text-[var(--event-green)]"
 
+  const prTitle = m.pr_title || null
+
   return (
     <Row ts={segment.ts} icon={icon} iconColor={color} pad>
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -275,12 +332,15 @@ function PrSegment({
         ) : prNum ? (
           <Badge variant="outline">{prNum}</Badge>
         ) : null}
-        {m.branch && (
+        {prTitle && (
+          <span className="text-foreground text-[11px] truncate">{prTitle}</span>
+        )}
+        {!prTitle && m.branch && (
           <Badge variant="secondary" className="text-[10px]">
             {m.branch}
           </Badge>
         )}
-        <span className="text-foreground text-[11px]">
+        <span className="text-muted-foreground text-[11px]">
           {isMerged ? "merged" : "opened"}
         </span>
       </div>
@@ -297,38 +357,37 @@ function LinearSegment({ segment }: { segment: TimelineSegment }) {
     return true
   })
 
-  // Show issue title only when single issue and title isn't a PR mirror
-  const singleTitle =
-    unique.length === 1 && unique[0]
-      ? getMeta(unique[0]).issue_title
-      : undefined
-  const showTitle = singleTitle && !/^PR #\d+/.test(singleTitle)
-
   return (
     <Row ts={segment.ts} icon={TaskDaily01Icon} iconColor="text-[var(--event-purple)]">
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-col gap-0.5">
         {unique.map((e, idx) => {
           const m = getMeta(e)
           const id = m.issue_id || e.summary || "issue"
+          const title = m.issue_title && !/^PR #\d+/.test(m.issue_title) ? m.issue_title : null
           const url = m.issue_id ? linearIssueUrl(m.issue_id) : null
-          return url ? (
-            <a key={idx} href={url} target="_blank" rel="noopener noreferrer">
-              <Badge
-                variant="secondary"
-                className="text-[var(--event-purple)] hover:bg-accent cursor-pointer"
-              >
-                {id}
-              </Badge>
-            </a>
-          ) : (
-            <Badge key={idx} variant="secondary" className="text-[var(--event-purple)]">
-              {id}
-            </Badge>
+
+          return (
+            <div key={idx} className="flex items-center gap-1.5">
+              {url ? (
+                <a href={url} target="_blank" rel="noopener noreferrer">
+                  <Badge
+                    variant="secondary"
+                    className="text-[var(--event-purple)] hover:bg-accent cursor-pointer shrink-0"
+                  >
+                    {id}
+                  </Badge>
+                </a>
+              ) : (
+                <Badge variant="secondary" className="text-[var(--event-purple)] shrink-0">
+                  {id}
+                </Badge>
+              )}
+              {title && (
+                <span className="text-foreground text-[11px] truncate">{title}</span>
+              )}
+            </div>
           )
         })}
-        {showTitle && (
-          <span className="text-foreground text-[11px] truncate">{singleTitle}</span>
-        )}
       </div>
     </Row>
   )
@@ -356,12 +415,25 @@ function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
 }
 
 function WorkSegment({ segment }: { segment: TimelineSegment }) {
-  const summaries = segment.events
-    .map((e) => cleanWorkSummary(e.summary))
-    .filter(Boolean)
+  // Collect all tool names, deduplicate with counts
+  const toolCounts = new Map<string, number>()
+  for (const e of segment.events) {
+    const cleaned = cleanWorkSummary(e.summary)
+    if (!cleaned) continue
+    // Split "2× Bash, Edit" into individual tools with counts
+    for (const part of cleaned.split(", ")) {
+      const countMatch = part.match(/^(\d+)×\s*(.+)$/)
+      const name = countMatch?.[2] ?? part
+      const count = countMatch?.[1] ? parseInt(countMatch[1], 10) : 1
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + count)
+    }
+  }
+
   const display =
-    summaries.length > 0
-      ? summaries.join(", ")
+    toolCounts.size > 0
+      ? [...toolCounts.entries()]
+          .map(([name, count]) => (count > 1 ? `${count}× ${name}` : name))
+          .join(", ")
       : `${segment.events.length} tool operations`
 
   return (
@@ -425,6 +497,8 @@ export function TimelineSegmentView({
   switch (segment.type) {
     case "qa":
       return <QASegment segment={segment} />
+    case "prompt":
+      return <PromptSegment segment={segment} />
     case "pr":
       return <PrSegment segment={segment} repoBase={repoBase} />
     case "linear":
