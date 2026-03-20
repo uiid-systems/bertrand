@@ -105,7 +105,7 @@ func ReadWorktree(name string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(data))
+	return strings.TrimRight(strings.TrimSpace(string(data)), ".")
 }
 
 type State struct {

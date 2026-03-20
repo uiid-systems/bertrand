@@ -308,7 +308,7 @@ name="${BERTRAND_SESSION:-}"
 
 input="$(cat)"
 # Extract branch name from tool output — best effort
-branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branch //')"
+branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branch //; s/[.,;:]$//')"
 [ -z "$branch" ] && branch="unknown"
 esc_branch="$(printf '%s' "$branch" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
