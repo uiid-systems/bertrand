@@ -1,6 +1,6 @@
-import type { EnrichedEvent } from "@/lib/types"
-import { linearIssueUrl, githubPrUrl } from "@/lib/constants"
-import { Badge } from "@/components/ui/badge"
+import type { EnrichedEvent } from "@/lib/types";
+import { linearIssueUrl, githubPrUrl } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge";
 import {
   GitPullRequestIcon,
   GitMergeIcon,
@@ -9,8 +9,8 @@ import {
   GitBranchIcon,
   TaskDaily01Icon,
   UserIcon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,11 +21,11 @@ function formatTime(ts: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  })
+  });
 }
 
 function getMeta(e: EnrichedEvent): Record<string, string> {
-  return (e.meta as Record<string, string>) ?? {}
+  return (e.meta as Record<string, string>) ?? {};
 }
 
 /**
@@ -36,12 +36,12 @@ function getMeta(e: EnrichedEvent): Record<string, string> {
  * Returns null for non-MCP tools.
  */
 function parseMcpServer(toolName: string): string | null {
-  const match = toolName.match(/^mcp__(.+?)__/)
-  if (!match?.[1]) return null
-  const alias = match[1]
+  const match = toolName.match(/^mcp__(.+?)__/);
+  if (!match?.[1]) return null;
+  const alias = match[1];
   // claude.ai servers: "claude_ai_Linear" → "Linear"
-  const cloudMatch = alias.match(/^claude_ai_(.+)$/)
-  return cloudMatch?.[1] ?? alias
+  const cloudMatch = alias.match(/^claude_ai_(.+)$/);
+  return cloudMatch?.[1] ?? alias;
 }
 
 /**
@@ -50,7 +50,7 @@ function parseMcpServer(toolName: string): string | null {
  * e.g. "Bash" → "Bash"
  */
 function displayToolName(toolName: string): string {
-  return parseMcpServer(toolName) ?? toolName
+  return parseMcpServer(toolName) ?? toolName;
 }
 
 /**
@@ -64,13 +64,13 @@ function cleanWorkSummary(s: string): string {
     .filter((part) => part !== "AskUserQuestion")
     .map((part) => {
       // Handle "N× tool" format
-      const countMatch = part.match(/^(\d+×\s*)(.+)$/)
+      const countMatch = part.match(/^(\d+×\s*)(.+)$/);
       if (countMatch?.[2]) {
-        return countMatch[1] + displayToolName(countMatch[2])
+        return countMatch[1] + displayToolName(countMatch[2]);
       }
-      return displayToolName(part)
+      return displayToolName(part);
     })
-    .join(", ")
+    .join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -78,9 +78,9 @@ function cleanWorkSummary(s: string): string {
 // ---------------------------------------------------------------------------
 
 export interface TimelineSegment {
-  type: "qa" | "prompt" | "pr" | "linear" | "worktree" | "work" | "lifecycle"
-  ts: string
-  events: [EnrichedEvent, ...EnrichedEvent[]]
+  type: "qa" | "prompt" | "pr" | "linear" | "worktree" | "work" | "lifecycle";
+  ts: string;
+  events: [EnrichedEvent, ...EnrichedEvent[]];
 }
 
 const LIFECYCLE = new Set([
@@ -91,7 +91,7 @@ const LIFECYCLE = new Set([
   "claude.started",
   "claude.ended",
   "claude.discarded",
-])
+]);
 
 /**
  * Collapse a raw timeline into narrative segments.
@@ -104,117 +104,119 @@ const LIFECYCLE = new Set([
  */
 export function buildSegments(input: EnrichedEvent[]): TimelineSegment[] {
   const raw = input.filter(
-    (e) => e.event !== "permission.request" && e.event !== "permission.resolve"
-  )
+    (e) => e.event !== "permission.request" && e.event !== "permission.resolve",
+  );
 
-  const out: TimelineSegment[] = []
-  let i = 0
+  const out: TimelineSegment[] = [];
+  let i = 0;
 
   while (i < raw.length) {
-    const cur = raw[i]!
+    const cur = raw[i]!;
 
     // --- Q&A pair ---
     if (cur.event === "session.block") {
-      const pair: [EnrichedEvent, ...EnrichedEvent[]] = [cur]
-      let j = i + 1
+      const pair: [EnrichedEvent, ...EnrichedEvent[]] = [cur];
+      let j = i + 1;
       while (j < raw.length) {
-        const next = raw[j]!
+        const next = raw[j]!;
         if (next.event === "session.resume") {
-          pair.push(next)
-          j++
-          break
+          pair.push(next);
+          j++;
+          break;
         }
         if (next.event === "tool.work" && next.summary === "AskUserQuestion") {
-          j++
-          continue
+          j++;
+          continue;
         }
-        break
+        break;
       }
-      out.push({ type: "qa", ts: cur.ts, events: pair })
-      i = j
-      continue
+      out.push({ type: "qa", ts: cur.ts, events: pair });
+      i = j;
+      continue;
     }
 
     // --- User free-text prompt ---
     if (cur.event === "user.prompt") {
-      out.push({ type: "prompt", ts: cur.ts, events: [cur] })
-      i++
-      continue
+      out.push({ type: "prompt", ts: cur.ts, events: [cur] });
+      i++;
+      continue;
     }
 
     // Skip orphan resume
     if (cur.event === "session.resume") {
-      i++
-      continue
+      i++;
+      continue;
     }
 
     // --- PR ---
     if (cur.event === "gh.pr.created" || cur.event === "gh.pr.merged") {
-      out.push({ type: "pr", ts: cur.ts, events: [cur] })
-      i++
-      continue
+      out.push({ type: "pr", ts: cur.ts, events: [cur] });
+      i++;
+      continue;
     }
 
     // --- Linear (collapse consecutive linear reads only) ---
     if (cur.event === "linear.issue.read") {
-      const group: [EnrichedEvent, ...EnrichedEvent[]] = [cur]
-      let j = i + 1
+      const group: [EnrichedEvent, ...EnrichedEvent[]] = [cur];
+      let j = i + 1;
       while (j < raw.length && raw[j]!.event === "linear.issue.read") {
-        group.push(raw[j]!)
-        j++
+        group.push(raw[j]!);
+        j++;
       }
-      out.push({ type: "linear", ts: cur.ts, events: group })
-      i = j
-      continue
+      out.push({ type: "linear", ts: cur.ts, events: group });
+      i = j;
+      continue;
     }
 
     // --- Worktree ---
     if (cur.event === "worktree.entered" || cur.event === "worktree.exited") {
-      out.push({ type: "worktree", ts: cur.ts, events: [cur] })
-      i++
-      continue
+      out.push({ type: "worktree", ts: cur.ts, events: [cur] });
+      i++;
+      continue;
     }
 
     // --- tool.work → collapsed work segment ---
     if (cur.event === "tool.work") {
-      const group: EnrichedEvent[] = [cur]
-      let j = i + 1
+      const group: EnrichedEvent[] = [cur];
+      let j = i + 1;
       while (j < raw.length && raw[j]!.event === "tool.work") {
-        group.push(raw[j]!)
-        j++
+        group.push(raw[j]!);
+        j++;
       }
       // Filter: keep only tool.work with non-empty cleaned summaries
-      const meaningful = group.filter((ev) => cleanWorkSummary(ev.summary).length > 0)
+      const meaningful = group.filter(
+        (ev) => cleanWorkSummary(ev.summary).length > 0,
+      );
       if (meaningful.length > 0) {
         out.push({
           type: "work",
           ts: cur.ts,
           events: meaningful as [EnrichedEvent, ...EnrichedEvent[]],
-        })
+        });
       }
-      i = j
-      continue
+      i = j;
+      continue;
     }
 
     // --- Lifecycle (collapse consecutive) ---
     if (LIFECYCLE.has(cur.event)) {
-      const group: [EnrichedEvent, ...EnrichedEvent[]] = [cur]
-      let j = i + 1
+      const group: [EnrichedEvent, ...EnrichedEvent[]] = [cur];
+      let j = i + 1;
       while (j < raw.length && LIFECYCLE.has(raw[j]!.event)) {
-        group.push(raw[j]!)
-        j++
+        group.push(raw[j]!);
+        j++;
       }
-      out.push({ type: "lifecycle", ts: cur.ts, events: group })
-      i = j
-      continue
+      out.push({ type: "lifecycle", ts: cur.ts, events: group });
+      i = j;
+      continue;
     }
 
     // Fallback
-    out.push({ type: "lifecycle", ts: cur.ts, events: [cur] })
-    i++
+    out.push({ type: "lifecycle", ts: cur.ts, events: [cur] });
+    i++;
   }
 
-  return out
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,28 +231,34 @@ function Row({
   children,
   pad,
 }: {
-  ts: string
-  icon?: typeof GitPullRequestIcon
-  iconColor?: string
-  opacity?: string
-  children: React.ReactNode
-  pad?: boolean
+  ts: string;
+  icon?: typeof GitPullRequestIcon;
+  iconColor?: string;
+  opacity?: string;
+  children: React.ReactNode;
+  pad?: boolean;
 }) {
   return (
-    <div className={`flex gap-2 ${pad ? "py-1.5" : "py-0.5"} items-start ${opacity ?? ""}`}>
+    <div
+      className={`flex gap-2 ${pad ? "py-1.5" : "py-0.5"} items-start ${opacity ?? ""}`}
+    >
       <span className="w-10 shrink-0 text-muted-foreground pt-px">
         {formatTime(ts)}
       </span>
       <span className="w-4 shrink-0 flex items-center justify-center pt-px">
         {icon ? (
-          <HugeiconsIcon icon={icon} size={12} className={iconColor ?? "text-muted-foreground"} />
+          <HugeiconsIcon
+            icon={icon}
+            size={12}
+            className={iconColor ?? "text-muted-foreground"}
+          />
         ) : (
           <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
         )}
       </span>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -258,14 +266,19 @@ function Row({
 // ---------------------------------------------------------------------------
 
 function QASegment({ segment }: { segment: TimelineSegment }) {
-  const block = segment.events[0]
-  const resume = segment.events.find((e) => e.event === "session.resume")
-  const m = getMeta(block)
-  const question = m.question || block.summary || "Waiting for input"
-  const answer = resume ? getMeta(resume).answer || resume.summary : null
+  const block = segment.events[0];
+  const resume = segment.events.find((e) => e.event === "session.resume");
+  const m = getMeta(block);
+  const question = m.question || block.summary || "Waiting for input";
+  const answer = resume ? getMeta(resume).answer || resume.summary : null;
 
   return (
-    <Row ts={segment.ts} icon={MessageQuestionIcon} iconColor="text-[var(--event-orange)]" pad>
+    <Row
+      ts={segment.ts}
+      icon={MessageQuestionIcon}
+      iconColor="text-[var(--event-orange)]"
+      pad
+    >
       <div className="space-y-1">
         <div className="border-l-2 border-[var(--event-orange)]/50 pl-2.5 text-foreground leading-snug font-sans">
           {question}
@@ -281,50 +294,60 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
         ) : null}
       </div>
     </Row>
-  )
+  );
 }
 
 function PromptSegment({ segment }: { segment: TimelineSegment }) {
-  const e = segment.events[0]
-  const m = getMeta(e)
-  const prompt = m.prompt || e.summary || ""
+  const e = segment.events[0];
+  const m = getMeta(e);
+  const prompt = m.prompt || e.summary || "";
 
   return (
-    <Row ts={segment.ts} icon={UserIcon} iconColor="text-[var(--event-blue)]" pad>
+    <Row
+      ts={segment.ts}
+      icon={UserIcon}
+      iconColor="text-[var(--event-blue)]"
+      pad
+    >
       <div className="border-l-2 border-[var(--event-blue)]/50 pl-2.5 text-foreground/80 leading-snug font-sans">
         {prompt}
       </div>
     </Row>
-  )
+  );
 }
 
 function PrSegment({
   segment,
   repoBase,
 }: {
-  segment: TimelineSegment
-  repoBase?: string
+  segment: TimelineSegment;
+  repoBase?: string;
 }) {
-  const e = segment.events[0]
-  const m = getMeta(e)
-  const isMerged = e.event === "gh.pr.merged"
-  const prNum = m.pr_number ? `#${m.pr_number}` : null
+  const e = segment.events[0];
+  const m = getMeta(e);
+  const isMerged = e.event === "gh.pr.merged";
+  const prNum = m.pr_number ? `#${m.pr_number}` : null;
   // Use pr_url if available; fall back to repoBase, then constants
   const prUrl =
     m.pr_url ||
     (repoBase && m.pr_number ? `${repoBase}/pull/${m.pr_number}` : null) ||
-    (m.pr_number ? githubPrUrl(m.pr_number) : null)
-  const icon = isMerged ? GitMergeIcon : GitPullRequestIcon
-  const color = isMerged ? "text-[var(--event-purple)]" : "text-[var(--event-green)]"
+    (m.pr_number ? githubPrUrl(m.pr_number) : null);
+  const icon = isMerged ? GitMergeIcon : GitPullRequestIcon;
+  const color = isMerged
+    ? "text-[var(--event-purple)]"
+    : "text-[var(--event-green)]";
 
-  const prTitle = m.pr_title || null
+  const prTitle = m.pr_title || null;
 
   return (
     <Row ts={segment.ts} icon={icon} iconColor={color} pad>
       <div className="flex items-center gap-1.5 flex-wrap">
         {prNum && prUrl ? (
           <a href={prUrl} target="_blank" rel="noopener noreferrer">
-            <Badge variant="outline" className="gap-1 hover:bg-accent cursor-pointer">
+            <Badge
+              variant="outline"
+              className="gap-1 hover:bg-accent cursor-pointer"
+            >
               <HugeiconsIcon icon={icon} size={10} className={color} />
               {prNum}
             </Badge>
@@ -333,7 +356,9 @@ function PrSegment({
           <Badge variant="outline">{prNum}</Badge>
         ) : null}
         {prTitle && (
-          <span className="text-foreground text-[11px] truncate">{prTitle}</span>
+          <span className="text-foreground text-[11px] truncate">
+            {prTitle}
+          </span>
         )}
         {!prTitle && m.branch && (
           <Badge variant="secondary" className="text-[10px]">
@@ -345,26 +370,33 @@ function PrSegment({
         </span>
       </div>
     </Row>
-  )
+  );
 }
 
 function LinearSegment({ segment }: { segment: TimelineSegment }) {
-  const seen = new Set<string>()
+  const seen = new Set<string>();
   const unique = segment.events.filter((e) => {
-    const id = getMeta(e).issue_id || e.summary
-    if (!id || seen.has(id)) return false
-    seen.add(id)
-    return true
-  })
+    const id = getMeta(e).issue_id || e.summary;
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 
   return (
-    <Row ts={segment.ts} icon={TaskDaily01Icon} iconColor="text-[var(--event-purple)]">
+    <Row
+      ts={segment.ts}
+      icon={TaskDaily01Icon}
+      iconColor="text-[var(--event-purple)]"
+    >
       <div className="flex flex-col gap-0.5">
         {unique.map((e, idx) => {
-          const m = getMeta(e)
-          const id = m.issue_id || e.summary || "issue"
-          const title = m.issue_title && !/^PR #\d+/.test(m.issue_title) ? m.issue_title : null
-          const url = m.issue_id ? linearIssueUrl(m.issue_id) : null
+          const m = getMeta(e);
+          const id = m.issue_id || e.summary || "issue";
+          const title =
+            m.issue_title && !/^PR #\d+/.test(m.issue_title)
+              ? m.issue_title
+              : null;
+          const url = m.issue_id ? linearIssueUrl(m.issue_id) : null;
 
           return (
             <div key={idx} className="flex items-center gap-1.5">
@@ -378,28 +410,38 @@ function LinearSegment({ segment }: { segment: TimelineSegment }) {
                   </Badge>
                 </a>
               ) : (
-                <Badge variant="secondary" className="text-[var(--event-purple)] shrink-0">
+                <Badge
+                  variant="secondary"
+                  className="text-[var(--event-purple)] shrink-0"
+                >
                   {id}
                 </Badge>
               )}
               {title && (
-                <span className="text-foreground text-[11px] truncate">{title}</span>
+                <span className="text-foreground text-[11px] truncate">
+                  {title}
+                </span>
               )}
             </div>
-          )
+          );
         })}
       </div>
     </Row>
-  )
+  );
 }
 
 function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
-  const e = segment.events[0]
-  const m = getMeta(e)
-  const entered = e.event === "worktree.entered"
+  const e = segment.events[0];
+  const m = getMeta(e);
+  const entered = e.event === "worktree.entered";
 
   return (
-    <Row ts={segment.ts} icon={GitBranchIcon} iconColor="text-[var(--event-green)]" opacity="opacity-80">
+    <Row
+      ts={segment.ts}
+      icon={GitBranchIcon}
+      iconColor="text-[var(--event-green)]"
+      opacity="opacity-80"
+    >
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground text-[11px]">
           {entered ? "entered worktree" : "exited worktree"}
@@ -411,21 +453,21 @@ function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
         )}
       </div>
     </Row>
-  )
+  );
 }
 
 function WorkSegment({ segment }: { segment: TimelineSegment }) {
   // Collect all tool names, deduplicate with counts
-  const toolCounts = new Map<string, number>()
+  const toolCounts = new Map<string, number>();
   for (const e of segment.events) {
-    const cleaned = cleanWorkSummary(e.summary)
-    if (!cleaned) continue
+    const cleaned = cleanWorkSummary(e.summary);
+    if (!cleaned) continue;
     // Split "2× Bash, Edit" into individual tools with counts
     for (const part of cleaned.split(", ")) {
-      const countMatch = part.match(/^(\d+)×\s*(.+)$/)
-      const name = countMatch?.[2] ?? part
-      const count = countMatch?.[1] ? parseInt(countMatch[1], 10) : 1
-      toolCounts.set(name, (toolCounts.get(name) ?? 0) + count)
+      const countMatch = part.match(/^(\d+)×\s*(.+)$/);
+      const name = countMatch?.[2] ?? part;
+      const count = countMatch?.[1] ? parseInt(countMatch[1], 10) : 1;
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + count);
     }
   }
 
@@ -434,13 +476,15 @@ function WorkSegment({ segment }: { segment: TimelineSegment }) {
       ? [...toolCounts.entries()]
           .map(([name, count]) => (count > 1 ? `${count}× ${name}` : name))
           .join(", ")
-      : `${segment.events.length} tool operations`
+      : `${segment.events.length} tool operations`;
 
   return (
     <Row ts={segment.ts} icon={CodeIcon} opacity="opacity-50">
-      <span className="text-muted-foreground text-[11px] truncate block">{display}</span>
+      <span className="text-muted-foreground text-[11px] truncate block">
+        {display}
+      </span>
     </Row>
-  )
+  );
 }
 
 function LifecycleSegment({ segment }: { segment: TimelineSegment }) {
@@ -449,8 +493,8 @@ function LifecycleSegment({ segment }: { segment: TimelineSegment }) {
       (e) =>
         e.event === "session.started" ||
         e.event === "session.resumed" ||
-        e.event === "session.end"
-    ) ?? segment.events[0]
+        e.event === "session.end",
+    ) ?? segment.events[0];
 
   const label =
     best.event === "session.started"
@@ -459,13 +503,13 @@ function LifecycleSegment({ segment }: { segment: TimelineSegment }) {
         ? "session resumed"
         : best.event === "session.end"
           ? best.summary || "session ended"
-          : best.label || best.event
+          : best.label || best.event;
 
   return (
     <Row ts={segment.ts} opacity="opacity-35">
       <span className="text-muted-foreground text-[11px]">{label}</span>
     </Row>
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -478,36 +522,36 @@ function LifecycleSegment({ segment }: { segment: TimelineSegment }) {
  */
 export function extractRepoBase(events: EnrichedEvent[]): string | undefined {
   for (const e of events) {
-    const url = getMeta(e).pr_url
+    const url = getMeta(e).pr_url;
     if (url) {
-      const match = url.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+)\//)
-      if (match?.[1]) return match[1]
+      const match = url.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+)\//);
+      if (match?.[1]) return match[1];
     }
   }
-  return undefined
+  return undefined;
 }
 
 export function TimelineSegmentView({
   segment,
   repoBase,
 }: {
-  segment: TimelineSegment
-  repoBase?: string
+  segment: TimelineSegment;
+  repoBase?: string;
 }) {
   switch (segment.type) {
     case "qa":
-      return <QASegment segment={segment} />
+      return <QASegment segment={segment} />;
     case "prompt":
-      return <PromptSegment segment={segment} />
+      return <PromptSegment segment={segment} />;
     case "pr":
-      return <PrSegment segment={segment} repoBase={repoBase} />
+      return <PrSegment segment={segment} repoBase={repoBase} />;
     case "linear":
-      return <LinearSegment segment={segment} />
+      return <LinearSegment segment={segment} />;
     case "worktree":
-      return <WorktreeSegment segment={segment} />
+      return <WorktreeSegment segment={segment} />;
     case "work":
-      return <WorkSegment segment={segment} />
+      return <WorkSegment segment={segment} />;
     case "lifecycle":
-      return <LifecycleSegment segment={segment} />
+      return <LifecycleSegment segment={segment} />;
   }
 }
