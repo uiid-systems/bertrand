@@ -8,10 +8,26 @@ export interface Session {
   timestamp: string
 }
 
-export interface TypedEvent {
-  V: number
-  Event: string
-  Session: string
-  TS: string
-  TypedMeta: Record<string, string> | null
+export interface EnrichedEvent {
+  event: string
+  session: string
+  ts: string
+  summary: string
+  label: string
+  category: string
+  color: string
+  meta: Record<string, string> | null
+}
+
+export interface SessionDigest {
+  session: string
+  started_at: string
+  ended_at: string
+  duration_s: number
+  event_count: number
+  interactions: number
+  conversations: number
+  prs: number
+  timeline: EnrichedEvent[]
+  events: EnrichedEvent[]
 }

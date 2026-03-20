@@ -217,7 +217,7 @@ function Dashboard() {
       />
 
       {showBulk && sorted.length > 0 && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
+        <div className="flex items-center gap-1.5 @sm:gap-2 border-b border-border px-3 @sm:px-4 py-1.5">
           <Checkbox
             checked={selectedInView.length === sorted.length && sorted.length > 0}
             onChange={() => handleSelectAll()}
@@ -346,7 +346,7 @@ function Header({
   ]
 
   return (
-    <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <div className="flex flex-col @sm:flex-row @sm:items-center justify-between gap-2 border-b border-border px-3 @sm:px-4 py-2 @sm:py-3">
       <Select
         value={selectedProject ?? ""}
         onValueChange={(val) => onProject(val || null)}
@@ -362,7 +362,7 @@ function Header({
           ))}
         </SelectPopup>
       </Select>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}
