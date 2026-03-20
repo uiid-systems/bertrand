@@ -62,20 +62,11 @@ func Scan(repoDir string) (*Plan, error) {
 	return plan, nil
 }
 
-// worktreeInfo holds parsed output from git worktree list --porcelain.
-type worktreeInfo struct {
-	Path   string
-	Branch string
-}
-
 func scanWorktrees(repoDir string) ([]Item, error) {
-	cmd := exec.Command("git", "-C", repoDir, "worktree", "list", "--porcelain")
-	out, err := cmd.Output()
+	worktrees, err := session.ListWorktrees(repoDir)
 	if err != nil {
 		return nil, err
 	}
-
-	worktrees := parseWorktreeList(string(out))
 
 	// Get all sessions and their worktree markers
 	allSessions, err := session.ListSessions()
@@ -143,44 +134,14 @@ func isBranchMerged(repoDir, branch, mainBranch string) bool {
 	return cmd.Run() == nil
 }
 
-func parseWorktreeList(output string) []worktreeInfo {
-	var worktrees []worktreeInfo
-	var current worktreeInfo
-
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if current.Path != "" {
-				worktrees = append(worktrees, current)
-			}
-			current = worktreeInfo{}
-			continue
-		}
-		if strings.HasPrefix(line, "worktree ") {
-			current.Path = strings.TrimPrefix(line, "worktree ")
-		}
-		if strings.HasPrefix(line, "branch ") {
-			ref := strings.TrimPrefix(line, "branch ")
-			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
-		}
-	}
-	if current.Path != "" {
-		worktrees = append(worktrees, current)
-	}
-
-	return worktrees
-}
-
 func scanMergedBranches(repoDir string) ([]Item, error) {
 	// Find main branch name
 	mainBranch := detectMainBranch(repoDir)
 
 	// Collect branches currently checked out in worktrees to exclude them
-	wtCmd := exec.Command("git", "-C", repoDir, "worktree", "list", "--porcelain")
-	wtOut, _ := wtCmd.Output()
+	wtList, _ := session.ListWorktrees(repoDir)
 	checkedOut := make(map[string]bool)
-	for _, wt := range parseWorktreeList(string(wtOut)) {
+	for _, wt := range wtList {
 		if wt.Branch != "" {
 			checkedOut[wt.Branch] = true
 		}
@@ -292,14 +253,11 @@ func scanArchivedSessions() ([]Item, error) {
 
 // ExecuteWorktree removes a stale git worktree.
 func ExecuteWorktree(repoDir string, item Item, force bool) error {
-	// Find the full worktree path
-	cmd := exec.Command("git", "-C", repoDir, "worktree", "list", "--porcelain")
-	out, err := cmd.Output()
+	worktrees, err := session.ListWorktrees(repoDir)
 	if err != nil {
 		return err
 	}
 
-	worktrees := parseWorktreeList(string(out))
 	for _, wt := range worktrees {
 		if wt.Branch == item.Detail {
 			args := []string{"-C", repoDir, "worktree", "remove"}
