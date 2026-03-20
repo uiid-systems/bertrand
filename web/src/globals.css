@@ -106,7 +106,7 @@
   }
 
   body {
-    @apply font-mono text-[13px] leading-relaxed bg-background text-foreground;
+    @apply text-[13px] leading-relaxed bg-background text-foreground;
   }
 }
 

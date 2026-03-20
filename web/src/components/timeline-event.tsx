@@ -197,7 +197,7 @@ function Row({
 }) {
   return (
     <div className={`flex gap-2 ${pad ? "py-1.5" : "py-0.5"} items-start ${opacity ?? ""}`}>
-      <span className="w-10 shrink-0 text-muted-foreground tabular-nums pt-px">
+      <span className="w-10 shrink-0 text-muted-foreground pt-px">
         {formatTime(ts)}
       </span>
       <span className="w-4 shrink-0 flex items-center justify-center pt-px">
@@ -276,7 +276,7 @@ function PrSegment({
           <Badge variant="outline">{prNum}</Badge>
         ) : null}
         {m.branch && (
-          <Badge variant="secondary" className="font-mono text-[10px]">
+          <Badge variant="secondary" className="text-[10px]">
             {m.branch}
           </Badge>
         )}
@@ -346,7 +346,7 @@ function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
           {entered ? "entered worktree" : "exited worktree"}
         </span>
         {m.branch && (
-          <Badge variant="secondary" className="font-mono text-[10px]">
+          <Badge variant="secondary" className="text-[10px]">
             {m.branch}
           </Badge>
         )}
