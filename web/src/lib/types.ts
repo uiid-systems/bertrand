@@ -6,6 +6,7 @@ export interface Session {
   summary: string
   pid: number
   timestamp: string
+  focused: boolean
 }
 
 export interface EnrichedEvent {
@@ -19,6 +20,12 @@ export interface EnrichedEvent {
   meta: Record<string, string> | null
 }
 
+export interface TimingBreakdown {
+  claude_work_s: number
+  user_wait_s: number
+  active_pct: number
+}
+
 export interface SessionDigest {
   session: string
   started_at: string
@@ -28,6 +35,10 @@ export interface SessionDigest {
   interactions: number
   conversations: number
   prs: number
+  timing: TimingBreakdown
+  activity_by_hour: Record<string, number>
+  event_distribution: Record<string, number>
+  time_distribution: Record<string, number>
   timeline: EnrichedEvent[]
   events: EnrichedEvent[]
 }

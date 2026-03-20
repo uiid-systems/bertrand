@@ -85,6 +85,9 @@ func focusBlock(name string) error {
 		return fmt.Errorf("focusblock failed: %w (session may be on a different tab)", err)
 	}
 
+	// Write focus marker so the dashboard can highlight the active session
+	_ = session.WriteFocused(name)
+
 	return nil
 }
 

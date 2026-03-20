@@ -8,6 +8,15 @@ export function formatDuration(ms: number): string {
   return rm ? h + "h" + rm + "m" : h + "h"
 }
 
+export function formatDurationS(s: number): string {
+  if (s < 60) return s + "s"
+  const m = Math.floor(s / 60)
+  if (m < 60) return m + "m"
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  return rm ? h + "h" + rm + "m" : h + "h"
+}
+
 export function formatAgo(ts: string): string {
   const d = Date.now() - new Date(ts).getTime()
   if (d < 60000) return "just now"
