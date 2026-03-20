@@ -6,6 +6,12 @@ bertrand
 
 # Claude Code local settings
 .claude/settings.local.json
+.mcp.json
+
+# Root JS (MCP tooling)
+node_modules/
+package.json
+package-lock.json
 
 # Web
 web/node_modules/
