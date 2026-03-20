@@ -84,7 +84,7 @@ export function SessionCard({
             >
               {session.status}
             </span>
-            <span>{ago}</span>
+            <span className="text-muted-foreground/50">{ago}</span>
           </div>
         </div>
       </AccordionTrigger>
