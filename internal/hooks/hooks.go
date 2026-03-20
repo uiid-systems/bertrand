@@ -404,11 +404,15 @@ case "$cmd" in
     pr_url="$(printf '%s' "$input" | grep -oE 'https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)"
     pr_number="$(printf '%s' "$pr_url" | grep -oE '[0-9]+$')"
     branch="$(printf '%s' "$input" | grep -o '"branch"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"branch"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+    # Extract PR title from --title flag in the command
+    pr_title="$(printf '%s' "$cmd" | sed -n 's/.*--title[[:space:]]*"\([^"]*\)".*/\1/p' | cut -c1-120)"
     [ -z "$pr_number" ] && pr_number=""
     [ -z "$pr_url" ] && pr_url=""
     [ -z "$branch" ] && branch=""
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    [ -z "$pr_title" ] && pr_title=""
+    esc_title="$(printf '%s' "$pr_title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/log.jsonl"
     ;;
   gh\ pr\ merge*)
     pr_number="$(printf '%s' "$cmd" | grep -oE '[0-9]+' | head -1)"

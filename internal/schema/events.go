@@ -97,6 +97,7 @@ type GhPrCreatedMeta struct {
 	PRNumber string `json:"pr_number,omitempty"`
 	PRURL    string `json:"pr_url,omitempty"`
 	Branch   string `json:"branch,omitempty"`
+	PRTitle  string `json:"pr_title,omitempty"`
 	ClaudeID string `json:"claude_id"`
 }
 
