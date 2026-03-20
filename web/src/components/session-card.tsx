@@ -43,7 +43,7 @@ export function SessionCard({
   return (
     <AccordionItem value={session.session}>
       <AccordionTrigger className="hover:no-underline">
-        <div className="flex flex-1 items-center gap-2.5">
+        <div className="flex flex-1 items-center gap-1.5 @sm:gap-2.5">
           {onSelect && (
             <Checkbox
               checked={!!selected}
@@ -60,11 +60,12 @@ export function SessionCard({
               variant="ghost"
               size="xs"
               onClick={handleFocus}
+              className="hidden @sm:inline-flex"
             >
               focus
             </Button>
             <span
-              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeColors[session.status]}`}
+              className={`hidden @sm:inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeColors[session.status]}`}
             >
               {session.status}
             </span>
@@ -73,7 +74,7 @@ export function SessionCard({
         </div>
       </AccordionTrigger>
       {hasSummary && (
-        <div className="truncate px-3 pb-1 pl-7 text-xs text-muted-foreground">
+        <div className="hidden @sm:block truncate px-3 pb-1 pl-7 text-xs text-muted-foreground">
           {session.summary}
         </div>
       )}

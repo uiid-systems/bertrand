@@ -1,4 +1,4 @@
-import type { Session, TypedEvent } from "@/lib/types"
+import type { Session, SessionDigest } from "@/lib/types"
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
@@ -15,7 +15,7 @@ export function fetchSessions(): Promise<Session[]> {
   return apiFetch("/sessions")
 }
 
-export function fetchSessionLog(sessionName: string): Promise<TypedEvent[]> {
+export function fetchSessionLog(sessionName: string): Promise<SessionDigest> {
   return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/log`)
 }
 

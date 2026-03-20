@@ -6,7 +6,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <div className="min-h-screen">
+    <div className="@container min-h-screen">
       <Outlet />
     </div>
   )
