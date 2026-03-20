@@ -182,24 +182,15 @@ fi
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 if command -v python3 &>/dev/null; then
-  printf '%s' "$answer" | python3 -c "
-import json, sys
+  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$answer" | python3 -c "
+import json, sys, os
 a = sys.stdin.read()
-obj = {'v':1,'event':'session.resume','session':'$name','ts':'$ts','meta':{'answer':a,'claude_id':'$cid'}}
-line = json.dumps(obj, ensure_ascii=False)
-print(line)
-" >> "$HOME/.bertrand/sessions/$name/log.jsonl" 2>/dev/null
-  printf '%s' "$answer" | python3 -c "
-import json, sys
-a = sys.stdin.read()
-obj = {'v':1,'event':'session.resume','session':'$name','ts':'$ts','meta':{'answer':a,'claude_id':'$cid'}}
-line = json.dumps(obj, ensure_ascii=False)
-print(line)
-" >> "$HOME/.bertrand/log.jsonl" 2>/dev/null
+obj = {'v':1,'event':'session.resume','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'answer':a,'claude_id':os.environ['CID']}}
+print(json.dumps(obj, ensure_ascii=False))
+" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 else
   esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-  printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" >> "$HOME/.bertrand/log.jsonl"
+  printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 fi
 `
 }
@@ -479,20 +470,12 @@ fi
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 if command -v python3 &>/dev/null; then
-  printf '%s' "$prompt" | python3 -c "
-import json, sys
+  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$prompt" | python3 -c "
+import json, sys, os
 p = sys.stdin.read()
-obj = {'v':1,'event':'user.prompt','session':'$name','ts':'$ts','meta':{'prompt':p,'claude_id':'$cid'}}
-line = json.dumps(obj, ensure_ascii=False)
-print(line)
-" >> "$HOME/.bertrand/sessions/$name/log.jsonl" 2>/dev/null
-  printf '%s' "$prompt" | python3 -c "
-import json, sys
-p = sys.stdin.read()
-obj = {'v':1,'event':'user.prompt','session':'$name','ts':'$ts','meta':{'prompt':p,'claude_id':'$cid'}}
-line = json.dumps(obj, ensure_ascii=False)
-print(line)
-" >> "$HOME/.bertrand/log.jsonl" 2>/dev/null
+obj = {'v':1,'event':'user.prompt','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'prompt':p,'claude_id':os.environ['CID']}}
+print(json.dumps(obj, ensure_ascii=False))
+" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 fi
 `
 }

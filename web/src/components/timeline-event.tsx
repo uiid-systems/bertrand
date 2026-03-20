@@ -271,8 +271,8 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
           {question}
         </div>
         {answer ? (
-          <div className="pl-3 leading-snug max-w-[75ch] font-sans text-muted-foreground/80">
-            → {answer}
+          <div className="pl-3 leading-snug max-w-[75ch] font-sans italic text-muted-foreground">
+            {answer}
           </div>
         ) : resume ? (
           <div className="pl-3 text-muted-foreground/40 text-[11px]">
@@ -424,7 +424,7 @@ function WorkSegment({ segment }: { segment: TimelineSegment }) {
     for (const part of cleaned.split(", ")) {
       const countMatch = part.match(/^(\d+)×\s*(.+)$/)
       const name = countMatch?.[2] ?? part
-      const count = countMatch ? parseInt(countMatch[1], 10) : 1
+      const count = countMatch?.[1] ? parseInt(countMatch[1], 10) : 1
       toolCounts.set(name, (toolCounts.get(name) ?? 0) + count)
     }
   }
