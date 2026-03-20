@@ -7,10 +7,17 @@ import { LogDrawer } from "@/components/log-drawer"
 import { Checkbox } from "@/components/checkbox"
 import { Button } from "@/components/ui/button"
 import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip"
+import {
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
 } from "@/components/ui/accordion"
+import { CenterFocusIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 
 const badgeColors: Record<SessionStatus, string> = {
   working: "bg-[var(--status-working)]/15 text-[var(--status-working)]",
@@ -32,8 +39,6 @@ export function SessionCard({
   const parsed = parseSessionName(session.session)
   const name = parsed.session
   const ago = formatAgo(session.timestamp)
-  const hasSummary =
-    session.summary && session.summary !== "Session " + session.status
 
   function handleFocus(e: React.MouseEvent) {
     e.stopPropagation()
@@ -43,7 +48,7 @@ export function SessionCard({
   return (
     <AccordionItem value={session.session}>
       <AccordionTrigger className="hover:no-underline">
-        <div className="flex flex-1 items-center gap-1.5 @sm:gap-2.5">
+        <div className="flex flex-1 items-center gap-1.5 @sm:gap-2">
           {onSelect && (
             <Checkbox
               checked={!!selected}
@@ -55,15 +60,22 @@ export function SessionCard({
           <div className="min-w-0 flex-1 truncate font-semibold">
             {name}
           </div>
-          <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={handleFocus}
-              className="hidden @sm:inline-flex"
-            >
-              focus
-            </Button>
+          <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleFocus}
+                    className="hidden @sm:inline-flex"
+                  />
+                }
+              >
+                <HugeiconsIcon icon={CenterFocusIcon} size={14} />
+              </TooltipTrigger>
+              <TooltipContent>Focus session</TooltipContent>
+            </Tooltip>
             <span
               className={`hidden @sm:inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeColors[session.status]}`}
             >
@@ -73,12 +85,7 @@ export function SessionCard({
           </div>
         </div>
       </AccordionTrigger>
-      {hasSummary && (
-        <div className="hidden @sm:block truncate px-3 pb-1 pl-7 text-xs text-muted-foreground">
-          {session.summary}
-        </div>
-      )}
-      <AccordionContent>
+      <AccordionContent className="px-0 pb-2">
         <LogDrawer sessionName={session.session} />
       </AccordionContent>
     </AccordionItem>

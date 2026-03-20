@@ -103,13 +103,30 @@ input="$(cat)"
 
 bertrand update --name "$name" --status prompting --summary "Resumed after input"
 
-# Extract user answer from tool_response (best effort)
-# Format in JSON: "tool_response":"User has answered your questions: \"q\"=\"a, b\". ..."
+# Extract user answer from tool_response.answers (JSON object)
+# PostToolUse input structure: {"tool_response": {"answers": {"question": "answer"}}, ...}
 answer=""
-resp="$(printf '%s' "$input" | sed -n 's/.*"tool_response"[[:space:]]*:[[:space:]]*"//p' | sed 's/"[[:space:]]*[,}].*//')"
-if [ -n "$resp" ]; then
-  # Extract answer values from escaped format: =\"answer\"
-  answer="$(printf '%s' "$resp" | grep -oE '=\\"[^\\]*\\"' | sed 's/^=\\"//' | sed 's/\\"$//' | paste -sd ', ' - | tr -d '\n' | cut -c1-120)"
+if command -v python3 &>/dev/null; then
+  answer="$(printf '%s' "$input" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    # tool_response is a JSON object with an 'answers' dict
+    tr = d.get('tool_response', {})
+    if isinstance(tr, dict):
+        ans = tr.get('answers', {})
+        if ans:
+            print(', '.join(str(v) for v in ans.values())[:200])
+            sys.exit(0)
+    # Fallback: tool_input also has answers
+    ti = d.get('tool_input', {})
+    if isinstance(ti, dict):
+        ans = ti.get('answers', {})
+        if ans:
+            print(', '.join(str(v) for v in ans.values())[:200])
+except:
+    pass
+" 2>/dev/null)"
 fi
 
 # Wave badge clear + focus cycling (skip if wsh not available)
