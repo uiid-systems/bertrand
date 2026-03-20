@@ -127,7 +127,7 @@ try:
         ans = ti.get('answers', {})
         if ans:
             print(', '.join(str(v) for v in ans.values())[:200])
-except:
+except Exception:
     pass
 " 2>/dev/null)"
 fi

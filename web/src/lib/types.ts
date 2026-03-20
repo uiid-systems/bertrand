@@ -26,46 +26,6 @@ export interface TimingBreakdown {
   active_pct: number
 }
 
-export interface SessionBlockMeta {
-  question: string
-  claude_id: string
-}
-
-export interface SessionResumeMeta {
-  answer: string
-  claude_id: string
-}
-
-export interface GhPrCreatedMeta {
-  pr_number?: string
-  pr_url?: string
-  branch?: string
-  claude_id: string
-}
-
-export interface GhPrMergedMeta {
-  pr_number?: string
-  branch?: string
-  claude_id: string
-}
-
-export interface LinearIssueReadMeta {
-  issue_id?: string
-  issue_title?: string
-  tool_name?: string
-  claude_id: string
-}
-
-export interface WorktreeEnteredMeta {
-  branch: string
-  claude_id: string
-}
-
-export interface ToolWorkMeta {
-  detail?: string
-  claude_id?: string
-}
-
 export interface SessionDigest {
   session: string
   started_at: string

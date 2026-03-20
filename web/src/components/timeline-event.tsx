@@ -1,4 +1,5 @@
 import type { EnrichedEvent } from "@/lib/types"
+import { linearIssueUrl, githubPrUrl } from "@/lib/constants"
 import { Badge } from "@/components/ui/badge"
 import {
   GitPullRequestIcon,
@@ -24,11 +25,6 @@ function formatTime(ts: string): string {
 
 function getMeta(e: EnrichedEvent): Record<string, string> {
   return (e.meta as Record<string, string>) ?? {}
-}
-
-/** Build a Linear issue URL from an issue ID like "ELKY-61" */
-function linearUrl(issueId: string): string {
-  return `https://linear.app/issue/${issueId}`
 }
 
 /**
@@ -118,20 +114,13 @@ export function buildSegments(input: EnrichedEvent[]): TimelineSegment[] {
       continue
     }
 
-    // --- Linear (collapse consecutive, skip interleaved tool.work) ---
+    // --- Linear (collapse consecutive linear reads only) ---
     if (cur.event === "linear.issue.read") {
       const group: [EnrichedEvent, ...EnrichedEvent[]] = [cur]
       let j = i + 1
-      while (j < raw.length) {
-        const next = raw[j]!
-        if (next.event === "linear.issue.read") {
-          group.push(next)
-          j++
-        } else if (next.event === "tool.work") {
-          j++
-        } else {
-          break
-        }
+      while (j < raw.length && raw[j]!.event === "linear.issue.read") {
+        group.push(raw[j]!)
+        j++
       }
       out.push({ type: "linear", ts: cur.ts, events: group })
       i = j
@@ -235,9 +224,9 @@ function QASegment({ segment }: { segment: TimelineSegment }) {
   const answer = resume ? getMeta(resume).answer || resume.summary : null
 
   return (
-    <Row ts={segment.ts} icon={MessageQuestionIcon} iconColor="text-[var(--orange)]" pad>
+    <Row ts={segment.ts} icon={MessageQuestionIcon} iconColor="text-[var(--event-orange)]" pad>
       <div className="space-y-1">
-        <div className="border-l-2 border-[var(--orange)]/50 pl-2.5 text-foreground leading-snug font-sans">
+        <div className="border-l-2 border-[var(--event-orange)]/50 pl-2.5 text-foreground leading-snug font-sans">
           {question}
         </div>
         {answer ? (
@@ -265,11 +254,13 @@ function PrSegment({
   const m = getMeta(e)
   const isMerged = e.event === "gh.pr.merged"
   const prNum = m.pr_number ? `#${m.pr_number}` : null
-  // Use pr_url if available; otherwise construct from repoBase
+  // Use pr_url if available; fall back to repoBase, then constants
   const prUrl =
-    m.pr_url || (repoBase && m.pr_number ? `${repoBase}/pull/${m.pr_number}` : null)
+    m.pr_url ||
+    (repoBase && m.pr_number ? `${repoBase}/pull/${m.pr_number}` : null) ||
+    (m.pr_number ? githubPrUrl(m.pr_number) : null)
   const icon = isMerged ? GitMergeIcon : GitPullRequestIcon
-  const color = isMerged ? "text-[var(--purple)]" : "text-[var(--green)]"
+  const color = isMerged ? "text-[var(--event-purple)]" : "text-[var(--event-green)]"
 
   return (
     <Row ts={segment.ts} icon={icon} iconColor={color} pad>
@@ -314,23 +305,23 @@ function LinearSegment({ segment }: { segment: TimelineSegment }) {
   const showTitle = singleTitle && !/^PR #\d+/.test(singleTitle)
 
   return (
-    <Row ts={segment.ts} icon={TaskDaily01Icon} iconColor="text-[var(--purple)]">
+    <Row ts={segment.ts} icon={TaskDaily01Icon} iconColor="text-[var(--event-purple)]">
       <div className="flex items-center gap-1.5 flex-wrap">
         {unique.map((e, idx) => {
           const m = getMeta(e)
           const id = m.issue_id || e.summary || "issue"
-          const url = m.issue_id ? linearUrl(m.issue_id) : null
+          const url = m.issue_id ? linearIssueUrl(m.issue_id) : null
           return url ? (
             <a key={idx} href={url} target="_blank" rel="noopener noreferrer">
               <Badge
                 variant="secondary"
-                className="text-[var(--purple)] hover:bg-accent cursor-pointer"
+                className="text-[var(--event-purple)] hover:bg-accent cursor-pointer"
               >
                 {id}
               </Badge>
             </a>
           ) : (
-            <Badge key={idx} variant="secondary" className="text-[var(--purple)]">
+            <Badge key={idx} variant="secondary" className="text-[var(--event-purple)]">
               {id}
             </Badge>
           )
@@ -349,7 +340,7 @@ function WorktreeSegment({ segment }: { segment: TimelineSegment }) {
   const entered = e.event === "worktree.entered"
 
   return (
-    <Row ts={segment.ts} icon={GitBranchIcon} iconColor="text-[var(--green)]" opacity="opacity-80">
+    <Row ts={segment.ts} icon={GitBranchIcon} iconColor="text-[var(--event-green)]" opacity="opacity-80">
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground text-[11px]">
           {entered ? "entered worktree" : "exited worktree"}
