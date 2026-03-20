@@ -363,9 +363,9 @@ function SessionList({
       <>
         {Array.from(groups.entries()).map(([status, statusSessions]) => (
           <div key={status} className="mb-2">
-            <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+            <h3 className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5 mt-2 mb-1 text-xs font-semibold text-muted-foreground">
               {STATUS_LABELS[status]}
-              <span className="ml-1 opacity-60">{statusSessions.length}</span>
+              <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none">{statusSessions.length}</span>
             </h3>
             <Accordion>
               {statusSessions.map((s) => (
@@ -389,7 +389,7 @@ function SessionList({
     <>
       {Array.from(tickets.entries()).map(([ticket, ticketSessions]) => (
         <div key={ticket} className="mb-2">
-          <h3 className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+          <h3 className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5 mt-2 mb-1 text-xs font-semibold text-muted-foreground">
             {ticket}/
           </h3>
           <Accordion>

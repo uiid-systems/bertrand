@@ -1,4 +1,5 @@
 import type { Session, SessionStatus } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { formatAgo } from "@/lib/format"
 import { parseSessionName } from "@/lib/sessions"
 import { focusSession } from "@/api/client"
@@ -48,7 +49,10 @@ export function SessionCard({
   return (
     <AccordionItem
       value={session.session}
-      className={session.focused ? "ring-1 ring-[var(--status-working)]/30" : undefined}
+      className={cn(
+        session.focused && "ring-1 ring-[var(--status-working)]/30",
+        session.status === "archived" && "opacity-40",
+      )}
     >
       <AccordionTrigger className="hover:no-underline">
         <div className="flex flex-1 items-center gap-1.5 @sm:gap-2">

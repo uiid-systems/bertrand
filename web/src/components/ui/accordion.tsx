@@ -7,7 +7,7 @@ function Accordion({ className, ...props }: AccordionPrimitive.Root.Props) {
     <AccordionPrimitive.Root
       data-slot="accordion"
       className={cn(
-        "flex w-full flex-col gap-1",
+        "flex w-full flex-col gap-1 py-1",
         className
       )}
       {...props}
@@ -35,7 +35,7 @@ function AccordionTrigger({
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(
-          "group/accordion-trigger relative flex flex-1 items-center justify-between gap-4 rounded-md border border-transparent px-3 py-2.5 text-left text-xs/relaxed font-medium transition-colors outline-none hover:bg-accent aria-disabled:pointer-events-none aria-disabled:opacity-50",
+          "group/accordion-trigger relative flex flex-1 items-center justify-between gap-4 rounded-md border border-transparent px-3 py-1.5 text-left text-xs/relaxed font-medium transition-colors outline-none hover:bg-accent aria-disabled:pointer-events-none aria-disabled:opacity-50",
           className
         )}
         {...props}
