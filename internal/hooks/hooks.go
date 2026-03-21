@@ -42,21 +42,18 @@ summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertran
 
 bertrand update --name "$name" --status blocked --summary "$summary"
 
-# Wave badge + notification + focus (skip if wsh not available)
+# Wave badge + notification (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
 
-  source "$HOME/.bertrand/hooks/_focus_delay.sh"
-  _focus_delay
-
-  # Activate Wave (bring to foreground) if auto_focus is enabled
+  # Focus steal: only if auto_focus is enabled
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+    source "$HOME/.bertrand/hooks/_focus_delay.sh"
+    _focus_delay
     osascript -e 'tell application "Wave" to activate' 2>/dev/null
+    wsh focusblock
   fi
-
-  # Always focus this block within the tab so the user lands here
-  wsh focusblock
 
   # Write focus marker for dashboard
   printf '%s' "$name" > "$HOME/.bertrand/focused"
@@ -150,32 +147,9 @@ except Exception:
 " 2>/dev/null)"
 fi
 
-# Wave badge clear + focus cycling (skip if wsh not available)
+# Clear badge (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge --clear
-
-  # Read prev-focus BEFORE overwriting it — this is the block to return to
-  prev="$(wsh getmeta 'bertrand:prev-focus' -b tab --raw 2>/dev/null)"
-
-  # Now update prev-focus to this block (it's the last active bertrand block)
-  wsh setmeta -b tab "bertrand:prev-focus=${WAVETERM_BLOCKID:-}" 2>/dev/null
-
-  # Cycle focus: find the next blocked session and focus its block
-  next="$(bertrand focus --next 2>/dev/null)"
-  if [ -n "$next" ]; then
-    source "$HOME/.bertrand/hooks/_focus_delay.sh"
-    _focus_delay
-
-    # Activate Wave if auto_focus is enabled
-    if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
-      osascript -e 'tell application "Wave" to activate' 2>/dev/null
-    fi
-  else
-    # No other blocked sessions — return focus to the last active bertrand block
-    if [ -n "$prev" ] && [ "$prev" != "null" ] && [ "$prev" != "${WAVETERM_BLOCKID:-}" ]; then
-      wsh focusblock -b "$prev" 2>/dev/null
-    fi
-  fi
 fi
 
 # Log event — use python3 for JSON-safe escaping (handles newlines, control chars)
@@ -233,21 +207,18 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
 printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 
-# Wave badge + notification + focus (priority 25 > blocked's 20, skip if wsh not available)
+# Wave badge + notification (priority 25 > blocked's 20, skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
   wsh notify -t "$name" "Needs permission: $tool"
 
-  source "$HOME/.bertrand/hooks/_focus_delay.sh"
-  _focus_delay
-
-  # Activate Wave if auto_focus is enabled
+  # Focus steal: only if auto_focus is enabled
   if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
+    source "$HOME/.bertrand/hooks/_focus_delay.sh"
+    _focus_delay
     osascript -e 'tell application "Wave" to activate' 2>/dev/null
+    wsh focusblock
   fi
-
-  # Always focus this block so the user lands on the permission prompt
-  wsh focusblock
 fi
 
 # Log event
@@ -279,18 +250,9 @@ had_pending=0
 [ -f "$HOME/.bertrand/sessions/$name/pending" ] && had_pending=1
 rm -f "$HOME/.bertrand/sessions/$name/pending"
 
-# Track this block as the last active bertrand block for return-focus
-if command -v wsh &>/dev/null; then
-  # Read prev-focus BEFORE overwriting — needed for permission return-focus
-  prev="$(wsh getmeta 'bertrand:prev-focus' -b tab --raw 2>/dev/null)"
-  wsh setmeta -b tab "bertrand:prev-focus=${WAVETERM_BLOCKID:-}" 2>/dev/null
-
-  # If this tool had a permission prompt, return focus to the last active block
-  if [ "$had_pending" -eq 1 ]; then
-    if [ -n "$prev" ] && [ "$prev" != "null" ] && [ "$prev" != "${WAVETERM_BLOCKID:-}" ]; then
-      wsh focusblock -b "$prev" 2>/dev/null
-    fi
-  fi
+# Clear permission badge if we had a pending prompt
+if [ "$had_pending" -eq 1 ] && command -v wsh &>/dev/null; then
+  wsh badge --clear
 fi
 
 # Log event
