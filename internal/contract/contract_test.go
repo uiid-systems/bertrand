@@ -15,4 +15,8 @@ func TestTemplate(t *testing.T) {
 	if !strings.Contains(result, "AskUserQuestion") {
 		t.Error("template should reference AskUserQuestion")
 	}
+
+	if !strings.Contains(result, "MUST use multiSelect: true. No exceptions") {
+		t.Error("template should enforce multiSelect: true with no exceptions")
+	}
 }
