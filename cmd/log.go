@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	sessionlog "github.com/uiid-systems/bertrand/internal/log"
 	"github.com/uiid-systems/bertrand/internal/schema"
 	"github.com/uiid-systems/bertrand/internal/session"
+	"github.com/uiid-systems/bertrand/internal/tui"
 )
 
 var jsonOutput bool
@@ -157,8 +159,18 @@ func showSessionLog(name string) error {
 		return nil
 	}
 
-	fmt.Printf("\033[1m%s\033[0m\n", name)
-	fmt.Print(renderTimeline(d.Timeline, d.TimingRaw))
+	timeline := renderTimeline(d.Timeline, d.TimingRaw)
+	lines := strings.Count(timeline, "\n")
+	if lines > tui.ViewportThreshold {
+		m := tui.NewTimelineModel(name, timeline)
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("\033[1m%s\033[0m\n", name)
+		fmt.Print(timeline)
+	}
 	return nil
 }
 
