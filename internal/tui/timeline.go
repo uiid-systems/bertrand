@@ -14,15 +14,17 @@ import (
 // viewportMaxHeight caps the viewport to this many lines.
 const viewportMaxHeight = 14
 
+// ViewportThreshold is the line count above which `bertrand log` uses a
+// scrollable viewport instead of printing inline.
+const ViewportThreshold = 30
+
 // TimelineModel wraps a rendered timeline string in a scrollable viewport.
 type TimelineModel struct {
 	viewport viewport.Model
 	name     string
 	header   string // pre-rendered header (session info)
 	footer   string // pre-rendered footer (stats)
-	content  string // timeline body
 	ready    bool
-	quitting bool
 	width    int
 }
 
@@ -38,11 +40,10 @@ func NewTimelineModel(name string, rendered string) TimelineModel {
 	}
 
 	m := TimelineModel{
-		name:    name,
-		header:  header,
-		content: body,
-		footer:  footer,
-		width:   width,
+		name:   name,
+		header: header,
+		footer: footer,
+		width:  width,
 	}
 
 	// Initialize viewport immediately so we don't need WindowSizeMsg
@@ -52,8 +53,6 @@ func NewTimelineModel(name string, rendered string) TimelineModel {
 
 	return m
 }
-
-func (m TimelineModel) Quitting() bool { return m.quitting }
 
 func (m TimelineModel) Init() tea.Cmd {
 	return nil
@@ -66,12 +65,22 @@ func (m TimelineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.viewport.Width = m.width
+		headerHeight := lipgloss.Height(m.renderHeader())
+		footerHeight := lipgloss.Height(m.renderFooter())
+		available := msg.Height - headerHeight - footerHeight
+		h := viewportMaxHeight
+		if available < h {
+			h = available
+		}
+		if h < 4 {
+			h = 4
+		}
+		m.viewport.Height = h
 		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "enter", "ctrl+c":
-			m.quitting = true
 			return m, tea.Quit
 		}
 	}

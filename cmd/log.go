@@ -161,10 +161,12 @@ func showSessionLog(name string) error {
 
 	timeline := renderTimeline(d.Timeline, d.TimingRaw)
 	lines := strings.Count(timeline, "\n")
-	if lines > 30 {
+	if lines > tui.ViewportThreshold {
 		m := tui.NewTimelineModel(name, timeline)
 		p := tea.NewProgram(m, tea.WithAltScreen())
-		p.Run()
+		if _, err := p.Run(); err != nil {
+			return err
+		}
 	} else {
 		fmt.Printf("\033[1m%s\033[0m\n", name)
 		fmt.Print(timeline)
