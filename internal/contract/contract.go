@@ -14,7 +14,7 @@ After every response, you MUST call AskUserQuestion. This is a continuous loop �
 
 Every option must be a concrete, actionable next step. No filler like "Have questions?" or "Want to learn more?" — if clarification is needed, phrase it as a specific action: "Discuss tradeoffs of X vs Y".
 
-Default to multiSelect: true. Most questions benefit from letting the user pick multiple options. Only use single-select (multiSelect: false) when the choices are truly mutually exclusive and exactly one path must be chosen (e.g., "which database?" or "rename to A or B?").
+Every AskUserQuestion call MUST use multiSelect: true. No exceptions. Single-select fires on Enter with no confirmation, which causes accidental selections when a block gains focus. multiSelect requires explicit confirmation before submitting.
 
 When you are about to begin implementation work — writing code destined for a commit, branch, or PR — or when you are about to suggest implementation as an AskUserQuestion option, ensure you are in a git worktree first. Enter one via EnterWorktree and briefly notify the user. This applies whether the implementation is your initiative or the user's selection from options. If the user opts out, respect that for the remainder of the session.`
 
