@@ -3,6 +3,16 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+@import "@uiid/tokens/globals.css";
+@import "@uiid/layout/globals.css";
+@import "@uiid/typography/globals.css";
+@import "@uiid/buttons/globals.css";
+@import "@uiid/forms/globals.css";
+@import "@uiid/interactive/globals.css";
+@import "@uiid/cards/globals.css";
+@import "@uiid/lists/globals.css";
+@import "@uiid/overlays/globals.css";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -40,7 +50,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --radius: 0.625rem;
   --font-mono: "SF Mono", "Cascadia Code", "Fira Code", monospace;
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: "Geist Variable", sans-serif;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
