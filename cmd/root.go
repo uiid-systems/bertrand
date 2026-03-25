@@ -324,7 +324,14 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		<-sigCh
 		forceCleaned = true
 		cleanup("Session ended")
-		printSaveMessage(name, sessionTimeline(name))
+		// Print inline on signal — no interactive viewport on forced exit
+		fmt.Print(tui.Goodbye())
+		fmt.Printf("\033[38;5;78m✓\033[0m \033[38;5;252mSession \033[1m%s\033[0m\033[38;5;252m saved\033[0m\n", name)
+		timeline := sessionTimeline(name)
+		if timeline != "" {
+			fmt.Print(timeline)
+		}
+		fmt.Printf("\033[38;5;241m  Resume with: \033[0m\033[38;5;120mbertrand %s\033[0m\n\n", name)
 		os.Exit(0)
 	}()
 
