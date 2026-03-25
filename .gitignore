@@ -12,6 +12,7 @@ bertrand
 node_modules/
 package.json
 package-lock.json
+pnpm-lock.yaml
 
 # Web
 web/node_modules/
