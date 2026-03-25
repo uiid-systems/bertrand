@@ -1,28 +1,20 @@
 import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+
+import { Stack, Group } from "@uiid/layout";
+
 import { useSessions } from "@/hooks/useSessions";
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations";
 import { useSessionStore } from "@/store/session-store";
 import type { ViewMode } from "@/store/session-store";
-import { SessionCard } from "@/components/session-card";
-import { SearchInput } from "@/components/search-input";
-import { StatusChips } from "@/components/status-chips";
-import { ViewSwitcher } from "@/components/view-switcher";
+import { Header } from "@/components/header/header";
+import { sessionToAccordionItem } from "@/components/session-card";
 import { Checkbox } from "@/components/checkbox";
-import { Accordion } from "@/components/ui/accordion";
+import { Accordion } from "@uiid/interactive";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectPopup,
-  SelectItem,
-} from "@/components/ui/select";
 import { parseSessionName } from "@/lib/sessions";
 import type { Session, SessionStatus } from "@/lib/types";
-import { Group, Stack } from "@uiid/layout";
-
-import { Header } from "@/components/header/header";
+import { Text } from "@uiid/typography";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -349,6 +341,54 @@ function Dashboard() {
   );
 }
 
+function toItems(
+  sessions: Session[],
+  selected: Set<string>,
+  onSelect?: (name: string, checked: boolean) => void,
+) {
+  return sessions.map((s) =>
+    sessionToAccordionItem(s, {
+      selected: selected.has(s.session),
+      onSelect,
+    }),
+  );
+}
+
+function GroupLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <Group gap={2} ay="center" py={2} px={4} mt={4} fullwidth>
+      <Text weight="bold" size={-1}>
+        {label}
+      </Text>
+      &middot;{" "}
+      <Text weight="bold" size={-1} shade="muted">
+        {count}
+      </Text>
+    </Group>
+  );
+}
+
+function groupSessions(
+  sessions: Session[],
+  viewMode: ViewMode,
+): Map<string, Session[]> {
+  if (viewMode === "status") {
+    const groups = groupByStatus(sessions);
+    return new Map(
+      Array.from(groups.entries()).map(([status, s]) => [
+        STATUS_LABELS[status],
+        s,
+      ]),
+    );
+  }
+
+  const { tickets, direct } = groupByTicket(sessions);
+  const groups = new Map<string, Session[]>();
+  for (const [ticket, s] of tickets) groups.set(`${ticket}/`, s);
+  if (direct.length > 0) groups.set("ungrouped", direct);
+  return groups;
+}
+
 function SessionList({
   sessions,
   viewMode,
@@ -361,81 +401,23 @@ function SessionList({
   onSelect?: (name: string, checked: boolean) => void;
 }) {
   if (viewMode === "recent") {
-    return (
-      <Accordion>
-        {sessions.map((s) => (
-          <SessionCard
-            key={s.session}
-            session={s}
-            selected={selected.has(s.session)}
-            onSelect={onSelect}
-          />
-        ))}
-      </Accordion>
-    );
+    return <Accordion items={toItems(sessions, selected, onSelect)} />;
   }
 
-  if (viewMode === "status") {
-    const groups = groupByStatus(sessions);
-    return (
-      <>
-        {Array.from(groups.entries()).map(([status, statusSessions]) => (
-          <div key={status} className="mb-2">
-            <h3 className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5 mt-2 mb-1 text-xs font-semibold text-muted-foreground">
-              {STATUS_LABELS[status]}
-              <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none">
-                {statusSessions.length}
-              </span>
-            </h3>
-            <Accordion>
-              {statusSessions.map((s) => (
-                <SessionCard
-                  key={s.session}
-                  session={s}
-                  selected={selected.has(s.session)}
-                  onSelect={onSelect}
-                />
-              ))}
-            </Accordion>
-          </div>
-        ))}
-      </>
-    );
-  }
+  const groups = groupSessions(sessions, viewMode);
 
-  // viewMode === "ticket"
-  const { tickets, direct } = groupByTicket(sessions);
   return (
     <>
-      {Array.from(tickets.entries()).map(([ticket, ticketSessions]) => (
-        <div key={ticket} className="mb-2">
-          <h3 className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5 mt-2 mb-1 text-xs font-semibold text-muted-foreground">
-            {ticket}/
-          </h3>
-          <Accordion>
-            {ticketSessions.map((s) => (
-              <SessionCard
-                key={s.session}
-                session={s}
-                selected={selected.has(s.session)}
-                onSelect={onSelect}
-              />
-            ))}
-          </Accordion>
-        </div>
+      {Array.from(groups.entries()).map(([label, groupSessions]) => (
+        <Stack key={label} fullwidth>
+          <GroupLabel label={label} count={groupSessions.length} />
+          <Accordion
+            items={toItems(groupSessions, selected, onSelect)}
+            TriggerProps={{ className: "!py-2 *:!text-xs" }}
+            PanelProps={{ className: "*:w-full" }}
+          />
+        </Stack>
       ))}
-      {direct.length > 0 && (
-        <Accordion>
-          {direct.map((s) => (
-            <SessionCard
-              key={s.session}
-              session={s}
-              selected={selected.has(s.session)}
-              onSelect={onSelect}
-            />
-          ))}
-        </Accordion>
-      )}
     </>
   );
 }
