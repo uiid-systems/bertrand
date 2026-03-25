@@ -93,8 +93,6 @@ func (m TimelineModel) View() string {
 }
 
 var (
-	borderColor = lipgloss.Color("238")
-
 	timelineHeaderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252")).
 				Bold(true).
@@ -107,12 +105,6 @@ var (
 	scrollHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			PaddingLeft(1)
-
-	timelineBoxStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(borderColor).
-				PaddingLeft(1).
-				PaddingRight(1)
 )
 
 func (m TimelineModel) renderHeader() string {
