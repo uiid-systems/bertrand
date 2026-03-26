@@ -156,7 +156,8 @@ fi
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 if command -v python3 &>/dev/null; then
-  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$answer" | python3 -c "
+  export NAME="$name" TS="$ts" CID="$cid"
+  printf '%s' "$answer" | python3 -c "
 import json, sys, os
 a = sys.stdin.read()
 obj = {'v':1,'event':'session.resume','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'answer':a,'claude_id':os.environ['CID']}}
@@ -432,7 +433,8 @@ fi
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 if command -v python3 &>/dev/null; then
-  NAME="$name" TS="$ts" CID="$cid" printf '%s' "$prompt" | python3 -c "
+  export NAME="$name" TS="$ts" CID="$cid"
+  printf '%s' "$prompt" | python3 -c "
 import json, sys, os
 p = sys.stdin.read()
 obj = {'v':1,'event':'user.prompt','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'prompt':p,'claude_id':os.environ['CID']}}
