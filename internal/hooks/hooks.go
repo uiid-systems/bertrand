@@ -389,11 +389,42 @@ name="${BERTRAND_SESSION:-}"
 input="$(cat)"
 tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
 
-# Extract issue ID and title from the response (best effort)
-issue_id="$(printf '%s' "$input" | grep -o '"id":"[A-Z]*-[0-9]*"' | head -1 | sed 's/"id":"//;s/"$//')"
-issue_title="$(printf '%s' "$input" | grep -o '"title":"[^"]*"' | head -1 | sed 's/"title":"//;s/"$//')"
-[ -z "$issue_id" ] && issue_id=""
-esc_title="$(printf '%s' "$issue_title" | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-80)"
+# Extract issue ID and title from the response via python3 JSON parsing
+issue_id=""
+esc_title=""
+if command -v python3 &>/dev/null; then
+  eval "$(printf '%s' "$input" | python3 -c "
+import json, sys, re
+try:
+    d = json.load(sys.stdin)
+    resp = d.get('tool_response', '')
+    if isinstance(resp, str):
+        try: resp = json.loads(resp)
+        except: pass
+    iid = ''
+    ttl = ''
+    if isinstance(resp, dict):
+        raw_id = resp.get('id', '')
+        if isinstance(raw_id, str) and re.match(r'^[A-Z]+-\d+$', raw_id):
+            iid = raw_id
+        ttl = resp.get('title', '') or ''
+    if not iid:
+        inp = d.get('tool_input', {})
+        if isinstance(inp, dict):
+            for k in ('id', 'issueId', 'issue_id'):
+                v = inp.get(k, '')
+                if isinstance(v, str) and re.match(r'^[A-Z]+-\d+$', v):
+                    iid = v
+                    break
+    safe_id = iid.replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
+    safe_ttl = ttl[:80].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
+    print('issue_id=' + chr(34) + safe_id + chr(34))
+    print('esc_title=' + chr(34) + safe_ttl + chr(34))
+except:
+    print('issue_id=' + chr(34) + chr(34))
+    print('esc_title=' + chr(34) + chr(34))
+" 2>/dev/null)"
+fi
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
