@@ -53,7 +53,7 @@ export function LinearSegment({ segment }: { segment: TimelineSegment }) {
                 </Badge>
               )}
               {title && (
-                <span className="text-foreground text-[11px] truncate">
+                <span className="text-foreground text-[11px]">
                   {title}
                 </span>
               )}
