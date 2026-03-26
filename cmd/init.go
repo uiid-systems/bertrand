@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -154,59 +153,8 @@ func runInitWizard(showLogo bool) error {
 		fmt.Printf("%s %s %s\n", check, label("Shell completions written to"), path(compPath))
 	}
 
-	// Wave-specific: install widget config
-	if hasWave {
-		if err := installWaveWidget(); err != nil {
-			fmt.Fprintf(os.Stderr, "  %s %v\n", label("Wave widget skipped:"), err)
-		} else {
-			home, _ := os.UserHomeDir()
-			fmt.Printf("%s %s %s\n", check, label("Wave widget config written to"),
-				path(filepath.Join(home, ".config", "waveterm", "widgets.json")))
-		}
-	}
-
 	fmt.Printf("\n%s %s\n", bold("Ready."), label("Run: "+bold("bertrand")))
 	return nil
-}
-
-// installWaveWidget merges the bertrand-dashboard widget into ~/.config/waveterm/widgets.json.
-func installWaveWidget() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	widgetsPath := filepath.Join(home, ".config", "waveterm", "widgets.json")
-	if err := os.MkdirAll(filepath.Dir(widgetsPath), 0755); err != nil {
-		return err
-	}
-
-	// Read existing widgets
-	widgets := make(map[string]any)
-	if data, err := os.ReadFile(widgetsPath); err == nil {
-		json.Unmarshal(data, &widgets)
-	}
-
-	// Add/update bertrand-dashboard widget
-	widgets["bertrand-dashboard"] = map[string]any{
-		"icon":        "table-layout",
-		"label":       "bertrand",
-		"description": "Session dashboard — status, logs, and focus switching",
-		"color":       "#e0b956",
-		"blockdef": map[string]any{
-			"meta": map[string]any{
-				"view":      "web",
-				"url":       fmt.Sprintf("http://127.0.0.1:%d", server.DefaultPort),
-				"pinnedurl": fmt.Sprintf("http://127.0.0.1:%d", server.DefaultPort),
-			},
-		},
-	}
-
-	data, err := json.MarshalIndent(widgets, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(widgetsPath, append(data, '\n'), 0644)
 }
 
 // installCompletions detects the user's shell and writes the completion script
