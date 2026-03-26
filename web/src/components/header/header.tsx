@@ -30,9 +30,12 @@ export function Header({
       >
         <Select
           placeholder="Showing all projects"
-          value={selectedProject}
+          value={selectedProject ?? ""}
           onValueChange={(val) => onProject(val || null)}
-          items={projects.map((p) => ({ label: p, value: p }))}
+          items={[
+            { label: "All Projects", value: "" },
+            ...projects.map((p) => ({ label: p, value: p })),
+          ]}
           size="small"
         />
         <Group ay="center" gap={2}>

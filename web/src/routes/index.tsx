@@ -132,11 +132,11 @@ function Dashboard() {
     return Array.from(set).sort();
   }, [parsed]);
 
-  /** Fall back to first project if selection is stale or empty */
+  /** Fall back to null (all projects) if selection is stale */
   const effectiveProject =
     selectedProject && projects.includes(selectedProject)
       ? selectedProject
-      : (projects[0] ?? null);
+      : null;
 
   /** Sessions filtered to the active project */
   const projectFiltered = useMemo(

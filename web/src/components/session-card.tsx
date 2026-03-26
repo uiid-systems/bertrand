@@ -51,7 +51,7 @@ export function sessionToAccordionItem(
           />
         )}
         <StatusDot status={session.status} />
-        <div className="min-w-0 flex-1 truncate font-semibold">{name}</div>
+        <div className="min-w-0 flex-1 break-all font-semibold">{name}</div>
         <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           <Tooltip>
             <TooltipTrigger
