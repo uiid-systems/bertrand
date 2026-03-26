@@ -33,29 +33,26 @@ export function LinearSegment({ segment }: { segment: TimelineSegment }) {
               : null;
           const url = m.issue_id ? linearIssueUrl(m.issue_id) : null;
 
+          const label = title ? `[${id}] ${title}` : `[${id}]`;
+
           return (
             <div key={idx} className="flex items-center gap-1.5">
               {url ? (
                 <a href={url} target="_blank" rel="noopener noreferrer">
                   <Badge
                     variant="secondary"
-                    className="text-[var(--event-purple)] hover:bg-accent cursor-pointer shrink-0"
+                    className="text-(--event-purple) hover:bg-accent cursor-pointer font-semibold"
                   >
-                    {id}
+                    {label}
                   </Badge>
                 </a>
               ) : (
                 <Badge
                   variant="secondary"
-                  className="text-[var(--event-purple)] shrink-0"
+                  className="text-(--event-purple) font-semibold"
                 >
-                  {id}
+                  {label}
                 </Badge>
-              )}
-              {title && (
-                <span className="text-foreground text-[11px]">
-                  {title}
-                </span>
               )}
             </div>
           );
