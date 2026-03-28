@@ -1,20 +1,19 @@
 import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Stack, Group } from "@uiid/layout";
+import { Stack, Group, Accordion, Text } from "@uiid/design-system";
 
 import { useSessions } from "@/hooks/useSessions";
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations";
 import { useSessionStore } from "@/store/session-store";
 import type { ViewMode } from "@/store/session-store";
 import { Header } from "@/components/header/header";
+import { WorktreePanel } from "@/components/worktree-panel";
 import { sessionToAccordionItem } from "@/components/session-card";
 import { Checkbox } from "@/components/checkbox";
-import { Accordion } from "@uiid/interactive";
 import { Button } from "@/components/ui/button";
 import { parseSessionName } from "@/lib/sessions";
 import type { Session, SessionStatus } from "@/lib/types";
-import { Text } from "@uiid/typography";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -257,6 +256,8 @@ function Dashboard() {
         onProject={setSelectedProject}
         statusCounts={statusCounts}
       />
+
+      <WorktreePanel sessions={projectFiltered} />
 
       {showBulk && sorted.length > 0 && (
         <div className="flex items-center gap-1.5 @sm:gap-2 border-b border-border px-3 @sm:px-4 py-1.5">

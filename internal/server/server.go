@@ -69,10 +69,11 @@ func New(port int, webDir string) *http.ServeMux {
 	return mux
 }
 
-// sessionWithFocus extends State with a focused flag for the API response.
+// sessionWithFocus extends State with a focused flag and worktree branch for the API response.
 type sessionWithFocus struct {
 	session.State
-	Focused bool `json:"focused"`
+	Focused  bool   `json:"focused"`
+	Worktree string `json:"worktree,omitempty"`
 }
 
 func handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +85,11 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	focused := session.ReadFocused()
 	out := make([]sessionWithFocus, len(sessions))
 	for i, s := range sessions {
-		out[i] = sessionWithFocus{State: s, Focused: s.Session == focused}
+		out[i] = sessionWithFocus{
+			State:    s,
+			Focused:  s.Session == focused,
+			Worktree: session.ReadWorktree(s.Session),
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
