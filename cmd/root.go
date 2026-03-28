@@ -142,13 +142,14 @@ func ensureServeRunning() {
 		return
 	}
 
-	// Write state file: "pid webDir" (webDir may be empty for embedded mode)
-	state := fmt.Sprintf("%d %s", cmd.Process.Pid, webDir)
+	// Write state file: one line per field so parsing doesn't break on spaces in paths.
+	state := fmt.Sprintf("%d\n%s", cmd.Process.Pid, webDir)
 	os.WriteFile(serveStateFile(), []byte(state), 0644)
 }
 
 // resolveWebDir returns the absolute path to web/dist if it exists in the
-// current working directory, or empty string otherwise.
+// current working directory, or empty string otherwise. Assumes cwd is the
+// repo root (bertrand is typically launched from there).
 func resolveWebDir() string {
 	if info, err := os.Stat("web/dist"); err == nil && info.IsDir() {
 		abs, _ := filepath.Abs("web/dist")
@@ -162,10 +163,10 @@ func resolveWebDir() string {
 func shouldRestartServe(webDir string) bool {
 	data, err := os.ReadFile(serveStateFile())
 	if err != nil {
-		return true // no state file → can't tell, restart to be safe
+		return false // no state file → assume externally managed, don't kill it
 	}
-	parts := strings.SplitN(string(data), " ", 2)
-	if len(parts) < 2 || parts[1] == "" {
+	lines := strings.SplitN(string(data), "\n", 2)
+	if len(lines) < 2 || strings.TrimSpace(lines[1]) == "" {
 		return true // running in embedded mode → restart with web-dir
 	}
 	return false // already running with --web-dir
@@ -178,8 +179,8 @@ func killServe() {
 	if err != nil {
 		return
 	}
-	parts := strings.SplitN(string(data), " ", 2)
-	pid, err := strconv.Atoi(parts[0])
+	lines := strings.SplitN(string(data), "\n", 2)
+	pid, err := strconv.Atoi(lines[0])
 	if err != nil {
 		return
 	}
