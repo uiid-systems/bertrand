@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -170,7 +171,8 @@ func shouldRestartServe(webDir string) bool {
 	return false // already running with --web-dir
 }
 
-// killServe reads the serve state file and kills the running server process.
+// killServe reads the serve state file, kills the running server process, and
+// waits for the port to become free before returning.
 func killServe() {
 	data, err := os.ReadFile(serveStateFile())
 	if err != nil {
@@ -183,9 +185,20 @@ func killServe() {
 	}
 	if p, err := os.FindProcess(pid); err == nil {
 		p.Signal(syscall.SIGTERM)
-		p.Wait()
 	}
 	os.Remove(serveStateFile())
+
+	// Poll until the port is free (the process may not be our child, so
+	// Wait() is unreliable). Give up after 2 seconds.
+	addr := fmt.Sprintf("127.0.0.1:%d", server.DefaultPort)
+	for i := 0; i < 40; i++ {
+		conn, err := net.DialTimeout("tcp", addr, 50*1e6) // 50ms
+		if err != nil {
+			return // port is free
+		}
+		conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 var rootCmd = &cobra.Command{
