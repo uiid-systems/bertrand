@@ -7,6 +7,7 @@ export interface Session {
   pid: number
   timestamp: string
   focused: boolean
+  worktree?: string
 }
 
 export interface EnrichedEvent {

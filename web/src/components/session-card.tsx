@@ -1,26 +1,27 @@
+import {
+  Badge,
+  Group,
+  Text,
+  type AccordionItemData,
+  type BadgeProps,
+} from "@uiid/design-system";
+
+import { GitBranchIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+
 import type { Session, SessionStatus } from "@/lib/types";
 import { formatAgo } from "@/lib/format";
 import { parseSessionName } from "@/lib/sessions";
-import { focusSession } from "@/api/client";
 import { StatusDot } from "@/components/status-dot";
 import { LogDrawer } from "@/components/log-drawer";
 import { Checkbox } from "@/components/checkbox";
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
-import { CenterFocusIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import type { AccordionItemData } from "@uiid/interactive";
 
-const badgeColors: Record<SessionStatus, string> = {
-  working: "bg-[var(--status-working)]/15 text-[var(--status-working)]",
-  blocked: "bg-[var(--status-blocked)]/15 text-[var(--status-blocked)]",
-  prompting: "bg-[var(--status-prompting)]/15 text-[var(--status-prompting)]",
-  paused: "bg-muted-foreground/15 text-muted-foreground",
-  archived: "bg-muted-foreground/10 text-muted-foreground/60",
+const badgeColors: Record<SessionStatus, BadgeProps["color"]> = {
+  working: "green",
+  blocked: "red",
+  prompting: "yellow",
+  paused: "purple",
+  archived: "blue",
 };
 
 export function sessionToAccordionItem(
@@ -34,15 +35,10 @@ export function sessionToAccordionItem(
   const name = parsed.session;
   const ago = formatAgo(session.timestamp);
 
-  function handleFocus(e: React.MouseEvent) {
-    e.stopPropagation();
-    focusSession(session.session);
-  }
-
   return {
     value: session.session,
     trigger: (
-      <div className="flex flex-1 items-center gap-1.5 @sm:gap-2">
+      <Group gap={2} ay="center">
         {options?.onSelect && (
           <Checkbox
             checked={!!options.selected}
@@ -51,31 +47,22 @@ export function sessionToAccordionItem(
           />
         )}
         <StatusDot status={session.status} />
-        <div className="min-w-0 flex-1 break-all font-semibold">{name}</div>
-        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={handleFocus}
-                  className="hidden @sm:inline-flex"
-                />
-              }
-            >
-              <HugeiconsIcon icon={CenterFocusIcon} size={14} />
-            </TooltipTrigger>
-            <TooltipContent>Focus session</TooltipContent>
-          </Tooltip>
-          <span
-            className={`hidden @sm:inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeColors[session.status]}`}
-          >
-            {session.status}
-          </span>
-          <span className="text-muted-foreground/50">{ago}</span>
-        </div>
-      </div>
+        <Text size={-1} weight="bold">
+          {name}
+        </Text>
+        {session.worktree && (
+          <Badge size="small" color="blue">
+            <HugeiconsIcon icon={GitBranchIcon} size={10} />
+            {session.worktree}
+          </Badge>
+        )}
+        <Badge size="small" color={badgeColors[session.status]}>
+          {session.status}
+        </Badge>
+        <Text size={-1} shade="muted">
+          {ago}
+        </Text>
+      </Group>
     ),
     content: <LogDrawer sessionName={session.session} />,
   };
