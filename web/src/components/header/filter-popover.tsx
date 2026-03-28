@@ -1,10 +1,7 @@
 import { FilterHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { Button } from "@uiid/buttons";
-import { Group, Stack } from "@uiid/layout";
-import { Popover } from "@uiid/overlays";
-import { Text } from "@uiid/typography";
+import { Button, Stack, Group, Text, Popover } from "@uiid/design-system";
 
 import { useSessionStore, type ViewMode } from "@/store/session-store";
 import type { SessionStatus } from "@/lib/types";

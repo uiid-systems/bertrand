@@ -1,7 +1,6 @@
 import { useMemo, useRef, useEffect } from "react";
 
-import { Group, Stack } from "@uiid/layout";
-import { Text } from "@uiid/typography";
+import { Group, Stack, Text } from "@uiid/design-system";
 
 import { useSessionLog } from "@/hooks/useSessionLog";
 import { SessionStats } from "@/components/session-stats";

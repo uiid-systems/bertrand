@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-import { Input } from "@uiid/forms";
+import { Input } from "@uiid/design-system";
 
 import { useSessionStore } from "@/store/session-store";
 

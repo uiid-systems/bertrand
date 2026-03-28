@@ -1,8 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GitMergeIcon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
 
-import { Group } from "@uiid/layout";
-import { Text } from "@uiid/typography";
+import { Group, Text } from "@uiid/design-system";
 
 import { Badge } from "@/components/ui/badge";
 import { githubPrUrl } from "@/lib/constants";

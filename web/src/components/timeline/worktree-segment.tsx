@@ -1,5 +1,4 @@
-import { Group } from "@uiid/layout";
-import { Text } from "@uiid/typography";
+import { Group, Text } from "@uiid/design-system";
 
 import { TimelineSegment } from "./timeline-event";
 import { getMeta } from "./utils";

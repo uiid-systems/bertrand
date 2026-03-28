@@ -1,4 +1,4 @@
-import { Text } from "@uiid/typography";
+import { Text } from "@uiid/design-system";
 
 import { Sunrise, Sunset } from "@hugeicons/core-free-icons";
 
