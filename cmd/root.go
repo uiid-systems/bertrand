@@ -8,8 +8,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -82,25 +85,121 @@ func isInitialized() bool {
 	return err == nil
 }
 
+// serveStateFile returns the path to the serve state file that tracks the
+// running dashboard server's PID and web-dir mode.
+func serveStateFile() string {
+	return filepath.Join(session.BaseDir(), "serve.state")
+}
+
 // ensureServeRunning starts bertrand serve as a detached background process
-// if the dashboard port is not already listening.
+// if the dashboard port is not already listening. When a web/dist directory
+// exists in the working directory (dev mode), it passes --web-dir so the
+// server serves fresh filesystem assets instead of stale embedded ones.
+//
+// If a server is already running with embedded assets but web/dist now exists,
+// the stale server is killed and restarted with --web-dir.
 func ensureServeRunning() {
 	addr := fmt.Sprintf("127.0.0.1:%d", server.DefaultPort)
+	webDir := resolveWebDir()
+
 	conn, err := net.DialTimeout("tcp", addr, 200*1e6) // 200ms
 	if err == nil {
 		conn.Close()
-		return // already running
+		// Server is running. If we're in dev mode, check whether it needs a restart.
+		if webDir != "" && shouldRestartServe(webDir) {
+			killServe()
+		} else {
+			return
+		}
+	}
+
+	// Auto-build: if we're in the source tree but web/dist is missing, build it.
+	if webDir == "" {
+		if _, err := os.Stat("web/package.json"); err == nil {
+			if pnpm, err := exec.LookPath("pnpm"); err == nil {
+				build := exec.Command(pnpm, "build")
+				build.Dir = "web"
+				if build.Run() == nil {
+					webDir = resolveWebDir()
+				}
+			}
+		}
 	}
 
 	bin, err := os.Executable()
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(bin, "serve")
+	args := []string{"serve"}
+	if webDir != "" {
+		args = append(args, "--web-dir", webDir)
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return
+	}
+
+	// Write state file: one line per field so parsing doesn't break on spaces in paths.
+	state := fmt.Sprintf("%d\n%s", cmd.Process.Pid, webDir)
+	os.WriteFile(serveStateFile(), []byte(state), 0644)
+}
+
+// resolveWebDir returns the absolute path to web/dist if it exists in the
+// current working directory, or empty string otherwise. Assumes cwd is the
+// repo root (bertrand is typically launched from there).
+func resolveWebDir() string {
+	if info, err := os.Stat("web/dist"); err == nil && info.IsDir() {
+		abs, _ := filepath.Abs("web/dist")
+		return abs
+	}
+	return ""
+}
+
+// shouldRestartServe checks whether the running server is using embedded assets
+// while a web/dist directory is available on disk.
+func shouldRestartServe(webDir string) bool {
+	data, err := os.ReadFile(serveStateFile())
+	if err != nil {
+		return false // no state file → assume externally managed, don't kill it
+	}
+	lines := strings.SplitN(string(data), "\n", 2)
+	if len(lines) < 2 || strings.TrimSpace(lines[1]) == "" {
+		return true // running in embedded mode → restart with web-dir
+	}
+	return false // already running with --web-dir
+}
+
+// killServe reads the serve state file, kills the running server process, and
+// waits for the port to become free before returning.
+func killServe() {
+	data, err := os.ReadFile(serveStateFile())
+	if err != nil {
+		return
+	}
+	lines := strings.SplitN(string(data), "\n", 2)
+	pid, err := strconv.Atoi(lines[0])
+	if err != nil {
+		return
+	}
+	if p, err := os.FindProcess(pid); err == nil {
+		p.Signal(syscall.SIGTERM)
+	}
+	os.Remove(serveStateFile())
+
+	// Poll until the port is free (the process may not be our child, so
+	// Wait() is unreliable). Give up after 2 seconds.
+	addr := fmt.Sprintf("127.0.0.1:%d", server.DefaultPort)
+	for i := 0; i < 40; i++ {
+		conn, err := net.DialTimeout("tcp", addr, 50*1e6) // 50ms
+		if err != nil {
+			return // port is free
+		}
+		conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 var rootCmd = &cobra.Command{

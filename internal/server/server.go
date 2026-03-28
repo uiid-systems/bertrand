@@ -21,7 +21,10 @@ var staticFiles embed.FS
 
 const DefaultPort = 7779
 
-func New(port int) *http.ServeMux {
+// New creates the dashboard HTTP mux. If webDir is non-empty and points to a
+// directory on disk, assets are served from the filesystem (dev mode). Otherwise
+// the compile-time embedded assets are used (production / Homebrew installs).
+func New(port int, webDir string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// API routes
@@ -29,20 +32,29 @@ func New(port int) *http.ServeMux {
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
 
-	// Dashboard SPA — serve Vite build output, fall back to index.html for client-side routing
-	staticFS, _ := fs.Sub(staticFiles, "static/dist")
-	fileServer := http.FileServer(http.FS(staticFS))
+	// Resolve the asset filesystem: prefer on-disk dir for dev, embedded for prod.
+	var assetFS fs.FS
+	if webDir != "" {
+		if info, err := os.Stat(webDir); err == nil && info.IsDir() {
+			assetFS = os.DirFS(webDir)
+		}
+	}
+	if assetFS == nil {
+		assetFS, _ = fs.Sub(staticFiles, "static/dist")
+	}
+
+	fileServer := http.FileServer(http.FS(assetFS))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		// Try the actual file first
 		if r.URL.Path != "/" {
-			f, err := fs.Stat(staticFS, strings.TrimPrefix(r.URL.Path, "/"))
+			f, err := fs.Stat(assetFS, strings.TrimPrefix(r.URL.Path, "/"))
 			if err == nil && !f.IsDir() {
 				fileServer.ServeHTTP(w, r)
 				return
 			}
 		}
 		// Fall back to index.html for SPA routing; if no build exists, serve placeholder
-		index, err := fs.ReadFile(staticFS, "index.html")
+		index, err := fs.ReadFile(assetFS, "index.html")
 		if err != nil {
 			index, err = fs.ReadFile(staticFiles, "static/placeholder.html")
 			if err != nil {
