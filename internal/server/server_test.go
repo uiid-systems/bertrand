@@ -8,7 +8,7 @@ import (
 )
 
 func TestGetSessions(t *testing.T) {
-	mux := New(DefaultPort)
+	mux := New(DefaultPort, "")
 	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -27,7 +27,7 @@ func TestGetSessions(t *testing.T) {
 }
 
 func TestSessionNotFound(t *testing.T) {
-	mux := New(DefaultPort)
+	mux := New(DefaultPort, "")
 	req := httptest.NewRequest(http.MethodGet, "/sessions/nonexistent/fakesession", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -38,7 +38,7 @@ func TestSessionNotFound(t *testing.T) {
 }
 
 func TestSessionLogNotFound(t *testing.T) {
-	mux := New(DefaultPort)
+	mux := New(DefaultPort, "")
 	req := httptest.NewRequest(http.MethodGet, "/sessions/nonexistent/fakesession/log", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -49,7 +49,7 @@ func TestSessionLogNotFound(t *testing.T) {
 }
 
 func TestBadSessionName(t *testing.T) {
-	mux := New(DefaultPort)
+	mux := New(DefaultPort, "")
 	req := httptest.NewRequest(http.MethodGet, "/sessions/noproject", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

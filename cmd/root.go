@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -82,25 +84,108 @@ func isInitialized() bool {
 	return err == nil
 }
 
+// serveStateFile returns the path to the serve state file that tracks the
+// running dashboard server's PID and web-dir mode.
+func serveStateFile() string {
+	return filepath.Join(session.BaseDir(), "serve.state")
+}
+
 // ensureServeRunning starts bertrand serve as a detached background process
-// if the dashboard port is not already listening.
+// if the dashboard port is not already listening. When a web/dist directory
+// exists in the working directory (dev mode), it passes --web-dir so the
+// server serves fresh filesystem assets instead of stale embedded ones.
+//
+// If a server is already running with embedded assets but web/dist now exists,
+// the stale server is killed and restarted with --web-dir.
 func ensureServeRunning() {
 	addr := fmt.Sprintf("127.0.0.1:%d", server.DefaultPort)
+	webDir := resolveWebDir()
+
 	conn, err := net.DialTimeout("tcp", addr, 200*1e6) // 200ms
 	if err == nil {
 		conn.Close()
-		return // already running
+		// Server is running. If we're in dev mode, check whether it needs a restart.
+		if webDir != "" && shouldRestartServe(webDir) {
+			killServe()
+		} else {
+			return
+		}
+	}
+
+	// Auto-build: if we're in the source tree but web/dist is missing, build it.
+	if webDir == "" {
+		if _, err := os.Stat("web/package.json"); err == nil {
+			if pnpm, err := exec.LookPath("pnpm"); err == nil {
+				build := exec.Command(pnpm, "build")
+				build.Dir = "web"
+				if build.Run() == nil {
+					webDir = resolveWebDir()
+				}
+			}
+		}
 	}
 
 	bin, err := os.Executable()
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(bin, "serve")
+	args := []string{"serve"}
+	if webDir != "" {
+		args = append(args, "--web-dir", webDir)
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return
+	}
+
+	// Write state file: "pid webDir" (webDir may be empty for embedded mode)
+	state := fmt.Sprintf("%d %s", cmd.Process.Pid, webDir)
+	os.WriteFile(serveStateFile(), []byte(state), 0644)
+}
+
+// resolveWebDir returns the absolute path to web/dist if it exists in the
+// current working directory, or empty string otherwise.
+func resolveWebDir() string {
+	if info, err := os.Stat("web/dist"); err == nil && info.IsDir() {
+		abs, _ := filepath.Abs("web/dist")
+		return abs
+	}
+	return ""
+}
+
+// shouldRestartServe checks whether the running server is using embedded assets
+// while a web/dist directory is available on disk.
+func shouldRestartServe(webDir string) bool {
+	data, err := os.ReadFile(serveStateFile())
+	if err != nil {
+		return true // no state file → can't tell, restart to be safe
+	}
+	parts := strings.SplitN(string(data), " ", 2)
+	if len(parts) < 2 || parts[1] == "" {
+		return true // running in embedded mode → restart with web-dir
+	}
+	return false // already running with --web-dir
+}
+
+// killServe reads the serve state file and kills the running server process.
+func killServe() {
+	data, err := os.ReadFile(serveStateFile())
+	if err != nil {
+		return
+	}
+	parts := strings.SplitN(string(data), " ", 2)
+	pid, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return
+	}
+	if p, err := os.FindProcess(pid); err == nil {
+		p.Signal(syscall.SIGTERM)
+		p.Wait()
+	}
+	os.Remove(serveStateFile())
 }
 
 var rootCmd = &cobra.Command{
