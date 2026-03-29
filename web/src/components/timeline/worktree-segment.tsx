@@ -4,7 +4,7 @@ import { TimelineSegment } from "./timeline-event";
 import { getMeta } from "./utils";
 import { Row } from "./row";
 import { GitBranchIcon } from "@hugeicons/core-free-icons";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@uiid/design-system";
 
 import { SegmentWrapper } from "./subcomponents/segment-wrapper";
 
@@ -30,7 +30,7 @@ export function WorktreeSegment({ segment }: WorktreeSegmentProps) {
             {entered ? "entered worktree" : "exited worktree"}
           </Text>
           {m.branch && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge color="green" size="small">
               {m.branch}
             </Badge>
           )}

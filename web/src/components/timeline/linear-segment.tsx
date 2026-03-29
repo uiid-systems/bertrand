@@ -1,7 +1,7 @@
 import { TaskDaily01Icon } from "@hugeicons/core-free-icons";
 
 import { linearIssueUrl } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@uiid/design-system";
 
 import { TimelineSegment } from "./timeline-event";
 import { getMeta } from "./utils";
@@ -40,16 +40,17 @@ export function LinearSegment({ segment }: { segment: TimelineSegment }) {
               {url ? (
                 <a href={url} target="_blank" rel="noopener noreferrer">
                   <Badge
-                    variant="secondary"
-                    className="text-(--event-purple) hover:bg-accent cursor-pointer font-semibold"
+                    color="purple"
+                    size="small"
+                    className="cursor-pointer"
                   >
                     {label}
                   </Badge>
                 </a>
               ) : (
                 <Badge
-                  variant="secondary"
-                  className="text-(--event-purple) font-semibold"
+                  color="purple"
+                  size="small"
                 >
                   {label}
                 </Badge>
