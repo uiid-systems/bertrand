@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from "react";
 
-import { Group, Stack, Text } from "@uiid/design-system";
+import { Group, Separator, Stack, Text } from "@uiid/design-system";
 
 import { useSessionLog } from "@/hooks/useSessionLog";
 import { SessionStats } from "@/components/session-stats";
@@ -9,7 +9,6 @@ import {
   buildSegments,
   extractRepoBase,
 } from "@/components/timeline/timeline-event";
-import { Separator } from "@/components/ui/separator";
 
 /**
  * Format a date as a short label for day separators.
