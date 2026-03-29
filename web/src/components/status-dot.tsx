@@ -1,4 +1,3 @@
-import { cn } from "@/lib/utils"
 import type { SessionStatus } from "@/lib/types"
 
 const statusColors: Record<SessionStatus, string> = {
@@ -12,7 +11,7 @@ const statusColors: Record<SessionStatus, string> = {
 export function StatusDot({ status }: { status: SessionStatus }) {
   return (
     <div
-      className={cn("h-2 w-2 shrink-0 rounded-full", statusColors[status])}
+      className={`h-2 w-2 shrink-0 rounded-full ${statusColors[status]}`}
     />
   )
 }
