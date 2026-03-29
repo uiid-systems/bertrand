@@ -1,10 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GitMergeIcon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
 
-import { Group } from "@uiid/layout";
-import { Text } from "@uiid/typography";
+import { Group, Text } from "@uiid/design-system";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@uiid/design-system";
 import { githubPrUrl } from "@/lib/constants";
 
 import { TimelineSegment } from "./timeline-event";
@@ -41,15 +40,16 @@ export function PrSegment({ segment, repoBase }: PrSegmentProps) {
           {prNum && prUrl ? (
             <a href={prUrl} target="_blank" rel="noopener noreferrer">
               <Badge
-                variant="outline"
-                className="gap-1 hover:bg-accent cursor-pointer"
+                color="green"
+                size="small"
+                className="cursor-pointer"
               >
-                <HugeiconsIcon icon={icon} size={10} className={color} />
+                <HugeiconsIcon icon={icon} size={10} />
                 {prNum}
               </Badge>
             </a>
           ) : prNum ? (
-            <Badge variant="outline">{prNum}</Badge>
+            <Badge color="green" size="small">{prNum}</Badge>
           ) : null}
           {prTitle && (
             <Text size={-1} shade="halftone">
@@ -57,7 +57,7 @@ export function PrSegment({ segment, repoBase }: PrSegmentProps) {
             </Text>
           )}
           {!prTitle && m.branch && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge color="green" size="small">
               {m.branch}
             </Badge>
           )}

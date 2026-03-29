@@ -1,5 +1,4 @@
-import { Group, Stack } from "@uiid/layout";
-import { Select } from "@uiid/forms";
+import { Group, Stack, Select } from "@uiid/design-system";
 
 import type { SessionStatus } from "@/lib/types";
 

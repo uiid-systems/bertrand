@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { NuqsAdapter } from "nuqs/adapters/react"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { TooltipProvider } from "@uiid/design-system"
 import { routeTree } from "./routeTree.gen"
 import "./globals.css"
 

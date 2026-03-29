@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Stack, Group, Accordion, Text } from "@uiid/design-system";
+import { Stack, Group, Accordion, Text, Button } from "@uiid/design-system";
 
 import { useSessions } from "@/hooks/useSessions";
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations";
@@ -11,7 +11,6 @@ import { Header } from "@/components/header/header";
 import { WorktreePanel } from "@/components/worktree-panel";
 import { sessionToAccordionItem } from "@/components/session-card";
 import { Checkbox } from "@/components/checkbox";
-import { Button } from "@/components/ui/button";
 import { parseSessionName } from "@/lib/sessions";
 import type { Session, SessionStatus } from "@/lib/types";
 
@@ -278,8 +277,8 @@ function Dashboard() {
             <div className="ml-auto flex gap-1.5">
               {canArchive && (
                 <Button
-                  variant="secondary"
-                  size="xs"
+                  variant="subtle"
+                  size="xsmall"
                   onClick={() => setConfirming("archive")}
                   disabled={busy}
                 >
@@ -287,8 +286,9 @@ function Dashboard() {
                 </Button>
               )}
               <Button
-                variant="destructive"
-                size="xs"
+                variant="inverted"
+                size="xsmall"
+                className="text-destructive"
                 onClick={() => setConfirming("delete")}
                 disabled={busy}
               >
@@ -304,8 +304,9 @@ function Dashboard() {
                 {selectedInView.length !== 1 ? "s" : ""}?
               </span>
               <Button
-                variant="destructive"
-                size="xs"
+                variant="inverted"
+                size="xsmall"
+                className="text-destructive"
                 onClick={() => handleBulkAction(confirming)}
                 disabled={busy}
               >
@@ -313,7 +314,7 @@ function Dashboard() {
               </Button>
               <Button
                 variant="ghost"
-                size="xs"
+                size="xsmall"
                 onClick={() => setConfirming(null)}
                 disabled={busy}
               >

@@ -1,6 +1,6 @@
 import { MessageQuestionIcon } from "@hugeicons/core-free-icons";
 
-import { Text } from "@uiid/typography";
+import { Text } from "@uiid/design-system";
 
 import { TimelineSegment } from "./timeline-event";
 import { getMeta } from "./utils";
