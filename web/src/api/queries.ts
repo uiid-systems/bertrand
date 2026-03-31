@@ -1,10 +1,15 @@
 import { queryOptions } from "@tanstack/react-query"
-import { fetchSessions, fetchSessionLog } from "./client"
+import { fetchSessions, fetchSessionLog, fetchWorktrees } from "./client"
 
 export const sessionKeys = {
   all: ["sessions"] as const,
   list: () => [...sessionKeys.all, "list"] as const,
   log: (name: string) => [...sessionKeys.all, name, "log"] as const,
+}
+
+export const worktreeKeys = {
+  all: ["worktrees"] as const,
+  list: () => [...worktreeKeys.all, "list"] as const,
 }
 
 export const sessionQueries = {
@@ -20,5 +25,14 @@ export const sessionQueries = {
       queryKey: sessionKeys.log(name),
       queryFn: () => fetchSessionLog(name),
       refetchInterval: 2000,
+    }),
+}
+
+export const worktreeQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: worktreeKeys.list(),
+      queryFn: fetchWorktrees,
+      refetchInterval: 5000,
     }),
 }

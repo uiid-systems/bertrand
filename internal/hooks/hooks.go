@@ -301,9 +301,16 @@ branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branc
 [ -z "$branch" ] && branch="unknown"
 esc_branch="$(printf '%s' "$branch" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
-# Write worktree marker file
+# Extract worktree path from tool output — best effort
+wt_path="$(printf '%s' "$input" | grep -o '/[^ ]*worktrees/[^ ]*' | head -1 | sed 's/[.,;:]$//')"
+
+# Write worktree marker file (branch on line 1, path on line 2 if available)
 mkdir -p "$HOME/.bertrand/sessions/$name" 2>/dev/null
-printf '%s' "$branch" > "$HOME/.bertrand/sessions/$name/worktree"
+if [ -n "$wt_path" ]; then
+  printf '%s\n%s' "$branch" "$wt_path" > "$HOME/.bertrand/sessions/$name/worktree"
+else
+  printf '%s' "$branch" > "$HOME/.bertrand/sessions/$name/worktree"
+fi
 
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

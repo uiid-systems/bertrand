@@ -1,5 +1,6 @@
 @import "@fontsource-variable/geist";
 @import "@uiid/design-system/globals.css";
+@import "@uiid/forms/globals.css";
 
 /* Accordion panel: smooth height + opacity transitions using Base-UI data attributes */
 .accordion-panel {

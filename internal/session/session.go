@@ -100,12 +100,31 @@ func ReadFocused() string {
 func WorktreePath(name string) string { return filepath.Join(SessionDir(name), "worktree") }
 
 // ReadWorktree returns the worktree branch name if the session is in a worktree.
+// The marker file may contain just a branch (legacy) or branch\npath (new format).
 func ReadWorktree(name string) string {
 	data, err := os.ReadFile(WorktreePath(name))
 	if err != nil {
 		return ""
 	}
-	return strings.TrimRight(strings.TrimSpace(string(data)), ".")
+	content := strings.TrimSpace(string(data))
+	// New format: first line is branch, second line is path
+	if idx := strings.Index(content, "\n"); idx >= 0 {
+		return strings.TrimRight(content[:idx], ".")
+	}
+	return strings.TrimRight(content, ".")
+}
+
+// ReadWorktreeDir returns the filesystem path of the worktree if stored in the marker.
+func ReadWorktreeDir(name string) string {
+	data, err := os.ReadFile(WorktreePath(name))
+	if err != nil {
+		return ""
+	}
+	content := strings.TrimSpace(string(data))
+	if idx := strings.Index(content, "\n"); idx >= 0 {
+		return strings.TrimSpace(content[idx+1:])
+	}
+	return ""
 }
 
 type State struct {

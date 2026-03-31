@@ -1,14 +1,14 @@
 import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Stack, Group, Accordion, Text, Button } from "@uiid/design-system";
+import { Stack, Group, Accordion, Tabs, Text, Button } from "@uiid/design-system";
 
 import { useSessions } from "@/hooks/useSessions";
 import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations";
 import { useSessionStore } from "@/store/session-store";
 import type { ViewMode } from "@/store/session-store";
 import { Header } from "@/components/header/header";
-import { WorktreePanel } from "@/components/worktree-panel";
+import { WorktreeList } from "@/components/worktree-list";
 import { sessionToAccordionItem } from "@/components/session-card";
 import { Checkbox } from "@/components/checkbox";
 import { parseSessionName } from "@/lib/sessions";
@@ -256,89 +256,113 @@ function Dashboard() {
         statusCounts={statusCounts}
       />
 
-      <WorktreePanel sessions={projectFiltered} />
+      <Tabs
+        defaultValue="sessions"
+        ghost
+        items={[
+          {
+            label: "Sessions",
+            value: "sessions",
+            render: (
+              <>
+                {showBulk && sorted.length > 0 && (
+                  <div className="flex items-center gap-1.5 @sm:gap-2 border-b border-border px-3 @sm:px-4 py-1.5">
+                    <Checkbox
+                      checked={
+                        selectedInView.length === sorted.length &&
+                        sorted.length > 0
+                      }
+                      onChange={() => handleSelectAll()}
+                      label="Select all sessions"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {selectedInView.length > 0
+                        ? `${selectedInView.length} selected`
+                        : "select all"}
+                    </span>
 
-      {showBulk && sorted.length > 0 && (
-        <div className="flex items-center gap-1.5 @sm:gap-2 border-b border-border px-3 @sm:px-4 py-1.5">
-          <Checkbox
-            checked={
-              selectedInView.length === sorted.length && sorted.length > 0
-            }
-            onChange={() => handleSelectAll()}
-            label="Select all sessions"
-          />
-          <span className="text-xs text-muted-foreground">
-            {selectedInView.length > 0
-              ? `${selectedInView.length} selected`
-              : "select all"}
-          </span>
+                    {selectedInView.length > 0 && !confirming && (
+                      <div className="ml-auto flex gap-1.5">
+                        {canArchive && (
+                          <Button
+                            variant="subtle"
+                            size="xsmall"
+                            onClick={() => setConfirming("archive")}
+                            disabled={busy}
+                          >
+                            archive
+                          </Button>
+                        )}
+                        <Button
+                          variant="inverted"
+                          size="xsmall"
+                          className="text-destructive"
+                          onClick={() => setConfirming("delete")}
+                          disabled={busy}
+                        >
+                          delete
+                        </Button>
+                      </div>
+                    )}
 
-          {selectedInView.length > 0 && !confirming && (
-            <div className="ml-auto flex gap-1.5">
-              {canArchive && (
-                <Button
-                  variant="subtle"
-                  size="xsmall"
-                  onClick={() => setConfirming("archive")}
-                  disabled={busy}
-                >
-                  archive
-                </Button>
-              )}
-              <Button
-                variant="inverted"
-                size="xsmall"
-                className="text-destructive"
-                onClick={() => setConfirming("delete")}
-                disabled={busy}
-              >
-                delete
-              </Button>
-            </div>
-          )}
+                    {confirming && (
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <span className="text-xs text-destructive">
+                          {confirming} {selectedInView.length} session
+                          {selectedInView.length !== 1 ? "s" : ""}?
+                        </span>
+                        <Button
+                          variant="inverted"
+                          size="xsmall"
+                          className="text-destructive"
+                          onClick={() => handleBulkAction(confirming)}
+                          disabled={busy}
+                        >
+                          {busy ? "..." : "confirm"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xsmall"
+                          onClick={() => setConfirming(null)}
+                          disabled={busy}
+                        >
+                          cancel
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-          {confirming && (
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="text-xs text-destructive">
-                {confirming} {selectedInView.length} session
-                {selectedInView.length !== 1 ? "s" : ""}?
-              </span>
-              <Button
-                variant="inverted"
-                size="xsmall"
-                className="text-destructive"
-                onClick={() => handleBulkAction(confirming)}
-                disabled={busy}
-              >
-                {busy ? "..." : "confirm"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="xsmall"
-                onClick={() => setConfirming(null)}
-                disabled={busy}
-              >
-                cancel
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="p-2">
-        {sorted.length === 0 ? (
-          <div className="p-10 text-center text-muted-foreground">
-            {searchQuery.trim() ? "no matching sessions" : "no sessions"}
-          </div>
-        ) : (
-          <SessionList
-            sessions={sorted}
-            viewMode={viewMode}
-            selected={selected}
-            onSelect={showBulk ? handleSelect : undefined}
-          />
-        )}
-      </div>
+                <div className="p-2">
+                  {sorted.length === 0 ? (
+                    <div className="p-10 text-center text-muted-foreground">
+                      {searchQuery.trim()
+                        ? "no matching sessions"
+                        : "no sessions"}
+                    </div>
+                  ) : (
+                    <SessionList
+                      sessions={sorted}
+                      viewMode={viewMode}
+                      selected={selected}
+                      onSelect={showBulk ? handleSelect : undefined}
+                    />
+                  )}
+                </div>
+              </>
+            ),
+          },
+          {
+            label: "Worktrees",
+            value: "worktrees",
+            render: (
+              <div className="p-2">
+                <WorktreeList sessions={projectFiltered} />
+              </div>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

@@ -1,4 +1,4 @@
-import type { Session, SessionDigest } from "@/lib/types"
+import type { Session, SessionDigest, Worktree } from "@/lib/types"
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
@@ -29,4 +29,8 @@ export function archiveSession(sessionName: string): Promise<void> {
 
 export function deleteSession(sessionName: string): Promise<void> {
   return apiPost(`/sessions/${encodeURIComponent(sessionName)}/delete`)
+}
+
+export function fetchWorktrees(): Promise<Worktree[]> {
+  return apiFetch("/worktrees")
 }

@@ -29,6 +29,7 @@ func New(port int, webDir string) *http.ServeMux {
 
 	// API routes
 	mux.HandleFunc("GET /sessions", handleSessions)
+	mux.HandleFunc("GET /worktrees", handleWorktrees)
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
 
@@ -269,6 +270,109 @@ func handleSessionDelete(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+type worktreeResponse struct {
+	Branch         string             `json:"branch"`
+	Sessions       []string           `json:"sessions"`
+	Files          []session.FileDiff `json:"files"`
+	TotalAdditions int                `json:"total_additions"`
+	TotalDeletions int                `json:"total_deletions"`
+}
+
+func handleWorktrees(w http.ResponseWriter, r *http.Request) {
+	sessions, err := session.ListSessions()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Group sessions by worktree branch, track worktree dirs from marker files
+	type branchInfo struct {
+		sessions []string
+		wtDir    string // filesystem path if known
+	}
+	branches := make(map[string]*branchInfo)
+
+	for _, s := range sessions {
+		branch := session.ReadWorktree(s.Session)
+		if branch == "" {
+			continue
+		}
+		bi, ok := branches[branch]
+		if !ok {
+			bi = &branchInfo{}
+			branches[branch] = bi
+		}
+		bi.sessions = append(bi.sessions, s.Session)
+		// Prefer a stored worktree dir
+		if bi.wtDir == "" {
+			bi.wtDir = session.ReadWorktreeDir(s.Session)
+		}
+	}
+
+	if len(branches) == 0 {
+		writeJSON(w, http.StatusOK, []worktreeResponse{})
+		return
+	}
+
+	// Fall back to current repo for branches without a stored path
+	repoDir := session.FindRepoRoot()
+
+	var out []worktreeResponse
+	for branch, bi := range branches {
+		wt := worktreeResponse{
+			Branch:   branch,
+			Sessions: bi.sessions,
+		}
+
+		// Resolve worktree filesystem path
+		wtPath := bi.wtDir
+		if wtPath == "" && repoDir != "" {
+			wtPath, _ = session.ResolveWorktreePath(repoDir, branch)
+		}
+		if wtPath == "" {
+			wtPath = session.FindWorktreePathByBranch(branch)
+		}
+
+		if wtPath != "" {
+			// Detect main branch for the repo this worktree belongs to
+			wtRepoRoot := repoRootFromWorktree(wtPath)
+			if wtRepoRoot == "" {
+				wtRepoRoot = repoDir
+			}
+			mainBranch := session.DetectMainBranch(wtRepoRoot)
+
+			files, err := session.DiffNumstat(wtPath, mainBranch)
+			if err == nil {
+				wt.Files = files
+				for _, f := range files {
+					wt.TotalAdditions += f.Additions
+					wt.TotalDeletions += f.Deletions
+				}
+			}
+		}
+
+		if wt.Files == nil {
+			wt.Files = []session.FileDiff{}
+		}
+
+		out = append(out, wt)
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+// repoRootFromWorktree returns the main repo root for a worktree path.
+func repoRootFromWorktree(wtPath string) string {
+	cmd := exec.Command("git", "-C", wtPath, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	gitDir := strings.TrimSpace(string(out))
+	// gitDir is like /repo/.git — parent is repo root
+	return filepath.Dir(gitDir)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

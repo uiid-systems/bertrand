@@ -18,6 +18,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/sessions": "http://127.0.0.1:7779",
+      "/worktrees": "http://127.0.0.1:7779",
     },
   },
 })

@@ -49,6 +49,20 @@ export interface SessionDigest {
   events: EnrichedEvent[];
 }
 
+export interface WorktreeFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface Worktree {
+  branch: string;
+  sessions: string[];
+  files: WorktreeFile[];
+  total_additions: number;
+  total_deletions: number;
+}
+
 export interface Options {
   selected?: boolean;
   onSelect?: (name: string, checked: boolean) => void;
