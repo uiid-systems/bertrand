@@ -118,20 +118,34 @@ When a session becomes **blocked** (agent calls `AskUserQuestion`), hooks automa
 
 ## Releasing
 
-Tag and push — goreleaser handles the rest:
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please) and [goreleaser](https://goreleaser.com/).
 
-```sh
-git tag v0.X.Y
-git push origin v0.X.Y
-```
+### How it works
 
-This triggers a GitHub Actions workflow that builds Darwin binaries (amd64 + arm64), creates a GitHub release, and updates the [homebrew tap](https://github.com/uiid-systems/homebrew-bertrand). Users get the update via:
+1. **Write conventional commits** — prefix your PR titles with `feat:`, `fix:`, `refactor:`, etc. (enforced by CI)
+2. **Merge to main** — release-please automatically opens or updates a "Release" PR with a generated changelog and version bump
+3. **Merge the Release PR** — release-please creates a `v*` tag, which triggers goreleaser to build Darwin binaries (amd64 + arm64), create a GitHub release, and update the [Homebrew tap](https://github.com/uiid-systems/homebrew-bertrand)
+
+Users get the update via:
 
 ```sh
 brew upgrade bertrand
 ```
 
-There's also a built-in command that automates version bumping, tagging, pushing, and watching the workflow:
+### Commit prefixes
+
+| Prefix | Bump | Changelog section |
+|--------|------|-------------------|
+| `feat:` | minor | Features |
+| `fix:` | patch | Bug Fixes |
+| `perf:` | patch | Performance |
+| `refactor:` | patch | Refactoring |
+| `feat!:` / `BREAKING CHANGE:` | major | Breaking Changes |
+| `docs:`, `chore:`, `test:`, `ci:` | — | hidden |
+
+### Manual release (escape hatch)
+
+If you need to bypass the automated flow:
 
 ```sh
 bertrand release           # patch bump (default)
