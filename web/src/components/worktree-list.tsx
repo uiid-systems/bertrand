@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GitBranchIcon } from "@hugeicons/core-free-icons";
 
@@ -99,6 +100,7 @@ function WorktreeContent({ worktree }: { worktree: Worktree }) {
 
 export function WorktreeList({ sessions }: { sessions: Session[] }) {
   const { data: worktrees, isLoading } = useWorktrees();
+  const [openItems, setOpenItems] = useState<string[]>([]);
 
   if (isLoading) {
     return (
@@ -123,6 +125,9 @@ export function WorktreeList({ sessions }: { sessions: Session[] }) {
   return (
     <Accordion
       items={items}
+      value={openItems}
+      onValueChange={setOpenItems}
+      multiple
       TriggerProps={{ className: "!py-2 *:!text-xs" }}
       PanelProps={{ className: "*:w-full" }}
     />
