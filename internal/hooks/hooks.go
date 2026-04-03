@@ -328,6 +328,14 @@ func WorktreeExitedScript() string {
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
+# Stop preview if running
+branch="$(head -1 "$HOME/.bertrand/sessions/$name/worktree" 2>/dev/null)"
+if [ -n "$branch" ]; then
+  curl -s -X POST http://127.0.0.1:7779/preview/stop \
+    -H 'Content-Type: application/json' \
+    -d "{\"branch\":\"$branch\"}" 2>/dev/null || true
+fi
+
 # Remove worktree marker
 rm -f "$HOME/.bertrand/sessions/$name/worktree"
 

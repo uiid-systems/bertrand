@@ -2,12 +2,61 @@ import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GitBranchIcon } from "@hugeicons/core-free-icons";
 
-import { Accordion, Badge, Group, Stack, Text } from "@uiid/design-system";
+import { Accordion, Badge, Button, Group, Stack, Text } from "@uiid/design-system";
 
 import { useWorktrees } from "@/hooks/useWorktrees";
+import { useStartPreview, useStopPreview } from "@/hooks/usePreviewMutations";
 import { StatusDot } from "@/components/status-dot";
-import { parseSessionName } from "@/lib/sessions";
 import type { Session, Worktree } from "@/lib/types";
+
+function PreviewButtons({ worktree }: { worktree: Worktree }) {
+  const start = useStartPreview();
+  const stop = useStopPreview();
+
+  if (worktree.preview_url) {
+    return (
+      <Group gap={1} ay="center">
+        <Button
+          size="xsmall"
+          variant="subtle"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            window.open(worktree.preview_url, "_blank");
+          }}
+        >
+          Open
+        </Button>
+        <Button
+          size="xsmall"
+          variant="subtle"
+          disabled={stop.isPending}
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            stop.mutate(worktree.branch);
+          }}
+        >
+          {stop.isPending ? "Stopping..." : "Stop"}
+        </Button>
+      </Group>
+    );
+  }
+
+  if (!worktree.has_dev_command) return null;
+
+  return (
+    <Button
+      size="xsmall"
+      variant="subtle"
+      disabled={start.isPending}
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        start.mutate(worktree.branch);
+      }}
+    >
+      {start.isPending ? "Starting..." : "Preview"}
+    </Button>
+  );
+}
 
 function WorktreeTrigger({
   worktree,
@@ -37,12 +86,12 @@ function WorktreeTrigger({
             {worktree.files.length === 1 ? "file" : "files"}
           </Badge>
           {worktree.total_additions > 0 && (
-            <Text size={-2} className="text-green-500">
+            <Text size={-1} className="text-green-500">
               +{worktree.total_additions}
             </Text>
           )}
           {worktree.total_deletions > 0 && (
-            <Text size={-2} className="text-red-400">
+            <Text size={-1} className="text-red-400">
               -{worktree.total_deletions}
             </Text>
           )}
@@ -55,6 +104,7 @@ function WorktreeTrigger({
           ))}
         </Group>
       )}
+      <PreviewButtons worktree={worktree} />
     </Group>
   );
 }
@@ -78,18 +128,18 @@ function WorktreeContent({ worktree }: { worktree: Worktree }) {
           className="py-0.5 border-b border-border last:border-b-0"
         >
           <Text
-            size={-2}
+            size={-1}
             className="min-w-[4ch] text-right text-green-500"
           >
             +{file.additions}
           </Text>
           <Text
-            size={-2}
+            size={-1}
             className="min-w-[4ch] text-right text-red-400"
           >
             -{file.deletions}
           </Text>
-          <Text size={-2} className="font-mono truncate">
+          <Text size={-1} className="font-mono truncate">
             {file.path}
           </Text>
         </Group>
