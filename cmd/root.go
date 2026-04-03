@@ -54,13 +54,10 @@ func printDiscardMessage(name string, timeline string) {
 	fmt.Println()
 }
 
-// sessionTimeline reads the session log and renders a compacted pipe timeline.
-func sessionTimeline(name string) string {
-	d, err := sessionlog.Digest(name)
-	if err != nil || len(d.Timeline) == 0 {
-		return ""
-	}
-	return renderTimeline(d.Timeline, d.TimingRaw)
+// sessionRecap reads the session log and summary file, then renders a concise recap.
+func sessionRecap(name string) string {
+	summary := session.ReadSummary(name)
+	return sessionlog.SessionRecap(name, summary)
 }
 
 
@@ -423,7 +420,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		<-sigCh
 		forceCleaned = true
 		cleanup("Session ended")
-		printSaveMessage(name, sessionTimeline(name))
+		printSaveMessage(name, sessionRecap(name))
 		os.Exit(0)
 	}()
 
@@ -445,7 +442,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		resumeClaudeID = initialClaudeID
 	}
 	for {
-		tmpl := contract.Template(name, contextLayers()...)
+		tmpl := contract.Template(name, session.SummaryPath(name), contextLayers()...)
 
 		var claudeCmd *exec.Cmd
 		var claudeID string
@@ -484,7 +481,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		result, err := p.Run()
 		if err != nil {
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return err
 		}
 
@@ -493,14 +490,14 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		if !exit.Chosen() {
 			// Menu closed without selection — default to save
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 		}
 
 		switch exit.Choice() {
 		case tui.ExitSave:
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 
 		case tui.ExitArchive:
@@ -511,13 +508,13 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			session.WriteState(name, session.StatusArchived, summary, pid)
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
 			cleanupFiles()
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 
 		case tui.ExitDiscard:
 			// Write end event and capture timeline before deleting session data
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: "Session discarded"})
-			timeline := sessionTimeline(name)
+			timeline := sessionRecap(name)
 			cleanupFiles()
 			session.DeleteSession(name)
 			printDiscardMessage(name, timeline)

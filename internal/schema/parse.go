@@ -102,6 +102,12 @@ func parseMeta(event string, raw json.RawMessage) (any, error) {
 	case "user.prompt":
 		var m UserPromptMeta
 		return &m, json.Unmarshal(raw, &m)
+	case "notion.page.read":
+		var m NotionPageReadMeta
+		return &m, json.Unmarshal(raw, &m)
+	case "vercel.deploy":
+		var m VercelDeployMeta
+		return &m, json.Unmarshal(raw, &m)
 	default:
 		// Unknown event type — preserve raw meta as map for forward compat.
 		var m map[string]string
@@ -169,6 +175,10 @@ func (te *TypedEvent) MetaClaudeID() string {
 		return m.ClaudeID
 	case *UserPromptMeta:
 		return m.ClaudeID
+	case *NotionPageReadMeta:
+		return m.ClaudeID
+	case *VercelDeployMeta:
+		return m.ClaudeID
 	case map[string]string:
 		return m["claude_id"]
 	default:
@@ -207,6 +217,16 @@ func (te *TypedEvent) MetaSummary() string {
 		return m.IssueID
 	case *UserPromptMeta:
 		return m.Prompt
+	case *NotionPageReadMeta:
+		if m.PageTitle != "" {
+			return m.PageTitle
+		}
+		return m.PageID
+	case *VercelDeployMeta:
+		if m.DeployURL != "" {
+			return m.DeployURL
+		}
+		return m.ProjectName
 	case *ContextSnapshotMeta:
 		return m.Model + " " + m.RemainingPct + "%"
 	case *ClaudeIDMeta:
