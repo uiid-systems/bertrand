@@ -274,12 +274,16 @@ func launchInteractive() error {
 		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mRecovered %d stale %s\033[0m\n", len(recovered), noun)
 	}
 
-	// Check for stale hooks and auto-reinstall
+	// Check for stale hooks and auto-reinstall (includes settings + completions)
 	if hooks.HooksStale() {
 		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mHooks updated\033[0m\n")
 		if _, err := hooks.InstallHooks(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update hooks: %v\n", err)
 		}
+		if err := hooks.InjectSettings(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update Claude Code settings: %v\n", err)
+		}
+		installCompletions() // best-effort, errors silently ignored
 	}
 
 	allSessions, _ := session.ListSessions()
