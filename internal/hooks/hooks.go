@@ -11,21 +11,6 @@ import (
 	"github.com/uiid-systems/bertrand/internal/session"
 )
 
-// FocusDelayHelperScript returns a small shell snippet that other hooks source
-// to apply the configurable focus delay from config.yaml.
-func FocusDelayHelperScript() string {
-	return `#!/usr/bin/env bash
-# Shared helper: apply focus delay from config
-# Usage: source this file, then call _focus_delay
-_focus_delay() {
-  local ms
-  ms="$(grep 'focus_delay_ms:' "$HOME/.bertrand/config.yaml" 2>/dev/null | grep -o '[0-9]*')"
-  [ -z "$ms" ] && ms=1000
-  [ "$ms" -gt 0 ] 2>/dev/null && sleep "$(awk "BEGIN{printf \"%.3f\", $ms/1000}")"
-}
-`
-}
-
 // HookScript returns the shell script content for a hook.
 func BlockedScript() string {
 	return `#!/usr/bin/env bash
@@ -46,17 +31,6 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
-
-  # Focus steal: only if auto_focus is enabled
-  if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
-    source "$HOME/.bertrand/hooks/_focus_delay.sh"
-    _focus_delay
-    osascript -e 'tell application "Wave" to activate' 2>/dev/null
-    wsh focusblock
-  fi
-
-  # Write focus marker for dashboard
-  printf '%s' "$name" > "$HOME/.bertrand/focused"
 fi
 
 # Log event
@@ -212,14 +186,6 @@ printf '%s' "$tool" > "$HOME/.bertrand/sessions/$name/pending"
 if command -v wsh &>/dev/null; then
   wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
   wsh notify -t "$name" "Needs permission: $tool"
-
-  # Focus steal: only if auto_focus is enabled
-  if grep -q 'auto_focus:.*true' "$HOME/.bertrand/config.yaml" 2>/dev/null; then
-    source "$HOME/.bertrand/hooks/_focus_delay.sh"
-    _focus_delay
-    osascript -e 'tell application "Wave" to activate' 2>/dev/null
-    wsh focusblock
-  fi
 fi
 
 # Log event
@@ -648,7 +614,6 @@ func StatuslineSettingsJSON() string {
 // Used to detect when installed hooks are outdated.
 func hooksFingerprint() string {
 	h := sha256.New()
-	h.Write([]byte(FocusDelayHelperScript()))
 	h.Write([]byte(BlockedScript()))
 	h.Write([]byte(WorkingScript()))
 	h.Write([]byte(ResumedScript()))
@@ -682,7 +647,6 @@ func InstallHooks() (string, error) {
 	}
 
 	scripts := map[string]string{
-		"_focus_delay.sh":         FocusDelayHelperScript(),
 		"on-blocked.sh":           BlockedScript(),
 		"on-working.sh":           WorkingScript(),
 		"on-resumed.sh":           ResumedScript(),
