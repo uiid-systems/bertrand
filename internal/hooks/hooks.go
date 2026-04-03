@@ -408,7 +408,7 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 issue_id=""
 esc_title=""
 if command -v python3 &>/dev/null; then
-  eval "$(printf '%s' "$input" | python3 -c "
+  IFS=$'\t' read -r issue_id esc_title <<< "$(printf '%s' "$input" | python3 -c "
 import json, sys, re
 try:
     d = json.load(sys.stdin)
@@ -431,13 +431,10 @@ try:
                 if isinstance(v, str) and re.match(r'^[A-Z]+-\d+$', v):
                     iid = v
                     break
-    safe_id = iid.replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
     safe_ttl = ttl[:80].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
-    print('issue_id=' + chr(34) + safe_id + chr(34))
-    print('esc_title=' + chr(34) + safe_ttl + chr(34))
+    print(iid + chr(9) + safe_ttl)
 except:
-    print('issue_id=' + chr(34) + chr(34))
-    print('esc_title=' + chr(34) + chr(34))
+    pass
 " 2>/dev/null)"
 fi
 
