@@ -80,6 +80,8 @@ func NewServer(sessionName string) *server.MCPServer {
 	s.AddTool(
 		mcp.NewTool("search_events",
 			mcp.WithDescription("Search events across bertrand sessions by type and/or time range"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("event_type", mcp.Description("Filter by event type (e.g. gh.pr.created, session.block)")),
 			mcp.WithString("since", mcp.Description("Only events after this time (RFC3339 or duration like 1h, 24h)")),
 			mcp.WithString("session", mcp.Description("Scope to a specific session name (default: all sessions)")),
@@ -90,6 +92,8 @@ func NewServer(sessionName string) *server.MCPServer {
 	s.AddTool(
 		mcp.NewTool("session_summary",
 			mcp.WithDescription("Get a focused summary of a specific bertrand session"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("session_name", mcp.Description("The session name (e.g. project/ticket/session)"), mcp.Required()),
 		),
 		sessionSummaryHandler,
