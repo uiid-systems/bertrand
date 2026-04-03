@@ -202,7 +202,7 @@ func killServe() {
 var rootCmd = &cobra.Command{
 	Use:   "bertrand [session-name]",
 	Short: "Agentic workflow manager for Claude Code",
-	Long:  "Launch and manage concurrent Claude Code sessions with automatic focus management.",
+	Long:  "Launch and manage concurrent Claude Code sessions.",
 	Args:  cobra.MaximumNArgs(1),
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -271,11 +271,18 @@ func launchInteractive() error {
 		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mRecovered %d stale %s\033[0m\n", len(recovered), noun)
 	}
 
-	// Check for stale hooks and auto-reinstall
+	// Check for stale hooks and auto-reinstall (includes settings + completions)
 	if hooks.HooksStale() {
 		fmt.Printf("\033[38;5;214m⚑\033[0m \033[38;5;252mHooks updated\033[0m\n")
 		if _, err := hooks.InstallHooks(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update hooks: %v\n", err)
+		} else {
+			if err := hooks.InjectSettings(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to update settings: %v\n", err)
+			}
+			if _, err := installCompletions(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to update completions: %v\n", err)
+			}
 		}
 	}
 
@@ -371,11 +378,11 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 	}
 	session.AppendEvent(name, "session."+verb, &schema.SessionStartedMeta{PID: fmt.Sprintf("%d", pid)})
 
-	// Set Wave block title and persist block ID for focus targeting
+	// Set Wave block title and persist block ID for bertrand focus
 	if wsh, err := exec.LookPath("wsh"); err == nil {
 		exec.Command(wsh, "setmeta", fmt.Sprintf("frame:title=%s", name)).Run()
 
-		// Write wave-block-id so bertrand focus can target this block
+		// Persist wave-block-id for bertrand focus / dashboard
 		if blockID := os.Getenv("WAVETERM_BLOCKID"); blockID != "" {
 			os.WriteFile(filepath.Join(session.SessionDir(name), "wave-block-id"), []byte(blockID), 0644)
 		}

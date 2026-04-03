@@ -31,6 +31,8 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
   wsh notify -t "$name" "$summary"
+
+
 fi
 
 # Log event
