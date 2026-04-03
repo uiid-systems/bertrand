@@ -79,23 +79,6 @@ func ReadSummary(name string) string {
 	return string(data)
 }
 
-// FocusedPath returns the path to the global focused-session marker file.
-func FocusedPath() string { return filepath.Join(BaseDir(), "focused") }
-
-// WriteFocused writes the given session name to the global focus marker.
-func WriteFocused(name string) error {
-	return os.WriteFile(FocusedPath(), []byte(name), 0644)
-}
-
-// ReadFocused returns the name of the currently focused session, or "".
-func ReadFocused() string {
-	data, err := os.ReadFile(FocusedPath())
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
-}
-
 // WorktreePath returns the path to a session's worktree marker file.
 func WorktreePath(name string) string { return filepath.Join(SessionDir(name), "worktree") }
 

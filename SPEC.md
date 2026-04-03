@@ -72,7 +72,6 @@ When Claude Code pauses for tool permission (Edit, Bash, Write, etc.), the catch
 | `bertrand init` | Setup wizard: detect Wave/select terminal, install hooks |
 | `bertrand list` | Interactive session picker (bubbletea TUI) |
 | `bertrand update` | Write session state (agent/hook-facing, hidden from `--help`) |
-| `bertrand focus <name>` | Focus a session's Wave terminal block |
 | `bertrand completion [bash\|zsh\|fish]` | Generate shell completions |
 
 ### Launch TUI (`bertrand`)
@@ -191,10 +190,6 @@ Focus and notifications are handled directly by hook scripts using Wave's `wsh` 
 
 - **`wsh badge`** — Sets a colored badge icon on the block tab when a session is blocked
 - **`wsh notify`** — Sends a Wave notification with session name and question summary
-- **`osascript`** — Activates the Wave app (OS-level focus steal) before focusing the block
-- **`wsh focusblock`** — Switches to the blocked session's block within the current tab
-
-Auto-focus (opt-in via `auto_focus: true` in config) brings Wave to the foreground and focuses the blocked block automatically. Without it, only badge + notification fire.
 
 ---
 
@@ -208,7 +203,7 @@ Auto-focus (opt-in via `auto_focus: true` in config) brings Wave to the foregrou
 6. **PID-based session lookup.** Wrapper sets `BERTRAND_PID` env var. Hook scripts + `~/.bertrand/tmp/<PID>` files map PIDs to session names.
 7. **Stale session recovery.** If a session directory exists but its PID is dead, the wrapper recovers it automatically.
 8. **Resume = fresh Claude instance.** Bertrand "resume" restarts state tracking, doesn't use Claude's `--resume` (session UUIDs don't map to bertrand names).
-9. **Focus management via Wave hooks.** No external tools needed — `wsh` + `osascript` handle notifications, badges, and focus steal directly from hook scripts.
+9. **Notifications via Wave hooks.** No external tools needed — `wsh` handles notifications and badges directly from hook scripts.
 10. **Permission detection via pending markers.** Catch-all hooks write a `pending` file; PostToolUse removes it when the tool completes.
 
 ---

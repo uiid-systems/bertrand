@@ -91,7 +91,6 @@ When a session becomes **blocked** (agent calls `AskUserQuestion`), hooks automa
 
 - Set a colored badge on the block's tab header via `wsh badge`
 - Send a Wave notification via `wsh notify`
-- Optionally steal OS focus and switch to the block (requires `auto_focus: true` in `~/.bertrand/config.yaml`)
 
 ## File Layout
 
