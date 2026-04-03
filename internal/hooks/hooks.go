@@ -296,6 +296,14 @@ func WorktreeExitedScript() string {
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
+# Stop preview if running
+branch="$(head -1 "$HOME/.bertrand/sessions/$name/worktree" 2>/dev/null)"
+if [ -n "$branch" ]; then
+  curl -s -X POST http://127.0.0.1:7779/preview/stop \
+    -H 'Content-Type: application/json' \
+    -d "{\"branch\":\"$branch\"}" 2>/dev/null || true
+fi
+
 # Remove worktree marker
 rm -f "$HOME/.bertrand/sessions/$name/worktree"
 
@@ -368,7 +376,7 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 issue_id=""
 esc_title=""
 if command -v python3 &>/dev/null; then
-  eval "$(printf '%s' "$input" | python3 -c "
+  IFS=$'\t' read -r issue_id esc_title <<< "$(printf '%s' "$input" | python3 -c "
 import json, sys, re
 try:
     d = json.load(sys.stdin)
@@ -391,13 +399,10 @@ try:
                 if isinstance(v, str) and re.match(r'^[A-Z]+-\d+$', v):
                     iid = v
                     break
-    safe_id = iid.replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
     safe_ttl = ttl[:80].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
-    print('issue_id=' + chr(34) + safe_id + chr(34))
-    print('esc_title=' + chr(34) + safe_ttl + chr(34))
+    print(iid + chr(9) + safe_ttl)
 except:
-    print('issue_id=' + chr(34) + chr(34))
-    print('esc_title=' + chr(34) + chr(34))
+    pass
 " 2>/dev/null)"
 fi
 

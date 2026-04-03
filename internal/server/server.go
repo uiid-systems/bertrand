@@ -26,9 +26,14 @@ const DefaultPort = 7779
 func New(port int, webDir string) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	// Recover any persisted preview state from prior server runs.
+	loadPreviewStates()
+
 	// API routes
 	mux.HandleFunc("GET /sessions", handleSessions)
 	mux.HandleFunc("GET /worktrees", handleWorktrees)
+	mux.HandleFunc("POST /preview/start", handlePreviewStart)
+	mux.HandleFunc("POST /preview/stop", handlePreviewStop)
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
 
@@ -232,6 +237,8 @@ type worktreeResponse struct {
 	Files          []session.FileDiff `json:"files"`
 	TotalAdditions int                `json:"total_additions"`
 	TotalDeletions int                `json:"total_deletions"`
+	PreviewURL     string             `json:"preview_url,omitempty"`
+	HasDevCommand  bool               `json:"has_dev_command"`
 }
 
 func handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -311,10 +318,59 @@ func handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			wt.Files = []session.FileDiff{}
 		}
 
+		// Preview state
+		if wtPath != "" {
+			wt.HasDevCommand = hasDevCommand(wtPath)
+		}
+		if ps := getPreviewForBranch(branch); ps != nil {
+			wt.PreviewURL = ps.URL
+		}
+
 		out = append(out, wt)
 	}
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+func handlePreviewStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Branch == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "branch is required"})
+		return
+	}
+
+	wtPath := resolveWorktreePath(req.Branch)
+	if wtPath == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "could not resolve worktree path for branch"})
+		return
+	}
+
+	ps, err := startPreview(req.Branch, wtPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"url": ps.URL})
+}
+
+func handlePreviewStop(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Branch == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "branch is required"})
+		return
+	}
+
+	if err := stopPreview(req.Branch); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
 // repoRootFromWorktree returns the main repo root for a worktree path.
