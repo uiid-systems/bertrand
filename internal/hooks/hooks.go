@@ -892,6 +892,20 @@ func InjectSettings() error {
 	}
 	settings["hooks"] = existingHooks
 
+	// Register bertrand MCP server
+	binPath, _ := os.Executable()
+	if binPath != "" {
+		mcpServers, _ := settings["mcpServers"].(map[string]interface{})
+		if mcpServers == nil {
+			mcpServers = make(map[string]interface{})
+		}
+		mcpServers["bertrand"] = map[string]interface{}{
+			"command": binPath,
+			"args":    []string{"mcp"},
+		}
+		settings["mcpServers"] = mcpServers
+	}
+
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

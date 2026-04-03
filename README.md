@@ -48,8 +48,9 @@ This will:
 
 1. Install hook scripts to `~/.bertrand/hooks/`
 2. Configure Claude Code hooks in `~/.claude/settings.json`
-3. Write `~/.bertrand/config.yaml`
-4. Install Wave widget config (if Wave detected)
+3. Register the bertrand MCP server in Claude Code's settings
+4. Write `~/.bertrand/config.yaml`
+5. Install Wave widget config (if Wave detected)
 
 ## Usage
 
@@ -91,6 +92,39 @@ When a session becomes **blocked** (agent calls `AskUserQuestion`), hooks automa
 
 - Set a colored badge on the block's tab header via `wsh badge`
 - Send a Wave notification via `wsh notify`
+
+## MCP Server
+
+Bertrand includes an MCP server that gives Claude sessions on-demand access to data from other sessions. After running `bertrand init`, the server is automatically registered in Claude Code's settings.
+
+### How it works
+
+The MCP server runs over stdio — Claude Code spawns it as a child process. The current session name flows via the `BERTRAND_SESSION` environment variable, which bertrand already sets on every Claude process.
+
+### Resources
+
+| URI | Description |
+|-----|-------------|
+| `bertrand://siblings` | Sibling sessions in the same project/ticket scope |
+| `bertrand://sessions` | All sessions (optional `?project` filter) |
+| `bertrand://sessions/{name}/digest` | Full digest: timeline, timing, counts |
+| `bertrand://sessions/{name}/events` | Raw events (optional `?last=N`) |
+| `bertrand://sessions/{name}/state` | Current status, summary, worktree |
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_events` | Search events across sessions by type, time range, or session |
+| `session_summary` | Focused summary of any session with recent activity and PRs |
+
+### Standalone usage
+
+```sh
+bertrand mcp
+```
+
+Starts the MCP server over stdio. Useful for testing or integrating with other MCP clients.
 
 ## File Layout
 
