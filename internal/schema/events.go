@@ -122,6 +122,21 @@ type UserPromptMeta struct {
 	ClaudeID string `json:"claude_id"`
 }
 
+// NotionPageReadMeta is metadata for notion.page.read events.
+type NotionPageReadMeta struct {
+	PageID    string `json:"page_id,omitempty"`
+	PageTitle string `json:"page_title,omitempty"`
+	PageURL   string `json:"page_url,omitempty"`
+	ClaudeID  string `json:"claude_id"`
+}
+
+// VercelDeployMeta is metadata for vercel.deploy events.
+type VercelDeployMeta struct {
+	DeployURL   string `json:"deploy_url,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+	ClaudeID    string `json:"claude_id"`
+}
+
 // ContextSnapshotMeta is metadata for context.snapshot events.
 type ContextSnapshotMeta struct {
 	Model               string `json:"model"`
@@ -159,4 +174,6 @@ var EventNames = []string{
 	"context.snapshot",
 	"claude.discarded",
 	"user.prompt",
+	"notion.page.read",
+	"vercel.deploy",
 }

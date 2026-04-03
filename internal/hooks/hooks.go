@@ -234,11 +234,13 @@ printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"to
 // Sets a green check badge and writes done status.
 func DoneScript() string {
 	return `#!/usr/bin/env bash
-# Hook: Stop → mark session as paused
+# Hook: Stop → mark session as paused, using agent summary if available
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
-bertrand update --name "$name" --status paused --summary "Session ended"
+summary="$(cat "$HOME/.bertrand/sessions/$name/summary" 2>/dev/null | head -1 | cut -c1-120)"
+[ -z "$summary" ] && summary="Session ended"
+bertrand update --name "$name" --status paused --summary "$summary"
 
 # Wave badge (skip if wsh not available)
 if command -v wsh &>/dev/null; then
@@ -403,6 +405,91 @@ ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
 printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
 printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
+// NotionReadScript returns the hook script that logs Notion MCP tool usage.
+func NotionReadScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse mcp__claude_ai_Notion__* → log Notion page reads
+name="${BERTRAND_SESSION:-}"
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+page_id=""
+page_title=""
+page_url=""
+if command -v python3 &>/dev/null; then
+  eval "$(printf '%s' "$input" | python3 -c "
+import json, sys, re
+try:
+    d = json.load(sys.stdin)
+    inp = d.get('tool_input', {})
+    resp = d.get('tool_response', '')
+    if isinstance(resp, str):
+        try: resp = json.loads(resp)
+        except: pass
+    pid = ''
+    ttl = ''
+    url = ''
+    if isinstance(inp, dict):
+        pid = inp.get('pageId', inp.get('page_id', '')) or ''
+    if isinstance(resp, dict):
+        ttl = resp.get('title', '') or ''
+        url = resp.get('url', '') or ''
+        if not pid:
+            pid = resp.get('id', '') or ''
+    safe = lambda s: s[:120].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
+    print('page_id=' + chr(34) + safe(pid) + chr(34))
+    print('page_title=' + chr(34) + safe(ttl) + chr(34))
+    print('page_url=' + chr(34) + safe(url) + chr(34))
+except:
+    print('page_id=' + chr(34) + chr(34))
+    print('page_title=' + chr(34) + chr(34))
+    print('page_url=' + chr(34) + chr(34))
+" 2>/dev/null)"
+fi
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+esc_title="$(printf '%s' "$page_title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+printf '{"v":1,"event":"notion.page.read","session":"%s","ts":"%s","meta":{"page_id":"%s","page_title":"%s","page_url":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$page_id" "$esc_title" "$page_url" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"notion.page.read","session":"%s","ts":"%s","meta":{"page_id":"%s","page_title":"%s","page_url":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$page_id" "$esc_title" "$page_url" "$cid" >> "$HOME/.bertrand/log.jsonl"
+`
+}
+
+// VercelDeployScript returns the hook script that logs Vercel deployment commands.
+func VercelDeployScript() string {
+	return `#!/usr/bin/env bash
+# Hook: PostToolUse Bash → detect vercel deploy commands
+name="${BERTRAND_SESSION:-}"
+[ -z "$name" ] && exit 0
+
+input="$(cat)"
+tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+# Only process Bash tool calls
+[ "$tool" != "Bash" ] && exit 0
+
+cmd="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+
+# Only process vercel deploy commands
+case "$cmd" in
+  vercel\ deploy*|vercel\ --prod*|npx\ vercel\ deploy*|npx\ vercel\ --prod*) ;;
+  *) exit 0 ;;
+esac
+
+# Extract deploy URL from response
+deploy_url="$(printf '%s' "$input" | grep -oE 'https://[a-zA-Z0-9._-]+\.vercel\.app[^ "]*' | head -1)"
+project_name="$(printf '%s' "$cmd" | sed -n 's/.*--name[[:space:]]*\([^ ]*\).*/\1/p')"
+[ -z "$project_name" ] && project_name=""
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cid="${BERTRAND_CLAUDE_ID:-}"
+printf '{"v":1,"event":"vercel.deploy","session":"%s","ts":"%s","meta":{"deploy_url":"%s","project_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$deploy_url" "$project_name" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
+printf '{"v":1,"event":"vercel.deploy","session":"%s","ts":"%s","meta":{"deploy_url":"%s","project_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$deploy_url" "$project_name" "$cid" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -657,6 +744,8 @@ func InstallHooks() (string, error) {
 		"on-worktree-exited.sh":   WorktreeExitedScript(),
 		"on-gh-command.sh":        GhCommandScript(),
 		"on-linear-read.sh":       LinearReadScript(),
+		"on-notion-read.sh":       NotionReadScript(),
+		"on-vercel-deploy.sh":     VercelDeployScript(),
 		"on-user-prompt.sh":       UserPromptScript(),
 		"statusline.sh":           StatuslineScript(),
 	}
@@ -781,6 +870,11 @@ func InjectSettings() error {
 						Command: filepath.Join(hooksDir, "on-gh-command.sh"),
 						Timeout: 5,
 					},
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-vercel-deploy.sh"),
+						Timeout: 5,
+					},
 				},
 			},
 			{
@@ -809,6 +903,26 @@ func InjectSettings() error {
 					{
 						Type:    "command",
 						Command: filepath.Join(hooksDir, "on-linear-read.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "mcp__claude_ai_Notion__notion-fetch",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-notion-read.sh"),
+						Timeout: 5,
+					},
+				},
+			},
+			{
+				Matcher: "mcp__claude_ai_Notion__notion-search",
+				Hooks: []hookEntry{
+					{
+						Type:    "command",
+						Command: filepath.Join(hooksDir, "on-notion-read.sh"),
 						Timeout: 5,
 					},
 				},
