@@ -55,8 +55,6 @@ if command -v wsh &>/dev/null; then
     wsh focusblock
   fi
 
-  # Write focus marker for dashboard
-  printf '%s' "$name" > "$HOME/.bertrand/focused"
 fi
 
 # Log event
