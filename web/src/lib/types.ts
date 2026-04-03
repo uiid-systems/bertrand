@@ -11,7 +11,6 @@ export interface Session {
   summary: string;
   pid: number;
   timestamp: string;
-  focused: boolean;
   worktree?: string;
 }
 

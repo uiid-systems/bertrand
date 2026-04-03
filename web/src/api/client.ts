@@ -19,10 +19,6 @@ export function fetchSessionLog(sessionName: string): Promise<SessionDigest> {
   return apiFetch(`/sessions/${encodeURIComponent(sessionName)}/log`)
 }
 
-export function focusSession(sessionName: string): Promise<void> {
-  return apiPost(`/sessions/${encodeURIComponent(sessionName)}/focus`)
-}
-
 export function archiveSession(sessionName: string): Promise<void> {
   return apiPost(`/sessions/${encodeURIComponent(sessionName)}/archive`)
 }
