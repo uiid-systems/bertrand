@@ -54,13 +54,10 @@ func printDiscardMessage(name string, timeline string) {
 	fmt.Println()
 }
 
-// sessionTimeline reads the session log and renders a compacted pipe timeline.
-func sessionTimeline(name string) string {
-	d, err := sessionlog.Digest(name)
-	if err != nil || len(d.Timeline) == 0 {
-		return ""
-	}
-	return renderTimeline(d.Timeline, d.TimingRaw)
+// sessionRecap reads the session log and summary file, then renders a concise recap.
+func sessionRecap(name string) string {
+	summary := session.ReadSummary(name)
+	return sessionlog.SessionRecap(name, summary)
 }
 
 
@@ -430,7 +427,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		<-sigCh
 		forceCleaned = true
 		cleanup("Session ended")
-		printSaveMessage(name, sessionTimeline(name))
+		printSaveMessage(name, sessionRecap(name))
 		os.Exit(0)
 	}()
 
@@ -440,7 +437,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		if digest := sessionlog.ContractDigest(name); digest != "" {
 			layers = append(layers, digest)
 		}
-		if siblings := session.SiblingSummaries(name); siblings != "" {
+		if siblings := siblingContext(name); siblings != "" {
 			layers = append(layers, siblings)
 		}
 		return layers
@@ -452,7 +449,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		resumeClaudeID = initialClaudeID
 	}
 	for {
-		tmpl := contract.Template(name, contextLayers()...)
+		tmpl := contract.Template(name, session.SummaryPath(name), contextLayers()...)
 
 		var claudeCmd *exec.Cmd
 		var claudeID string
@@ -491,7 +488,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		result, err := p.Run()
 		if err != nil {
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return err
 		}
 
@@ -500,14 +497,14 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		if !exit.Chosen() {
 			// Menu closed without selection — default to save
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 		}
 
 		switch exit.Choice() {
 		case tui.ExitSave:
 			cleanup("Session ended")
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 
 		case tui.ExitArchive:
@@ -518,13 +515,13 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 			session.WriteState(name, session.StatusArchived, summary, pid)
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: summary})
 			cleanupFiles()
-			printSaveMessage(name, sessionTimeline(name))
+			printSaveMessage(name, sessionRecap(name))
 			return nil
 
 		case tui.ExitDiscard:
 			// Write end event and capture timeline before deleting session data
 			session.AppendEvent(name, "session.end", &schema.SessionEndMeta{Summary: "Session discarded"})
-			timeline := sessionTimeline(name)
+			timeline := sessionRecap(name)
 			cleanupFiles()
 			session.DeleteSession(name)
 			printDiscardMessage(name, timeline)
@@ -614,4 +611,120 @@ func resumeSession(name string) error {
 	}
 
 	return runSession(name, "resumed")
+}
+
+// siblingContext returns enriched sibling session context for contract injection.
+// Uses tiered detail: live siblings get full context, paused get medium, archived get one-line.
+// Widened scope: primary siblings (same ticket/project) get full detail, secondary siblings
+// (same project, different ticket) get one-line summaries.
+func siblingContext(name string) string {
+	project, ticket, _, err := session.ParseName(name)
+	if err != nil {
+		return ""
+	}
+
+	allSessions, err := session.ListSessionsForProject(project)
+	if err != nil {
+		return ""
+	}
+
+	const maxChars = 2000
+
+	type siblingInfo struct {
+		state     session.State
+		isPrimary bool // same ticket (or same 2-level scope)
+	}
+
+	var siblings []siblingInfo
+	for _, s := range allSessions {
+		if s.Session == name {
+			continue
+		}
+		_, sibTicket, _, sibErr := session.ParseName(s.Session)
+		if sibErr != nil {
+			continue
+		}
+		primary := ticket == sibTicket
+		siblings = append(siblings, siblingInfo{state: s, isPrimary: primary})
+	}
+
+	if len(siblings) == 0 {
+		return ""
+	}
+
+	var lines []string
+	for _, sib := range siblings {
+		s := sib.state
+
+		summary := s.Summary
+		if len(summary) > 60 {
+			summary = summary[:57] + "..."
+		}
+
+		wt := session.ReadWorktree(s.Session)
+
+		if !sib.isPrimary {
+			// Secondary sibling: one-line only
+			if wt != "" {
+				lines = append(lines, fmt.Sprintf("- %s: %s (worktree: %s) — %q", s.Session, s.Status, wt, summary))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s: %s — %q", s.Session, s.Status, summary))
+			}
+			continue
+		}
+
+		if s.Status == session.StatusArchived {
+			// Archived primary: one-line
+			lines = append(lines, fmt.Sprintf("- %s: archived — %q", s.Session, summary))
+			continue
+		}
+
+		// Primary sibling: enriched detail
+		var parts []string
+
+		// Base line
+		statusLine := fmt.Sprintf("- %s: %s", s.Session, s.Status)
+		if wt != "" {
+			statusLine += fmt.Sprintf(" (worktree: %s)", wt)
+		}
+		if summary != "" {
+			statusLine += fmt.Sprintf(" — %q", summary)
+		}
+		parts = append(parts, statusLine)
+
+		// Conversation count
+		convCount := sessionlog.SiblingConversationCount(s.Session)
+		if convCount > 0 {
+			parts = append(parts, fmt.Sprintf("  conversations: %d", convCount))
+		}
+
+		// PR URLs
+		prs := sessionlog.SiblingPRs(s.Session)
+		for _, url := range prs {
+			parts = append(parts, fmt.Sprintf("  PR: %s", url))
+		}
+
+		// Recent events (only for live siblings)
+		if session.IsLive(s.Status) {
+			digest := sessionlog.SiblingDigest(s.Session, 5)
+			if digest != "" {
+				parts = append(parts, fmt.Sprintf("  recent: %s", digest))
+			}
+		}
+
+		lines = append(lines, strings.Join(parts, "\n"))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	result := "## Sibling Sessions\n" + strings.Join(lines, "\n")
+
+	// Token budget guard: truncate if over budget
+	if len(result) > maxChars {
+		result = result[:maxChars-3] + "..."
+	}
+
+	return result
 }

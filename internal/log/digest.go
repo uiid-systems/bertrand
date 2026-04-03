@@ -207,3 +207,103 @@ func ContractDigest(name string) string {
 
 	return header + "\n" + strings.Join(lines, "\n")
 }
+
+// SiblingDigest returns a compact pipe-delimited summary of the last maxEvents
+// events for a session. Designed for sibling context injection where token
+// budget is tight.
+func SiblingDigest(name string, maxEvents int) string {
+	raw, err := ReadEvents(name)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+
+	// Take only the tail
+	if len(raw) > maxEvents {
+		raw = raw[len(raw)-maxEvents:]
+	}
+
+	var parts []string
+	for _, te := range raw {
+		if strings.HasPrefix(te.Event, "state.") || te.Event == "context.snapshot" {
+			continue
+		}
+
+		ts := te.TS.Format("15:04")
+
+		switch te.Event {
+		case "session.started":
+			parts = append(parts, ts+" started")
+		case "session.resumed":
+			parts = append(parts, ts+" resumed")
+		case "claude.started":
+			parts = append(parts, ts+" claude started")
+		case "claude.ended":
+			parts = append(parts, ts+" claude ended")
+		case "session.block":
+			q := te.MetaSummary()
+			if len(q) > 40 {
+				q = q[:37] + "..."
+			}
+			if q != "" {
+				parts = append(parts, fmt.Sprintf("%s blocked: %q", ts, q))
+			} else {
+				parts = append(parts, ts+" blocked")
+			}
+		case "session.resume":
+			parts = append(parts, ts+" resumed")
+		case "session.end":
+			parts = append(parts, ts+" ended")
+		case "worktree.entered":
+			branch := te.MetaSummary()
+			if branch != "" {
+				parts = append(parts, fmt.Sprintf("%s worktree (%s)", ts, branch))
+			}
+		case "gh.pr.created":
+			parts = append(parts, fmt.Sprintf("%s PR: %s", ts, te.MetaSummary()))
+		case "gh.pr.merged":
+			parts = append(parts, fmt.Sprintf("%s merged: %s", ts, te.MetaSummary()))
+		case "linear.issue.read":
+			parts = append(parts, fmt.Sprintf("%s linear: %s", ts, te.MetaSummary()))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+// SiblingPRs extracts PR URLs from a session's events.
+func SiblingPRs(name string) []string {
+	raw, err := ReadEvents(name)
+	if err != nil {
+		return nil
+	}
+
+	var urls []string
+	for _, te := range raw {
+		if te.Event == "gh.pr.created" {
+			if m, ok := te.TypedMeta.(*schema.GhPrCreatedMeta); ok && m.PRURL != "" {
+				urls = append(urls, m.PRURL)
+			}
+		}
+	}
+	return urls
+}
+
+// SiblingConversationCount returns the number of Claude conversations in a session.
+func SiblingConversationCount(name string) int {
+	raw, err := ReadEvents(name)
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, te := range raw {
+		if te.Event == "claude.started" {
+			count++
+		}
+	}
+	return count
+}

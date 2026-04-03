@@ -33,6 +33,8 @@ var Catalog = map[string]EventInfo{
 	"gh.pr.merged":  {Label: "PR merged", Category: "integration", Color: "var(--green)", ColorANSI: 78, DetailANSI: 252},
 
 	"linear.issue.read": {Label: "linear", Category: "integration", Color: "var(--purple)", ColorANSI: 141, DetailANSI: 252},
+	"notion.page.read":  {Label: "notion", Category: "integration", Color: "var(--blue)", ColorANSI: 111, DetailANSI: 252},
+	"vercel.deploy":     {Label: "deployed", Category: "integration", Color: "var(--green)", ColorANSI: 78, DetailANSI: 252},
 
 	"user.prompt": {Label: "user message", Category: "interaction", Color: "var(--blue)", ColorANSI: 111, DetailANSI: 252},
 

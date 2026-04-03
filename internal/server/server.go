@@ -4,7 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -27,9 +26,14 @@ const DefaultPort = 7779
 func New(port int, webDir string) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	// Recover any persisted preview state from prior server runs.
+	loadPreviewStates()
+
 	// API routes
 	mux.HandleFunc("GET /sessions", handleSessions)
 	mux.HandleFunc("GET /worktrees", handleWorktrees)
+	mux.HandleFunc("POST /preview/start", handlePreviewStart)
+	mux.HandleFunc("POST /preview/stop", handlePreviewStop)
 	mux.HandleFunc("GET /sessions/{rest...}", handleSessionRoute)
 	mux.HandleFunc("POST /sessions/{rest...}", handleSessionRoute)
 
@@ -70,10 +74,9 @@ func New(port int, webDir string) *http.ServeMux {
 	return mux
 }
 
-// sessionWithFocus extends State with a focused flag and worktree branch for the API response.
-type sessionWithFocus struct {
+// sessionResponse extends State with a worktree branch for the API response.
+type sessionResponse struct {
 	session.State
-	Focused  bool   `json:"focused"`
 	Worktree string `json:"worktree,omitempty"`
 }
 
@@ -83,12 +86,10 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	focused := session.ReadFocused()
-	out := make([]sessionWithFocus, len(sessions))
+	out := make([]sessionResponse, len(sessions))
 	for i, s := range sessions {
-		out[i] = sessionWithFocus{
+		out[i] = sessionResponse{
 			State:    s,
-			Focused:  s.Session == focused,
 			Worktree: session.ReadWorktree(s.Session),
 		}
 	}
@@ -100,7 +101,6 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 
 	// Routes:
 	//   GET  /sessions/{project}/{session}/log
-	//   POST /sessions/{project}/{session}/focus
 	//   GET  /sessions/{project}/{session}
 
 	// Find the action suffix
@@ -108,9 +108,6 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(rest, "/log") {
 		name = strings.TrimSuffix(rest, "/log")
 		action = "log"
-	} else if strings.HasSuffix(rest, "/focus") {
-		name = strings.TrimSuffix(rest, "/focus")
-		action = "focus"
 	} else if strings.HasSuffix(rest, "/archive") {
 		name = strings.TrimSuffix(rest, "/archive")
 		action = "archive"
@@ -134,12 +131,6 @@ func handleSessionRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		handleSessionLog(w, r, name)
-	case "focus":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		handleSessionFocus(w, r, name)
 	case "archive":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -198,38 +189,6 @@ func handleSessionLog(w http.ResponseWriter, r *http.Request, name string) {
 	writeJSON(w, http.StatusOK, d)
 }
 
-func handleSessionFocus(w http.ResponseWriter, r *http.Request, name string) {
-	blockIDPath := filepath.Join(session.SessionDir(name), "wave-block-id")
-	data, err := os.ReadFile(blockIDPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no wave-block-id for session"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
-	blockID := strings.TrimSpace(string(data))
-	if blockID == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "wave-block-id is empty"})
-		return
-	}
-
-	wsh, err := exec.LookPath("wsh")
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wsh not available"})
-		return
-	}
-
-	if err := exec.Command(wsh, "focusblock", "-b", blockID).Run(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("focusblock failed: %v", err)})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
-}
-
 func handleSessionArchive(w http.ResponseWriter, r *http.Request, name string) {
 	s, err := session.ReadState(name)
 	if err != nil {
@@ -278,6 +237,8 @@ type worktreeResponse struct {
 	Files          []session.FileDiff `json:"files"`
 	TotalAdditions int                `json:"total_additions"`
 	TotalDeletions int                `json:"total_deletions"`
+	PreviewURL     string             `json:"preview_url,omitempty"`
+	HasDevCommand  bool               `json:"has_dev_command"`
 }
 
 func handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -357,10 +318,59 @@ func handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			wt.Files = []session.FileDiff{}
 		}
 
+		// Preview state
+		if wtPath != "" {
+			wt.HasDevCommand = hasDevCommand(wtPath)
+		}
+		if ps := getPreviewForBranch(branch); ps != nil {
+			wt.PreviewURL = ps.URL
+		}
+
 		out = append(out, wt)
 	}
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+func handlePreviewStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Branch == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "branch is required"})
+		return
+	}
+
+	wtPath := resolveWorktreePath(req.Branch)
+	if wtPath == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "could not resolve worktree path for branch"})
+		return
+	}
+
+	ps, err := startPreview(req.Branch, wtPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"url": ps.URL})
+}
+
+func handlePreviewStop(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Branch == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "branch is required"})
+		return
+	}
+
+	if err := stopPreview(req.Branch); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
 // repoRootFromWorktree returns the main repo root for a worktree path.

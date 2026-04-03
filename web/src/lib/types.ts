@@ -11,7 +11,6 @@ export interface Session {
   summary: string;
   pid: number;
   timestamp: string;
-  focused: boolean;
   worktree?: string;
 }
 
@@ -61,6 +60,8 @@ export interface Worktree {
   files: WorktreeFile[];
   total_additions: number;
   total_deletions: number;
+  preview_url?: string;
+  has_dev_command: boolean;
 }
 
 export interface Options {
