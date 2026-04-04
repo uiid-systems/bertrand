@@ -37,5 +37,8 @@ brews:
     license: MIT
     install: |
       bin.install "bertrand"
+      system "xattr", "-cr", bin/"bertrand"
+    post_install: |
+      system "xattr", "-cr", bin/"bertrand"
     test: |
       system "#{bin}/bertrand", "--version"
