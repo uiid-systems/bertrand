@@ -894,18 +894,12 @@ func InjectSettings() error {
 	}
 	settings["hooks"] = existingHooks
 
-	// Register bertrand MCP server
-	binPath, _ := os.Executable()
-	if binPath != "" {
-		mcpServers, _ := settings["mcpServers"].(map[string]interface{})
-		if mcpServers == nil {
-			mcpServers = make(map[string]interface{})
+	// Remove stale bertrand MCP entry from settings.json (moved to ~/.claude.json)
+	if mcpServers, ok := settings["mcpServers"].(map[string]interface{}); ok {
+		delete(mcpServers, "bertrand")
+		if len(mcpServers) == 0 {
+			delete(settings, "mcpServers")
 		}
-		mcpServers["bertrand"] = map[string]interface{}{
-			"command": binPath,
-			"args":    []string{"mcp"},
-		}
-		settings["mcpServers"] = mcpServers
 	}
 
 	out, err := json.MarshalIndent(settings, "", "  ")
@@ -916,7 +910,55 @@ func InjectSettings() error {
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
+	if err := os.WriteFile(settingsPath, append(out, '\n'), 0644); err != nil {
+		return err
+	}
+
+	// Register bertrand MCP server in ~/.claude.json (where Claude discovers MCP servers)
+	return injectMCPServer(home)
+}
+
+// injectMCPServer registers bertrand as an MCP server in ~/.claude.json,
+// which is where Claude Code discovers user-scoped MCP servers.
+func injectMCPServer(home string) error {
+	claudePath := filepath.Join(home, ".claude.json")
+
+	var config map[string]interface{}
+
+	data, err := os.ReadFile(claudePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			config = make(map[string]interface{})
+		} else {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return err
+		}
+	}
+
+	binPath, _ := os.Executable()
+	if binPath == "" {
+		return nil
+	}
+
+	mcpServers, _ := config["mcpServers"].(map[string]interface{})
+	if mcpServers == nil {
+		mcpServers = make(map[string]interface{})
+	}
+	mcpServers["bertrand"] = map[string]interface{}{
+		"type":    "stdio",
+		"command": binPath,
+		"args":    []string{"mcp"},
+	}
+	config["mcpServers"] = mcpServers
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(claudePath, append(out, '\n'), 0644)
 }
 
 // RemoveSettings removes only bertrand hooks from Claude Code's settings.json,
@@ -981,10 +1023,53 @@ func RemoveSettings() error {
 	}
 
 
+	// Also remove stale bertrand MCP entry from settings.json
+	if mcpServers, ok := settings["mcpServers"].(map[string]interface{}); ok {
+		delete(mcpServers, "bertrand")
+		if len(mcpServers) == 0 {
+			delete(settings, "mcpServers")
+		}
+	}
+
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
+	if err := os.WriteFile(settingsPath, append(out, '\n'), 0644); err != nil {
+		return err
+	}
+
+	// Remove bertrand MCP server from ~/.claude.json
+	return removeMCPServer(home)
+}
+
+// removeMCPServer removes the bertrand entry from ~/.claude.json MCP servers.
+func removeMCPServer(home string) error {
+	claudePath := filepath.Join(home, ".claude.json")
+
+	data, err := os.ReadFile(claudePath)
+	if err != nil {
+		return nil
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	delete(mcpServers, "bertrand")
+	if len(mcpServers) == 0 {
+		delete(config, "mcpServers")
+	}
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(claudePath, append(out, '\n'), 0644)
 }
 
