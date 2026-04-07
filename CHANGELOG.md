@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.1](https://github.com/uiid-systems/bertrand/compare/v0.9.0...v0.9.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **brew:** strip quarantine attribute on install and upgrade ([#67](https://github.com/uiid-systems/bertrand/issues/67)) ([b617e97](https://github.com/uiid-systems/bertrand/commit/b617e9799a9c9a96856d01ff36a50b7a13a5b81b))
+* register MCP server in ~/.claude.json instead of settings.json ([#69](https://github.com/uiid-systems/bertrand/issues/69)) ([a658eee](https://github.com/uiid-systems/bertrand/commit/a658eeefdc76244a4ab77c2166328c28c5680224))
+
+
+### Refactoring
+
+* **contract:** decouple session summary from direct file write ([#70](https://github.com/uiid-systems/bertrand/issues/70)) ([a2d992e](https://github.com/uiid-systems/bertrand/commit/a2d992e807d7b84d0e5631b20ccdf04585d4ffa5))
+* **dashboard:** remove editing features ([#71](https://github.com/uiid-systems/bertrand/issues/71)) ([5fad3e3](https://github.com/uiid-systems/bertrand/commit/5fad3e38f244f70932e85f9725771870a8c517e7))
+
 ## [0.9.0](https://github.com/uiid-systems/bertrand/compare/v0.8.1...v0.9.0) (2026-04-03)
 
 
