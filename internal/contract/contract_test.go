@@ -6,7 +6,7 @@ import (
 )
 
 func TestTemplate(t *testing.T) {
-	result := Template("proj/my-session", "/tmp/test-summary")
+	result := Template("proj/my-session")
 
 	if !strings.Contains(result, "session: proj/my-session") {
 		t.Error("template should contain session name in preamble")

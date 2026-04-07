@@ -19,13 +19,20 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-raw="$(printf '%s' "$input" | grep -o '"question"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"question"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+raw="$(printf '%s' "$input" | jq -r '.tool_input.questions[0]?.question // empty' 2>/dev/null)"
 # Strip "sessionName » " or "bertrand:sessionName > " prefix
 # Use | delimiter — session names contain / which breaks s///
 summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertrand:${name} > ||" | cut -c1-80)"
 [ -z "$summary" ] && summary="Waiting for input"
 
 bertrand update --name "$name" --status blocked --summary "$summary"
+
+# Extract "Done for now" option description as rolling session summary.
+# The contract tells Claude to put a 1-2 sentence outcome summary in this description.
+done_desc="$(printf '%s' "$input" | jq -r '.tool_input.questions[]?.options[]? | select(.label == "Done for now") | .description // empty' 2>/dev/null | head -1 | cut -c1-120)"
+if [ -n "$done_desc" ]; then
+  printf '%s' "$done_desc" > "$HOME/.bertrand/sessions/$name/summary"
+fi
 
 # Wave badge + notification (skip if wsh not available)
 if command -v wsh &>/dev/null; then
@@ -38,9 +45,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-esc_summary="$(printf '%s' "$summary" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"session.block","session":"%s","ts":"%s","meta":{"question":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_summary" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg q "$summary" --arg cid "$cid" \
+  '{v:1, event:"session.block", session:$s, ts:$ts, meta:{question:$q, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -54,7 +61,7 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 # AskUserQuestion has its own PreToolUse hook (blocked), skip it here
 [ "$tool" = "AskUserQuestion" ] && exit 0
@@ -62,7 +69,7 @@ tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"
 # Only flip if currently prompting
 state_file="$HOME/.bertrand/sessions/$name/state.json"
 [ ! -f "$state_file" ] && exit 0
-status="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_file" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+status="$(jq -r '.status // empty' "$state_file" 2>/dev/null)"
 [ "$status" != "prompting" ] && exit 0
 
 bertrand update --name "$name" --status working --summary "Working"
@@ -79,70 +86,30 @@ input="$(cat)"
 
 bertrand update --name "$name" --status prompting --summary "Resumed after input"
 
-# Extract user answer + notes from PostToolUse payload (python3 for reliable JSON parsing)
-# tool_response is a string like: "User has answered your questions: \"q\"=\"a\". ..."
+# Extract user answer + notes from PostToolUse payload
 # tool_input.answers is a dict like: {"question": "answer"} (filled by permission component)
-answer=""
-if command -v python3 &>/dev/null; then
-  answer="$(printf '%s' "$input" | python3 -c "
-import json, sys, re
-try:
-    d = json.load(sys.stdin)
-    # Method 1: tool_input.answers (structured data from permission component)
-    ti = d.get('tool_input', {})
-    if isinstance(ti, dict):
-        ans = ti.get('answers', {})
-        if isinstance(ans, dict) and ans:
-            print(', '.join(str(v) for v in ans.values())[:200])
-            sys.exit(0)
-    # Method 2: tool_response as dict with answers
-    tr = d.get('tool_response', {})
-    if isinstance(tr, dict):
-        ans = tr.get('answers', {})
-        if isinstance(ans, dict) and ans:
-            print(', '.join(str(v) for v in ans.values())[:200])
-            sys.exit(0)
-    # Method 3: tool_response as string — parse answer from formatted text
-    if isinstance(tr, str):
-        # Extract answers from '\"question\"=\"answer\"' patterns
-        vals = re.findall(r'\"=\"([^\"]*?)\"', tr)
-        if not vals:
-            # Try unescaped: "question"="answer"
-            vals = re.findall(r'\"=\"([^\"]*)\"', tr)
-        # Also capture user notes if present
-        notes = ''
-        nm = re.search(r'user notes:\s*(.+?)(?:\.\s*You can now|\s*$)', tr, re.DOTALL)
-        if nm:
-            notes = nm.group(1).strip()
-        parts = [v for v in vals if v] + ([notes] if notes else [])
-        if parts:
-            print(', '.join(parts)[:200])
-            sys.exit(0)
-except Exception:
-    pass
-" 2>/dev/null)"
-fi
+# tool_response may be a dict with .answers, or a formatted string
+answer="$(printf '%s' "$input" | jq -r '
+  # Method 1: tool_input.answers
+  (.tool_input.answers // {} | to_entries | map(.value | tostring) | join(", ") | select(. != "")) //
+  # Method 2: tool_response.answers
+  (.tool_response | objects | .answers // {} | to_entries | map(.value | tostring) | join(", ") | select(. != "")) //
+  # Method 3: tool_response as formatted string — extract answer values
+  (.tool_response | strings | [scan("\"=\"([^\"]*)\"")[] | select(. != "")] | join(", ") | select(. != "")) //
+  empty
+' 2>/dev/null | head -1 | cut -c1-200)"
 
 # Clear badge (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge --clear
 fi
 
-# Log event — use python3 for JSON-safe escaping (handles newlines, control chars)
+# Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-if command -v python3 &>/dev/null; then
-  export NAME="$name" TS="$ts" CID="$cid"
-  printf '%s' "$answer" | python3 -c "
-import json, sys, os
-a = sys.stdin.read()
-obj = {'v':1,'event':'session.resume','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'answer':a,'claude_id':os.environ['CID']}}
-print(json.dumps(obj, ensure_ascii=False))
-" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
-else
-  esc_answer="$(printf '%s' "$answer" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{"v":1,"event":"session.resume","session":"%s","ts":"%s","meta":{"answer":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_answer" "$cid" | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
-fi
+jq -n --arg s "$name" --arg ts "$ts" --arg a "$answer" --arg cid "$cid" \
+  '{v:1, event:"session.resume", session:$s, ts:$ts, meta:{answer:$a, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -154,13 +121,12 @@ func extractDetailSnippet() string {
 detail=""
 case "$tool" in
   Bash)
-    detail="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    detail="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null | cut -c1-80)"
     ;;
   Edit|Write|Read)
-    detail="$(printf '%s' "$input" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-80)"
+    detail="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null | cut -c1-80)"
     ;;
 esac
-esc_detail="$(printf '%s' "$detail" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 `
 }
 
@@ -174,7 +140,7 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 # AskUserQuestion has its own hook (blocked) — skip permission pipeline entirely
 [ "$tool" = "AskUserQuestion" ] && exit 0
@@ -193,8 +159,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"permission.request","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg t "$tool" --arg d "$detail" --arg cid "$cid" \
+  '{v:1, event:"permission.request", session:$s, ts:$ts, meta:{tool:$t, detail:$d, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -207,7 +174,7 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 # Skip tools that are always auto-approved (no permission prompt)
 case "$tool" in
@@ -227,8 +194,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"permission.resolve","session":"%s","ts":"%s","meta":{"tool":"%s","detail":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$tool" "$esc_detail" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg t "$tool" --arg d "$detail" --arg cid "$cid" \
+  '{v:1, event:"permission.resolve", session:$s, ts:$ts, meta:{tool:$t, detail:$d, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -252,8 +220,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"session.paused","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"session.paused","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg cid "$cid" \
+  '{v:1, event:"session.paused", session:$s, ts:$ts, meta:{claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -269,7 +238,6 @@ input="$(cat)"
 # Extract branch name from tool output — best effort
 branch="$(printf '%s' "$input" | grep -o 'branch [^ ]*' | head -1 | sed 's/branch //; s/[.,;:]$//')"
 [ -z "$branch" ] && branch="unknown"
-esc_branch="$(printf '%s' "$branch" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
 # Extract worktree path from tool output — best effort
 wt_path="$(printf '%s' "$input" | grep -o '/[^ ]*worktrees/[^ ]*' | head -1 | sed 's/[.,;:]$//')"
@@ -285,8 +253,9 @@ fi
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"worktree.entered","session":"%s","ts":"%s","meta":{"branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$esc_branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg b "$branch" --arg cid "$cid" \
+  '{v:1, event:"worktree.entered", session:$s, ts:$ts, meta:{branch:$b, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -312,8 +281,9 @@ rm -f "$HOME/.bertrand/sessions/$name/worktree"
 # Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"worktree.exited","session":"%s","ts":"%s","meta":{"claude_id":"%s"}}\n' "$name" "$ts" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg cid "$cid" \
+  '{v:1, event:"worktree.exited", session:$s, ts:$ts, meta:{claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -326,13 +296,13 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 # Only process Bash tool calls
 [ "$tool" != "Bash" ] && exit 0
 
 # Extract the command from tool_input
-cmd="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
@@ -342,23 +312,18 @@ case "$cmd" in
     # Try to extract PR URL from the tool response
     pr_url="$(printf '%s' "$input" | grep -oE 'https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)"
     pr_number="$(printf '%s' "$pr_url" | grep -oE '[0-9]+$')"
-    branch="$(printf '%s' "$input" | grep -o '"branch"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"branch"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+    branch="$(printf '%s' "$input" | jq -r '.tool_input.branch // empty' 2>/dev/null)"
     # Extract PR title from --title flag in the command
     pr_title="$(printf '%s' "$cmd" | sed -n 's/.*--title[[:space:]]*"\([^"]*\)".*/\1/p' | cut -c1-120)"
-    [ -z "$pr_number" ] && pr_number=""
-    [ -z "$pr_url" ] && pr_url=""
-    [ -z "$branch" ] && branch=""
-    [ -z "$pr_title" ] && pr_title=""
-    esc_title="$(printf '%s' "$pr_title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-    printf '{"v":1,"event":"gh.pr.created","session":"%s","ts":"%s","meta":{"pr_number":"%s","pr_url":"%s","branch":"%s","pr_title":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$pr_url" "$branch" "$esc_title" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    jq -n --arg s "$name" --arg ts "$ts" --arg prn "${pr_number:-}" --arg url "${pr_url:-}" --arg br "${branch:-}" --arg ttl "${pr_title:-}" --arg cid "$cid" \
+      '{v:1, event:"gh.pr.created", session:$s, ts:$ts, meta:{pr_number:$prn, pr_url:$url, branch:$br, pr_title:$ttl, claude_id:$cid}}' \
+      2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
     ;;
   gh\ pr\ merge*)
     pr_number="$(printf '%s' "$cmd" | grep -oE '[0-9]+' | head -1)"
-    branch=""
-    [ -z "$pr_number" ] && pr_number=""
-    printf '{"v":1,"event":"gh.pr.merged","session":"%s","ts":"%s","meta":{"pr_number":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$branch" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-    printf '{"v":1,"event":"gh.pr.merged","session":"%s","ts":"%s","meta":{"pr_number":"%s","branch":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$pr_number" "$branch" "$cid" >> "$HOME/.bertrand/log.jsonl"
+    jq -n --arg s "$name" --arg ts "$ts" --arg prn "${pr_number:-}" --arg br "" --arg cid "$cid" \
+      '{v:1, event:"gh.pr.merged", session:$s, ts:$ts, meta:{pr_number:$prn, branch:$br, claude_id:$cid}}' \
+      2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
     ;;
 esac
 `
@@ -372,46 +337,23 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
-# Extract issue ID and title from the response via python3 JSON parsing
-issue_id=""
-esc_title=""
-if command -v python3 &>/dev/null; then
-  IFS=$'\t' read -r issue_id esc_title <<< "$(printf '%s' "$input" | python3 -c "
-import json, sys, re
-try:
-    d = json.load(sys.stdin)
-    resp = d.get('tool_response', '')
-    if isinstance(resp, str):
-        try: resp = json.loads(resp)
-        except: pass
-    iid = ''
-    ttl = ''
-    if isinstance(resp, dict):
-        raw_id = resp.get('id', '')
-        if isinstance(raw_id, str) and re.match(r'^[A-Z]+-\d+$', raw_id):
-            iid = raw_id
-        ttl = resp.get('title', '') or ''
-    if not iid:
-        inp = d.get('tool_input', {})
-        if isinstance(inp, dict):
-            for k in ('id', 'issueId', 'issue_id'):
-                v = inp.get(k, '')
-                if isinstance(v, str) and re.match(r'^[A-Z]+-\d+$', v):
-                    iid = v
-                    break
-    safe_ttl = ttl[:80].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
-    print(iid + chr(9) + safe_ttl)
-except:
-    pass
-" 2>/dev/null)"
+# Extract issue ID and title from the response
+# tool_response may be a JSON string or object; try to parse it
+resp="$(printf '%s' "$input" | jq -r '.tool_response | if type == "string" then (fromjson? // null) else . end' 2>/dev/null)"
+issue_id="$(printf '%s' "$resp" | jq -r '.id // empty | select(test("^[A-Z]+-[0-9]+$"))' 2>/dev/null)"
+issue_title="$(printf '%s' "$resp" | jq -r '.title // empty' 2>/dev/null | cut -c1-80)"
+# Fallback: check tool_input for issue ID
+if [ -z "$issue_id" ]; then
+  issue_id="$(printf '%s' "$input" | jq -r '.tool_input | (.id // .issueId // .issue_id // empty) | select(test("^[A-Z]+-[0-9]+$"))' 2>/dev/null)"
 fi
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"linear.issue.read","session":"%s","ts":"%s","meta":{"issue_id":"%s","issue_title":"%s","tool_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$issue_id" "$esc_title" "$tool" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg iid "$issue_id" --arg ttl "$issue_title" --arg tn "$tool" --arg cid "$cid" \
+  '{v:1, event:"linear.issue.read", session:$s, ts:$ts, meta:{issue_id:$iid, issue_title:$ttl, tool_name:$tn, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -423,47 +365,20 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
-page_id=""
-page_title=""
-page_url=""
-if command -v python3 &>/dev/null; then
-  eval "$(printf '%s' "$input" | python3 -c "
-import json, sys, re
-try:
-    d = json.load(sys.stdin)
-    inp = d.get('tool_input', {})
-    resp = d.get('tool_response', '')
-    if isinstance(resp, str):
-        try: resp = json.loads(resp)
-        except: pass
-    pid = ''
-    ttl = ''
-    url = ''
-    if isinstance(inp, dict):
-        pid = inp.get('pageId', inp.get('page_id', '')) or ''
-    if isinstance(resp, dict):
-        ttl = resp.get('title', '') or ''
-        url = resp.get('url', '') or ''
-        if not pid:
-            pid = resp.get('id', '') or ''
-    safe = lambda s: s[:120].replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
-    print('page_id=' + chr(34) + safe(pid) + chr(34))
-    print('page_title=' + chr(34) + safe(ttl) + chr(34))
-    print('page_url=' + chr(34) + safe(url) + chr(34))
-except:
-    print('page_id=' + chr(34) + chr(34))
-    print('page_title=' + chr(34) + chr(34))
-    print('page_url=' + chr(34) + chr(34))
-" 2>/dev/null)"
-fi
+# Extract page details from tool_input and tool_response
+resp="$(printf '%s' "$input" | jq -r '.tool_response | if type == "string" then (fromjson? // null) else . end' 2>/dev/null)"
+page_id="$(printf '%s' "$input" | jq -r '.tool_input | (.pageId // .page_id // empty)' 2>/dev/null)"
+[ -z "$page_id" ] && page_id="$(printf '%s' "$resp" | jq -r '.id // empty' 2>/dev/null)"
+page_title="$(printf '%s' "$resp" | jq -r '.title // empty' 2>/dev/null | cut -c1-120)"
+page_url="$(printf '%s' "$resp" | jq -r '.url // empty' 2>/dev/null | cut -c1-120)"
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-esc_title="$(printf '%s' "$page_title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '{"v":1,"event":"notion.page.read","session":"%s","ts":"%s","meta":{"page_id":"%s","page_title":"%s","page_url":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$page_id" "$esc_title" "$page_url" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"notion.page.read","session":"%s","ts":"%s","meta":{"page_id":"%s","page_title":"%s","page_url":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$page_id" "$esc_title" "$page_url" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg pid "$page_id" --arg ttl "$page_title" --arg url "$page_url" --arg cid "$cid" \
+  '{v:1, event:"notion.page.read", session:$s, ts:$ts, meta:{page_id:$pid, page_title:$ttl, page_url:$url, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -475,12 +390,12 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
-tool="$(printf '%s' "$input" | grep -o '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"tool_name"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+tool="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 # Only process Bash tool calls
 [ "$tool" != "Bash" ] && exit 0
 
-cmd="$(printf '%s' "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 
 # Only process vercel deploy commands
 case "$cmd" in
@@ -495,8 +410,9 @@ project_name="$(printf '%s' "$cmd" | sed -n 's/.*--name[[:space:]]*\([^ ]*\).*/\
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-printf '{"v":1,"event":"vercel.deploy","session":"%s","ts":"%s","meta":{"deploy_url":"%s","project_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$deploy_url" "$project_name" "$cid" >> "$HOME/.bertrand/sessions/$name/log.jsonl"
-printf '{"v":1,"event":"vercel.deploy","session":"%s","ts":"%s","meta":{"deploy_url":"%s","project_name":"%s","claude_id":"%s"}}\n' "$name" "$ts" "$deploy_url" "$project_name" "$cid" >> "$HOME/.bertrand/log.jsonl"
+jq -n --arg s "$name" --arg ts "$ts" --arg url "$deploy_url" --arg proj "${project_name:-}" --arg cid "$cid" \
+  '{v:1, event:"vercel.deploy", session:$s, ts:$ts, meta:{deploy_url:$url, project_name:$proj, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -511,34 +427,16 @@ name="${BERTRAND_SESSION:-}"
 input="$(cat)"
 
 # Extract prompt text from the hook input JSON
-prompt=""
-if command -v python3 &>/dev/null; then
-  prompt="$(printf '%s' "$input" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    p = d.get('prompt', '')
-    if p:
-        print(p[:200])
-except Exception:
-    pass
-" 2>/dev/null)"
-fi
+prompt="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null | cut -c1-200)"
 
 [ -z "$prompt" ] && exit 0
 
-# Log event — use python3 for JSON-safe escaping
+# Log event
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cid="${BERTRAND_CLAUDE_ID:-}"
-if command -v python3 &>/dev/null; then
-  export NAME="$name" TS="$ts" CID="$cid"
-  printf '%s' "$prompt" | python3 -c "
-import json, sys, os
-p = sys.stdin.read()
-obj = {'v':1,'event':'user.prompt','session':os.environ['NAME'],'ts':os.environ['TS'],'meta':{'prompt':p,'claude_id':os.environ['CID']}}
-print(json.dumps(obj, ensure_ascii=False))
-" 2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
-fi
+jq -n --arg s "$name" --arg ts "$ts" --arg p "$prompt" --arg cid "$cid" \
+  '{v:1, event:"user.prompt", session:$s, ts:$ts, meta:{prompt:$p, claude_id:$cid}}' \
+  2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
 `
 }
 
@@ -554,9 +452,6 @@ func StatuslineScript() string {
 input="$(cat)"
 name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
-
-HAS_JQ=0
-command -v jq >/dev/null 2>&1 && HAS_JQ=1
 
 # Colors (256-color ANSI — matches bertrand palette)
 c_name=$'\033[1;38;5;120m'   # bright green, bold — session name
@@ -576,11 +471,7 @@ c_rst=$'\033[0m'
 state_file="$HOME/.bertrand/sessions/$name/state.json"
 status=""
 if [ -f "$state_file" ]; then
-  if [ "$HAS_JQ" -eq 1 ]; then
-    status="$(jq -r '.status // ""' "$state_file" 2>/dev/null)"
-  else
-    status="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_file" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
-  fi
+  status="$(jq -r '.status // ""' "$state_file" 2>/dev/null)"
 fi
 
 case "$status" in
@@ -600,13 +491,8 @@ if [ -d "$HOME/.bertrand/sessions" ]; then
     sess_dir="$(dirname "$d")"
     sess_name="${sess_dir##*/}"
     [ "$sess_name" = "$name" ] && continue
-    if [ "$HAS_JQ" -eq 1 ]; then
-      spid="$(jq -r '.pid // 0' "$d" 2>/dev/null)"
-      s="$(jq -r '.status // ""' "$d" 2>/dev/null)"
-    else
-      spid="$(grep -o '"pid"[[:space:]]*:[[:space:]]*[0-9]*' "$d" | head -1 | sed 's/.*:[[:space:]]*//')"
-      s="$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$d" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')"
-    fi
+    spid="$(jq -r '.pid // 0' "$d" 2>/dev/null)"
+    s="$(jq -r '.status // ""' "$d" 2>/dev/null)"
     [ "$s" = "paused" ] || [ "$s" = "archived" ] || [ "$s" = "done" ] && continue
     [ -n "$spid" ] && [ "$spid" != "0" ] && kill -0 "$spid" 2>/dev/null && siblings=$((siblings + 1))
   done
@@ -635,34 +521,29 @@ fi
 # Claude JSON data — model + context
 model=""
 ctx_pct=""
-if [ "$HAS_JQ" -eq 1 ]; then
-  model="$(echo "$input" | jq -r '.model.display_name // ""' 2>/dev/null)"
-  ctx_size="$(echo "$input" | jq -r '.context_window.context_window_size // 0' 2>/dev/null)"
-  usage="$(echo "$input" | jq '.context_window.current_usage' 2>/dev/null)"
-  if [ "$usage" != "null" ] && [ -n "$usage" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
-    tokens="$(echo "$usage" | jq '(.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null)"
-    if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
-      used_pct=$((tokens * 100 / ctx_size))
-      remaining=$((100 - used_pct))
-      [ "$remaining" -lt 0 ] && remaining=0
-      [ "$remaining" -gt 100 ] && remaining=100
-      ctx_pct="$remaining"
-      if [ "$remaining" -le 20 ]; then
-        ctx_color="$c_ctx_crit"
-      elif [ "$remaining" -le 40 ]; then
-        ctx_color="$c_ctx_warn"
-      else
-        ctx_color="$c_ctx"
-      fi
+model="$(echo "$input" | jq -r '.model.display_name // ""' 2>/dev/null)"
+ctx_size="$(echo "$input" | jq -r '.context_window.context_window_size // 0' 2>/dev/null)"
+usage="$(echo "$input" | jq '.context_window.current_usage' 2>/dev/null)"
+if [ "$usage" != "null" ] && [ -n "$usage" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
+  tokens="$(echo "$usage" | jq '(.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null)"
+  if [ -n "$tokens" ] && [ "$tokens" -gt 0 ] 2>/dev/null; then
+    used_pct=$((tokens * 100 / ctx_size))
+    remaining=$((100 - used_pct))
+    [ "$remaining" -lt 0 ] && remaining=0
+    [ "$remaining" -gt 100 ] && remaining=100
+    ctx_pct="$remaining"
+    if [ "$remaining" -le 20 ]; then
+      ctx_color="$c_ctx_crit"
+    elif [ "$remaining" -le 40 ]; then
+      ctx_color="$c_ctx_warn"
+    else
+      ctx_color="$c_ctx"
     fi
   fi
 fi
 
 # Worktree detection (from Claude's JSON or bertrand marker)
-worktree=""
-if [ "$HAS_JQ" -eq 1 ]; then
-  worktree="$(echo "$input" | jq -r '.worktree.branch // ""' 2>/dev/null)"
-fi
+worktree="$(echo "$input" | jq -r '.worktree.branch // ""' 2>/dev/null)"
 [ -z "$worktree" ] && worktree="$(cat "$HOME/.bertrand/sessions/$name/worktree" 2>/dev/null)"
 
 # ── Render ──
@@ -1013,18 +894,12 @@ func InjectSettings() error {
 	}
 	settings["hooks"] = existingHooks
 
-	// Register bertrand MCP server
-	binPath, _ := os.Executable()
-	if binPath != "" {
-		mcpServers, _ := settings["mcpServers"].(map[string]interface{})
-		if mcpServers == nil {
-			mcpServers = make(map[string]interface{})
+	// Remove stale bertrand MCP entry from settings.json (moved to ~/.claude.json)
+	if mcpServers, ok := settings["mcpServers"].(map[string]interface{}); ok {
+		delete(mcpServers, "bertrand")
+		if len(mcpServers) == 0 {
+			delete(settings, "mcpServers")
 		}
-		mcpServers["bertrand"] = map[string]interface{}{
-			"command": binPath,
-			"args":    []string{"mcp"},
-		}
-		settings["mcpServers"] = mcpServers
 	}
 
 	out, err := json.MarshalIndent(settings, "", "  ")
@@ -1035,7 +910,55 @@ func InjectSettings() error {
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
+	if err := os.WriteFile(settingsPath, append(out, '\n'), 0644); err != nil {
+		return err
+	}
+
+	// Register bertrand MCP server in ~/.claude.json (where Claude discovers MCP servers)
+	return injectMCPServer(home)
+}
+
+// injectMCPServer registers bertrand as an MCP server in ~/.claude.json,
+// which is where Claude Code discovers user-scoped MCP servers.
+func injectMCPServer(home string) error {
+	claudePath := filepath.Join(home, ".claude.json")
+
+	var config map[string]interface{}
+
+	data, err := os.ReadFile(claudePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			config = make(map[string]interface{})
+		} else {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return err
+		}
+	}
+
+	binPath, _ := os.Executable()
+	if binPath == "" {
+		return nil
+	}
+
+	mcpServers, _ := config["mcpServers"].(map[string]interface{})
+	if mcpServers == nil {
+		mcpServers = make(map[string]interface{})
+	}
+	mcpServers["bertrand"] = map[string]interface{}{
+		"type":    "stdio",
+		"command": binPath,
+		"args":    []string{"mcp"},
+	}
+	config["mcpServers"] = mcpServers
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(claudePath, append(out, '\n'), 0644)
 }
 
 // RemoveSettings removes only bertrand hooks from Claude Code's settings.json,
@@ -1100,10 +1023,53 @@ func RemoveSettings() error {
 	}
 
 
+	// Also remove stale bertrand MCP entry from settings.json
+	if mcpServers, ok := settings["mcpServers"].(map[string]interface{}); ok {
+		delete(mcpServers, "bertrand")
+		if len(mcpServers) == 0 {
+			delete(settings, "mcpServers")
+		}
+	}
+
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, append(out, '\n'), 0644)
+	if err := os.WriteFile(settingsPath, append(out, '\n'), 0644); err != nil {
+		return err
+	}
+
+	// Remove bertrand MCP server from ~/.claude.json
+	return removeMCPServer(home)
+}
+
+// removeMCPServer removes the bertrand entry from ~/.claude.json MCP servers.
+func removeMCPServer(home string) error {
+	claudePath := filepath.Join(home, ".claude.json")
+
+	data, err := os.ReadFile(claudePath)
+	if err != nil {
+		return nil
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	delete(mcpServers, "bertrand")
+	if len(mcpServers) == 0 {
+		delete(config, "mcpServers")
+	}
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(claudePath, append(out, '\n'), 0644)
 }
 

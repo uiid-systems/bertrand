@@ -449,7 +449,7 @@ func runSessionInner(name, verb, initialClaudeID string) error {
 		resumeClaudeID = initialClaudeID
 	}
 	for {
-		tmpl := contract.Template(name, session.SummaryPath(name), contextLayers()...)
+		tmpl := contract.Template(name, contextLayers()...)
 
 		var claudeCmd *exec.Cmd
 		var claudeID string
