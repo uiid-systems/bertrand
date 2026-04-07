@@ -27,6 +27,13 @@ summary="$(printf '%s' "$raw" | sed "s|^${name} [^a-zA-Z]* ||" | sed "s|^bertran
 
 bertrand update --name "$name" --status blocked --summary "$summary"
 
+# Extract "Done for now" option description as rolling session summary.
+# The contract tells Claude to put a 1-2 sentence outcome summary in this description.
+done_desc="$(printf '%s' "$input" | grep -o '"label"[[:space:]]*:[[:space:]]*"Done for now"[^}]*"description"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"description"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-120)"
+if [ -n "$done_desc" ]; then
+  printf '%s' "$done_desc" > "$HOME/.bertrand/sessions/$name/summary"
+fi
+
 # Wave badge + notification (skip if wsh not available)
 if command -v wsh &>/dev/null; then
   wsh badge message-question --color '#e0b956' --priority 20 --beep
