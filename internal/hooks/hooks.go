@@ -29,7 +29,7 @@ bertrand update --name "$name" --status blocked --summary "$summary"
 
 # Extract "Done for now" option description as rolling session summary.
 # The contract tells Claude to put a 1-2 sentence outcome summary in this description.
-done_desc="$(printf '%s' "$input" | grep -o '"label"[[:space:]]*:[[:space:]]*"Done for now"[^}]*"description"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"description"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//' | cut -c1-120)"
+done_desc="$(printf '%s' "$input" | jq -r '.questions[]?.options[]? | select(.label == "Done for now") | .description // empty' 2>/dev/null | head -1 | cut -c1-120)"
 if [ -n "$done_desc" ]; then
   printf '%s' "$done_desc" > "$HOME/.bertrand/sessions/$name/summary"
 fi
