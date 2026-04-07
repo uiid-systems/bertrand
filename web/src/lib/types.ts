@@ -63,8 +63,3 @@ export interface Worktree {
   preview_url?: string;
   has_dev_command: boolean;
 }
-
-export interface Options {
-  selected?: boolean;
-  onSelect?: (name: string, checked: boolean) => void;
-}

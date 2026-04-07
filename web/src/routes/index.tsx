@@ -1,16 +1,14 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Stack, Group, Accordion, Tabs, Text, Button } from "@uiid/design-system";
+import { Stack, Group, Accordion, Tabs, Text } from "@uiid/design-system";
 
 import { useSessions } from "@/hooks/useSessions";
-import { useBulkArchive, useBulkDelete } from "@/hooks/useSessionMutations";
 import { useSessionStore } from "@/store/session-store";
 import type { ViewMode } from "@/store/session-store";
 import { Header } from "@/components/header/header";
 import { WorktreeList } from "@/components/worktree-list";
 import { sessionToAccordionItem } from "@/components/session-card";
-import { Checkbox } from "@/components/checkbox";
 import { parseSessionName } from "@/lib/sessions";
 import type { Session, SessionStatus } from "@/lib/types";
 
@@ -96,20 +94,12 @@ function matchesSearch(session: Session, query: string): boolean {
 
 function Dashboard() {
   const { data: sessions, isLoading, isError } = useSessions();
-  const bulkArchive = useBulkArchive();
-  const bulkDelete = useBulkDelete();
-  const busy = bulkArchive.isPending || bulkDelete.isPending;
 
   const selectedProject = useSessionStore((s) => s.selectedProject);
   const setSelectedProject = useSessionStore((s) => s.setSelectedProject);
   const searchQuery = useSessionStore((s) => s.searchQuery);
   const statusFilters = useSessionStore((s) => s.statusFilters);
   const viewMode = useSessionStore((s) => s.viewMode);
-
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirming, setConfirming] = useState<"archive" | "delete" | null>(
-    null,
-  );
 
   const allSessions = sessions ?? [];
 
@@ -187,46 +177,6 @@ function Dashboard() {
     [searchFiltered, viewMode],
   );
 
-  // Bulk actions available when filtering to non-live statuses
-  const hasOnlyBulkable =
-    statusFilters.size > 0 &&
-    [...statusFilters].every((s) => s === "paused" || s === "archived");
-  const showBulk = hasOnlyBulkable;
-  const canArchive =
-    statusFilters.has("paused") && !statusFilters.has("archived");
-  const selectedInView = [...selected].filter((n) =>
-    sorted.some((s) => s.session === n),
-  );
-
-  function handleSelect(name: string, checked: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(name);
-      else next.delete(name);
-      return next;
-    });
-    setConfirming(null);
-  }
-
-  function handleSelectAll() {
-    if (selectedInView.length === sorted.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(sorted.map((s) => s.session)));
-    }
-    setConfirming(null);
-  }
-
-  function handleBulkAction(action: "archive" | "delete") {
-    const mutation = action === "archive" ? bulkArchive : bulkDelete;
-    mutation.mutate(selectedInView, {
-      onSuccess: () => {
-        setSelected(new Set());
-        setConfirming(null);
-      },
-    });
-  }
-
   if (isLoading || isError) {
     return (
       <>
@@ -264,92 +214,20 @@ function Dashboard() {
             label: "Sessions",
             value: "sessions",
             render: (
-              <>
-                {showBulk && sorted.length > 0 && (
-                  <div className="flex items-center gap-1.5 @sm:gap-2 border-b border-border px-3 @sm:px-4 py-1.5">
-                    <Checkbox
-                      checked={
-                        selectedInView.length === sorted.length &&
-                        sorted.length > 0
-                      }
-                      onChange={() => handleSelectAll()}
-                      label="Select all sessions"
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {selectedInView.length > 0
-                        ? `${selectedInView.length} selected`
-                        : "select all"}
-                    </span>
-
-                    {selectedInView.length > 0 && !confirming && (
-                      <div className="ml-auto flex gap-1.5">
-                        {canArchive && (
-                          <Button
-                            variant="subtle"
-                            size="xsmall"
-                            onClick={() => setConfirming("archive")}
-                            disabled={busy}
-                          >
-                            archive
-                          </Button>
-                        )}
-                        <Button
-                          variant="inverted"
-                          size="xsmall"
-                          className="text-destructive"
-                          onClick={() => setConfirming("delete")}
-                          disabled={busy}
-                        >
-                          delete
-                        </Button>
-                      </div>
-                    )}
-
-                    {confirming && (
-                      <div className="ml-auto flex items-center gap-1.5">
-                        <span className="text-xs text-destructive">
-                          {confirming} {selectedInView.length} session
-                          {selectedInView.length !== 1 ? "s" : ""}?
-                        </span>
-                        <Button
-                          variant="inverted"
-                          size="xsmall"
-                          className="text-destructive"
-                          onClick={() => handleBulkAction(confirming)}
-                          disabled={busy}
-                        >
-                          {busy ? "..." : "confirm"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="xsmall"
-                          onClick={() => setConfirming(null)}
-                          disabled={busy}
-                        >
-                          cancel
-                        </Button>
-                      </div>
-                    )}
+              <div className="p-2">
+                {sorted.length === 0 ? (
+                  <div className="p-10 text-center text-muted-foreground">
+                    {searchQuery.trim()
+                      ? "no matching sessions"
+                      : "no sessions"}
                   </div>
+                ) : (
+                  <SessionList
+                    sessions={sorted}
+                    viewMode={viewMode}
+                  />
                 )}
-
-                <div className="p-2">
-                  {sorted.length === 0 ? (
-                    <div className="p-10 text-center text-muted-foreground">
-                      {searchQuery.trim()
-                        ? "no matching sessions"
-                        : "no sessions"}
-                    </div>
-                  ) : (
-                    <SessionList
-                      sessions={sorted}
-                      viewMode={viewMode}
-                      selected={selected}
-                      onSelect={showBulk ? handleSelect : undefined}
-                    />
-                  )}
-                </div>
-              </>
+              </div>
             ),
           },
           {
@@ -367,17 +245,8 @@ function Dashboard() {
   );
 }
 
-function toItems(
-  sessions: Session[],
-  selected: Set<string>,
-  onSelect?: (name: string, checked: boolean) => void,
-) {
-  return sessions.map((s) =>
-    sessionToAccordionItem(s, {
-      selected: selected.has(s.session),
-      onSelect,
-    }),
-  );
+function toItems(sessions: Session[]) {
+  return sessions.map((s) => sessionToAccordionItem(s));
 }
 
 function GroupLabel({ label, count }: { label: string; count: number }) {
@@ -418,16 +287,12 @@ function groupSessions(
 function SessionList({
   sessions,
   viewMode,
-  selected,
-  onSelect,
 }: {
   sessions: Session[];
   viewMode: ViewMode;
-  selected: Set<string>;
-  onSelect?: (name: string, checked: boolean) => void;
 }) {
   if (viewMode === "recent") {
-    return <Accordion items={toItems(sessions, selected, onSelect)} />;
+    return <Accordion items={toItems(sessions)} />;
   }
 
   const groups = groupSessions(sessions, viewMode);
@@ -438,7 +303,7 @@ function SessionList({
         <Stack key={label} fullwidth>
           <GroupLabel label={label} count={groupSessions.length} />
           <Accordion
-            items={toItems(groupSessions, selected, onSelect)}
+            items={toItems(groupSessions)}
             TriggerProps={{ className: "!py-2 *:!text-xs" }}
             PanelProps={{ className: "*:w-full" }}
           />
