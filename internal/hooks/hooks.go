@@ -1070,7 +1070,6 @@ func injectMCPServer(home string) error {
 		"type":    "stdio",
 		"command": binPath,
 		"args":    []string{"mcp"},
-		"env":     map[string]interface{}{},
 	}
 	config["mcpServers"] = mcpServers
 
