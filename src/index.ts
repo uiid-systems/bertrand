@@ -14,3 +14,4 @@ import "./cli/commands/completion.ts";
 import { route } from "./cli/router.ts";
 
 await route(process.argv);
+process.exit(0);
