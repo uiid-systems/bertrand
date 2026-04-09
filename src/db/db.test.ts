@@ -2,13 +2,14 @@ import { describe, test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { unlinkSync, existsSync } from "fs";
+import { mkdtempSync, unlinkSync, existsSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import * as schema from "./schema.ts";
 import { _setDb } from "./client.ts";
 
-// Set up test DB before any queries run
-const TEST_DB_PATH = "/tmp/bertrand-test.db";
-if (existsSync(TEST_DB_PATH)) unlinkSync(TEST_DB_PATH);
+// Set up test DB in a unique temp directory to avoid parallel run collisions
+const TEST_DB_PATH = join(mkdtempSync(join(tmpdir(), "bertrand-test-")), "test.db");
 
 const sqlite = new Database(TEST_DB_PATH);
 sqlite.exec("PRAGMA journal_mode = WAL");

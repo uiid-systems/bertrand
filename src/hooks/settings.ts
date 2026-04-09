@@ -37,55 +37,27 @@ export function installHookSettings() {
     {
       matcher: "PreToolUse",
       hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-blocked.sh`,
-        },
+        { type: "command", command: `${paths.hooks}/on-blocked.sh` },
+        { type: "command", command: `${paths.hooks}/on-working.sh` },
       ],
     },
     {
       matcher: "PostToolUse",
       hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-resumed.sh`,
-        },
-      ],
-    },
-    {
-      matcher: "PreToolUse",
-      hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-working.sh`,
-        },
+        { type: "command", command: `${paths.hooks}/on-resumed.sh` },
+        { type: "command", command: `${paths.hooks}/on-permission-done.sh` },
       ],
     },
     {
       matcher: "PermissionRequest",
       hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-permission-wait.sh`,
-        },
-      ],
-    },
-    {
-      matcher: "PostToolUse",
-      hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-permission-done.sh`,
-        },
+        { type: "command", command: `${paths.hooks}/on-permission-wait.sh` },
       ],
     },
     {
       matcher: "Stop",
       hooks: [
-        {
-          type: "command",
-          command: `${paths.hooks}/on-done.sh`,
-        },
+        { type: "command", command: `${paths.hooks}/on-done.sh` },
       ],
     },
   ];
