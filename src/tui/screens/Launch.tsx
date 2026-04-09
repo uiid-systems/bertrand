@@ -23,6 +23,10 @@ export function Launch() {
         setCursor((c) => Math.max(0, c - 1));
       } else if (e.key === "down" || e.key === "j") {
         setCursor((c) => Math.min(sessionRows.length - 1, c + 1));
+      } else if (e.key === "return" && sessionRows.length > 0) {
+        // TODO: resume selected session via engine
+        const selected = sessionRows[cursor];
+        if (selected) exit();
       } else if (e.key === "n") {
         setMode("create");
       } else if (e.key === "q") {

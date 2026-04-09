@@ -16,21 +16,22 @@ export async function route(argv: string[]) {
   const args = argv.slice(2);
   const command = args[0];
 
-  // No args or first arg doesn't match a command → launch (default)
-  if (!command || !resolveCommand(command)) {
+  // No args → launch TUI
+  if (!command) {
     const handler = commands.get("launch");
     if (!handler) throw new Error("No launch command registered");
     return handler(args);
   }
 
-  const resolved = resolveCommand(command)!;
-  const handler = commands.get(resolved);
-  if (!handler) {
+  // Unknown command → error
+  if (!resolveCommand(command)) {
     console.error(`Unknown command: ${command}`);
     printUsage();
     process.exit(1);
   }
 
+  const resolved = resolveCommand(command)!;
+  const handler = commands.get(resolved)!;
   return handler(args.slice(1));
 }
 
