@@ -1,4 +1,5 @@
 import { register } from "../router.ts";
+import { startTui } from "../../tui/app.tsx";
 
 register("launch", async (args) => {
   const sessionName = args[0];
@@ -11,6 +12,5 @@ register("launch", async (args) => {
   }
 
   // Default: launch Storm TUI
-  console.log("Launching TUI...");
-  // TODO: render Storm app
+  await startTui();
 });
