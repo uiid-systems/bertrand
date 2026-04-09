@@ -7,7 +7,6 @@ import { buildContract } from "../contract/template.ts";
 import { buildSiblingContext } from "../contract/context.ts";
 import { launchClaude } from "./process.ts";
 import { paths } from "../lib/paths.ts";
-import { join } from "path";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -59,9 +58,8 @@ export async function launch(opts: LaunchOpts): Promise<void> {
 
   // Build contract with context
   const sessionName = `${opts.groupPath}/${opts.slug}`;
-  const summaryPath = join(paths.sessions, sessionName, "summary");
   const siblingContext = buildSiblingContext(groupId, session.id);
-  const contract = buildContract(sessionName, summaryPath, siblingContext);
+  const contract = buildContract(sessionName, siblingContext);
 
   // Launch Claude
   const exitCode = await launchClaude({
@@ -102,8 +100,6 @@ export async function resume(opts: ResumeOpts): Promise<void> {
 
   const group = getGroup(session.groupId);
   const sessionName = group ? `${group.path}/${session.slug}` : session.name;
-  const summaryPath = join(paths.sessions, sessionName, "summary");
-
   updateSession(session.id, { status: "working", pid: process.pid });
 
   insertEvent({
@@ -115,7 +111,7 @@ export async function resume(opts: ResumeOpts): Promise<void> {
 
   // Build contract
   const siblingContext = buildSiblingContext(session.groupId, session.id);
-  const contract = buildContract(sessionName, summaryPath, siblingContext);
+  const contract = buildContract(sessionName, siblingContext);
 
   const exitCode = await launchClaude({
     sessionId: session.id,
