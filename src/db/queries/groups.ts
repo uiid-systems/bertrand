@@ -33,6 +33,10 @@ export function createGroup(opts: {
     .get();
 }
 
+export function getGroup(id: string) {
+  return getDb().select().from(groups).where(eq(groups.id, id)).get();
+}
+
 export function getGroupByPath(path: string) {
   return getDb().select().from(groups).where(eq(groups.path, path)).get();
 }

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getDb } from "../client.ts";
 import { labels, sessionLabels } from "../schema.ts";
 import { createId } from "../../lib/id.ts";
@@ -36,8 +36,7 @@ export function removeLabelFromSession(sessionId: string, labelId: string) {
   return getDb()
     .delete(sessionLabels)
     .where(
-      eq(sessionLabels.sessionId, sessionId) &&
-        eq(sessionLabels.labelId, labelId)
+      and(eq(sessionLabels.sessionId, sessionId), eq(sessionLabels.labelId, labelId))
     );
 }
 

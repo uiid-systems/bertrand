@@ -8,7 +8,10 @@ Every option must be a concrete, actionable next step. No filler like "Have ques
 
 Every AskUserQuestion call MUST use multiSelect: true. No exceptions. Single-select fires on Enter with no confirmation, which causes accidental selections when a block gains focus. multiSelect requires explicit confirmation before submitting.
 
-When you are about to begin implementation work — writing code destined for a commit, branch, or PR — or when you are about to suggest implementation as an AskUserQuestion option, ensure you are in a git worktree first. Enter one via EnterWorktree and briefly notify the user. This applies whether the implementation is your initiative or the user's selection from options. If the user opts out, respect that for the remainder of the session.`;
+When you are about to begin implementation work — writing code destined for a commit, branch, or PR — or when you are about to suggest implementation as an AskUserQuestion option, ensure you are in a git worktree first. Enter one via EnterWorktree and briefly notify the user. This applies whether the implementation is your initiative or the user's selection from options. If the user opts out, respect that for the remainder of the session.
+
+When the user selects "Done for now", before your final response, write a 1-2 sentence summary of what was accomplished in this session to: {summaryPath}
+Use the Write tool. The summary should describe outcomes (what was built, fixed, decided), not process. Do not include the session name or timestamps.`;
 
 /**
  * Generate the contract system prompt for a session.
@@ -16,9 +19,12 @@ When you are about to begin implementation work — writing code destined for a 
  */
 export function buildContract(
   sessionName: string,
+  summaryPath: string,
   ...contextLayers: string[]
 ): string {
-  const base = BASE_TEMPLATE.replace("{sessionName}", sessionName);
+  const base = BASE_TEMPLATE
+    .replace("{sessionName}", sessionName)
+    .replace("{summaryPath}", summaryPath);
 
   const layers = contextLayers
     .map((c) => c.trim())
