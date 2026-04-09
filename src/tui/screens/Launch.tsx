@@ -1,8 +1,11 @@
 import { useState } from "react";
+
 import { Box, Text, TextInput, useInput, useTui } from "@orchetron/storm";
+
 import { SessionRow } from "../components/SessionRow.tsx";
 import { getAllSessions } from "../../db/queries/sessions.ts";
 import { getGroupsByParent } from "../../db/queries/groups.ts";
+import { Logo } from "../components/BertrandLogo.tsx";
 
 type Mode = "browse" | "create";
 
@@ -38,7 +41,9 @@ export function Launch() {
   if (mode === "create") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="#82AAFF">New Session</Text>
+        <Text bold color="#82AAFF">
+          New Session
+        </Text>
         <Box height={1} />
         <Text>Name: </Text>
         <TextInput
@@ -59,19 +64,19 @@ export function Launch() {
   }
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text bold color="#82AAFF">bertrand</Text>
-        <Text dim> — sessions</Text>
+    <Box flexDirection="column" padding={1} gap={1}>
+      <Box>
+        <Logo />
       </Box>
 
       {sessionRows.length === 0 ? (
         <Box flexDirection="column">
           <Text dim>No sessions yet.</Text>
-          <Box height={1} />
-          <Text dim>Press </Text>
-          <Text bold>n</Text>
-          <Text dim> to create one.</Text>
+          <Box flexDirection="row">
+            <Text dim>Press </Text>
+            <Text bold>n</Text>
+            <Text dim> to create one.</Text>
+          </Box>
         </Box>
       ) : (
         sessionRows.map((row, i) => (
@@ -85,7 +90,7 @@ export function Launch() {
         ))
       )}
 
-      <Box marginTop={1}>
+      <Box>
         <Text dim>↑↓ navigate · enter select · n new · q quit</Text>
       </Box>
     </Box>
