@@ -8,11 +8,8 @@ bertrand
 .claude/settings.local.json
 .mcp.json
 
-# Root JS (MCP tooling)
+# Dependencies
 node_modules/
-package.json
-package-lock.json
-pnpm-lock.yaml
 
 # Web
 web/node_modules/
