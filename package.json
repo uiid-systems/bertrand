@@ -1,0 +1,21 @@
+{
+  "name": "bertrand",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "module": "src/index.ts",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/db/migrate.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0",
+    "nanoid": "^5.1.5"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.31.0"
+  }
+}
