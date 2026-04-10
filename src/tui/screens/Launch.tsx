@@ -10,7 +10,6 @@ import {
   moveSession,
   deleteSession,
 } from "../../db/queries/sessions.ts";
-import { getGroupsByParent } from "../../db/queries/groups.ts";
 import { getOrCreateGroupPath } from "../../db/queries/groups.ts";
 import { Logo } from "../components/BertrandLogo.tsx";
 import { parseSessionName } from "../../lib/parse-session-name.ts";

@@ -2,7 +2,7 @@ import { render } from "@orchetron/storm";
 import { Launch, type LaunchSelection } from "./screens/Launch.tsx";
 import { Exit, type ExitAction } from "./screens/Exit.tsx";
 import { Resume, type ResumeSelection } from "./screens/Resume.tsx";
-import { updateSessionStatus } from "../db/queries/sessions.ts";
+import { updateSessionStatus, deleteSession } from "../db/queries/sessions.ts";
 import { getConversationsBySession, createConversation } from "../db/queries/conversations.ts";
 import { launch, resume } from "../engine/session.ts";
 import { randomUUID } from "crypto";
@@ -99,13 +99,9 @@ export async function runSessionLoop(sessionId: string): Promise<void> {
       updateSessionStatus(sessionId, "archived");
       break;
 
-    case "discard": {
-      const { getDb } = await import("../db/client.ts");
-      const { sessions } = await import("../db/schema.ts");
-      const { eq } = await import("drizzle-orm");
-      getDb().delete(sessions).where(eq(sessions.id, sessionId)).run();
+    case "discard":
+      deleteSession(sessionId);
       break;
-    }
 
     case "resume": {
       const conversationId = await resolveConversationForResume(sessionId);

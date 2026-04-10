@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
-import { getSession, updateSessionStatus } from "../../db/queries/sessions.ts";
+import { getSession } from "../../db/queries/sessions.ts";
 import { getConversationsBySession } from "../../db/queries/conversations.ts";
 import { formatDuration } from "../../lib/format.ts";
 import { StatusDot } from "../components/StatusDot.tsx";

@@ -13,6 +13,8 @@ const COMMANDS = [
   "mcp",
   "import",
   "completion",
+  "badge",
+  "notify",
 ];
 
 function bashCompletion(): string {

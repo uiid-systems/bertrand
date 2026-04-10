@@ -50,7 +50,7 @@ register("init", async () => {
     terminal,
     version: 1,
     ...existing, // preserve existing overrides
-    // always re-detect terminal
+    // only set terminal if not already configured
     ...(existing?.terminal ? {} : { terminal }),
   };
   writeConfig(config);
