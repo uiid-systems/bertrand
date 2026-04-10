@@ -101,3 +101,28 @@ export function updateSession(
     .returning()
     .get();
 }
+
+export function renameSession(id: string, slug: string, name?: string) {
+  return getDb()
+    .update(sessions)
+    .set({ slug, name: name ?? slug, updatedAt: new Date().toISOString() })
+    .where(eq(sessions.id, id))
+    .returning()
+    .get();
+}
+
+export function moveSession(id: string, groupId: string) {
+  return getDb()
+    .update(sessions)
+    .set({ groupId, updatedAt: new Date().toISOString() })
+    .where(eq(sessions.id, id))
+    .returning()
+    .get();
+}
+
+export function deleteSession(id: string) {
+  return getDb()
+    .delete(sessions)
+    .where(eq(sessions.id, id))
+    .run();
+}

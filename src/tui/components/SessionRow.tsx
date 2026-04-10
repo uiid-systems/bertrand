@@ -9,14 +9,17 @@ interface SessionRowProps {
   selected?: boolean;
 }
 
-export function SessionRow({ name, status, updatedAt, selected }: SessionRowProps) {
+export function SessionRow({
+  name,
+  status,
+  updatedAt,
+  selected,
+}: SessionRowProps) {
   return (
-    <Box>
+    <Box flexDirection="row" gap={1}>
       <Text>{selected ? "❯ " : "  "}</Text>
       <StatusDot status={status} />
-      <Text> </Text>
       <Text bold={selected}>{name}</Text>
-      <Text> </Text>
       <Text dim>{formatAgo(updatedAt)}</Text>
     </Box>
   );

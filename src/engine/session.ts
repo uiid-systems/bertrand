@@ -1,12 +1,16 @@
 import { randomUUID } from "crypto";
-import { createSession, updateSession, getSession } from "../db/queries/sessions.ts";
+import {
+  createSession,
+  updateSession,
+  getSession,
+  getSessionByGroupSlug,
+} from "../db/queries/sessions.ts";
 import { createConversation, endConversation } from "../db/queries/conversations.ts";
 import { insertEvent } from "../db/queries/events.ts";
-import { getOrCreateGroupPath, getGroup } from "../db/queries/groups.ts";
+import { getOrCreateGroupPath, getGroup, getGroupByPath } from "../db/queries/groups.ts";
 import { buildContract } from "../contract/template.ts";
 import { buildSiblingContext } from "../contract/context.ts";
 import { launchClaude } from "./process.ts";
-import { paths } from "../lib/paths.ts";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -24,9 +28,20 @@ export interface ResumeOpts {
 
 /**
  * Create a new session and launch Claude.
- * Returns when the Claude process exits.
+ * Returns session ID when the Claude process exits.
  */
-export async function launch(opts: LaunchOpts): Promise<void> {
+export async function launch(opts: LaunchOpts): Promise<string> {
+  // Check for duplicate session slug within the target group
+  const existingGroup = getGroupByPath(opts.groupPath);
+  if (existingGroup) {
+    const existing = getSessionByGroupSlug(existingGroup.id, opts.slug);
+    if (existing) {
+      throw new Error(
+        `Session "${opts.slug}" already exists in group "${opts.groupPath}"`
+      );
+    }
+  }
+
   const groupId = getOrCreateGroupPath(opts.groupPath);
   const session = createSession({
     groupId,
@@ -88,13 +103,15 @@ export async function launch(opts: LaunchOpts): Promise<void> {
     sessionId: session.id,
     event: "session.end",
   });
+
+  return session.id;
 }
 
 /**
  * Resume an existing session with a specific conversation.
- * Returns when the Claude process exits.
+ * Returns session ID when the Claude process exits.
  */
-export async function resume(opts: ResumeOpts): Promise<void> {
+export async function resume(opts: ResumeOpts): Promise<string> {
   const session = getSession(opts.sessionId);
   if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
 
@@ -134,4 +151,6 @@ export async function resume(opts: ResumeOpts): Promise<void> {
     pid: null,
     endedAt: new Date().toISOString(),
   });
+
+  return session.id;
 }

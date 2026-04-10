@@ -2,6 +2,7 @@
  * Bash hook script templates.
  *
  * Architecture: Claude Code hooks → bash scripts → `bertrand update` → SQLite
+ * Terminal integration via `bertrand badge` / `bertrand notify` (adapter-based).
  * The hooks read BERTRAND_SESSION (session ID) and BERTRAND_CLAUDE_ID from env.
  */
 
@@ -25,11 +26,8 @@ if [ -n "$done_desc" ]; then
   bertrand update --session-id "$sid" --event context.snapshot --meta "$(jq -n --arg s "$done_desc" '{summary:$s}')"
 fi
 
-# Wave badge + notification
-if command -v wsh &>/dev/null; then
-  wsh badge message-question --color '#e0b956' --priority 20 --beep
-  wsh notify -t "bertrand" "$question"
-fi
+bertrand badge message-question --color '#e0b956' --priority 20 --beep
+bertrand notify bertrand "$question"
 `;
 }
 
@@ -52,10 +50,7 @@ answer="$(printf '%s' "$input" | jq -r '
 
 bertrand update --session-id "$sid" --event session.resume --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
 
-# Clear badge
-if command -v wsh &>/dev/null; then
-  wsh badge --clear
-fi
+bertrand badge --clear
 `;
 }
 
@@ -98,11 +93,8 @@ esac
 cid="\${BERTRAND_CLAUDE_ID:-}"
 bertrand update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
-# Wave badge
-if command -v wsh &>/dev/null; then
-  wsh badge bell-exclamation --color '#ff6b35' --priority 25 --beep
-  wsh notify -t "bertrand" "Needs permission: $tool"
-fi
+bertrand badge bell-exclamation --color '#ff6b35' --priority 25 --beep
+bertrand notify bertrand "Needs permission: $tool"
 `;
 }
 
@@ -131,10 +123,7 @@ esac
 cid="\${BERTRAND_CLAUDE_ID:-}"
 bertrand update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
-# Clear badge
-if command -v wsh &>/dev/null; then
-  wsh badge --clear
-fi
+bertrand badge --clear
 `;
 }
 
@@ -148,10 +137,7 @@ sid="\${BERTRAND_SESSION:-}"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 bertrand update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 
-# Wave badge
-if command -v wsh &>/dev/null; then
-  wsh badge check --color '#58c142' --priority 10
-fi
+bertrand badge check --color '#58c142' --priority 10
 `;
 }
 
