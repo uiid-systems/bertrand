@@ -12,6 +12,7 @@ import { getConversationsBySession } from "../../db/queries/conversations.ts";
 export type LaunchSelection =
   | { type: "create"; groupPath: string; slug: string }
   | { type: "resume"; sessionId: string; conversationId: string }
+  | { type: "pick"; sessionId: string }
   | { type: "quit" };
 
 interface LaunchProps {
@@ -45,14 +46,16 @@ export function Launch({ onSelect }: LaunchProps) {
         const selected = sessionRows[cursor];
         if (selected) {
           const conversations = getConversationsBySession(selected.session.id);
-          if (conversations.length > 0) {
+          if (conversations.length === 1) {
             select({
               type: "resume",
               sessionId: selected.session.id,
               conversationId: conversations[0]!.id,
             });
+          } else {
+            // 0 or 2+ conversations → show resume picker
+            select({ type: "pick", sessionId: selected.session.id });
           }
-          // TODO: if no conversations, start a new one (ELKY-122 resume picker)
         }
       } else if (e.key === "n") {
         setMode("create");
