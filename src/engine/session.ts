@@ -28,9 +28,9 @@ export interface ResumeOpts {
 
 /**
  * Create a new session and launch Claude.
- * Returns when the Claude process exits.
+ * Returns session ID when the Claude process exits.
  */
-export async function launch(opts: LaunchOpts): Promise<void> {
+export async function launch(opts: LaunchOpts): Promise<string> {
   // Check for duplicate session slug within the target group
   const existingGroup = getGroupByPath(opts.groupPath);
   if (existingGroup) {
@@ -103,13 +103,15 @@ export async function launch(opts: LaunchOpts): Promise<void> {
     sessionId: session.id,
     event: "session.end",
   });
+
+  return session.id;
 }
 
 /**
  * Resume an existing session with a specific conversation.
- * Returns when the Claude process exits.
+ * Returns session ID when the Claude process exits.
  */
-export async function resume(opts: ResumeOpts): Promise<void> {
+export async function resume(opts: ResumeOpts): Promise<string> {
   const session = getSession(opts.sessionId);
   if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
 
@@ -149,4 +151,6 @@ export async function resume(opts: ResumeOpts): Promise<void> {
     pid: null,
     endedAt: new Date().toISOString(),
   });
+
+  return session.id;
 }

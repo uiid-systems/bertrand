@@ -7,14 +7,20 @@ import { getAllSessions } from "../../db/queries/sessions.ts";
 import { getGroupsByParent } from "../../db/queries/groups.ts";
 import { Logo } from "../components/BertrandLogo.tsx";
 import { parseSessionName } from "../../lib/parse-session-name.ts";
-import { launch, resume } from "../../engine/session.ts";
 import { getConversationsBySession } from "../../db/queries/conversations.ts";
 
-type Mode = "browse" | "create";
+export type LaunchSelection =
+  | { type: "create"; groupPath: string; slug: string }
+  | { type: "resume"; sessionId: string; conversationId: string }
+  | { type: "quit" };
 
-export function Launch() {
+interface LaunchProps {
+  onSelect: (selection: LaunchSelection) => void;
+}
+
+export function Launch({ onSelect }: LaunchProps) {
   const { exit } = useTui();
-  const [mode, setMode] = useState<Mode>("browse");
+  const [mode, setMode] = useState<"browse" | "create">("browse");
   const [cursor, setCursor] = useState(0);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +28,13 @@ export function Launch() {
   const sessionRows = getAllSessions({ excludeArchived: true });
   const groups = getGroupsByParent(null);
 
+  const select = (selection: LaunchSelection) => {
+    onSelect(selection);
+    exit();
+  };
+
   useInput((e) => {
-    if (e.key === "c" && e.ctrl) exit();
+    if (e.key === "c" && e.ctrl) select({ type: "quit" });
 
     if (mode === "browse") {
       if (e.key === "up" || e.key === "k") {
@@ -35,16 +46,18 @@ export function Launch() {
         if (selected) {
           const conversations = getConversationsBySession(selected.session.id);
           if (conversations.length > 0) {
-            const mostRecent = conversations[0]!;
-            exit();
-            resume({ sessionId: selected.session.id, conversationId: mostRecent.id });
+            select({
+              type: "resume",
+              sessionId: selected.session.id,
+              conversationId: conversations[0]!.id,
+            });
           }
           // TODO: if no conversations, start a new one (ELKY-122 resume picker)
         }
       } else if (e.key === "n") {
         setMode("create");
       } else if (e.key === "q") {
-        exit();
+        select({ type: "quit" });
       }
     }
   });
@@ -63,12 +76,11 @@ export function Launch() {
             setNewName(v);
             setError(null);
           }}
-          onSubmit={async (value: string) => {
+          onSubmit={(value: string) => {
             if (!value.trim()) return;
             try {
               const { groupPath, slug } = parseSessionName(value);
-              exit();
-              await launch({ groupPath, slug });
+              select({ type: "create", groupPath, slug });
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));
             }
@@ -115,7 +127,7 @@ export function Launch() {
       )}
 
       <Box>
-        <Text dim>↑↓ navigate · enter select · n new · q quit</Text>
+        <Text dim>{"↑↓ navigate · enter select · n new · q quit"}</Text>
       </Box>
     </Box>
   );

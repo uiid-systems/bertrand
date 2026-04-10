@@ -1,5 +1,5 @@
 import { register } from "../router.ts";
-import { startTui } from "../../tui/app.tsx";
+import { startTui, runSessionLoop } from "../../tui/app.tsx";
 import { parseSessionName } from "../../lib/parse-session-name.ts";
 import { launch } from "../../engine/session.ts";
 import { recoverStaleSessions } from "../../engine/recovery.ts";
@@ -13,10 +13,11 @@ register("launch", async (args) => {
   if (sessionName) {
     // Direct create+launch: `bertrand project/my-session`
     const { groupPath, slug } = parseSessionName(sessionName);
-    await launch({ groupPath, slug });
+    const sessionId = await launch({ groupPath, slug });
+    await runSessionLoop(sessionId);
     return;
   }
 
-  // Default: launch Storm TUI
+  // Default: launch Storm TUI (handles full session loop)
   await startTui();
 });
