@@ -6,6 +6,8 @@ import { SessionRow } from "../components/SessionRow.tsx";
 import { getAllSessions } from "../../db/queries/sessions.ts";
 import { getGroupsByParent } from "../../db/queries/groups.ts";
 import { Logo } from "../components/BertrandLogo.tsx";
+import { parseSessionName } from "../../lib/parse-session-name.ts";
+import { launch } from "../../engine/session.ts";
 
 type Mode = "browse" | "create";
 
@@ -14,6 +16,7 @@ export function Launch() {
   const [mode, setMode] = useState<Mode>("browse");
   const [cursor, setCursor] = useState(0);
   const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const sessionRows = getAllSessions({ excludeArchived: true });
   const groups = getGroupsByParent(null);
@@ -48,15 +51,28 @@ export function Launch() {
         <Text>Name: </Text>
         <TextInput
           value={newName}
-          onChange={setNewName}
-          onSubmit={(value: string) => {
-            if (value.trim()) {
-              // TODO: create session + launch Claude
+          onChange={(v: string) => {
+            setNewName(v);
+            setError(null);
+          }}
+          onSubmit={async (value: string) => {
+            if (!value.trim()) return;
+            try {
+              const { groupPath, slug } = parseSessionName(value);
               exit();
+              await launch({ groupPath, slug });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
             }
           }}
-          placeholder="my-session-name"
+          placeholder="group/session-name"
         />
+        {error && (
+          <>
+            <Box height={1} />
+            <Text color="red">{error}</Text>
+          </>
+        )}
         <Box height={1} />
         <Text dim>Enter to create · Esc to cancel</Text>
       </Box>
