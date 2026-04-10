@@ -7,7 +7,8 @@ import { getAllSessions } from "../../db/queries/sessions.ts";
 import { getGroupsByParent } from "../../db/queries/groups.ts";
 import { Logo } from "../components/BertrandLogo.tsx";
 import { parseSessionName } from "../../lib/parse-session-name.ts";
-import { launch } from "../../engine/session.ts";
+import { launch, resume } from "../../engine/session.ts";
+import { getConversationsBySession } from "../../db/queries/conversations.ts";
 
 type Mode = "browse" | "create";
 
@@ -30,9 +31,16 @@ export function Launch() {
       } else if (e.key === "down" || e.key === "j") {
         setCursor((c) => Math.min(sessionRows.length - 1, c + 1));
       } else if (e.key === "return" && sessionRows.length > 0) {
-        // TODO: resume selected session via engine
         const selected = sessionRows[cursor];
-        if (selected) exit();
+        if (selected) {
+          const conversations = getConversationsBySession(selected.session.id);
+          if (conversations.length > 0) {
+            const mostRecent = conversations[0]!;
+            exit();
+            resume({ sessionId: selected.session.id, conversationId: mostRecent.id });
+          }
+          // TODO: if no conversations, start a new one (ELKY-122 resume picker)
+        }
       } else if (e.key === "n") {
         setMode("create");
       } else if (e.key === "q") {
