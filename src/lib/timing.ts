@@ -147,8 +147,8 @@ export function computeTimings(events: EventRow[]): TimingSummary {
   // Wall-clock duration from first to last event
   let durationS = 0;
   if (events.length >= 2) {
-    const first = tsMs(events[0].createdAt);
-    const last = tsMs(events[events.length - 1].createdAt);
+    const first = tsMs(events[0]!.createdAt);
+    const last = tsMs(events[events.length - 1]!.createdAt);
     durationS = Math.round((last - first) / 1000);
   }
 
