@@ -7,6 +7,7 @@ import { buildContract } from "../contract/template.ts";
 import { buildSiblingContext } from "../contract/context.ts";
 import { launchClaude } from "./process.ts";
 import { paths } from "../lib/paths.ts";
+import { computeAndPersist } from "../lib/timing.ts";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -88,6 +89,8 @@ export async function launch(opts: LaunchOpts): Promise<void> {
     sessionId: session.id,
     event: "session.end",
   });
+
+  computeAndPersist(session.id);
 }
 
 /**
@@ -134,4 +137,6 @@ export async function resume(opts: ResumeOpts): Promise<void> {
     pid: null,
     endedAt: new Date().toISOString(),
   });
+
+  computeAndPersist(session.id);
 }
