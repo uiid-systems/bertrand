@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 
 export interface ClaudeLaunchOpts {
   sessionId: string;
@@ -8,9 +8,13 @@ export interface ClaudeLaunchOpts {
   resume?: boolean;
 }
 
+/** Currently running Claude subprocess, if any. */
+let activeChild: ChildProcess | null = null;
+
 /**
  * Spawn a Claude Code subprocess with the appropriate flags and env vars.
- * Returns a promise that resolves when the process exits.
+ * Registers signal handlers to forward SIGINT/SIGTERM to the child and
+ * waits for it to exit before resolving.
  */
 export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
   const args: string[] = [];
@@ -37,12 +41,36 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
       shell: false,
     });
 
+    activeChild = child;
+
+    // Forward signals to the child — let Claude handle its own graceful shutdown.
+    // Prevent bertrand from exiting before cleanup runs.
+    const onSignal = (signal: NodeJS.Signals) => {
+      if (child.pid && !child.killed) {
+        child.kill(signal);
+      }
+    };
+
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+
     child.on("error", (err) => {
+      activeChild = null;
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
       reject(new Error(`Failed to launch claude: ${err.message}`));
     });
 
     child.on("exit", (code) => {
+      activeChild = null;
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
       resolve(code ?? 0);
     });
   });
+}
+
+/** Returns true if a Claude subprocess is currently running. */
+export function isClaudeRunning(): boolean {
+  return activeChild !== null && !activeChild.killed;
 }

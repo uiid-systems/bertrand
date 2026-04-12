@@ -10,6 +10,8 @@ import "./cli/commands/serve.ts";
 import "./cli/commands/mcp.ts";
 import "./cli/commands/import.ts";
 import "./cli/commands/completion.ts";
+import "./cli/commands/badge.ts";
+import "./cli/commands/notify.ts";
 
 import { route } from "./cli/router.ts";
 
