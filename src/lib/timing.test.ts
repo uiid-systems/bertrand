@@ -147,6 +147,28 @@ describe("computeTimings", () => {
     expect(result.segments[0].claudeId).toBe("meta-id");
   });
 
+  test("open work period closed at end of stream (no claude.ended)", () => {
+    const result = computeTimings([
+      ev("claude.started", t(0), "c1"),
+      ev("session.block", t(3), "c1"),
+      ev("session.resume", t(5), "c1"),
+    ]);
+    // work(3) + wait(2) + work(0 — last event is resume, same ts as period start)
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments[0]).toMatchObject({ type: "claude_work", durationMs: 3 * 60_000 });
+    expect(result.segments[1]).toMatchObject({ type: "user_wait", durationMs: 2 * 60_000 });
+  });
+
+  test("open blocked period closed at end of stream", () => {
+    const result = computeTimings([
+      ev("claude.started", t(0), "c1"),
+      ev("session.block", t(3), "c1"),
+    ]);
+    expect(result.segments).toHaveLength(1);
+    expect(result.segments[0]).toMatchObject({ type: "claude_work", durationMs: 3 * 60_000 });
+    // blocked period is zero-duration (last event = block event) so discarded
+  });
+
   test("non-timing events are ignored", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),

@@ -1,6 +1,5 @@
-import { getEventsBySession } from "../db/queries/events.ts";
+import { getEventsBySession, getEventsByType } from "../db/queries/events.ts";
 import { upsertSessionStats } from "../db/queries/stats.ts";
-import { getEventsByType } from "../db/queries/events.ts";
 
 // --- Types ---
 
@@ -122,6 +121,16 @@ export function computeTimings(events: EventRow[]): TimingSummary {
         currentClaudeId = undefined;
         break;
       }
+    }
+  }
+
+  // Close any open period (crash / active session without claude.ended)
+  const lastEvent = events[events.length - 1];
+  if (state !== "idle" && periodStart && lastEvent) {
+    if (state === "working") {
+      pushSegment(segments, "claude_work", periodStart, lastEvent.createdAt, currentClaudeId);
+    } else if (state === "blocked") {
+      pushSegment(segments, "user_wait", periodStart, lastEvent.createdAt, currentClaudeId);
     }
   }
 
