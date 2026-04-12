@@ -201,7 +201,9 @@ export function Launch({ onSelect }: LaunchProps) {
   if (mode === "create") {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="#82AAFF">New Session</Text>
+        <Text bold color="#82AAFF">
+          New Session
+        </Text>
         <Box height={1} />
         <Text>Name: </Text>
         <TextInput

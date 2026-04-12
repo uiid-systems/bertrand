@@ -11,6 +11,7 @@ import { getOrCreateGroupPath, getGroup, getGroupByPath } from "../db/queries/gr
 import { buildContract } from "../contract/template.ts";
 import { buildSiblingContext } from "../contract/context.ts";
 import { launchClaude } from "./process.ts";
+import { computeAndPersist } from "../lib/timing.ts";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -104,6 +105,8 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     event: "session.end",
   });
 
+  computeAndPersist(session.id);
+
   return session.id;
 }
 
@@ -151,6 +154,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     pid: null,
     endedAt: new Date().toISOString(),
   });
+
+  computeAndPersist(session.id);
 
   return session.id;
 }
