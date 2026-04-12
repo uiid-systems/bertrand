@@ -20,9 +20,9 @@ interface ListRow {
   duration: string;
 }
 
-function buildRows(
-  sessions: { session: { id: string; slug: string; status: string; updatedAt: string }; groupPath: string }[]
-): ListRow[] {
+type SessionRow = ReturnType<typeof getAllSessions>[number];
+
+function buildRows(sessions: SessionRow[]): ListRow[] {
   return sessions
     .sort((a, b) => new Date(b.session.updatedAt).getTime() - new Date(a.session.updatedAt).getTime())
     .map((row) => {
@@ -81,7 +81,7 @@ register("list", async (args) => {
   const groupFlag = args.indexOf("--group");
   const groupPath = groupFlag !== -1 ? args[groupFlag + 1] : undefined;
 
-  let sessionRows: { session: { id: string; slug: string; status: string; updatedAt: string }; groupPath: string }[];
+  let sessionRows: SessionRow[];
 
   if (groupPath) {
     const group = getGroupByPath(groupPath);
