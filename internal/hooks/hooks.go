@@ -19,6 +19,23 @@ name="${BERTRAND_SESSION:-}"
 [ -z "$name" ] && exit 0
 
 input="$(cat)"
+
+# If the user just selected "Done for now", deny this tool call so the
+# session ends without one more prompt. The marker is written by the
+# PostToolUse hook (ResumedScript) and is single-shot.
+marker="$HOME/.bertrand/sessions/$name/.done_for_now"
+if [ -f "$marker" ]; then
+  rm -f "$marker"
+  jq -n '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: "The user selected \"Done for now\" on the previous AskUserQuestion. The session is ending. Do NOT call AskUserQuestion again. Respond with a brief closing message (or no text at all) and stop."
+    }
+  }'
+  exit 0
+fi
+
 raw="$(printf '%s' "$input" | jq -r '.tool_input.questions[0]?.question // empty' 2>/dev/null)"
 # Strip "sessionName » " or "bertrand:sessionName > " prefix
 # Use | delimiter — session names contain / which breaks s///
@@ -110,6 +127,22 @@ cid="${BERTRAND_CLAUDE_ID:-}"
 jq -n --arg s "$name" --arg ts "$ts" --arg a "$answer" --arg cid "$cid" \
   '{v:1, event:"session.resume", session:$s, ts:$ts, meta:{answer:$a, claude_id:$cid}}' \
   2>/dev/null | tee -a "$HOME/.bertrand/sessions/$name/log.jsonl" >> "$HOME/.bertrand/log.jsonl"
+
+# If the user selected "Done for now", drop a marker so the next
+# AskUserQuestion (PreToolUse hook) denies the call and ends the loop.
+# Also inject additionalContext so Claude is nudged to stop before it
+# even tries — belt-and-suspenders: soft hint here, hard block there.
+case "$answer" in
+  *"Done for now"*)
+    touch "$HOME/.bertrand/sessions/$name/.done_for_now"
+    jq -n '{
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: "The user selected \"Done for now\". The session is ending. Do NOT call AskUserQuestion again. Respond with a brief closing message (or no text at all) and stop."
+      }
+    }'
+    ;;
+esac
 `
 }
 
