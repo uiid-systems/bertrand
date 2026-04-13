@@ -104,8 +104,7 @@ describe("collapsePermissions", () => {
     const result = collapsePermissions(events);
     expect(result).toHaveLength(1);
     expect(result[0]!.event).toBe("tool.work");
-    expect(result[0]!.summary).toContain("Bash");
-    expect(result[0]!.summary).toContain("Edit");
+    expect(result[0]!.summary).toBe("2× Bash, 1× Edit");
   });
 
   test("non-permission events pass through", () => {

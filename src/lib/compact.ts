@@ -61,9 +61,10 @@ export function collapsePermissions(events: EnrichedEvent[]): EnrichedEvent[] {
 
     if (batch.length === 0) continue;
 
-    // Count tools
+    // Count tools (only from requests to avoid double-counting request+resolve pairs)
     const toolCounts = new Map<string, number>();
     for (const pev of batch) {
+      if (pev.event !== "permission.request") continue;
       const meta = pev.meta as Record<string, unknown> | null;
       const tool = (meta?.tool as string) ?? "unknown";
       toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);
