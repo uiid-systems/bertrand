@@ -1,8 +1,8 @@
-import { register } from "../router.ts";
-import { getSession, updateSessionStatus } from "../../db/queries/sessions.ts";
-import { insertEvent } from "../../db/queries/events.ts";
-import { getConversation, updateLastQuestion } from "../../db/queries/conversations.ts";
-import type { SessionStatus } from "../../db/queries/sessions.ts";
+import { register } from "@/cli/router";
+import { getSession, updateSessionStatus } from "@/db/queries/sessions";
+import { insertEvent } from "@/db/queries/events";
+import { getConversation, updateLastQuestion } from "@/db/queries/conversations";
+import type { SessionStatus } from "@/db/queries/sessions";
 
 /** Status transitions implied by event types */
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {

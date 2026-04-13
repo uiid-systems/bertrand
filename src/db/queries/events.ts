@@ -1,6 +1,6 @@
 import { eq, and, desc } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { events } from "../schema.ts";
+import { getDb } from "@/db/client";
+import { events } from "@/db/schema";
 
 export function insertEvent(opts: {
   sessionId: string;

@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
-import { paths } from "../lib/paths.ts";
+import { paths } from "@/lib/paths";
 
 mkdirSync(dirname(paths.db), { recursive: true });
 const sqlite = new Database(paths.db);

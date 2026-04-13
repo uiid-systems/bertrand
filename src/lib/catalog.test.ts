@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { lookup, enrich, enrichAll, type EventType } from "./catalog.ts";
+import { lookup, enrich, enrichAll, type EventType } from "./catalog";
 
 const ALL_EVENT_TYPES: EventType[] = [
   "session.started",

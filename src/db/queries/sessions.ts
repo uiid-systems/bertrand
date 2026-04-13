@@ -1,7 +1,7 @@
 import { eq, and, inArray } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { sessions, groups } from "../schema.ts";
-import { createId } from "../../lib/id.ts";
+import { getDb } from "@/db/client";
+import { sessions, groups } from "@/db/schema";
+import { createId } from "@/lib/id";
 
 export type SessionStatus =
   | "working"

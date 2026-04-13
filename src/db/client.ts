@@ -2,8 +2,8 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
-import { paths } from "../lib/paths.ts";
-import * as schema from "./schema.ts";
+import { paths } from "@/lib/paths";
+import * as schema from "./schema";
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 

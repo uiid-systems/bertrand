@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseSessionName } from "./parse-session-name.ts";
+import { parseSessionName } from "./parse-session-name";
 
 describe("parseSessionName", () => {
   test("two segments: group/session", () => {

@@ -1,7 +1,7 @@
 import { eq, like, or, isNull } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { groups } from "../schema.ts";
-import { createId } from "../../lib/id.ts";
+import { getDb } from "@/db/client";
+import { groups } from "@/db/schema";
+import { createId } from "@/lib/id";
 
 export function createGroup(opts: {
   slug: string;

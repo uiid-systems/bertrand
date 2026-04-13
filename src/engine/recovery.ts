@@ -1,5 +1,5 @@
-import { getActiveSessions, updateSession } from "../db/queries/sessions.ts";
-import { insertEvent } from "../db/queries/events.ts";
+import { getActiveSessions, updateSession } from "@/db/queries/sessions";
+import { insertEvent } from "@/db/queries/events";
 
 /**
  * Check if a process with the given PID is alive.

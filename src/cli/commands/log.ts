@@ -1,13 +1,13 @@
-import { register } from "../router.ts";
-import { getAllSessions, getSessionByGroupSlug } from "../../db/queries/sessions.ts";
-import { getEventsBySession } from "../../db/queries/events.ts";
-import { getGroupByPath } from "../../db/queries/groups.ts";
-import { getSessionStats } from "../../db/queries/stats.ts";
-import { enrichAll, type EnrichedEvent } from "../../lib/catalog.ts";
-import { compact } from "../../lib/compact.ts";
-import { computeTimingsLive } from "../../lib/timing.ts";
-import { parseSessionName } from "../../lib/parse-session-name.ts";
-import { formatAgo, formatDuration, formatTime, truncate } from "../../lib/format.ts";
+import { register } from "@/cli/router";
+import { getAllSessions, getSessionByGroupSlug } from "@/db/queries/sessions";
+import { getEventsBySession } from "@/db/queries/events";
+import { getGroupByPath } from "@/db/queries/groups";
+import { getSessionStats } from "@/db/queries/stats";
+import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
+import { compact } from "@/lib/compact";
+import { computeTimingsLive } from "@/lib/timing";
+import { parseSessionName } from "@/lib/parse-session-name";
+import { formatAgo, formatDuration, formatTime, truncate } from "@/lib/format";
 
 // --- ANSI helpers ---
 

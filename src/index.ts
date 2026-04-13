@@ -13,7 +13,7 @@ import "./cli/commands/completion.ts";
 import "./cli/commands/badge.ts";
 import "./cli/commands/notify.ts";
 
-import { route } from "./cli/router.ts";
+import { route } from "./cli/router";
 
 await route(process.argv);
 process.exit(0);

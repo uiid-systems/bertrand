@@ -1,11 +1,11 @@
-import { register } from "../router.ts";
+import { register } from "@/cli/router";
 import {
   getAllSessions,
   getSessionByGroupSlug,
   updateSessionStatus,
-} from "../../db/queries/sessions.ts";
-import { getGroupByPath } from "../../db/queries/groups.ts";
-import { parseSessionName } from "../../lib/parse-session-name.ts";
+} from "@/db/queries/sessions";
+import { getGroupByPath } from "@/db/queries/groups";
+import { parseSessionName } from "@/lib/parse-session-name";
 
 const ACTIVE_STATUSES = ["working", "blocked", "prompting"] as const;
 

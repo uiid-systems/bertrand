@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, chmodSync } from "fs";
 import { join } from "path";
-import { paths } from "../lib/paths.ts";
-import { HOOK_SCRIPTS } from "./scripts.ts";
+import { paths } from "@/lib/paths";
+import { HOOK_SCRIPTS } from "./scripts";
 
 /** Write all hook scripts to ~/.bertrand/hooks/ with +x permissions */
 export function installHookScripts() {

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
-import { getSession } from "../../db/queries/sessions.ts";
-import { getConversationsBySession } from "../../db/queries/conversations.ts";
-import { formatAgo, formatDuration } from "../../lib/format.ts";
+import { getSession } from "@/db/queries/sessions";
+import { getConversationsBySession } from "@/db/queries/conversations";
+import { formatAgo, formatDuration } from "@/lib/format";
 
 export type ResumeSelection =
   | { type: "conversation"; conversationId: string }

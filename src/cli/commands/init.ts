@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
-import { register } from "../router.ts";
-import { installHookScripts } from "../../hooks/install.ts";
-import { installHookSettings } from "../../hooks/settings.ts";
-import { paths } from "../../lib/paths.ts";
-import { generateCompletions } from "../../lib/completions.ts";
+import { register } from "@/cli/router";
+import { installHookScripts } from "@/hooks/install";
+import { installHookSettings } from "@/hooks/settings";
+import { paths } from "@/lib/paths";
+import { generateCompletions } from "@/lib/completions";
 
 interface BertrandConfig {
   terminal: "wave" | "other";

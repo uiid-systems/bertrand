@@ -5,8 +5,8 @@ import {
   deduplicate,
   filterSkipped,
   compact,
-} from "./compact.ts";
-import type { EnrichedEvent } from "./catalog.ts";
+} from "./compact";
+import type { EnrichedEvent } from "./catalog";
 
 function ev(
   event: string,

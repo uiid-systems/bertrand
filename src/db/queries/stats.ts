@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { sessionStats } from "../schema.ts";
+import { getDb } from "@/db/client";
+import { sessionStats } from "@/db/schema";
 
 export function getSessionStats(sessionId: string) {
   return getDb()

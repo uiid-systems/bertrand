@@ -1,11 +1,11 @@
-import { register } from "../router.ts";
-import { getAllSessions, getSessionsByGroup, getSessionByGroupSlug } from "../../db/queries/sessions.ts";
-import { getSessionStats } from "../../db/queries/stats.ts";
-import { getGroupByPath } from "../../db/queries/groups.ts";
-import { getEventsBySession } from "../../db/queries/events.ts";
-import { computeTimingsLive } from "../../lib/timing.ts";
-import { formatDuration } from "../../lib/format.ts";
-import { parseSessionName } from "../../lib/parse-session-name.ts";
+import { register } from "@/cli/router";
+import { getAllSessions, getSessionsByGroup, getSessionByGroupSlug } from "@/db/queries/sessions";
+import { getSessionStats } from "@/db/queries/stats";
+import { getGroupByPath } from "@/db/queries/groups";
+import { getEventsBySession } from "@/db/queries/events";
+import { computeTimingsLive } from "@/lib/timing";
+import { formatDuration } from "@/lib/format";
+import { parseSessionName } from "@/lib/parse-session-name";
 
 interface SessionMetrics {
   name: string;

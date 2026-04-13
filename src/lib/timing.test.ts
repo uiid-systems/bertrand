@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { computeTimings, type TimingSummary } from "./timing.ts";
+import { computeTimings, type TimingSummary } from "./timing";
 
 function ev(event: string, createdAt: string, conversationId?: string, meta?: unknown) {
   return { event, createdAt, conversationId: conversationId ?? null, meta };

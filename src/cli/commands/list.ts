@@ -1,8 +1,8 @@
-import { register, alias } from "../router.ts";
-import { getAllSessions, getSessionsByGroup } from "../../db/queries/sessions.ts";
-import { getGroupByPath } from "../../db/queries/groups.ts";
-import { getSessionStats } from "../../db/queries/stats.ts";
-import { formatAgo, formatDuration } from "../../lib/format.ts";
+import { register, alias } from "@/cli/router";
+import { getAllSessions, getSessionsByGroup } from "@/db/queries/sessions";
+import { getGroupByPath } from "@/db/queries/groups";
+import { getSessionStats } from "@/db/queries/stats";
+import { formatAgo, formatDuration } from "@/lib/format";
 
 const STATUS_DOTS: Record<string, string> = {
   working: "\x1b[32m●\x1b[0m",    // green
