@@ -4,9 +4,13 @@ import { useHotkey, useInput } from "@orchetron/storm";
 
 import type { Mode } from "./launch.types";
 
+import type { getAllSessions } from "@/db/queries/sessions";
+
+type SessionRow = ReturnType<typeof getAllSessions>[number];
+
 interface UseLaunchHotkeysOpts {
   mode: Mode;
-  selected: unknown;
+  selected: SessionRow | undefined;
   sessionCount: number;
   quit: () => void;
   setCursor: React.Dispatch<React.SetStateAction<number>>;
@@ -75,7 +79,7 @@ export function useLaunchHotkeys({
   );
 
   const browseBindings = [
-    { label: "navigate", description: "up" },
+    { label: "navigate", description: "↑↓" },
     { label: "resume", description: "return" },
     { label: "new", description: "n" },
     { label: "archive", description: "a" },

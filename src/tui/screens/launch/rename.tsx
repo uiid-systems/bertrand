@@ -1,6 +1,6 @@
 import { Box, Text, TextInput } from "@orchetron/storm";
 
-import { formatBindings } from "@/tui/screens/launch/launch.utils";
+import { formatBindings } from "./launch.utils";
 
 interface RenameProps {
   editValue: string;

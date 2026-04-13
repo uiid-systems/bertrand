@@ -4,10 +4,10 @@ import { Box, Text, useTui } from "@orchetron/storm";
 
 import { SessionRow } from "@/tui/components/SessionRow";
 import { Logo } from "@/tui/components/BertrandLogo";
-import { Create } from "@/tui/screens/create";
-import { Rename } from "@/tui/screens/rename";
-import { Move } from "@/tui/screens/move";
-import { ConfirmDelete } from "@/tui/screens/confirm-delete";
+import { Create } from "./create";
+import { Rename } from "./rename";
+import { Move } from "./move";
+import { ConfirmDelete } from "./confirm-delete";
 
 import type { LaunchSelection, LaunchProps, Mode } from "./launch.types";
 import { formatBindings } from "./launch.utils";

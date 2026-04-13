@@ -1,44 +1,46 @@
 import { Box, Text, TextInput } from "@orchetron/storm";
 
-import { formatBindings } from "@/tui/screens/launch/launch.utils";
+import { formatBindings } from "./launch.utils";
 
-interface CreateProps {
-  newName: string;
-  setNewName: (newName: string) => void;
+interface MoveProps {
+  editValue: string;
+  setEditValue: (editValue: string) => void;
   setError: (error: string | null) => void;
-  handleCreateSubmit: (value: string) => void;
+  handleMoveSubmit: (value: string) => void;
   inputBindings: Array<{ label: string; description: string }>;
   error: string | null;
   escPending: boolean;
   clearEscPending: () => void;
+  placeholder?: string;
 }
 
-export function Create({
-  newName,
-  setNewName,
+export function Move({
+  editValue,
+  setEditValue,
   setError,
-  handleCreateSubmit,
+  handleMoveSubmit,
   inputBindings,
   error,
   escPending,
   clearEscPending,
-}: CreateProps) {
+  placeholder = "category/session-name",
+}: MoveProps) {
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold color="#82AAFF">
-        New Session
+        Move session
       </Text>
       <Box height={1} />
-      <Text>Name: </Text>
+      <Text>New group path: </Text>
       <TextInput
-        value={newName}
+        value={editValue}
         onChange={(v: string) => {
-          setNewName(v);
+          setEditValue(v);
           setError(null);
           clearEscPending();
         }}
-        onSubmit={handleCreateSubmit}
-        placeholder="group/session-name"
+        onSubmit={handleMoveSubmit}
+        placeholder={placeholder}
       />
       {error && (
         <>
@@ -50,7 +52,7 @@ export function Create({
       {escPending ? (
         <Text color="yellow">Press esc again to cancel</Text>
       ) : (
-        <Text dim>enter create · {formatBindings(inputBindings)}</Text>
+        <Text dim>enter move · {formatBindings(inputBindings)}</Text>
       )}
     </Box>
   );
