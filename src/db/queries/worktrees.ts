@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { worktreeAssociations } from "../schema.ts";
-import { createId } from "../../lib/id.ts";
+import { getDb } from "@/db/client";
+import { worktreeAssociations } from "@/db/schema";
+import { createId } from "@/lib/id";
 
 export function createWorktreeAssociation(opts: {
   sessionId: string;

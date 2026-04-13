@@ -5,8 +5,8 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { mkdtempSync, unlinkSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import * as schema from "./schema.ts";
-import { _setDb } from "./client.ts";
+import * as schema from "./schema";
+import { _setDb } from "./client";
 
 // Set up test DB in a unique temp directory to avoid parallel run collisions
 const TEST_DB_PATH = join(mkdtempSync(join(tmpdir(), "bertrand-test-")), "test.db");

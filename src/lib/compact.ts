@@ -1,5 +1,5 @@
-import type { EnrichedEvent } from "./catalog.ts";
-import { lookup } from "./catalog.ts";
+import type { EnrichedEvent } from "./catalog";
+import { lookup } from "./catalog";
 
 /**
  * Stage 1: Relocate session.resume events to sit immediately after their matching session.block.

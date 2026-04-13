@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import type { TerminalAdapter } from "./adapter.ts";
+import type { TerminalAdapter } from "./adapter";
 
 export class WaveAdapter implements TerminalAdapter {
   type = "wave" as const;

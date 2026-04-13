@@ -1,19 +1,19 @@
 // Register all commands (side-effect imports)
-import "./cli/commands/launch.ts";
-import "./cli/commands/init.ts";
-import "./cli/commands/list.ts";
-import "./cli/commands/log.ts";
-import "./cli/commands/stats.ts";
-import "./cli/commands/archive.ts";
-import "./cli/commands/update.ts";
-import "./cli/commands/serve.ts";
-import "./cli/commands/mcp.ts";
-import "./cli/commands/import.ts";
-import "./cli/commands/completion.ts";
-import "./cli/commands/badge.ts";
-import "./cli/commands/notify.ts";
+import "./cli/commands/launch";
+import "./cli/commands/init";
+import "./cli/commands/list";
+import "./cli/commands/log";
+import "./cli/commands/stats";
+import "./cli/commands/archive";
+import "./cli/commands/update";
+import "./cli/commands/serve";
+import "./cli/commands/mcp";
+import "./cli/commands/import";
+import "./cli/commands/completion";
+import "./cli/commands/badge";
+import "./cli/commands/notify";
 
-import { route } from "./cli/router.ts";
+import { route } from "./cli/router";
 
 await route(process.argv);
 process.exit(0);

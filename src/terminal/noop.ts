@@ -1,4 +1,4 @@
-import type { TerminalAdapter } from "./adapter.ts";
+import type { TerminalAdapter } from "./adapter";
 
 export class NoopAdapter implements TerminalAdapter {
   type = "noop" as const;

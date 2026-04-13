@@ -1,5 +1,5 @@
-import { getEventsBySession, getEventsByType } from "../db/queries/events.ts";
-import { upsertSessionStats } from "../db/queries/stats.ts";
+import { getEventsBySession, getEventsByType } from "@/db/queries/events";
+import { upsertSessionStats } from "@/db/queries/stats";
 
 // --- Types ---
 

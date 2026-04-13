@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { paths } from "./paths.ts";
+import { paths } from "./paths";
 
 const COMMANDS = [
   "init",

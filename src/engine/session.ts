@@ -4,14 +4,14 @@ import {
   updateSession,
   getSession,
   getSessionByGroupSlug,
-} from "../db/queries/sessions.ts";
-import { createConversation, endConversation } from "../db/queries/conversations.ts";
-import { insertEvent } from "../db/queries/events.ts";
-import { getOrCreateGroupPath, getGroup, getGroupByPath } from "../db/queries/groups.ts";
-import { buildContract } from "../contract/template.ts";
-import { buildSiblingContext } from "../contract/context.ts";
-import { launchClaude } from "./process.ts";
-import { computeAndPersist } from "../lib/timing.ts";
+} from "@/db/queries/sessions";
+import { createConversation, endConversation } from "@/db/queries/conversations";
+import { insertEvent } from "@/db/queries/events";
+import { getOrCreateGroupPath, getGroup, getGroupByPath } from "@/db/queries/groups";
+import { buildContract } from "@/contract/template";
+import { buildSiblingContext } from "@/contract/context";
+import { launchClaude } from "./process";
+import { computeAndPersist } from "@/lib/timing";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */

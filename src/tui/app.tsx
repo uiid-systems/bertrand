@@ -1,10 +1,11 @@
 import { render } from "@orchetron/storm";
-import { Launch, type LaunchSelection } from "./screens/Launch.tsx";
-import { Exit, type ExitAction } from "./screens/Exit.tsx";
-import { Resume, type ResumeSelection } from "./screens/Resume.tsx";
-import { updateSessionStatus, deleteSession } from "../db/queries/sessions.ts";
-import { getConversationsBySession, createConversation } from "../db/queries/conversations.ts";
-import { launch, resume } from "../engine/session.ts";
+import { Launch } from "./screens/launch/index";
+import type { LaunchSelection } from "./screens/launch/launch.types";
+import { Exit, type ExitAction } from "./screens/Exit";
+import { Resume, type ResumeSelection } from "./screens/Resume";
+import { updateSessionStatus, deleteSession } from "@/db/queries/sessions";
+import { getConversationsBySession, createConversation } from "@/db/queries/conversations";
+import { launch, resume } from "@/engine/session";
 import { randomUUID } from "crypto";
 
 /**

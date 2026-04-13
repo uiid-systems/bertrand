@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
-import { getDb } from "../client.ts";
-import { labels, sessionLabels } from "../schema.ts";
-import { createId } from "../../lib/id.ts";
+import { getDb } from "@/db/client";
+import { labels, sessionLabels } from "@/db/schema";
+import { createId } from "@/lib/id";
 
 export function createLabel(opts: { name: string; color?: string }) {
   return getDb()

@@ -1,8 +1,8 @@
-import { register } from "../router.ts";
-import { startTui, runSessionLoop } from "../../tui/app.tsx";
-import { parseSessionName } from "../../lib/parse-session-name.ts";
-import { launch } from "../../engine/session.ts";
-import { recoverStaleSessions } from "../../engine/recovery.ts";
+import { register } from "@/cli/router";
+import { startTui, runSessionLoop } from "@/tui/app";
+import { parseSessionName } from "@/lib/parse-session-name";
+import { launch } from "@/engine/session";
+import { recoverStaleSessions } from "@/engine/recovery";
 
 register("launch", async (args) => {
   // Recover any sessions stuck in working/blocked/prompting from crashed processes

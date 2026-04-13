@@ -1,9 +1,9 @@
-import type { TerminalAdapter } from "./adapter.ts";
-import { WaveAdapter } from "./wave.ts";
-import { NoopAdapter } from "./noop.ts";
+import type { TerminalAdapter } from "./adapter";
+import { WaveAdapter } from "./wave";
+import { NoopAdapter } from "./noop";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { paths } from "../lib/paths.ts";
+import { paths } from "@/lib/paths";
 
 let cachedAdapter: TerminalAdapter | null = null;
 
@@ -42,4 +42,4 @@ function readConfigTerminal(): string | null {
   }
 }
 
-export type { TerminalAdapter } from "./adapter.ts";
+export type { TerminalAdapter } from "./adapter";

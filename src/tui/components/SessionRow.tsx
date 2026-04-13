@@ -1,6 +1,6 @@
 import { Box, Text } from "@orchetron/storm";
-import { StatusDot } from "./StatusDot.tsx";
-import { formatAgo } from "../../lib/format.ts";
+import { StatusDot } from "./StatusDot";
+import { formatAgo } from "@/lib/format";
 
 interface SessionRowProps {
   name: string;

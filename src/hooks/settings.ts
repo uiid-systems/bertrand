@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
-import { paths } from "../lib/paths.ts";
+import { paths } from "@/lib/paths";
 
 const SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
-import { getSession } from "../../db/queries/sessions.ts";
-import { getConversationsBySession } from "../../db/queries/conversations.ts";
-import { formatDuration } from "../../lib/format.ts";
-import { StatusDot } from "../components/StatusDot.tsx";
+import { getSession } from "@/db/queries/sessions";
+import { getConversationsBySession } from "@/db/queries/conversations";
+import { formatDuration } from "@/lib/format";
+import { StatusDot } from "@/tui/components/StatusDot";
 
 type ExitAction = "save" | "archive" | "discard" | "resume";
 

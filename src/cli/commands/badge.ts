@@ -1,5 +1,5 @@
-import { register } from "../router.ts";
-import { getTerminalAdapter } from "../../terminal/index.ts";
+import { register } from "@/cli/router";
+import { getTerminalAdapter } from "@/terminal/index";
 
 // Usage: bertrand badge <icon> --color <color> [--priority <n>] [--beep] [--clear]
 register("badge", async (args) => {

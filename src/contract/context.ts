@@ -1,5 +1,5 @@
-import { getSessionsByGroup } from "../db/queries/sessions.ts";
-import { formatAgo } from "../lib/format.ts";
+import { getSessionsByGroup } from "@/db/queries/sessions";
+import { formatAgo } from "@/lib/format";
 
 /**
  * Build sibling sessions context layer.
