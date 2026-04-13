@@ -1,5 +1,7 @@
 import { Box, Text, TextInput } from "@orchetron/storm";
 
+import { formatBindings } from "@/tui/screens/launch/launch.utils";
+
 interface CreateProps {
   newName: string;
   setNewName: (newName: string) => void;
@@ -10,8 +12,6 @@ interface CreateProps {
   escPending: boolean;
   clearEscPending: () => void;
 }
-
-import { formatBindings } from "@/tui/screens/launch/launch.utils";
 
 export function Create({
   newName,
