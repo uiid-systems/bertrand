@@ -38,7 +38,7 @@ function getMetrics(sessionId: string, name: string, status: string): SessionMet
 
   for (const ev of allEvents) {
     if (ev.conversationId) conversations.add(ev.conversationId);
-    if (ev.event === "session.block") interactionCount++;
+    if (ev.event === "session.block" || ev.event === "session.resume") interactionCount++;
     if (ev.event === "gh.pr.created") prCount++;
   }
 
