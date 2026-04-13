@@ -2,6 +2,7 @@ import { register } from "../router.ts";
 import { getAllSessions, getSessionsByGroup, getSessionByGroupSlug } from "../../db/queries/sessions.ts";
 import { getSessionStats } from "../../db/queries/stats.ts";
 import { getGroupByPath } from "../../db/queries/groups.ts";
+import { getEventsBySession } from "../../db/queries/events.ts";
 import { computeTimingsLive } from "../../lib/timing.ts";
 import { formatDuration } from "../../lib/format.ts";
 import { parseSessionName } from "../../lib/parse-session-name.ts";
@@ -28,15 +29,26 @@ function getMetrics(sessionId: string, name: string, status: string): SessionMet
     return { name, status, ...stats };
   }
 
-  // Live fallback for active sessions
+  // Live fallback for active sessions — compute counts from events
   const timing = computeTimingsLive(sessionId);
+  const allEvents = getEventsBySession(sessionId);
+  const conversations = new Set<string>();
+  let interactionCount = 0;
+  let prCount = 0;
+
+  for (const ev of allEvents) {
+    if (ev.conversationId) conversations.add(ev.conversationId);
+    if (ev.event === "session.block") interactionCount++;
+    if (ev.event === "gh.pr.created") prCount++;
+  }
+
   return {
     name,
     status,
-    eventCount: 0,
-    conversationCount: 0,
-    interactionCount: 0,
-    prCount: 0,
+    eventCount: allEvents.length,
+    conversationCount: conversations.size,
+    interactionCount,
+    prCount,
     claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
     userWaitS: Math.round(timing.totalUserWaitMs / 1000),
     activePct: timing.activePct,
