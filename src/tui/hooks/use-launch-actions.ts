@@ -11,7 +11,7 @@ import { getOrCreateGroupPath } from "@/db/queries/groups";
 import { parseSessionName } from "@/lib/parse-session-name";
 
 import type { getAllSessions } from "@/db/queries/sessions";
-import type { LaunchSelection, Mode } from "./launch.types";
+import type { LaunchSelection, Mode } from "../screens/launch/launch.types";
 
 type SessionRow = ReturnType<typeof getAllSessions>[number];
 

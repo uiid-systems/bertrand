@@ -39,7 +39,7 @@ const goodbyeLines = [
   " 888' `88b  d88' `88b d88' `88b d88' `888   d88' `88b  `88.  .8'   d88' `88b Y8P  ",
   " 888   888  888   888 888   888 888   888   888   888   `88..8'   888ooo888 `8'  ",
   " `88bod8P'  888   888 888   888 888   888   888   888    `888'    888    .o .o.  ",
-  '`8oooooo.  `Y8bod8P\' `Y8bod8P\' `Y8bod88P"  `Y8bod8P\'     .8\'     `Y8bod8P\' Y8P  ',
+  "`8oooooo.  `Y8bod8P' `Y8bod8P' `Y8bod88P\"  `Y8bod8P'     .8'     `Y8bod8P' Y8P  ",
   `d"     YD                                            .o..P'                     `,
   "`\"Y88888P'                                            `Y8P'                      ",
 ];
@@ -52,12 +52,6 @@ export function Logo() {
           {line}
         </Text>
       ))}
-      <Box flexDirection="column" margin={1}>
-        <Text dim>Multi-session workflow manager for Claude Code</Text>
-        <Text dim>
-          by uiid.systems · https://github.com/uiid-systems/bertrand
-        </Text>
-      </Box>
     </Box>
   );
 }

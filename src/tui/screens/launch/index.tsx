@@ -2,18 +2,20 @@ import { useState, useCallback } from "react";
 
 import { Box, Text, useTui } from "@orchetron/storm";
 
-import { SessionRow } from "@/tui/components/SessionRow";
-import { Logo } from "@/tui/components/BertrandLogo";
+import { AppDetails, Logo, NoSessions, SessionRow } from "@/tui/components";
+import {
+  useLaunchActions,
+  useLaunchHotkeys,
+  useLaunchSessions,
+} from "@/tui/hooks";
+
+import type { LaunchSelection, LaunchProps, Mode } from "./launch.types";
+import { formatBindings } from "./launch.utils";
+
 import { Create } from "./create";
 import { Rename } from "./rename";
 import { Move } from "./move";
 import { ConfirmDelete } from "./confirm-delete";
-
-import type { LaunchSelection, LaunchProps, Mode } from "./launch.types";
-import { formatBindings } from "./launch.utils";
-import { useLaunchSessions } from "./use-launch-sessions";
-import { useLaunchActions } from "./use-launch-actions";
-import { useLaunchHotkeys } from "./use-launch-hotkeys";
 
 export function Launch({ onSelect }: LaunchProps) {
   const { exit } = useTui();
@@ -22,15 +24,8 @@ export function Launch({ onSelect }: LaunchProps) {
   const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const {
-    sessionRows,
-    selected,
-    cursor,
-    setCursor,
-    showArchived,
-    toggleArchived,
-    refresh,
-  } = useLaunchSessions();
+  const { sessionRows, selected, cursor, setCursor, toggleArchived, refresh } =
+    useLaunchSessions();
 
   const select = useCallback(
     (selection: LaunchSelection) => {
@@ -127,42 +122,30 @@ export function Launch({ onSelect }: LaunchProps) {
   }
 
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
-      <Box>
+    <Box flexDirection="column" paddingY={1} gap={1}>
+      <Box data-slot="logo" marginX={1}>
         <Logo />
       </Box>
 
-      {sessionRows.length === 0 ? (
-        <Box flexDirection="column">
-          <Text dim>
-            {showArchived ? "No sessions." : "No active sessions."}
-          </Text>
-          <Box flexDirection="row">
-            <Text dim>Press </Text>
-            <Text bold>n</Text>
-            <Text dim> to create one</Text>
-            {!showArchived && (
-              <>
-                <Text dim> · </Text>
-                <Text bold>tab</Text>
-                <Text dim> to show archived</Text>
-              </>
-            )}
-          </Box>
-        </Box>
-      ) : (
-        sessionRows.map((row, i) => (
-          <SessionRow
-            key={row.session.id}
-            name={`${row.groupPath}/${row.session.slug}`}
-            status={row.session.status}
-            updatedAt={row.session.updatedAt}
-            selected={i === cursor}
-          />
-        ))
-      )}
+      <Box data-slot="app-menu" flexDirection="column" marginX={2} gap={1}>
+        <AppDetails />
 
-      <Box>
+        {sessionRows.length === 0 ? (
+          <NoSessions />
+        ) : (
+          <Box flexDirection="column">
+            {sessionRows.map((row, i) => (
+              <SessionRow
+                key={row.session.id}
+                name={`${row.groupPath}/${row.session.slug}`}
+                status={row.session.status}
+                updatedAt={row.session.updatedAt}
+                selected={i === cursor}
+              />
+            ))}
+          </Box>
+        )}
+
         <Text dim>{formatBindings(browseBindings)}</Text>
       </Box>
     </Box>

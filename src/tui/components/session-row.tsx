@@ -1,8 +1,8 @@
 import { Box, Text } from "@orchetron/storm";
-import { StatusDot } from "./StatusDot";
+import { StatusDot } from "./status-dot";
 import { formatAgo } from "@/lib/format";
 
-interface SessionRowProps {
+export interface SessionRowProps {
   name: string;
   status: string;
   updatedAt: string;
@@ -17,10 +17,12 @@ export function SessionRow({
 }: SessionRowProps) {
   return (
     <Box flexDirection="row" gap={1}>
-      <Text>{selected ? "❯ " : "  "}</Text>
+      <Text color="green">{selected ? "❯ " : "  "}</Text>
       <StatusDot status={status} />
-      <Text bold={selected}>{name}</Text>
-      <Text dim>{formatAgo(updatedAt)}</Text>
+      <Text bold={selected} color={selected ? "green" : undefined}>
+        {name}
+      </Text>
+      <Text dim>Updated {formatAgo(updatedAt)}</Text>
     </Box>
   );
 }
