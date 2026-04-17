@@ -8,10 +8,11 @@ import {
 } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import { getOrCreateGroupPath } from "@/db/queries/groups";
+import type { getAllSessions } from "@/db/queries/sessions";
 import { parseSessionName } from "@/lib/parse-session-name";
 
-import type { getAllSessions } from "@/db/queries/sessions";
-import type { LaunchSelection, Mode } from "../screens/launch/launch.types";
+import type { LaunchSelection } from "../screens/launch/launch.types";
+import type { Mode } from "../types";
 
 type SessionRow = ReturnType<typeof getAllSessions>[number];
 

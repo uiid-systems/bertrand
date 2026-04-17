@@ -8,11 +8,12 @@ import {
   useLaunchHotkeys,
   useLaunchSessions,
 } from "@/tui/hooks";
+import type { Mode } from "@/tui/types";
 
-import type { LaunchSelection, LaunchProps, Mode } from "./launch.types";
+import type { LaunchSelection, LaunchProps } from "./launch.types";
 import { formatBindings } from "./launch.utils";
 
-import { Create } from "./create";
+import { Create } from "./create-session";
 import { Rename } from "./rename";
 import { Move } from "./move";
 import { ConfirmDelete } from "./confirm-delete";
@@ -106,20 +107,7 @@ export function Launch({ onSelect }: LaunchProps) {
     );
   }
 
-  if (mode === "create") {
-    return (
-      <Create
-        newName={newName}
-        setNewName={setNewName}
-        setError={setError}
-        handleCreateSubmit={actions.handleCreateSubmit}
-        inputBindings={inputBindings}
-        error={error}
-        escPending={escPending}
-        clearEscPending={clearEscPending}
-      />
-    );
-  }
+  const hasSessions = sessionRows.length > 0;
 
   return (
     <Box flexDirection="column" paddingY={1} gap={1}>
@@ -130,11 +118,14 @@ export function Launch({ onSelect }: LaunchProps) {
       <Box data-slot="app-menu" flexDirection="column" marginX={2} gap={1}>
         <AppDetails />
 
-        {sessionRows.length === 0 ? (
-          <NoSessions />
-        ) : (
-          <Box flexDirection="column">
-            {sessionRows.map((row, i) => (
+        <Box flexDirection="column" paddingY={1}>
+          <Create
+            setError={setError}
+            handleCreateSubmit={actions.handleCreateSubmit}
+            error={error}
+          />
+          {hasSessions &&
+            sessionRows.map((row, i) => (
               <SessionRow
                 key={row.session.id}
                 name={`${row.groupPath}/${row.session.slug}`}
@@ -143,8 +134,7 @@ export function Launch({ onSelect }: LaunchProps) {
                 selected={i === cursor}
               />
             ))}
-          </Box>
-        )}
+        </Box>
 
         <Text dim>{formatBindings(browseBindings)}</Text>
       </Box>

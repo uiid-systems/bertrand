@@ -1,13 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-
 import { useHotkey, useInput } from "@orchetron/storm";
 
-import type { Mode } from "./launch.types";
-
 import type { getAllSessions } from "@/db/queries/sessions";
+import type { Mode } from "@/tui/types";
 
 type SessionRow = ReturnType<typeof getAllSessions>[number];
-
 interface UseLaunchHotkeysOpts {
   mode: Mode;
   selected: SessionRow | undefined;
@@ -86,7 +83,6 @@ export function useLaunchHotkeys({
     { label: "delete", description: "d" },
     { label: "rename", description: "r" },
     { label: "move", description: "m" },
-    { label: "filter", description: "tab" },
     { label: "quit", description: "q" },
   ];
 

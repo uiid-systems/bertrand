@@ -1,10 +1,13 @@
-import { render } from "@orchetron/storm";
+import { render, createTheme, ThemeProvider } from "@orchetron/storm";
 import { Launch } from "./screens/launch/index";
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import { Exit, type ExitAction } from "./screens/Exit";
 import { Resume, type ResumeSelection } from "./screens/Resume";
 import { updateSessionStatus, deleteSession } from "@/db/queries/sessions";
-import { getConversationsBySession, createConversation } from "@/db/queries/conversations";
+import {
+  getConversationsBySession,
+  createConversation,
+} from "@/db/queries/conversations";
 import { launch, resume } from "@/engine/session";
 import { randomUUID } from "crypto";
 
@@ -15,7 +18,11 @@ export async function startLaunchTui(): Promise<LaunchSelection> {
   let result: LaunchSelection = { type: "quit" };
 
   const app = render(
-    <Launch onSelect={(selection) => { result = selection; }} />,
+    <Launch
+      onSelect={(selection) => {
+        result = selection;
+      }}
+    />,
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
@@ -30,7 +37,12 @@ async function startExitTui(sessionId: string): Promise<ExitAction> {
   let result: ExitAction = "save";
 
   const app = render(
-    <Exit sessionId={sessionId} onAction={(action) => { result = action; }} />,
+    <Exit
+      sessionId={sessionId}
+      onAction={(action) => {
+        result = action;
+      }}
+    />,
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
@@ -42,7 +54,9 @@ async function startExitTui(sessionId: string): Promise<ExitAction> {
  * Render the resume picker and return the user's choice.
  * Auto-selects if only one conversation exists.
  */
-export async function startResumeTui(sessionId: string): Promise<ResumeSelection> {
+export async function startResumeTui(
+  sessionId: string,
+): Promise<ResumeSelection> {
   const conversations = getConversationsBySession(sessionId);
 
   // Auto-select if single conversation
@@ -58,7 +72,12 @@ export async function startResumeTui(sessionId: string): Promise<ResumeSelection
   let result: ResumeSelection = { type: "back" };
 
   const app = render(
-    <Resume sessionId={sessionId} onSelect={(selection) => { result = selection; }} />,
+    <Resume
+      sessionId={sessionId}
+      onSelect={(selection) => {
+        result = selection;
+      }}
+    />,
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
@@ -69,7 +88,9 @@ export async function startResumeTui(sessionId: string): Promise<ResumeSelection
 /**
  * Resolve a conversation ID for resuming — either from the picker or a new one.
  */
-async function resolveConversationForResume(sessionId: string): Promise<string | null> {
+async function resolveConversationForResume(
+  sessionId: string,
+): Promise<string | null> {
   const selection = await startResumeTui(sessionId);
 
   switch (selection.type) {
@@ -137,9 +158,14 @@ export async function startTui(): Promise<void> {
     }
 
     case "pick": {
-      const conversationId = await resolveConversationForResume(selection.sessionId);
+      const conversationId = await resolveConversationForResume(
+        selection.sessionId,
+      );
       if (!conversationId) break; // user pressed back
-      const sessionId = await resume({ sessionId: selection.sessionId, conversationId });
+      const sessionId = await resume({
+        sessionId: selection.sessionId,
+        conversationId,
+      });
       await runSessionLoop(sessionId);
       break;
     }
