@@ -120,6 +120,7 @@ export function Launch({ onSelect }: LaunchProps) {
 
         <Box flexDirection="column" paddingY={1}>
           <Create
+            isFocused={mode === "create"}
             setError={setError}
             handleCreateSubmit={actions.handleCreateSubmit}
             error={error}
