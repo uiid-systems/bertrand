@@ -14,6 +14,9 @@ export function getDb() {
   const sqlite = new Database(paths.db);
   sqlite.exec("PRAGMA journal_mode = WAL");
   sqlite.exec("PRAGMA foreign_keys = ON");
+  sqlite.exec("PRAGMA synchronous = NORMAL");
+  sqlite.exec("PRAGMA cache_size = -8000");
+  sqlite.exec("PRAGMA temp_store = MEMORY");
 
   _db = drizzle(sqlite, { schema });
   return _db;

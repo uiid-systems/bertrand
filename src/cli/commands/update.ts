@@ -46,6 +46,13 @@ register("update", async (args) => {
     process.exit(1);
   }
 
+  // Skip redundant status updates — session.working fires on every PreToolUse
+  // but is a no-op when already working. Avoids unnecessary DB writes.
+  const newStatus = EVENT_STATUS_MAP[event];
+  if (newStatus && newStatus === session.status) {
+    return;
+  }
+
   let meta: Record<string, unknown> | undefined;
   if (metaJson) {
     try {
@@ -73,8 +80,7 @@ register("update", async (args) => {
     meta,
   });
 
-  // Update session status if this event implies a transition
-  const newStatus = EVENT_STATUS_MAP[event];
+  // Update session status
   if (newStatus) {
     updateSessionStatus(sessionId, newStatus);
   }
