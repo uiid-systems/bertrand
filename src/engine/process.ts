@@ -4,6 +4,7 @@ export interface ClaudeLaunchOpts {
   sessionId: string;
   claudeId: string;
   sessionName: string;
+  sessionSlug: string;
   contract: string;
   resume?: boolean;
 }
@@ -32,6 +33,8 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     BERTRAND_PID: String(process.pid),
     BERTRAND_CLAUDE_ID: opts.claudeId,
     BERTRAND_SESSION: opts.sessionId,
+    BERTRAND_SESSION_NAME: opts.sessionName,
+    BERTRAND_SESSION_SLUG: opts.sessionSlug,
   };
 
   return new Promise((resolve, reject) => {

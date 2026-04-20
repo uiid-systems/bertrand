@@ -82,6 +82,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     sessionId: session.id,
     claudeId,
     sessionName,
+    sessionSlug: opts.slug,
     contract,
   });
 
@@ -137,6 +138,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     sessionId: session.id,
     claudeId: opts.conversationId,
     sessionName,
+    sessionSlug: session.slug,
     contract,
     resume: true,
   });
