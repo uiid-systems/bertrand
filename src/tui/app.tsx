@@ -1,8 +1,10 @@
-import { render, createTheme, ThemeProvider } from "@orchetron/storm";
-import { Launch } from "./screens/launch/index";
+import { spawn } from "child_process";
+import { readFileSync, unlinkSync } from "fs";
+import { join } from "path";
+
 import type { LaunchSelection } from "./screens/launch/launch.types";
-import { Exit, type ExitAction } from "./screens/Exit";
-import { Resume, type ResumeSelection } from "./screens/Resume";
+import type { ExitAction } from "./screens/Exit";
+import type { ResumeSelection } from "./screens/Resume";
 import { updateSessionStatus, deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
@@ -11,45 +13,46 @@ import {
 import { launch, resume } from "@/engine/session";
 import { randomUUID } from "crypto";
 
+const SCREEN_ENTRY = join(import.meta.dir, "run-screen.tsx");
+
+/**
+ * Run a TUI screen in a subprocess.
+ *
+ * Storm renders in the child process and exits completely when done.
+ * The parent process never loads Storm — zero CPU overhead while Claude runs.
+ */
+async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
+  const tmpFile = `/tmp/bertrand-tui-${process.pid}-${Date.now()}.json`;
+
+  const child = spawn("bun", ["run", SCREEN_ENTRY, screen, tmpFile, ...args], {
+    stdio: "inherit",
+  });
+
+  const exitCode = await new Promise<number>((resolve) => {
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+
+  if (exitCode !== 0) {
+    throw new Error(`TUI screen "${screen}" exited with code ${exitCode}`);
+  }
+
+  const result = JSON.parse(readFileSync(tmpFile, "utf-8")) as T;
+  unlinkSync(tmpFile);
+  return result;
+}
+
 /**
  * Render the launch screen and return the user's selection.
  */
 export async function startLaunchTui(): Promise<LaunchSelection> {
-  let result: LaunchSelection = { type: "quit" };
-
-  const app = render(
-    <Launch
-      onSelect={(selection) => {
-        result = selection;
-      }}
-    />,
-    { alternateScreen: true, patchConsole: true },
-  );
-  await app.waitUntilExit();
-  app.unmount();
-
-  return result;
+  return runScreen<LaunchSelection>("launch");
 }
 
 /**
  * Render the exit menu and return the user's chosen action.
  */
 async function startExitTui(sessionId: string): Promise<ExitAction> {
-  let result: ExitAction = "save";
-
-  const app = render(
-    <Exit
-      sessionId={sessionId}
-      onAction={(action) => {
-        result = action;
-      }}
-    />,
-    { alternateScreen: true, patchConsole: true },
-  );
-  await app.waitUntilExit();
-  app.unmount();
-
-  return result;
+  return runScreen<ExitAction>("exit", sessionId);
 }
 
 /**
@@ -61,31 +64,15 @@ export async function startResumeTui(
 ): Promise<ResumeSelection> {
   const conversations = getConversationsBySession(sessionId);
 
-  // Auto-select if single conversation
   if (conversations.length === 1) {
     return { type: "conversation", conversationId: conversations[0]!.id };
   }
 
-  // No conversations — go straight to new
   if (conversations.length === 0) {
     return { type: "new" };
   }
 
-  let result: ResumeSelection = { type: "back" };
-
-  const app = render(
-    <Resume
-      sessionId={sessionId}
-      onSelect={(selection) => {
-        result = selection;
-      }}
-    />,
-    { alternateScreen: true, patchConsole: true },
-  );
-  await app.waitUntilExit();
-  app.unmount();
-
-  return result;
+  return runScreen<ResumeSelection>("resume", sessionId);
 }
 
 /**
@@ -130,7 +117,7 @@ export async function runSessionLoop(sessionId: string): Promise<void> {
 
     case "resume": {
       const conversationId = await resolveConversationForResume(sessionId);
-      if (!conversationId) break; // user pressed back
+      if (!conversationId) break;
       await resume({ sessionId, conversationId });
       await runSessionLoop(sessionId);
       break;
@@ -164,7 +151,7 @@ export async function startTui(): Promise<void> {
       const conversationId = await resolveConversationForResume(
         selection.sessionId,
       );
-      if (!conversationId) break; // user pressed back
+      if (!conversationId) break;
       const sessionId = await resume({
         sessionId: selection.sessionId,
         conversationId,
