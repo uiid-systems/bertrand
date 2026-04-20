@@ -103,16 +103,19 @@ ${BIN} update --session-id "$sid" --event session.active --meta "$(jq -n --arg c
 `;
 }
 
-/** PermissionRequest → write pending marker for real permission prompts */
+/** PermissionRequest → write pending marker + emit permission.request */
 export function permissionWaitScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PermissionRequest → pending marker for permission prompts
+# Hook: PermissionRequest → mark pending, emit permission.request
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 ${EXTRACT_TOOL}
 [ "$tool" = "AskUserQuestion" ] && exit 0
+
+# Write marker so PostToolUse knows this was a real permission prompt (not auto-approved)
+touch "/tmp/bertrand-perm-pending-$sid"
 
 # Extract detail from tool_input via grep (avoid jq for simple fields)
 detail=""
@@ -131,30 +134,22 @@ wait
 `;
 }
 
-/** PostToolUse (catch-all) → track permission outcome */
+/** PostToolUse (catch-all) → resolve permission if manually prompted */
 export function permissionDoneScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PostToolUse (catch-all) → track permission outcome (approved/rejected/auto)
+# Hook: PostToolUse (catch-all) → emit permission.resolve only for manually-prompted tools
+# Auto-approved tools have no pending marker, so they're skipped entirely.
+# Rejected tools never reach PostToolUse, so rejection = request with no resolve.
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
+# Only fire if a PermissionRequest preceded this (marker exists)
+marker="/tmp/bertrand-perm-pending-$sid"
+[ ! -f "$marker" ] && exit 0
+rm -f "$marker"
+
 input="$(cat)"
 ${EXTRACT_TOOL}
-
-# Skip tools that never trigger permission prompts
-case "$tool" in
-  AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
-esac
-
-# Determine outcome: check if tool_response contains an error
-# Rejected tools have tool_response with error text like "denied" or "rejected"
-rejected="$(printf '%s' "$input" | grep -o '"tool_response":"[^"]*"' | grep -qi 'denied\\|rejected\\|not allowed' && echo "1")"
-
-if [ -n "$rejected" ]; then
-  outcome="rejected"
-else
-  outcome="approved"
-fi
 
 # Extract detail via grep
 detail=""
@@ -164,7 +159,7 @@ case "$tool" in
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
 
 ${BIN} badge --clear &
 wait
