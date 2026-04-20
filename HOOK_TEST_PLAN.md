@@ -66,7 +66,7 @@ Tests: process spawn cost, debounce, status update path.
 
 **What to watch in TablePlus:** `session.working` events. Should be sparse (debounce), not one per tool call.
 
-**Result:** ___
+**Result:** Pass — no lag, DB writes look correct. Required fixing hook scripts to call `~/.bertrand/bin/bertrand` (TS binary) instead of bare `bertrand` (Go binary from PATH).
 
 ## Step 2: on-blocked.sh (PreToolUse AskUserQuestion)
 
