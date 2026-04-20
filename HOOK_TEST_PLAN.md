@@ -15,12 +15,15 @@ Before starting, the following issues were identified and fixed:
 
 4. **SQLite pragmas** — Added `synchronous=NORMAL`, `cache_size=8MB`, `temp_store=MEMORY` to `src/db/client.ts`.
 
+5. **State rename** — `working/blocked/prompting` → `active/waiting` (prompting removed). Events renamed: `session.block` → `session.waiting`, `session.working` → `session.active`, `session.resume` → `session.answered`.
+
 ## Setup
 
-- `~/.claude/settings.json` — all bertrand hooks removed, no statusline
+- `~/.claude/settings.json` — hooks added incrementally per step
 - `~/.claude/settings.json.bak` — backup with original config
 - `~/.bertrand/bertrand.db` — cleared, fresh schema
-- `~/.bertrand/hooks/` — old scripts removed; build each one incrementally per step
+- `~/.bertrand/bin/bertrand` — compiled TS binary (hooks must call this, not the Go binary in PATH)
+- `~/.bertrand/hooks/` — build each hook incrementally per step
 
 To restore original settings at any point:
 ```bash
@@ -35,7 +38,7 @@ For each step:
 3. Start a new bertrand session (`bun run src/index.ts`)
 4. Type normally for 2-3 minutes — code edits, tool calls, questions
 5. Note any lag, dropped keystrokes, or delays between tool calls
-6. Check `events` table in TablePlus for write frequency
+6. Check `events` table in TablePlus for write frequency and correctness
 7. Record result below before moving to the next hook
 
 ## Step 0: Baseline (no hooks)
@@ -48,7 +51,7 @@ Launch a session with zero hooks, no statusline. Confirm zero lag.
 
 **Result:** Pass — lag-free after fixing Storm subprocess issue. Identical to vanilla Claude.
 
-## Step 1: on-working.sh (PreToolUse catch-all)
+## Step 1: on-active.sh (PreToolUse catch-all)
 
 Highest frequency hook — fires on every tool call.
 Tests: process spawn cost, debounce, status update path.
@@ -58,50 +61,50 @@ Tests: process spawn cost, debounce, status update path.
   "PreToolUse": [
     {
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-working.sh", "timeout": 5 }]
+      "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }]
     }
   ]
 }
 ```
 
-**What to watch in TablePlus:** `session.working` events. Should be sparse (debounce), not one per tool call.
+**What to watch in TablePlus:** `session.active` events. Should be sparse (debounce), not one per tool call.
 
-**Result:** Pass — no lag, DB writes look correct. Required fixing hook scripts to call `~/.bertrand/bin/bertrand` (TS binary) instead of bare `bertrand` (Go binary from PATH).
+**Result:** Pass — no lag, DB writes correct. Required fixing hooks to call `~/.bertrand/bin/bertrand` (TS binary) instead of bare `bertrand` (Go binary). Confirmed after state rename.
 
-## Step 2: on-blocked.sh (PreToolUse AskUserQuestion)
+## Step 2: on-waiting.sh (PreToolUse AskUserQuestion)
 
 Fires when Claude asks a question. Tests: grep parsing, bertrand update, badge+notify.
 
 ```json
 "hooks": {
   "PreToolUse": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-working.sh", "timeout": 5 }] },
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-blocked.sh", "timeout": 10 }] }
+    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }] },
+    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-waiting.sh", "timeout": 10 }] }
   ]
 }
 ```
 
-**What to watch:** `session.block` events with question text in meta.
+**What to watch:** `session.waiting` events with question text in meta.
 
 **Result:** ___
 
-## Step 3: on-resumed.sh (PostToolUse AskUserQuestion)
+## Step 3: on-answered.sh (PostToolUse AskUserQuestion)
 
 Fires when user answers a question. Tests: answer extraction, badge clear.
 
 ```json
 "hooks": {
   "PreToolUse": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-working.sh", "timeout": 5 }] },
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-blocked.sh", "timeout": 10 }] }
+    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }] },
+    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-waiting.sh", "timeout": 10 }] }
   ],
   "PostToolUse": [
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-resumed.sh", "timeout": 10 }] }
+    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-answered.sh", "timeout": 10 }] }
   ]
 }
 ```
 
-**What to watch:** `session.resume` events with answer in meta.
+**What to watch:** `session.answered` events with answer in meta.
 
 **Result:** ___
 
@@ -112,11 +115,11 @@ Fires after every tool use (with fast-path exit for auto-approved tools).
 ```json
 "hooks": {
   "PreToolUse": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-working.sh", "timeout": 5 }] },
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-blocked.sh", "timeout": 10 }] }
+    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }] },
+    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-waiting.sh", "timeout": 10 }] }
   ],
   "PostToolUse": [
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-resumed.sh", "timeout": 10 }] },
+    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-answered.sh", "timeout": 10 }] },
     { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-permission-done.sh", "timeout": 5 }] }
   ]
 }
