@@ -131,20 +131,30 @@ wait
 `;
 }
 
-/** PostToolUse (catch-all) → remove pending marker */
+/** PostToolUse (catch-all) → track permission outcome */
 export function permissionDoneScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PostToolUse (catch-all) → clear pending marker
+# Hook: PostToolUse (catch-all) → track permission outcome (approved/rejected/auto)
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 ${EXTRACT_TOOL}
 
-# Skip always-auto-approved tools
+# Skip tools that never trigger permission prompts
 case "$tool" in
   AskUserQuestion|Read|Glob|Grep|ToolSearch) exit 0 ;;
 esac
+
+# Determine outcome: check if tool_response contains an error
+# Rejected tools have tool_response with error text like "denied" or "rejected"
+rejected="$(printf '%s' "$input" | grep -o '"tool_response":"[^"]*"' | grep -qi 'denied\\|rejected\\|not allowed' && echo "1")"
+
+if [ -n "$rejected" ]; then
+  outcome="rejected"
+else
+  outcome="approved"
+fi
 
 # Extract detail via grep
 detail=""
@@ -154,7 +164,7 @@ case "$tool" in
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')"
 
 ${BIN} badge --clear &
 wait
