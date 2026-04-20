@@ -26,6 +26,7 @@ export async function startLaunchTui(): Promise<LaunchSelection> {
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
+  app.unmount();
 
   return result;
 }
@@ -46,6 +47,7 @@ async function startExitTui(sessionId: string): Promise<ExitAction> {
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
+  app.unmount();
 
   return result;
 }
@@ -81,6 +83,7 @@ export async function startResumeTui(
     { alternateScreen: true, patchConsole: true },
   );
   await app.waitUntilExit();
+  app.unmount();
 
   return result;
 }
