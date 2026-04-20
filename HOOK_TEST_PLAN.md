@@ -86,78 +86,23 @@ Fires when Claude asks a question. Tests: grep parsing, bertrand update, badge+n
 
 **What to watch:** `session.waiting` events with question text in meta.
 
-**Result:** ___
+**Result:** Pass — session.waiting events with question text. Badge + notify working. No lag.
 
 ## Step 3: on-answered.sh (PostToolUse AskUserQuestion)
 
 Fires when user answers a question. Tests: answer extraction, badge clear.
 
-```json
-"hooks": {
-  "PreToolUse": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }] },
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-waiting.sh", "timeout": 10 }] }
-  ],
-  "PostToolUse": [
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-answered.sh", "timeout": 10 }] }
-  ]
-}
-```
-
 **What to watch:** `session.answered` events with answer in meta.
 
-**Result:** ___
+**Result:** Pass — answers captured in meta. Badge clears. Timing pairs (waiting→answered) visible. No lag.
 
-## Step 4: on-permission-done.sh (PostToolUse catch-all)
-
-Fires after every tool use (with fast-path exit for auto-approved tools).
-
-```json
-"hooks": {
-  "PreToolUse": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-active.sh", "timeout": 5 }] },
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-waiting.sh", "timeout": 10 }] }
-  ],
-  "PostToolUse": [
-    { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-answered.sh", "timeout": 10 }] },
-    { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-permission-done.sh", "timeout": 5 }] }
-  ]
-}
-```
-
-**What to watch:** `permission.resolve` events. Should only appear for tools that required permission.
-
-**Result:** ___
-
-## Step 5: on-permission-wait.sh (PermissionRequest)
-
-Fires when Claude requests permission for a tool.
-
-Add to the config above:
-```json
-"PermissionRequest": [
-  { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-permission-wait.sh", "timeout": 10 }] }
-]
-```
-
-**What to watch:** `permission.request` events with tool name in meta.
-
-**Result:** ___
-
-## Step 6: on-done.sh (Stop)
+## Step 4: on-done.sh (Stop)
 
 Fires once when Claude stops. Lowest impact.
 
-Add to the config above:
-```json
-"Stop": [
-  { "matcher": "", "hooks": [{ "type": "command", "command": "/Users/adamfratino/.bertrand/hooks/on-done.sh", "timeout": 5 }] }
-]
-```
-
 **What to watch:** `session.paused` event at session end.
 
-**Result:** ___
+**Result:** Pass — session.paused at end, green badge. No lag.
 
 ## Step 7: Statusline
 
