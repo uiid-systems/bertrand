@@ -1,9 +1,8 @@
 import { Text } from "@orchetron/storm";
 
 const STATUS_COLORS: Record<string, string> = {
-  working: "orange",
-  blocked: "red",
-  prompting: "green",
+  active: "orange",
+  waiting: "red",
   paused: "gold",
   archived: "purple",
 };

@@ -81,14 +81,14 @@ describe("sessions", () => {
       slug: "port-hooks",
       name: "port-hooks",
     });
-    const updated = updateSessionStatus(session.id, "working");
-    expect(updated!.status).toBe("working");
+    const updated = updateSessionStatus(session.id, "active");
+    expect(updated!.status).toBe("active");
   });
 
   test("get active sessions", () => {
     const active = getActiveSessions();
     expect(active.length).toBeGreaterThan(0);
-    expect(active[0]!.session.status).toBe("working");
+    expect(active[0]!.session.status).toBe("active");
   });
 });
 
@@ -109,7 +109,7 @@ describe("events", () => {
 
     insertEvent({
       sessionId: session.id,
-      event: "session.block",
+      event: "session.waiting",
       summary: "What should we do next?",
       meta: { question: "What should we do next?" },
     });
@@ -117,7 +117,7 @@ describe("events", () => {
     const events = getEventsBySession(session.id);
     expect(events.length).toBe(2);
     expect(events[0]!.event).toBe("session.started");
-    expect(events[1]!.event).toBe("session.block");
+    expect(events[1]!.event).toBe("session.waiting");
   });
 });
 

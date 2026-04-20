@@ -6,11 +6,11 @@ import type { SessionStatus } from "@/db/queries/sessions";
 
 /** Status transitions implied by event types */
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
-  "session.block": "blocked",
-  "session.resume": "prompting",
-  "session.working": "working",
+  "session.waiting": "waiting",
+  "session.answered": "active",
+  "session.active": "active",
   "session.paused": "paused",
-  "session.started": "working",
+  "session.started": "active",
   "session.end": "paused",
 };
 
@@ -85,8 +85,8 @@ register("update", async (args) => {
     updateSessionStatus(sessionId, newStatus);
   }
 
-  // If this is a block event with a question, update conversation's lastQuestion
-  if (event === "session.block" && conversationId && meta?.question) {
+  // If this is a waiting event with a question, update conversation's lastQuestion
+  if (event === "session.waiting" && conversationId && meta?.question) {
     updateLastQuestion(conversationId, meta.question as string);
   }
 });

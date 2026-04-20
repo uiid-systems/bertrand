@@ -5,7 +5,7 @@ import { upsertSessionStats } from "@/db/queries/stats";
 
 export type TimingType = "claude_work" | "user_wait";
 
-type State = "idle" | "working" | "blocked";
+type State = "idle" | "active" | "waiting";
 
 export interface TimingSegment {
   start: string; // ISO timestamp
@@ -59,12 +59,12 @@ function pushSegment(
 /**
  * Walk a chronologically-ordered event sequence and produce timing segments.
  *
- * Explicit FSM with three states: idle → working → blocked → working (cycle).
+ * Explicit FSM with three states: idle → active → waiting → active (cycle).
  * Only four event types drive transitions:
- *   claude.started  → enter working
- *   session.block   → working → blocked  (emit claude_work segment)
- *   session.resume  → blocked → working  (emit user_wait segment)
- *   claude.ended    → close any open period, return to idle
+ *   claude.started    → enter active
+ *   session.waiting   → active → waiting  (emit claude_work segment)
+ *   session.answered  → waiting → active  (emit user_wait segment)
+ *   claude.ended      → close any open period, return to idle
  */
 export function computeTimings(events: EventRow[]): TimingSummary {
   const segments: TimingSegment[] = [];
@@ -76,44 +76,44 @@ export function computeTimings(events: EventRow[]): TimingSummary {
     switch (ev.event) {
       case "claude.started": {
         // If we were already working (malformed: double claude.started), close the open period
-        if (state === "working" && periodStart) {
+        if (state === "active" && periodStart) {
           pushSegment(segments, "claude_work", periodStart, ev.createdAt, currentClaudeId);
         }
         // If we were blocked (malformed: claude.started during block), close the wait period
-        if (state === "blocked" && periodStart) {
+        if (state === "waiting" && periodStart) {
           pushSegment(segments, "user_wait", periodStart, ev.createdAt, currentClaudeId);
         }
-        state = "working";
+        state = "active";
         periodStart = ev.createdAt;
         currentClaudeId = getClaudeId(ev);
         break;
       }
 
-      case "session.block": {
-        if (state === "working" && periodStart) {
+      case "session.waiting": {
+        if (state === "active" && periodStart) {
           pushSegment(segments, "claude_work", periodStart, ev.createdAt, currentClaudeId);
         }
-        state = "blocked";
+        state = "waiting";
         periodStart = ev.createdAt;
         currentClaudeId = getClaudeId(ev) ?? currentClaudeId;
         break;
       }
 
-      case "session.resume": {
-        if (state === "blocked" && periodStart) {
+      case "session.answered": {
+        if (state === "waiting" && periodStart) {
           pushSegment(segments, "user_wait", periodStart, ev.createdAt, currentClaudeId);
         }
-        state = "working";
+        state = "active";
         periodStart = ev.createdAt;
         currentClaudeId = getClaudeId(ev) ?? currentClaudeId;
         break;
       }
 
       case "claude.ended": {
-        if (state === "working" && periodStart) {
+        if (state === "active" && periodStart) {
           pushSegment(segments, "claude_work", periodStart, ev.createdAt, currentClaudeId);
         }
-        if (state === "blocked" && periodStart) {
+        if (state === "waiting" && periodStart) {
           pushSegment(segments, "user_wait", periodStart, ev.createdAt, currentClaudeId);
         }
         state = "idle";
@@ -127,9 +127,9 @@ export function computeTimings(events: EventRow[]): TimingSummary {
   // Close any open period (crash / active session without claude.ended)
   const lastEvent = events[events.length - 1];
   if (state !== "idle" && periodStart && lastEvent) {
-    if (state === "working") {
+    if (state === "active") {
       pushSegment(segments, "claude_work", periodStart, lastEvent.createdAt, currentClaudeId);
-    } else if (state === "blocked") {
+    } else if (state === "waiting") {
       pushSegment(segments, "user_wait", periodStart, lastEvent.createdAt, currentClaudeId);
     }
   }
@@ -170,7 +170,7 @@ export function computeAndPersist(sessionId: string): TimingSummary {
     events.filter((e) => e.conversationId).map((e) => e.conversationId)
   );
   const interactionCount = events.filter(
-    (e) => e.event === "session.block" || e.event === "session.resume"
+    (e) => e.event === "session.waiting" || e.event === "session.answered"
   ).length;
 
   upsertSessionStats(sessionId, {

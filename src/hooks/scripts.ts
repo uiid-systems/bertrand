@@ -9,7 +9,7 @@
  *   - grep/sed used instead of jq for simple field extraction (~1ms vs ~15ms)
  *   - jq -n kept for building meta JSON (safe escaping, acceptable cost)
  *   - badge/notify backgrounded where possible (terminal UI doesn't need to block Claude)
- *   - workingScript has a debounce guard to skip redundant updates
+ *   - activeScript has a debounce guard to skip redundant updates
  */
 
 import { paths } from "@/lib/paths";
@@ -20,10 +20,10 @@ const BIN = paths.bin;
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
 
-/** PreToolUse AskUserQuestion → mark session as blocked */
-export function blockedScript(): string {
+/** PreToolUse AskUserQuestion → mark session as waiting */
+export function waitingScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PreToolUse AskUserQuestion → mark session as blocked
+# Hook: PreToolUse AskUserQuestion → mark session as waiting
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -37,7 +37,7 @@ question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut 
 # Clear working debounce marker so next resume→working transition fires
 rm -f "/tmp/bertrand-working-$sid"
 
-${BIN} update --session-id "$sid" --event session.block --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
 # Extract "Done for now" description as rolling session summary
 done_desc="$(printf '%s' "$input" | jq -r '.tool_input.questions[]?.options[]? | select(.label == "Done for now") | .description // empty' 2>/dev/null | head -1 | cut -c1-120)"
@@ -52,10 +52,10 @@ wait
 `;
 }
 
-/** PostToolUse AskUserQuestion → mark session as prompting (user answered) */
-export function resumedScript(): string {
+/** PostToolUse AskUserQuestion → mark session as active (user answered) */
+export function answeredScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PostToolUse AskUserQuestion → mark session as prompting
+# Hook: PostToolUse AskUserQuestion → mark session as active
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -69,21 +69,21 @@ answer="$(printf '%s' "$input" | jq -r '
   empty
 ' 2>/dev/null | head -1 | cut -c1-200)"
 
-${BIN} update --session-id "$sid" --event session.resume --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.answered --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
 
 ${BIN} badge --clear &
 wait
 `;
 }
 
-/** PreToolUse (catch-all) → flip prompting to working */
-export function workingScript(): string {
+/** PreToolUse (catch-all) → flip waiting to active */
+export function activeScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PreToolUse (catch-all) → flip prompting to working
+# Hook: PreToolUse (catch-all) → flip waiting to active
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
-# Debounce: skip if we already sent session.working within the last 5 seconds.
+# Debounce: skip if we already sent session.active within the last 5 seconds.
 # This avoids spawning bertrand (~31ms) on every tool call during rapid sequences.
 marker="/tmp/bertrand-working-$sid"
 if [ -f "$marker" ]; then
@@ -99,7 +99,7 @@ ${EXTRACT_TOOL}
 
 touch "$marker"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event session.working --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 `;
 }
 
@@ -176,9 +176,9 @@ ${BIN} badge check --color '#58c142' --priority 10
 }
 
 export const HOOK_SCRIPTS = {
-  "on-blocked.sh": blockedScript,
-  "on-resumed.sh": resumedScript,
-  "on-working.sh": workingScript,
+  "on-waiting.sh": waitingScript,
+  "on-answered.sh": answeredScript,
+  "on-active.sh": activeScript,
   "on-permission-wait.sh": permissionWaitScript,
   "on-permission-done.sh": permissionDoneScript,
   "on-done.sh": doneScript,

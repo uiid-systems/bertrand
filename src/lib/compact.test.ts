@@ -34,24 +34,24 @@ function t(minutes: number): string {
 describe("repairQAPairs", () => {
   test("already adjacent — no change", () => {
     const events = [
-      ev("session.block", t(0), { claudeId: "c1" }),
-      ev("session.resume", t(1), { claudeId: "c1" }),
+      ev("session.waiting", t(0), { claudeId: "c1" }),
+      ev("session.answered", t(1), { claudeId: "c1" }),
     ];
     const result = repairQAPairs(events);
-    expect(result.map((e) => e.event)).toEqual(["session.block", "session.resume"]);
+    expect(result.map((e) => e.event)).toEqual(["session.waiting", "session.answered"]);
   });
 
   test("relocates resume to be adjacent to block", () => {
     const events = [
-      ev("session.block", t(0), { claudeId: "c1" }),
+      ev("session.waiting", t(0), { claudeId: "c1" }),
       ev("permission.request", t(1)),
       ev("permission.resolve", t(2)),
-      ev("session.resume", t(3), { claudeId: "c1" }),
+      ev("session.answered", t(3), { claudeId: "c1" }),
     ];
     const result = repairQAPairs(events);
     expect(result.map((e) => e.event)).toEqual([
-      "session.block",
-      "session.resume",
+      "session.waiting",
+      "session.answered",
       "permission.request",
       "permission.resolve",
     ]);
@@ -60,23 +60,23 @@ describe("repairQAPairs", () => {
   test("no matching block — resume stays in place", () => {
     const events = [
       ev("permission.request", t(0)),
-      ev("session.resume", t(1), { claudeId: "c1" }),
+      ev("session.answered", t(1), { claudeId: "c1" }),
     ];
     const result = repairQAPairs(events);
-    expect(result.map((e) => e.event)).toEqual(["permission.request", "session.resume"]);
+    expect(result.map((e) => e.event)).toEqual(["permission.request", "session.answered"]);
   });
 
   test("mismatched claudeId — no relocation", () => {
     const events = [
-      ev("session.block", t(0), { claudeId: "c1" }),
+      ev("session.waiting", t(0), { claudeId: "c1" }),
       ev("permission.request", t(1)),
-      ev("session.resume", t(2), { claudeId: "c2" }),
+      ev("session.answered", t(2), { claudeId: "c2" }),
     ];
     const result = repairQAPairs(events);
     expect(result.map((e) => e.event)).toEqual([
-      "session.block",
+      "session.waiting",
       "permission.request",
-      "session.resume",
+      "session.answered",
     ]);
   });
 });
@@ -112,13 +112,13 @@ describe("collapsePermissions", () => {
       ev("claude.started", t(0)),
       ev("permission.request", t(1), { meta: { tool: "Bash" } }),
       ev("permission.resolve", t(2), { meta: { tool: "Bash" } }),
-      ev("session.block", t(3)),
+      ev("session.waiting", t(3)),
     ];
     const result = collapsePermissions(events);
     expect(result).toHaveLength(3);
     expect(result[0]!.event).toBe("claude.started");
     expect(result[1]!.event).toBe("tool.work");
-    expect(result[2]!.event).toBe("session.block");
+    expect(result[2]!.event).toBe("session.waiting");
   });
 
   test("empty list", () => {
@@ -129,9 +129,9 @@ describe("collapsePermissions", () => {
 describe("deduplicate", () => {
   test("collapses consecutive identical events", () => {
     const events = [
-      ev("session.block", t(0), { summary: "q?" }),
-      ev("session.block", t(1), { summary: "q?" }),
-      ev("session.block", t(2), { summary: "q?" }),
+      ev("session.waiting", t(0), { summary: "q?" }),
+      ev("session.waiting", t(1), { summary: "q?" }),
+      ev("session.waiting", t(2), { summary: "q?" }),
     ];
     const result = deduplicate(events);
     expect(result).toHaveLength(1);
@@ -140,8 +140,8 @@ describe("deduplicate", () => {
 
   test("different summaries are not collapsed", () => {
     const events = [
-      ev("session.block", t(0), { summary: "q1?" }),
-      ev("session.block", t(1), { summary: "q2?" }),
+      ev("session.waiting", t(0), { summary: "q1?" }),
+      ev("session.waiting", t(1), { summary: "q2?" }),
     ];
     const result = deduplicate(events);
     expect(result).toHaveLength(2);
@@ -149,8 +149,8 @@ describe("deduplicate", () => {
 
   test("different event types are not collapsed", () => {
     const events = [
-      ev("session.block", t(0)),
-      ev("session.resume", t(1)),
+      ev("session.waiting", t(0)),
+      ev("session.answered", t(1)),
     ];
     const result = deduplicate(events);
     expect(result).toHaveLength(2);
@@ -180,9 +180,9 @@ describe("compact (pipeline)", () => {
       ev("permission.request", t(1), { meta: { tool: "Bash", detail: "npm test" } }),
       ev("permission.resolve", t(2), { meta: { tool: "Bash" } }),
       ev("context.snapshot", t(3)),
-      ev("session.block", t(4), { claudeId: "c1", summary: "Which file?" }),
+      ev("session.waiting", t(4), { claudeId: "c1", summary: "Which file?" }),
       ev("permission.request", t(5), { meta: { tool: "Read" } }),
-      ev("session.resume", t(6), { claudeId: "c1", summary: "src/index.ts" }),
+      ev("session.answered", t(6), { claudeId: "c1", summary: "src/index.ts" }),
       ev("claude.ended", t(7), { claudeId: "c1" }),
     ];
     const result = compact(events);
@@ -193,15 +193,15 @@ describe("compact (pipeline)", () => {
     const eventTypes = result.map((e) => e.event);
     expect(eventTypes).toContain("claude.started");
     expect(eventTypes).toContain("tool.work");
-    expect(eventTypes).toContain("session.block");
-    expect(eventTypes).toContain("session.resume");
+    expect(eventTypes).toContain("session.waiting");
+    expect(eventTypes).toContain("session.answered");
     expect(eventTypes).toContain("claude.ended");
     expect(eventTypes).not.toContain("context.snapshot");
     expect(eventTypes).not.toContain("permission.request");
 
     // Block and resume should be adjacent
-    const blockIdx = result.findIndex((e) => e.event === "session.block");
-    const resumeIdx = result.findIndex((e) => e.event === "session.resume");
+    const blockIdx = result.findIndex((e) => e.event === "session.waiting");
+    const resumeIdx = result.findIndex((e) => e.event === "session.answered");
     expect(resumeIdx).toBe(blockIdx + 1);
   });
 

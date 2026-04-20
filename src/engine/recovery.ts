@@ -14,7 +14,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Detect sessions stuck in an active state (working/blocked/prompting)
+ * Detect sessions stuck in an active state (active/waiting)
  * whose owning process is no longer running, and recover them to paused.
  *
  * Returns the number of recovered sessions.

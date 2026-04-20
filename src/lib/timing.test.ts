@@ -42,8 +42,8 @@ describe("computeTimings", () => {
   test("work → block → resume → ended", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(3), "c1"),
-      ev("session.resume", t(5), "c1"),
+      ev("session.waiting", t(3), "c1"),
+      ev("session.answered", t(5), "c1"),
       ev("claude.ended", t(10), "c1"),
     ]);
     expect(result.segments).toHaveLength(3);
@@ -58,10 +58,10 @@ describe("computeTimings", () => {
   test("multiple block/resume cycles", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(2), "c1"),
-      ev("session.resume", t(3), "c1"),
-      ev("session.block", t(6), "c1"),
-      ev("session.resume", t(8), "c1"),
+      ev("session.waiting", t(2), "c1"),
+      ev("session.answered", t(3), "c1"),
+      ev("session.waiting", t(6), "c1"),
+      ev("session.answered", t(8), "c1"),
       ev("claude.ended", t(10), "c1"),
     ]);
     expect(result.segments).toHaveLength(5);
@@ -76,8 +76,8 @@ describe("computeTimings", () => {
       ev("claude.started", t(0), "c1"),
       ev("claude.ended", t(5), "c1"),
       ev("claude.started", t(6), "c2"),
-      ev("session.block", t(8), "c2"),
-      ev("session.resume", t(10), "c2"),
+      ev("session.waiting", t(8), "c2"),
+      ev("session.answered", t(10), "c2"),
       ev("claude.ended", t(12), "c2"),
     ]);
     expect(result.segments).toHaveLength(4);
@@ -89,7 +89,7 @@ describe("computeTimings", () => {
   test("claude ended while user blocked closes wait period", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(3), "c1"),
+      ev("session.waiting", t(3), "c1"),
       ev("claude.ended", t(5), "c1"),
     ]);
     expect(result.segments).toHaveLength(2);
@@ -110,8 +110,8 @@ describe("computeTimings", () => {
 
   test("malformed: block without prior started is ignored", () => {
     const result = computeTimings([
-      ev("session.block", t(0)),
-      ev("session.resume", t(2)),
+      ev("session.waiting", t(0)),
+      ev("session.answered", t(2)),
     ]);
     // block in idle → enters blocked state, but no work segment emitted
     // resume closes the wait period
@@ -122,8 +122,8 @@ describe("computeTimings", () => {
   test("zero-duration segments are discarded", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(0), "c1"), // same timestamp
-      ev("session.resume", t(2), "c1"),
+      ev("session.waiting", t(0), "c1"), // same timestamp
+      ev("session.answered", t(2), "c1"),
       ev("claude.ended", t(2), "c1"), // same timestamp
     ]);
     // work(0) discarded, wait(2) kept, work(0) discarded
@@ -150,8 +150,8 @@ describe("computeTimings", () => {
   test("open work period closed at end of stream (no claude.ended)", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(3), "c1"),
-      ev("session.resume", t(5), "c1"),
+      ev("session.waiting", t(3), "c1"),
+      ev("session.answered", t(5), "c1"),
     ]);
     // work(3) + wait(2) + work(0 — last event is resume, same ts as period start)
     expect(result.segments).toHaveLength(2);
@@ -162,7 +162,7 @@ describe("computeTimings", () => {
   test("open blocked period closed at end of stream", () => {
     const result = computeTimings([
       ev("claude.started", t(0), "c1"),
-      ev("session.block", t(3), "c1"),
+      ev("session.waiting", t(3), "c1"),
     ]);
     expect(result.segments).toHaveLength(1);
     expect(result.segments[0]).toMatchObject({ type: "claude_work", durationMs: 3 * 60_000 });

@@ -7,7 +7,7 @@ import {
 import { getGroupByPath } from "@/db/queries/groups";
 import { parseSessionName } from "@/lib/parse-session-name";
 
-const ACTIVE_STATUSES = ["working", "blocked", "prompting"] as const;
+const ACTIVE_STATUSES = ["active", "waiting"] as const;
 
 function resolveSession(name: string) {
   const { groupPath, slug } = parseSessionName(name);

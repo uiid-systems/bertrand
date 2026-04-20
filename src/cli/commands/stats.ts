@@ -20,7 +20,7 @@ interface SessionMetrics {
   durationS: number;
 }
 
-const ACTIVE_STATUSES = ["working", "blocked", "prompting"];
+const ACTIVE_STATUSES = ["active", "waiting"];
 
 function getMetrics(sessionId: string, name: string, status: string): SessionMetrics {
   const stats = getSessionStats(sessionId);
@@ -38,7 +38,7 @@ function getMetrics(sessionId: string, name: string, status: string): SessionMet
 
   for (const ev of allEvents) {
     if (ev.conversationId) conversations.add(ev.conversationId);
-    if (ev.event === "session.block" || ev.event === "session.resume") interactionCount++;
+    if (ev.event === "session.waiting" || ev.event === "session.answered") interactionCount++;
     if (ev.event === "gh.pr.created") prCount++;
   }
 

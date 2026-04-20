@@ -2,7 +2,7 @@ import type { EnrichedEvent } from "./catalog";
 import { lookup } from "./catalog";
 
 /**
- * Stage 1: Relocate session.resume events to sit immediately after their matching session.block.
+ * Stage 1: Relocate session.answered events to sit immediately after their matching session.waiting.
  * Matches by claudeId. If already adjacent, no change.
  */
 export function repairQAPairs(events: EnrichedEvent[]): EnrichedEvent[] {
@@ -10,13 +10,13 @@ export function repairQAPairs(events: EnrichedEvent[]): EnrichedEvent[] {
 
   for (let i = 0; i < result.length; i++) {
     const ev = result[i]!;
-    if (ev.event !== "session.resume") continue;
+    if (ev.event !== "session.answered") continue;
 
-    // Find the closest preceding session.block with matching claudeId
+    // Find the closest preceding session.waiting with matching claudeId
     let blockIdx = -1;
     for (let j = i - 1; j >= 0; j--) {
       const candidate = result[j]!;
-      if (candidate.event === "session.block" && candidate.claudeId === ev.claudeId) {
+      if (candidate.event === "session.waiting" && candidate.claudeId === ev.claudeId) {
         blockIdx = j;
         break;
       }

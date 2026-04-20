@@ -27,9 +27,8 @@ function ansi256(code: number, text: string): string {
 // --- Status dots ---
 
 const STATUS_DOTS: Record<string, string> = {
-  working: ansi(32, "●"),
-  blocked: ansi(33, "●"),
-  prompting: ansi(36, "●"),
+  active: ansi(32, "●"),
+  waiting: ansi(33, "●"),
   paused: `${DIM}●${RESET}`,
   archived: `${DIM}○${RESET}`,
 };
@@ -151,9 +150,9 @@ function renderSegment(seg: Segment, segIdx: number, totalSegs: number) {
     }
 
     // Q&A pair rendering
-    if (ev.event === "session.block") {
+    if (ev.event === "session.waiting") {
       const next = seg.events[i + 1];
-      const resume = next?.event === "session.resume" ? next : undefined;
+      const resume = next?.event === "session.answered" ? next : undefined;
       const qaLines = renderQAPair(ev, resume);
       lines.push(`${connector} ${qaLines[0]}`);
       for (let j = 1; j < qaLines.length; j++) {

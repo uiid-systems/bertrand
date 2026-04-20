@@ -57,7 +57,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Update session to working with PID
-  updateSession(session.id, { status: "working", pid: process.pid });
+  updateSession(session.id, { status: "active", pid: process.pid });
 
   // Log start events
   insertEvent({
@@ -120,7 +120,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
 
   const group = getGroup(session.groupId);
   const sessionName = group ? `${group.path}/${session.slug}` : session.name;
-  updateSession(session.id, { status: "working", pid: process.pid });
+  updateSession(session.id, { status: "active", pid: process.pid });
 
   insertEvent({
     sessionId: session.id,

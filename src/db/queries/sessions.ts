@@ -4,9 +4,8 @@ import { sessions, groups } from "@/db/schema";
 import { createId } from "@/lib/id";
 
 export type SessionStatus =
-  | "working"
-  | "blocked"
-  | "prompting"
+  | "active"
+  | "waiting"
   | "paused"
   | "archived";
 
@@ -49,7 +48,7 @@ export function getActiveSessions() {
     .select({ session: sessions, groupPath: groups.path })
     .from(sessions)
     .innerJoin(groups, eq(sessions.groupId, groups.id))
-    .where(inArray(sessions.status, ["working", "blocked", "prompting"]))
+    .where(inArray(sessions.status, ["active", "waiting"]))
     .all();
 }
 
@@ -64,9 +63,8 @@ export function getAllSessions(opts?: { excludeArchived?: boolean }) {
     return query
       .where(
         inArray(sessions.status, [
-          "working",
-          "blocked",
-          "prompting",
+          "active",
+          "waiting",
           "paused",
         ])
       )

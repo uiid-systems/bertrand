@@ -7,8 +7,8 @@ const EVENT_TYPES = [
   "claude.started",
   "claude.ended",
   "claude.discarded",
-  "session.block",
-  "session.resume",
+  "session.waiting",
+  "session.answered",
   "permission.request",
   "permission.resolve",
   "worktree.entered",
@@ -47,8 +47,8 @@ const catalog = {
   "claude.started": { label: "claude started", category: "lifecycle", color: 35, detailColor: 245, skip: false },
   "claude.ended": { label: "claude ended", category: "lifecycle", color: 35, detailColor: 245, skip: false },
   "claude.discarded": { label: "discarded", category: "lifecycle", color: 245, detailColor: 245, skip: false },
-  "session.block": { label: "blocked", category: "interaction", color: 33, detailColor: 245, skip: false },
-  "session.resume": { label: "responded", category: "interaction", color: 36, detailColor: 245, skip: false },
+  "session.waiting": { label: "waiting", category: "interaction", color: 33, detailColor: 245, skip: false },
+  "session.answered": { label: "answered", category: "interaction", color: 36, detailColor: 245, skip: false },
   "permission.request": { label: "permission", category: "work", color: 214, detailColor: 245, skip: false },
   "permission.resolve": { label: "allowed", category: "work", color: 214, detailColor: 245, skip: false },
   "worktree.entered": { label: "worktree", category: "lifecycle", color: 35, detailColor: 245, skip: false },
@@ -121,9 +121,9 @@ function extractSummary(row: EventRow): string {
   if (!meta) return "";
 
   switch (row.event) {
-    case "session.block":
+    case "session.waiting":
       return (meta.question as string) ?? "";
-    case "session.resume":
+    case "session.answered":
       return (meta.answer as string) ?? "";
     case "permission.request":
     case "permission.resolve": {

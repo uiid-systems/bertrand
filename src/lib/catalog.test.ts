@@ -8,8 +8,8 @@ const ALL_EVENT_TYPES: EventType[] = [
   "claude.started",
   "claude.ended",
   "claude.discarded",
-  "session.block",
-  "session.resume",
+  "session.waiting",
+  "session.answered",
   "permission.request",
   "permission.resolve",
   "worktree.entered",
@@ -59,7 +59,7 @@ describe("lookup", () => {
 
   test("categories are correct", () => {
     expect(lookup("session.started").category).toBe("lifecycle");
-    expect(lookup("session.block").category).toBe("interaction");
+    expect(lookup("session.waiting").category).toBe("interaction");
     expect(lookup("permission.request").category).toBe("work");
     expect(lookup("gh.pr.created").category).toBe("integration");
     expect(lookup("context.snapshot").category).toBe("context");
@@ -85,13 +85,13 @@ describe("enrich", () => {
     expect(enriched.claudeId).toBe("meta-id");
   });
 
-  test("extracts summary from session.block question", () => {
-    const enriched = enrich(row("session.block", { question: "What file?" }));
+  test("extracts summary from session.waiting question", () => {
+    const enriched = enrich(row("session.waiting", { question: "What file?" }));
     expect(enriched.summary).toBe("What file?");
   });
 
-  test("extracts summary from session.resume answer", () => {
-    const enriched = enrich(row("session.resume", { answer: "src/index.ts" }));
+  test("extracts summary from session.answered answer", () => {
+    const enriched = enrich(row("session.answered", { answer: "src/index.ts" }));
     expect(enriched.summary).toBe("src/index.ts");
   });
 
@@ -140,7 +140,7 @@ describe("enrich", () => {
 
 describe("enrichAll", () => {
   test("enriches multiple events", () => {
-    const rows = [row("session.started"), row("claude.started"), row("session.block", { question: "q?" })];
+    const rows = [row("session.started"), row("claude.started"), row("session.waiting", { question: "q?" })];
     const enriched = enrichAll(rows);
     expect(enriched).toHaveLength(3);
     expect(enriched[0].label).toBe("started");

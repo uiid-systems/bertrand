@@ -5,9 +5,8 @@ import { getSessionStats } from "@/db/queries/stats";
 import { formatAgo, formatDuration } from "@/lib/format";
 
 const STATUS_DOTS: Record<string, string> = {
-  working: "\x1b[32m●\x1b[0m",    // green
-  blocked: "\x1b[33m●\x1b[0m",    // yellow
-  prompting: "\x1b[36m●\x1b[0m",  // cyan
+  active: "\x1b[32m●\x1b[0m",     // green
+  waiting: "\x1b[33m●\x1b[0m",    // yellow
   paused: "\x1b[90m●\x1b[0m",     // gray
   archived: "\x1b[90m○\x1b[0m",   // gray hollow
 };
