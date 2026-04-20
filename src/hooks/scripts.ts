@@ -1,8 +1,8 @@
 /**
  * Bash hook script templates.
  *
- * Architecture: Claude Code hooks → bash scripts → `bertrand update` → SQLite
- * Terminal integration via `bertrand badge` / `bertrand notify` (adapter-based).
+ * Architecture: Claude Code hooks → bash scripts → `${BIN} update` → SQLite
+ * Terminal integration via `${BIN} badge` / `${BIN} notify` (adapter-based).
  * The hooks read BERTRAND_SESSION (session ID) and BERTRAND_CLAUDE_ID from env.
  *
  * Performance notes:
@@ -11,6 +11,11 @@
  *   - badge/notify backgrounded where possible (terminal UI doesn't need to block Claude)
  *   - workingScript has a debounce guard to skip redundant updates
  */
+
+import { paths } from "@/lib/paths";
+
+/** Absolute path to the TS bertrand binary — avoids resolving the Go binary from PATH */
+const BIN = paths.bin;
 
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
@@ -32,17 +37,17 @@ question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut 
 # Clear working debounce marker so next resume→working transition fires
 rm -f "/tmp/bertrand-working-$sid"
 
-bertrand update --session-id "$sid" --event session.block --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.block --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
 # Extract "Done for now" description as rolling session summary
 done_desc="$(printf '%s' "$input" | jq -r '.tool_input.questions[]?.options[]? | select(.label == "Done for now") | .description // empty' 2>/dev/null | head -1 | cut -c1-120)"
 if [ -n "$done_desc" ]; then
-  bertrand update --session-id "$sid" --event context.snapshot --meta "$(jq -n --arg s "$done_desc" '{summary:$s}')" &
+  ${BIN} update --session-id "$sid" --event context.snapshot --meta "$(jq -n --arg s "$done_desc" '{summary:$s}')" &
 fi
 
 # Badge + notify in background — terminal UI doesn't need to block Claude
-bertrand badge message-question --color '#e0b956' --priority 20 --beep &
-bertrand notify bertrand "$question" &
+${BIN} badge message-question --color '#e0b956' --priority 20 --beep &
+${BIN} notify bertrand "$question" &
 wait
 `;
 }
@@ -64,9 +69,9 @@ answer="$(printf '%s' "$input" | jq -r '
   empty
 ' 2>/dev/null | head -1 | cut -c1-200)"
 
-bertrand update --session-id "$sid" --event session.resume --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.resume --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
 
-bertrand badge --clear &
+${BIN} badge --clear &
 wait
 `;
 }
@@ -94,7 +99,7 @@ ${EXTRACT_TOOL}
 
 touch "$marker"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bertrand update --session-id "$sid" --event session.working --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.working --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 `;
 }
 
@@ -117,11 +122,11 @@ case "$tool" in
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bertrand update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
 # Badge + notify in background
-bertrand badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
-bertrand notify bertrand "Needs permission: $tool" &
+${BIN} badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
+${BIN} notify bertrand "Needs permission: $tool" &
 wait
 `;
 }
@@ -149,9 +154,9 @@ case "$tool" in
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bertrand update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
-bertrand badge --clear &
+${BIN} badge --clear &
 wait
 `;
 }
@@ -164,9 +169,9 @@ sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bertrand update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+${BIN} update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 
-bertrand badge check --color '#58c142' --priority 10
+${BIN} badge check --color '#58c142' --priority 10
 `;
 }
 
