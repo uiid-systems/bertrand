@@ -155,6 +155,11 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     endedAt: new Date().toISOString(),
   });
 
+  insertEvent({
+    sessionId: session.id,
+    event: "session.end",
+  });
+
   computeAndPersist(session.id);
 
   return session.id;
