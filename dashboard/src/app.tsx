@@ -1,47 +1,12 @@
-import { useState, useEffect } from "react"
-
-type Session = {
-  session: {
-    id: string
-    slug: string
-    name: string
-    status: string
-    startedAt: string
-    endedAt: string | null
-  }
-  groupPath: string
-}
-
-type Event = {
-  id: number
-  sessionId: string
-  conversationId: string | null
-  event: string
-  summary: string | null
-  meta: Record<string, unknown> | null
-  createdAt: string
-}
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { sessionsQuery, eventsQuery } from "./api/queries"
 
 export function App() {
-  const [sessions, setSessions] = useState<Session[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [events, setEvents] = useState<Event[]>([])
 
-  useEffect(() => {
-    fetch("/api/sessions")
-      .then((r) => r.json())
-      .then(setSessions)
-  }, [])
-
-  useEffect(() => {
-    if (!selectedSessionId) {
-      setEvents([])
-      return
-    }
-    fetch(`/api/events/${selectedSessionId}`)
-      .then((r) => r.json())
-      .then(setEvents)
-  }, [selectedSessionId])
+  const { data: sessions = [] } = useQuery(sessionsQuery)
+  const { data: events = [] } = useQuery(eventsQuery(selectedSessionId!))
 
   return (
     <div style={{ fontFamily: "monospace", padding: 24 }}>
