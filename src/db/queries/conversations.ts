@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { conversations } from "@/db/schema";
 
@@ -38,7 +38,7 @@ export function getConversationsBySession(sessionId: string) {
 export function endConversation(id: string) {
   return getDb()
     .update(conversations)
-    .set({ endedAt: new Date().toISOString() })
+    .set({ endedAt: sql`(datetime('now'))` })
     .where(eq(conversations.id, id))
     .returning()
     .get();

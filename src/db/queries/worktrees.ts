@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { worktreeAssociations } from "@/db/schema";
 import { createId } from "@/lib/id";
@@ -47,7 +47,7 @@ export function getAllActiveWorktrees() {
 export function exitWorktree(id: string) {
   return getDb()
     .update(worktreeAssociations)
-    .set({ active: false, exitedAt: new Date().toISOString() })
+    .set({ active: false, exitedAt: sql`(datetime('now'))` })
     .where(eq(worktreeAssociations.id, id))
     .returning()
     .get();

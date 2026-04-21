@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { sessions, groups } from "@/db/schema";
 import { createId } from "@/lib/id";
@@ -77,7 +77,7 @@ export function getAllSessions(opts?: { excludeArchived?: boolean }) {
 export function updateSessionStatus(id: string, status: SessionStatus) {
   return getDb()
     .update(sessions)
-    .set({ status, updatedAt: new Date().toISOString() })
+    .set({ status, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();
@@ -94,7 +94,7 @@ export function updateSession(
 ) {
   return getDb()
     .update(sessions)
-    .set({ ...data, updatedAt: new Date().toISOString() })
+    .set({ ...data, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();
@@ -103,7 +103,7 @@ export function updateSession(
 export function renameSession(id: string, slug: string, name?: string) {
   return getDb()
     .update(sessions)
-    .set({ slug, name: name ?? slug, updatedAt: new Date().toISOString() })
+    .set({ slug, name: name ?? slug, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();
@@ -112,7 +112,7 @@ export function renameSession(id: string, slug: string, name?: string) {
 export function moveSession(id: string, groupId: string) {
   return getDb()
     .update(sessions)
-    .set({ groupId, updatedAt: new Date().toISOString() })
+    .set({ groupId, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();

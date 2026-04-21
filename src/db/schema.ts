@@ -41,7 +41,7 @@ export const sessions = sqliteTable(
     id: text("id").primaryKey(),
     groupId: text("group_id")
       .notNull()
-      .references(() => groups.id),
+      .references(() => groups.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     status: text("status", {

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { sessionStats } from "@/db/schema";
 
@@ -28,11 +28,11 @@ export function upsertSessionStats(
     .values({
       sessionId,
       ...data,
-      updatedAt: new Date().toISOString(),
+      updatedAt: sql`(datetime('now'))`,
     })
     .onConflictDoUpdate({
       target: sessionStats.sessionId,
-      set: { ...data, updatedAt: new Date().toISOString() },
+      set: { ...data, updatedAt: sql`(datetime('now'))` },
     })
     .returning()
     .get();
