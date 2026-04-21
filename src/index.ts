@@ -10,6 +10,7 @@ const hotPath: Record<string, () => Promise<unknown>> = {
   update: () => import("./cli/commands/update"),
   badge: () => import("./cli/commands/badge"),
   notify: () => import("./cli/commands/notify"),
+  serve: () => import("./cli/commands/serve"),
 };
 
 if (command && command in hotPath) {
