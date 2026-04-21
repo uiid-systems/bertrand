@@ -1,5 +1,6 @@
 import { register } from "@/cli/router";
+import { startServer } from "@/server/index";
 
 register("serve", async () => {
-  console.log("TODO: Start dashboard HTTP server");
+  startServer();
 });
