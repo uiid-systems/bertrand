@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { eventsQuery, statsQuery } from "../../api/queries"
 
@@ -13,17 +13,13 @@ function SessionDetail() {
 
   return (
     <div>
-      <Link to="/" style={{ color: "inherit", fontSize: 12, opacity: 0.6 }}>
-        &larr; back
-      </Link>
-
       {stats && (
-        <div style={{ margin: "12px 0", fontSize: 12, opacity: 0.7 }}>
+        <div style={{ marginBottom: 12, fontSize: 12, opacity: 0.7 }}>
           {stats.eventCount} events &middot; {stats.conversationCount} conversations &middot; {stats.interactionCount} interactions
         </div>
       )}
 
-      <h2 style={{ fontSize: 14, margin: "12px 0 8px" }}>
+      <h2 style={{ fontSize: 14, marginBottom: 8 }}>
         Events ({events.length})
       </h2>
 
