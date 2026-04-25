@@ -1,50 +1,102 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { eventsQuery, statsQuery } from "../../api/queries"
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+
+import { Card, Stack, Text, Timeline } from "@uiid/design-system";
+import {
+  ArrowLeftRightIcon,
+  ClockIcon,
+  CpuIcon,
+  GitPullRequestIcon,
+  HandshakeIcon,
+  HourglassIcon,
+  MessageSquareMoreIcon,
+} from "@uiid/icons";
+
+import { eventsQuery, statsQuery } from "../../api/queries";
+import { eventColor, eventDescription, eventTitle, formatDuration, formatTimestamp } from "../../lib/format";
+import { useSecondarySidebar } from "../../lib/secondary-sidebar-context";
 
 export const Route = createFileRoute("/sessions/$sessionId")({
   component: SessionDetail,
-})
+});
 
 function SessionDetail() {
-  const { sessionId } = Route.useParams()
-  const { data: events = [] } = useQuery(eventsQuery(sessionId))
-  const { data: stats } = useQuery(statsQuery(sessionId))
+  const { sessionId } = Route.useParams();
+  const { data: events = [] } = useQuery(eventsQuery(sessionId));
+  const { data: stats } = useQuery(statsQuery(sessionId));
+
+  useSecondarySidebar(
+    stats ? (
+      <Stack gap={4} ax="stretch">
+        <Card
+          title="Events"
+          description="Total events emitted"
+          icon={ArrowLeftRightIcon}
+          action={<Stat value={stats.eventCount} />}
+        />
+        <Card
+          title="Interactions"
+          description="User–Claude exchanges"
+          icon={HandshakeIcon}
+          action={<Stat value={stats.interactionCount} />}
+        />
+        <Card
+          title="Conversations"
+          description="Distinct conversation threads"
+          icon={MessageSquareMoreIcon}
+          action={<Stat value={stats.conversationCount} />}
+        />
+        <Card
+          title="Duration"
+          description="Total session time"
+          icon={ClockIcon}
+          action={<Stat label={formatDuration(stats.durationS)} />}
+        />
+        <Card
+          title="Claude work"
+          description="Time Claude spent active"
+          icon={CpuIcon}
+          action={<Stat label={formatDuration(stats.claudeWorkS)} />}
+        />
+        <Card
+          title="User wait"
+          description="Time user spent waiting"
+          icon={HourglassIcon}
+          action={<Stat label={formatDuration(stats.userWaitS)} />}
+        />
+        {stats.prCount > 0 && (
+          <Card
+            title="PRs"
+            description="Pull requests created"
+            icon={GitPullRequestIcon}
+            action={<Stat value={stats.prCount} />}
+          />
+        )}
+      </Stack>
+    ) : null,
+  );
 
   return (
-    <div>
-      {stats && (
-        <div style={{ marginBottom: 12, fontSize: 12, opacity: 0.7 }}>
-          {stats.eventCount} events &middot; {stats.conversationCount} conversations &middot; {stats.interactionCount} interactions
-        </div>
+    <Stack gap={4} ax="stretch" fullwidth>
+      {events.length > 0 && (
+        <Timeline
+          activeIndex={events.length}
+          items={events.map((e) => ({
+            title: eventTitle(e),
+            description: eventDescription(e),
+            time: formatTimestamp(e.createdAt),
+            color: eventColor(e.event),
+          }))}
+          DescriptionProps={{ style: { maxWidth: 360 } }}
+        />
       )}
-
-      <h2 style={{ fontSize: 14, marginBottom: 8 }}>
-        Events ({events.length})
-      </h2>
-
-      {events.map((e) => (
-        <div
-          key={e.id}
-          style={{
-            padding: "8px 12px",
-            marginBottom: 4,
-            border: "1px solid #333",
-            fontSize: 13,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <strong>{e.event}</strong>
-            <span style={{ opacity: 0.5 }}>{e.createdAt}</span>
-          </div>
-          {e.summary && <div style={{ marginTop: 4 }}>{e.summary}</div>}
-          {e.meta && (
-            <pre style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
-              {JSON.stringify(e.meta, null, 2)}
-            </pre>
-          )}
-        </div>
-      ))}
-    </div>
-  )
+    </Stack>
+  );
 }
+
+const Stat = ({ value, label }: { value?: number; label?: string }) => (
+  <Text size={3} family="mono" weight="bold">
+    {label ?? value}
+  </Text>
+);
+Stat.displayName = "Stat";

@@ -1,57 +1,57 @@
-import { createRootRoute, Link, Outlet, useMatchRoute } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { sessionsQuery } from "../api/queries"
+import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+
+import {
+  Stack,
+  Resizable,
+  ResizablePanel,
+  ResizableHandle,
+} from "@uiid/design-system";
+
+import { sessionsQuery } from "../api/queries";
+import { SecondarySidebarProvider } from "../lib/secondary-sidebar-context";
+
+import { Sidebar } from "../components/sidebar";
+import { TopBar } from "../components/topbar";
+import { SecondarySidebar } from "../components/secondary-sidebar";
+
+import "../globals.css";
 
 export const Route = createRootRoute({
   component: RootLayout,
-})
+});
 
 function RootLayout() {
-  const { data: sessions = [] } = useQuery(sessionsQuery)
-  const matchRoute = useMatchRoute()
+  const { data: sessions = [] } = useQuery(sessionsQuery);
 
   return (
-    <div style={{ fontFamily: "monospace", padding: 24 }}>
-      <h1 style={{ fontSize: 16, marginBottom: 16 }}>bertrand</h1>
+    <SecondarySidebarProvider>
+      <Stack fullwidth style={{ position: "fixed", height: "100dvh" }}>
+        <TopBar sessionCount={sessions.length} />
+        <Resizable direction="horizontal">
+          <ResizablePanel defaultSize={360} minSize={320} maxSize={540}>
+            <Sidebar sessions={sessions} />
+          </ResizablePanel>
 
-      <div style={{ display: "flex", gap: 24 }}>
-        <nav style={{ width: 280, flexShrink: 0 }}>
-          <h2 style={{ fontSize: 13, marginBottom: 8, opacity: 0.6 }}>
-            Sessions ({sessions.length})
-          </h2>
-          {sessions.map((s) => {
-            const isActive = matchRoute({
-              to: "/sessions/$sessionId",
-              params: { sessionId: s.session.id },
-            })
-            return (
-              <Link
-                key={s.session.id}
-                to="/sessions/$sessionId"
-                params={{ sessionId: s.session.id }}
-                style={{
-                  display: "block",
-                  padding: "8px 12px",
-                  marginBottom: 4,
-                  border: "1px solid",
-                  borderColor: isActive ? "#fff" : "#333",
-                  background: isActive ? "#222" : "transparent",
-                  color: "inherit",
-                  textDecoration: "none",
-                  fontSize: 13,
-                }}
+          <ResizableHandle />
+          <ResizablePanel>
+            <Stack render={<main />} fullwidth>
+              <Stack
+                data-slot="overflow-container"
+                fullwidth
+                p={8}
+                style={{ overflow: "auto" }}
               >
-                <div>{s.groupPath}/{s.session.slug}</div>
-                <div style={{ fontSize: 11, opacity: 0.6 }}>{s.session.status}</div>
-              </Link>
-            )
-          })}
-        </nav>
-
-        <main style={{ flex: 1, minWidth: 0 }}>
-          <Outlet />
-        </main>
-      </div>
-    </div>
-  )
+                <Outlet />
+              </Stack>
+            </Stack>
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize={460} minSize={380} maxSize={540}>
+            <SecondarySidebar />
+          </ResizablePanel>
+        </Resizable>
+      </Stack>
+    </SecondarySidebarProvider>
+  );
 }
