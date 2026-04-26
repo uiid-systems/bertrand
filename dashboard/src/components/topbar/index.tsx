@@ -1,4 +1,5 @@
 import { Activity } from "react";
+import { Link } from "@tanstack/react-router";
 import { Badge, Text } from "@uiid/design-system";
 import { TopBarWrapper } from "./topbar-wrapper";
 
