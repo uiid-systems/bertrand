@@ -1,8 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Breadcrumbs, Card, Stack, Text, Timeline } from "@uiid/design-system";
+import {
+  Breadcrumbs,
+  Card,
+  Accordion,
+  Stack,
+  Text,
+  Timeline,
+} from "@uiid/design-system";
 import {
   ArrowLeftRightIcon,
   ClockIcon,
@@ -11,6 +18,7 @@ import {
   HandshakeIcon,
   HourglassIcon,
   MessageSquareMoreIcon,
+  CodeIcon,
 } from "@uiid/icons";
 
 import { eventsQuery, sessionsQuery, statsQuery } from "../../api/queries";
@@ -22,21 +30,23 @@ import {
   formatTimestamp,
 } from "../../lib/format";
 import { useSecondarySidebar } from "../../lib/secondary-sidebar-context";
+import { applyTransforms } from "../../lib/timeline/transforms";
 
 export const Route = createFileRoute("/sessions/$sessionId")({
   component: SessionDetail,
 });
 
-const RouterLink = ({ href, children }: { href: string; children: ReactNode }) => (
-  <Link to={href}>{children}</Link>
-);
+const RouterLink = ({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) => <Link to={href}>{children}</Link>;
 
 type Crumb = { label: string; value: string };
 
-function buildBreadcrumbs(
-  groupPath: string,
-  sessionName: string,
-): Crumb[] {
+function buildBreadcrumbs(groupPath: string, sessionName: string): Crumb[] {
   const segments = groupPath.split("/").filter(Boolean);
   const items: Crumb[] = segments.map((segment, i) => ({
     label: segment,
@@ -46,10 +56,20 @@ function buildBreadcrumbs(
   return items;
 }
 
+const MOCK_ITEMS = [
+  {
+    icon: CodeIcon,
+    value: "code",
+    trigger: "Accordion title",
+    content: <div>content here</div>,
+  },
+];
+
 function SessionDetail() {
   const { sessionId } = Route.useParams();
   const { data: sessions = [] } = useQuery(sessionsQuery);
-  const { data: events = [] } = useQuery(eventsQuery(sessionId));
+  const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId));
+  const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
   const { data: stats } = useQuery(statsQuery(sessionId));
 
   const match = sessions.find((s) => s.session.id === sessionId);
@@ -109,20 +129,11 @@ function SessionDetail() {
   );
 
   return (
-    <Stack gap={4} ax="stretch" fullwidth>
-      <Stack
-        bb={1}
-        p={4}
-        style={{
-          position: "sticky",
-          top: 0,
-          backgroundColor: "var(--shade-background)",
-          zIndex: 1,
-        }}
-      >
+    <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
+      <Stack bb={1} p={4}>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
       </Stack>
-      <Stack px={8} style={{ overflow: "auto" }}>
+      <Stack p={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
         {events.length > 0 && (
           <Timeline
             activeIndex={events.length}
@@ -131,7 +142,10 @@ function SessionDetail() {
               description: eventDescription(e),
               time: formatTimestamp(e.createdAt),
               color: eventColor(e.event),
+              content: <Accordion items={MOCK_ITEMS} />,
             }))}
+            ItemProps={{ style: { width: "100%" } }}
+            ContentProps={{ fullwidth: true }}
             DescriptionProps={{ style: { maxWidth: 360 } }}
           />
         )}

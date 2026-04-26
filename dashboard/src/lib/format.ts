@@ -101,6 +101,10 @@ export function eventTitle(event: EventRow): string {
   if (!meta) return label
 
   switch (event.event) {
+    case "session.answered": {
+      const question = meta.question as string | undefined
+      return question ?? label
+    }
     case "permission.request":
     case "permission.resolve": {
       const tool = meta.tool as string | undefined

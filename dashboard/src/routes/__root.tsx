@@ -35,10 +35,8 @@ function RootLayout() {
 
           <ResizableHandle />
           <ResizablePanel>
-            <Stack render={<main />} fullwidth>
-              <Stack data-slot="overflow-container" fullwidth>
-                <Outlet />
-              </Stack>
+            <Stack render={<main />} fullwidth fullheight>
+              <Outlet />
             </Stack>
           </ResizablePanel>
           <ResizableHandle />
