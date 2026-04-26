@@ -39,10 +39,10 @@ rm -f "/tmp/bertrand-working-$sid"
 
 ${BIN} update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
-# Extract "Done for now" description as rolling session summary
-done_desc="$(printf '%s' "$input" | jq -r '.tool_input.questions[]?.options[]? | select(.label == "Done for now") | .description // empty' 2>/dev/null | head -1 | cut -c1-120)"
-if [ -n "$done_desc" ]; then
-  ${BIN} update --session-id "$sid" --event context.snapshot --meta "$(jq -n --arg s "$done_desc" '{summary:$s}')" &
+# Context snapshot — extract transcript path and capture token usage
+tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
+if [ -n "$tpath" ]; then
+  ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
 # Badge + notify in background — terminal UI doesn't need to block Claude
@@ -166,15 +166,22 @@ wait
 `;
 }
 
-/** Stop hook → mark session as paused */
+/** Stop hook → mark session as paused + final context snapshot */
 export function doneScript(): string {
   return `#!/usr/bin/env bash
 # Hook: Stop → mark session as paused
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
+input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 ${BIN} update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+
+# Final context snapshot — capture token usage at session end
+tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
+if [ -n "$tpath" ]; then
+  ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+fi
 
 ${BIN} badge check --color '#58c142' --priority 10
 `;
