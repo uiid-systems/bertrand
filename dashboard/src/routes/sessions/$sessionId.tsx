@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Breadcrumbs,
   Card,
-  Accordion,
   Stack,
   Text,
   Timeline,
@@ -18,19 +17,18 @@ import {
   HandshakeIcon,
   HourglassIcon,
   MessageSquareMoreIcon,
-  CodeIcon,
 } from "@uiid/icons";
 
 import { eventsQuery, sessionsQuery, statsQuery } from "../../api/queries";
 import {
   eventColor,
-  eventDescription,
   eventTitle,
   formatDuration,
   formatTimestamp,
 } from "../../lib/format";
 import { useSecondarySidebar } from "../../lib/secondary-sidebar-context";
 import { applyTransforms } from "../../lib/timeline/transforms";
+import { EventContent } from "../../components/timeline";
 
 export const Route = createFileRoute("/sessions/$sessionId")({
   component: SessionDetail,
@@ -55,15 +53,6 @@ function buildBreadcrumbs(groupPath: string, sessionName: string): Crumb[] {
   items.push({ label: sessionName, value: "" });
   return items;
 }
-
-const MOCK_ITEMS = [
-  {
-    icon: CodeIcon,
-    value: "code",
-    trigger: "Accordion title",
-    content: <div>content here</div>,
-  },
-];
 
 function SessionDetail() {
   const { sessionId } = Route.useParams();
@@ -139,14 +128,12 @@ function SessionDetail() {
             activeIndex={events.length}
             items={events.map((e) => ({
               title: eventTitle(e),
-              description: eventDescription(e),
               time: formatTimestamp(e.createdAt),
               color: eventColor(e.event),
-              content: <Accordion items={MOCK_ITEMS} />,
+              content: <EventContent event={e} />,
             }))}
             ItemProps={{ style: { width: "100%" } }}
             ContentProps={{ fullwidth: true }}
-            DescriptionProps={{ style: { maxWidth: 360 } }}
           />
         )}
       </Stack>

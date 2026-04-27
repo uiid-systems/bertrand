@@ -1,4 +1,5 @@
 import type { EventRow, SessionRow } from "../api/types"
+import { colorOf, labelOf } from "./timeline/categories"
 
 type SessionStatus = SessionRow["status"]
 
@@ -38,61 +39,9 @@ export function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-type TimelineColor = "red" | "orange" | "yellow" | "green" | "blue" | "indigo" | "purple" | "neutral"
+export const eventColor = colorOf
 
-const EVENT_CATEGORY: Record<string, TimelineColor> = {
-  "session.started": "blue",
-  "session.resumed": "blue",
-  "session.end": "neutral",
-  "claude.started": "blue",
-  "claude.ended": "blue",
-  "claude.discarded": "neutral",
-  "session.waiting": "green",
-  "session.answered": "green",
-  "permission.request": "orange",
-  "permission.resolve": "orange",
-  "worktree.entered": "indigo",
-  "worktree.exited": "indigo",
-  "gh.pr.created": "purple",
-  "gh.pr.merged": "purple",
-  "linear.issue.read": "purple",
-  "notion.page.read": "purple",
-  "vercel.deploy": "purple",
-  "user.prompt": "green",
-  "context.snapshot": "neutral",
-  "tool.work": "yellow",
-}
-
-const EVENT_LABEL: Record<string, string> = {
-  "session.started": "started",
-  "session.resumed": "resumed",
-  "session.end": "ended",
-  "claude.started": "claude started",
-  "claude.ended": "claude ended",
-  "claude.discarded": "discarded",
-  "session.waiting": "waiting",
-  "session.answered": "answered",
-  "permission.request": "permission",
-  "permission.resolve": "allowed",
-  "worktree.entered": "worktree",
-  "worktree.exited": "worktree exited",
-  "gh.pr.created": "PR created",
-  "gh.pr.merged": "PR merged",
-  "linear.issue.read": "Linear issue",
-  "notion.page.read": "Notion page",
-  "vercel.deploy": "deployed",
-  "user.prompt": "prompt",
-  "context.snapshot": "context",
-  "tool.work": "tool work",
-}
-
-export function eventColor(event: string): TimelineColor {
-  return EVENT_CATEGORY[event] ?? "neutral"
-}
-
-export function eventLabel(event: string): string {
-  return EVENT_LABEL[event] ?? event
-}
+export const eventLabel = labelOf
 
 export function eventTitle(event: EventRow): string {
   const label = eventLabel(event.event)
@@ -105,50 +54,10 @@ export function eventTitle(event: EventRow): string {
       const question = meta.question as string | undefined
       return question ?? label
     }
-    case "permission.request":
-    case "permission.resolve": {
-      const tool = meta.tool as string | undefined
-      return tool ? `${label}: ${tool}` : label
-    }
-    case "gh.pr.created":
-      return meta.pr_title ? `${label}: ${meta.pr_title}` : label
-    case "gh.pr.merged":
-      return meta.branch ? `${label}: ${meta.branch}` : label
-    case "worktree.entered":
-      return meta.branch ? `${label}: ${meta.branch}` : label
-    case "linear.issue.read":
-      return meta.issue_title ? `${label}: ${meta.issue_title}` : label
-    case "notion.page.read":
-      return meta.page_title ? `${label}: ${meta.page_title}` : label
-    case "vercel.deploy":
-      return meta.project_name ? `${label}: ${meta.project_name}` : label
+    case "tool.work":
+      return event.summary ?? label
     default:
       return label
-  }
-}
-
-export function eventDescription(event: EventRow): string | undefined {
-  if (event.summary) return event.summary
-
-  const meta = event.meta as Record<string, unknown> | null
-  if (!meta) return undefined
-
-  switch (event.event) {
-    case "session.waiting":
-      return meta.question as string | undefined
-    case "session.answered":
-      return meta.answer as string | undefined
-    case "user.prompt":
-      return meta.prompt as string | undefined
-    case "permission.request":
-    case "permission.resolve":
-      return meta.detail as string | undefined
-    case "context.snapshot":
-      return meta.remaining_pct ? `${meta.remaining_pct}% context remaining` : undefined
-    case "gh.pr.created":
-      return meta.pr_url as string | undefined
-    default:
-      return undefined
   }
 }
 
