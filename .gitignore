@@ -8,5 +8,9 @@
 # Dependencies
 node_modules/
 
+# Build artifacts
+dashboard/dist/
+*.tsbuildinfo
+
 # Local dev DB
 bertrand.db
