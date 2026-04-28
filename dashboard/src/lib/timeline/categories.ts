@@ -43,6 +43,7 @@ const EVENT_CATALOG: Record<string, EventInfo> = {
   "user.prompt": { category: "interaction", color: "green", label: "prompt" },
   "context.snapshot": { category: "context", color: "neutral", label: "context" },
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
+  "tool.applied": { category: "work", color: "yellow", label: "applied" },
 }
 
 const DEFAULT_INFO: EventInfo = {

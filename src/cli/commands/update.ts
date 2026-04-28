@@ -18,8 +18,9 @@ register("update", async (args) => {
   let sessionId = "";
   let event = "";
   let metaJson = "";
+  let summaryArg: string | undefined;
 
-  // Parse flags: --session-id <id> --event <type> --meta <json>
+  // Parse flags: --session-id <id> --event <type> [--summary <text>] [--meta <json>]
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     const next = args[i + 1];
@@ -28,6 +29,9 @@ register("update", async (args) => {
       i++;
     } else if (arg === "--event" && next) {
       event = next;
+      i++;
+    } else if (arg === "--summary" && next) {
+      summaryArg = next;
       i++;
     } else if (arg === "--meta" && next) {
       metaJson = next;
@@ -76,7 +80,7 @@ register("update", async (args) => {
     sessionId,
     conversationId,
     event,
-    summary: (meta?.question as string) || (meta?.answer as string) || undefined,
+    summary: summaryArg || (meta?.question as string) || (meta?.answer as string) || undefined,
     meta,
   });
 

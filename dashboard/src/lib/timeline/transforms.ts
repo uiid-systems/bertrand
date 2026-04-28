@@ -109,6 +109,7 @@ function formatSinglePermission(p: PermissionDetail): string {
  * Collapse consecutive permission.request + permission.resolve pairs into
  * summarized tool.work events. Single pairs get a descriptive title;
  * batches get a tool count summary with individual details in meta.permissions.
+ * Diff data captured at resolve time is forwarded via meta.permissions[].oldStr/newStr.
  */
 export const consolidatePermissions: TimelineTransform = (events) => {
   const result: EventRow[] = []
@@ -206,7 +207,32 @@ export const consolidatePermissions: TimelineTransform = (events) => {
   return result
 }
 
-const transforms: TimelineTransform[] = [consolidateLifecycle, consolidateInteractions, consolidatePermissions]
+const TOOL_APPLIED_TITLES: Record<string, string> = {
+  Edit: "edited a file",
+  Write: "wrote a file",
+  MultiEdit: "edited a file",
+}
+
+/**
+ * Set summary on tool.applied events if missing. The hook passes --summary, but older
+ * compiled binaries silently ignore it; this transform fills the gap based on meta.
+ */
+export const decorateToolApplied: TimelineTransform = (events) =>
+  events.map((e) => {
+    if (e.event !== "tool.applied" || e.summary) return e
+    const meta = e.meta as Record<string, unknown> | null
+    const permissions = (meta?.permissions ?? []) as Array<{ tool?: string }>
+    const tool = permissions[0]?.tool
+    if (!tool) return e
+    return { ...e, summary: TOOL_APPLIED_TITLES[tool] ?? `${tool} applied` }
+  })
+
+const transforms: TimelineTransform[] = [
+  consolidateLifecycle,
+  consolidateInteractions,
+  consolidatePermissions,
+  decorateToolApplied,
+]
 
 export function applyTransforms(events: EventRow[]): EventRow[] {
   return transforms.reduce((acc, fn) => fn(acc), events)

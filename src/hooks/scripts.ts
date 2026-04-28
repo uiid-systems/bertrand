@@ -136,42 +136,72 @@ wait
 `;
 }
 
-/** PostToolUse (catch-all) → resolve permission if manually prompted */
+/** PostToolUse (catch-all) → emit tool.applied for edits, permission.resolve for prompted tools */
 export function permissionDoneScript(): string {
   return `#!/usr/bin/env bash
-# Hook: PostToolUse (catch-all) → emit permission.resolve only for manually-prompted tools
-# Auto-approved tools have no pending marker, so they're skipped entirely.
-# Rejected tools never reach PostToolUse, so rejection = request with no resolve.
+# Hook: PostToolUse (catch-all)
+#
+# Two flows:
+#   1. Edit/Write/MultiEdit: ALWAYS emit tool.applied with diff, regardless of permission
+#      flow. This is the only way to capture diffs for auto-approved edits — bertrand
+#      must never require disabling auto-approve to gather data.
+#   2. Other tools: emit permission.resolve only if a PermissionRequest preceded this
+#      (marker exists). Rejected tools never reach PostToolUse, so a request without a
+#      resolve = rejected.
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
-
-# Only fire if a PermissionRequest preceded this (marker exists)
-marker="/tmp/bertrand-perm-pending-$sid"
-[ ! -f "$marker" ] && exit 0
-rm -f "$marker"
 
 input="$(cat)"
 ${EXTRACT_TOOL}
 
-# Extract detail via grep
+marker="/tmp/bertrand-perm-pending-$sid"
+had_marker=0
+if [ -f "$marker" ]; then
+  had_marker=1
+  rm -f "$marker"
+  ${BIN} badge --clear &
+fi
+
+cid="\${BERTRAND_CLAUDE_ID:-}"
+
+case "$tool" in
+  Edit|Write|MultiEdit)
+    detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)"
+    case "$tool" in
+      Write) summary="wrote a file" ;;
+      *) summary="edited a file" ;;
+    esac
+    # Single jq pass: build meta.permissions[] with diff data so the dashboard renders
+    # via the existing WorkContent path (same shape as collapsed permission events).
+    # Emit camelCase keys (oldStr/newStr/edits) directly so WorkContent reads
+    # meta.permissions[] without going through transforms.ts's snake→camel adapter.
+    meta="$(printf '%s' "$input" | jq --arg t "$tool" --arg d "$detail" --arg cid "$cid" '
+      {
+        permissions: [
+          {tool:$t, detail:$d, outcome:"applied", count:1}
+          + (.tool_input.old_string | if type == "string" and . != "" then {oldStr: .[:4096]} else {} end)
+          + ((.tool_input.new_string // .tool_input.content) | if type == "string" and . != "" then {newStr: .[:4096]} else {} end)
+          + (.tool_input.edits | if type == "array" and length > 0 then {edits: [.[] | {oldStr: ((.old_string // "")[:4096]), newStr: ((.new_string // "")[:4096])}]} else {} end)
+        ],
+        outcome: "applied",
+        claude_id: $cid
+      }
+    ')"
+    ${BIN} update --session-id "$sid" --event tool.applied --summary "$summary" --meta "$meta"
+    wait
+    exit 0
+    ;;
+esac
+
+# Other tools: only emit permission.resolve if there was a real prompt
+[ "$had_marker" = "0" ] && exit 0
+
 detail=""
 case "$tool" in
   Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
-  Edit|Write|MultiEdit) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
 esac
 
-cid="\${BERTRAND_CLAUDE_ID:-}"
-# Single jq pass: extract Edit/Write/MultiEdit diff data (4KB cap per string) AND build meta JSON.
-# Reads tool_input from stdin instead of jq -n so we don't add a second jq invocation.
-meta="$(printf '%s' "$input" | jq --arg t "$tool" --arg d "$detail" --arg cid "$cid" '
-  {tool:$t, detail:$d, outcome:"approved", claude_id:$cid}
-  + (.tool_input.old_string | if type == "string" and . != "" then {old_str: .[:4096]} else {} end)
-  + ((.tool_input.new_string // .tool_input.content) | if type == "string" and . != "" then {new_str: .[:4096]} else {} end)
-  + (.tool_input.edits | if type == "array" and length > 0 then {edits: [.[] | {old_str: ((.old_string // "")[:4096]), new_str: ((.new_string // "")[:4096])}]} else {} end)
-')"
-${BIN} update --session-id "$sid" --event permission.resolve --meta "$meta"
-
-${BIN} badge --clear &
+${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
 wait
 `;
 }
