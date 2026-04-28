@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>bertrand</title>
+    <script>
+      // Sets data-theme before bundle parses to prevent FOUC.
+      // Mirrors the localStorage contract used by useTheme().
+      (function () {
+        try {
+          var t = localStorage.getItem("uiid-theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

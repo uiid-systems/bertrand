@@ -2,6 +2,7 @@ import { Activity } from "react";
 import { Link } from "@tanstack/react-router";
 import { Badge, Text } from "@uiid/design-system";
 import { TopBarWrapper } from "./topbar-wrapper";
+import { ThemeToggle } from "../theme-toggle";
 
 type TopBarProps = {
   sessionCount?: number;
@@ -17,6 +18,10 @@ export const TopBar = ({ sessionCount }: TopBarProps) => {
       <Activity mode={sessionCount ? "visible" : "hidden"}>
         <Badge color="blue">{sessionCount} session(s)</Badge>
       </Activity>
+
+      <div style={{ marginLeft: "auto" }}>
+        <ThemeToggle />
+      </div>
     </TopBarWrapper>
   );
 };
