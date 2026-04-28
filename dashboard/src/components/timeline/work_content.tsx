@@ -1,4 +1,4 @@
-import { Accordion, Stack, Text } from "@uiid/design-system";
+import { Accordion, List, Text } from "@uiid/design-system";
 import { CheckIcon } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
@@ -39,6 +39,10 @@ export function WorkContent({ event }: WorkContentProps) {
 
   // Multiple permissions — accordion with details
   const totalCount = permissions.reduce((sum, p) => sum + p.count, 0);
+  const items = permissions.map((p, i) => ({
+    label: formatPermissionLine(p),
+    value: `permission-${i}`,
+  }));
 
   return (
     <Accordion
@@ -47,15 +51,7 @@ export function WorkContent({ event }: WorkContentProps) {
           icon: CheckIcon,
           value: "permissions",
           trigger: `${totalCount} approved tool${totalCount === 1 ? "" : "s"}`,
-          content: (
-            <Stack gap={1}>
-              {permissions.map((p, i) => (
-                <Text size={-1} family="mono" key={i}>
-                  {formatPermissionLine(p)}
-                </Text>
-              ))}
-            </Stack>
-          ),
+          content: <List type="ordered" size="small" items={items} />,
         },
       ]}
     />
