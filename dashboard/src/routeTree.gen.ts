@@ -10,7 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SessionsSessionIdRouteImport } from './routes/sessions/$sessionId'
+import { Route as SessionsSlugRouteImport } from './routes/sessions/$slug'
 import { Route as GroupsSplatRouteImport } from './routes/groups/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -18,9 +18,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
-  id: '/sessions/$sessionId',
-  path: '/sessions/$sessionId',
+const SessionsSlugRoute = SessionsSlugRouteImport.update({
+  id: '/sessions/$slug',
+  path: '/sessions/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GroupsSplatRoute = GroupsSplatRouteImport.update({
@@ -32,31 +32,31 @@ const GroupsSplatRoute = GroupsSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/groups/$' | '/sessions/$sessionId'
+  fullPaths: '/' | '/groups/$' | '/sessions/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/groups/$' | '/sessions/$sessionId'
-  id: '__root__' | '/' | '/groups/$' | '/sessions/$sessionId'
+  to: '/' | '/groups/$' | '/sessions/$slug'
+  id: '__root__' | '/' | '/groups/$' | '/sessions/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GroupsSplatRoute: typeof GroupsSplatRoute
-  SessionsSessionIdRoute: typeof SessionsSessionIdRoute
+  SessionsSlugRoute: typeof SessionsSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -68,11 +68,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sessions/$sessionId': {
-      id: '/sessions/$sessionId'
-      path: '/sessions/$sessionId'
-      fullPath: '/sessions/$sessionId'
-      preLoaderRoute: typeof SessionsSessionIdRouteImport
+    '/sessions/$slug': {
+      id: '/sessions/$slug'
+      path: '/sessions/$slug'
+      fullPath: '/sessions/$slug'
+      preLoaderRoute: typeof SessionsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/groups/$': {
@@ -88,7 +88,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GroupsSplatRoute: GroupsSplatRoute,
-  SessionsSessionIdRoute: SessionsSessionIdRoute,
+  SessionsSlugRoute: SessionsSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
