@@ -53,18 +53,44 @@ export const consolidateInteractions: TimelineTransform = (events) => {
   return result
 }
 
+export type EditEntry = { oldStr: string; newStr: string }
+
 export type PermissionDetail = {
   tool: string
   detail: string
   outcome: string
+  oldStr?: string
+  newStr?: string
+  edits?: EditEntry[]
+}
+
+function extractEdits(meta: Record<string, unknown> | null): EditEntry[] | undefined {
+  const raw = meta?.edits
+  if (!Array.isArray(raw)) return undefined
+  const parsed: EditEntry[] = []
+  for (const entry of raw) {
+    if (entry && typeof entry === "object") {
+      const e = entry as Record<string, unknown>
+      parsed.push({
+        oldStr: typeof e.old_str === "string" ? e.old_str : "",
+        newStr: typeof e.new_str === "string" ? e.new_str : "",
+      })
+    }
+  }
+  return parsed.length > 0 ? parsed : undefined
 }
 
 function extractPermissionDetail(event: EventRow): PermissionDetail {
   const meta = event.meta as Record<string, unknown> | null
+  const oldStr = meta?.old_str
+  const newStr = meta?.new_str
   return {
     tool: (meta?.tool as string) ?? "unknown",
     detail: (meta?.detail as string) ?? "",
     outcome: (meta?.outcome as string) ?? (event.event === "permission.resolve" ? "approved" : "pending"),
+    oldStr: typeof oldStr === "string" ? oldStr : undefined,
+    newStr: typeof newStr === "string" ? newStr : undefined,
+    edits: extractEdits(meta),
   }
 }
 
@@ -106,13 +132,27 @@ export const consolidatePermissions: TimelineTransform = (events) => {
       i++
     }
 
-    // Extract permission details (from requests only, to avoid double-counting pairs)
-    const permissions: PermissionDetail[] = []
-    for (const pev of batch) {
-      if (pev.event === "permission.request") {
-        permissions.push(extractPermissionDetail(pev))
+    // Extract permission details from requests; merge diff data from the paired resolve.
+    // Hook emits request+resolve in order, so position-based pairing matches them up.
+    // Rejected requests have no resolve at their index → entry stays without diff.
+    const requests = batch.filter((e) => e.event === "permission.request")
+    const resolves = batch.filter((e) => e.event === "permission.resolve")
+
+    // Orphan resolves with no matching request — drop the batch entirely.
+    // These can occur from stale /tmp markers or partial event-write failures.
+    if (requests.length === 0) continue
+
+    const permissions: PermissionDetail[] = requests.map((req, idx) => {
+      const detail = extractPermissionDetail(req)
+      const resolve = resolves[idx]
+      if (resolve) {
+        const resolveDetail = extractPermissionDetail(resolve)
+        if (resolveDetail.oldStr) detail.oldStr = resolveDetail.oldStr
+        if (resolveDetail.newStr) detail.newStr = resolveDetail.newStr
+        if (resolveDetail.edits) detail.edits = resolveDetail.edits
       }
-    }
+      return detail
+    })
 
     // Check if there's a resolve for each request (batch has both)
     const hasResolves = batch.some((e) => e.event === "permission.resolve")

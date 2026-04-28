@@ -8,6 +8,8 @@
  * Performance notes:
  *   - grep/sed used instead of jq for simple field extraction (~1ms vs ~15ms)
  *   - jq -n kept for building meta JSON (safe escaping, acceptable cost)
+ *   - permissionDoneScript folds diff extraction into the existing jq invocation
+ *     so adding old_str/new_str capture costs nothing extra
  *   - badge/notify backgrounded where possible (terminal UI doesn't need to block Claude)
  *   - activeScript has a debounce guard to skip redundant updates
  */
@@ -155,11 +157,19 @@ ${EXTRACT_TOOL}
 detail=""
 case "$tool" in
   Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
-  Edit|Write) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
+  Edit|Write|MultiEdit) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
+# Single jq pass: extract Edit/Write/MultiEdit diff data (4KB cap per string) AND build meta JSON.
+# Reads tool_input from stdin instead of jq -n so we don't add a second jq invocation.
+meta="$(printf '%s' "$input" | jq --arg t "$tool" --arg d "$detail" --arg cid "$cid" '
+  {tool:$t, detail:$d, outcome:"approved", claude_id:$cid}
+  + (.tool_input.old_string | if type == "string" and . != "" then {old_str: .[:4096]} else {} end)
+  + ((.tool_input.new_string // .tool_input.content) | if type == "string" and . != "" then {new_str: .[:4096]} else {} end)
+  + (.tool_input.edits | if type == "array" and length > 0 then {edits: [.[] | {old_str: ((.old_string // "")[:4096]), new_str: ((.new_string // "")[:4096])}]} else {} end)
+')"
+${BIN} update --session-id "$sid" --event permission.resolve --meta "$meta"
 
 ${BIN} badge --clear &
 wait
