@@ -58,6 +58,11 @@ wait
 export function answeredScript(): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
+#
+# If the user's answer contains "Done for now", emit {"continue": false} to
+# Claude Code so the agent halts immediately instead of taking another turn.
+# This is the mechanical enforcement of the contract's loop-exit rule — the
+# contract prose is a soft hint, this JSON is the guarantee.
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -74,6 +79,13 @@ answer="$(printf '%s' "$input" | jq -r '
 ${BIN} update --session-id "$sid" --event session.answered --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
 
 ${BIN} badge --clear &
+
+# Halt the agent loop if the user signaled Done for now. The Stop hook
+# (on-done.sh) will fire afterwards and mark the session as paused.
+if printf '%s' "$answer" | grep -q "Done for now"; then
+  printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
+fi
+
 wait
 `;
 }
