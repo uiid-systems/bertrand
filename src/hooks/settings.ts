@@ -5,17 +5,64 @@ import { paths } from "@/lib/paths";
 
 const SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 
-interface HookEntry {
+interface HookCommand {
+  type: string;
+  command: string;
+  timeout?: number;
+}
+
+interface HookGroup {
   matcher: string;
-  hooks: Array<{
-    type: string;
-    command: string;
-  }>;
+  hooks: HookCommand[];
+}
+
+type HooksByEvent = Record<string, HookGroup[]>;
+
+// Matchers scope hooks to specific tools — on-waiting/on-answered must only fire
+// for AskUserQuestion or they'd flip session state on every tool call.
+const BERTRAND_HOOKS: HooksByEvent = {
+  PreToolUse: [
+    {
+      matcher: "AskUserQuestion",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-waiting.sh` }],
+    },
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-active.sh` }],
+    },
+  ],
+  PostToolUse: [
+    {
+      matcher: "AskUserQuestion",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-answered.sh` }],
+    },
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-permission-done.sh` }],
+    },
+  ],
+  PermissionRequest: [
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-permission-wait.sh` }],
+    },
+  ],
+  Stop: [
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-done.sh` }],
+    },
+  ],
+};
+
+function isBertrandGroup(group: HookGroup): boolean {
+  return group.hooks?.some((h) => h.command?.includes(".bertrand/hooks/")) ?? false;
 }
 
 /**
  * Non-destructive merge of bertrand hooks into ~/.claude/settings.json.
- * Preserves all existing settings. Only adds/updates bertrand hook entries.
+ * Preserves all other settings and non-bertrand hook entries.
+ * Claude Code schema: hooks is Record<EventType, Array<{matcher, hooks: [...]}>>.
  */
 export function installHookSettings() {
   let settings: Record<string, unknown> = {};
@@ -26,43 +73,18 @@ export function installHookSettings() {
     // File doesn't exist or invalid JSON — start fresh
   }
 
-  const hooks = (settings.hooks ?? []) as HookEntry[];
+  const existingHooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks)
+    ? (settings.hooks as HooksByEvent)
+    : {}) as HooksByEvent;
 
-  // Remove existing bertrand hooks (we'll re-add them)
-  const cleaned = hooks.filter(
-    (h) => !h.hooks?.some((hh) => hh.command?.includes(".bertrand/hooks/"))
-  );
+  const merged: HooksByEvent = { ...existingHooks };
 
-  const bertrandHooks: HookEntry[] = [
-    {
-      matcher: "PreToolUse",
-      hooks: [
-        { type: "command", command: `${paths.hooks}/on-waiting.sh` },
-        { type: "command", command: `${paths.hooks}/on-active.sh` },
-      ],
-    },
-    {
-      matcher: "PostToolUse",
-      hooks: [
-        { type: "command", command: `${paths.hooks}/on-answered.sh` },
-        { type: "command", command: `${paths.hooks}/on-permission-done.sh` },
-      ],
-    },
-    {
-      matcher: "PermissionRequest",
-      hooks: [
-        { type: "command", command: `${paths.hooks}/on-permission-wait.sh` },
-      ],
-    },
-    {
-      matcher: "Stop",
-      hooks: [
-        { type: "command", command: `${paths.hooks}/on-done.sh` },
-      ],
-    },
-  ];
+  for (const [eventType, bertrandGroups] of Object.entries(BERTRAND_HOOKS)) {
+    const existing = (merged[eventType] ?? []).filter((g) => !isBertrandGroup(g));
+    merged[eventType] = [...existing, ...bertrandGroups];
+  }
 
-  settings.hooks = [...cleaned, ...bertrandHooks];
+  settings.hooks = merged;
 
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
