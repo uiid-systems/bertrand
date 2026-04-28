@@ -18,11 +18,11 @@ export const ThemeToggle = () => {
       <Toggle value="light" aria-label="Light mode">
         <Sun />
       </Toggle>
-      <Toggle value="system" aria-label="System theme">
-        <Monitor />
-      </Toggle>
       <Toggle value="dark" aria-label="Dark mode">
         <Moon />
+      </Toggle>
+      <Toggle value="system" aria-label="System theme">
+        <Monitor />
       </Toggle>
     </ToggleGroup>
   );
