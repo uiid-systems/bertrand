@@ -10,7 +10,6 @@ const COMMANDS = [
   "archive",
   "update",
   "serve",
-  "mcp",
   "import",
   "completion",
   "badge",

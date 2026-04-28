@@ -1,6 +1,3 @@
-# Binary
-bertrand
-
 # OS
 .DS_Store
 
@@ -11,7 +8,5 @@ bertrand
 # Dependencies
 node_modules/
 
-# Web
-web/node_modules/
-internal/server/static/dist/
-web/src/routeTree.gen.ts
+# Local dev DB
+bertrand.db

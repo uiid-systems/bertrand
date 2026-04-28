@@ -55,7 +55,6 @@ Usage:
   bertrand archive <name>   Archive/unarchive a session
   bertrand update           Hook-facing state writer (internal)
   bertrand serve            Start dashboard HTTP server
-  bertrand mcp              Start MCP server (stdio)
   bertrand import           Import sessions from Go format
   bertrand completion       Shell completions
 `.trim());

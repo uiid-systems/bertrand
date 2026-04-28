@@ -27,7 +27,6 @@ if (command && command in hotPath) {
     import("./cli/commands/update"),
     import("./cli/commands/snapshot"),
     import("./cli/commands/serve"),
-    import("./cli/commands/mcp"),
     import("./cli/commands/import"),
     import("./cli/commands/completion"),
     import("./cli/commands/badge"),
