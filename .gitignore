@@ -1,6 +1,3 @@
-# Binary
-bertrand
-
 # OS
 .DS_Store
 
@@ -8,13 +5,12 @@ bertrand
 .claude/settings.local.json
 .mcp.json
 
-# Root JS (MCP tooling)
+# Dependencies
 node_modules/
-package.json
-package-lock.json
-pnpm-lock.yaml
 
-# Web
-web/node_modules/
-internal/server/static/dist/
-web/src/routeTree.gen.ts
+# Build artifacts
+dashboard/dist/
+*.tsbuildinfo
+
+# Local dev DB
+bertrand.db
