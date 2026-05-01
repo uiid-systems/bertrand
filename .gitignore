@@ -10,6 +10,7 @@ node_modules/
 
 # Build artifacts
 dashboard/dist/
+dashboard/.vite/
 *.tsbuildinfo
 
 # Local dev DB
