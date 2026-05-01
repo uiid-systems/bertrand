@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import {
   Badge,
+  Group,
   Input,
   Kbd,
   List,
@@ -10,8 +11,9 @@ import {
   type ListItemProps,
   type StatusProps,
   Text,
+  ToggleButton,
 } from "@uiid/design-system";
-import { SearchIcon } from "@uiid/icons";
+import { ChevronsDownUp, ChevronsUpDown, SearchIcon } from "@uiid/icons";
 
 import type { SessionWithGroup } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
@@ -51,8 +53,11 @@ function groupSessions(sessions: SessionWithGroup[]): ListItemGroupProps[] {
   );
 }
 
+const groupKeyOf = (g: ListItemGroupProps) => g.id ?? g.category ?? "";
+
 export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
   const items = useMemo(() => {
@@ -68,6 +73,29 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
     return groupSessions(filtered);
   }, [sessions, query]);
 
+  const groupKeys = items.map(groupKeyOf);
+  const allOpen =
+    groupKeys.length > 0 && groupKeys.every((key) => openMap[key] !== false);
+
+  const toggleAll = () => {
+    const target = !allOpen;
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const key of groupKeys) next[key] = target;
+      return next;
+    });
+  };
+
+  const decoratedItems = items.map((g) => {
+    const key = groupKeyOf(g);
+    return {
+      ...g,
+      open: openMap[key] ?? true,
+      onOpenChange: (open: boolean) =>
+        setOpenMap((m) => ({ ...m, [key]: open })),
+    };
+  });
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -82,21 +110,39 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
 
   return (
     <SidebarWrapper {...WrapperProps}>
-      <Input
-        ref={inputRef}
-        placeholder="Search for a session"
-        before={<SearchIcon />}
-        after={<Kbd hotkey={["meta", "k"]} />}
-        size="small"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <Group ay="center" gap={2} fullwidth>
+        <Input
+          ref={inputRef}
+          placeholder="Search for a session"
+          before={<SearchIcon />}
+          after={<Kbd hotkey={["meta", "k"]} />}
+          size="small"
+          fullwidth
+          style={{ flex: 1, minWidth: 0 }}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {items.length > 0 && (
+          <ToggleButton
+            size="small"
+            variant="subtle"
+            shape="square"
+            tooltip={allOpen ? "Collapse all" : "Expand all"}
+            pressed={!allOpen}
+            onPressedChange={() => toggleAll()}
+            icon={{
+              unpressed: <ChevronsDownUp />,
+              pressed: <ChevronsUpDown />,
+            }}
+          />
+        )}
+      </Group>
       {items.length === 0 ? (
         <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
           No sessions match "{query}".
         </Text>
       ) : (
-        <List items={items} line size="small" />
+        <List items={decoratedItems} line size="small" />
       )}
     </SidebarWrapper>
   );
