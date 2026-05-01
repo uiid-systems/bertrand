@@ -31,8 +31,8 @@ describe("computeTimings", () => {
       ev("claude.ended", t(5), "c1"),
     ]);
     expect(result.segments).toHaveLength(1);
-    expect(result.segments[0].type).toBe("claude_work");
-    expect(result.segments[0].durationMs).toBe(5 * 60_000);
+    expect(result.segments[0]!.type).toBe("claude_work");
+    expect(result.segments[0]!.durationMs).toBe(5 * 60_000);
     expect(result.totalClaudeWorkMs).toBe(5 * 60_000);
     expect(result.totalUserWaitMs).toBe(0);
     expect(result.activePct).toBe(100);
@@ -128,7 +128,7 @@ describe("computeTimings", () => {
     ]);
     // work(0) discarded, wait(2) kept, work(0) discarded
     expect(result.segments).toHaveLength(1);
-    expect(result.segments[0].type).toBe("user_wait");
+    expect(result.segments[0]!.type).toBe("user_wait");
   });
 
   test("extracts claudeId from conversationId", () => {
@@ -136,7 +136,7 @@ describe("computeTimings", () => {
       ev("claude.started", t(0), "conv-abc"),
       ev("claude.ended", t(5), "conv-abc"),
     ]);
-    expect(result.segments[0].claudeId).toBe("conv-abc");
+    expect(result.segments[0]!.claudeId).toBe("conv-abc");
   });
 
   test("extracts claudeId from meta.claude_id fallback", () => {
@@ -144,7 +144,7 @@ describe("computeTimings", () => {
       ev("claude.started", t(0), undefined, { claude_id: "meta-id" }),
       ev("claude.ended", t(5), undefined, { claude_id: "meta-id" }),
     ]);
-    expect(result.segments[0].claudeId).toBe("meta-id");
+    expect(result.segments[0]!.claudeId).toBe("meta-id");
   });
 
   test("open work period closed at end of stream (no claude.ended)", () => {

@@ -4,7 +4,7 @@ import { getSessionStats } from "@/db/queries/stats"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
-type RouteHandler = (params: Record<string, string>, url: URL) => unknown
+type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
 const routes: [RegExp, RouteHandler][] = [
   // GET /api/sessions
@@ -15,19 +15,19 @@ const routes: [RegExp, RouteHandler][] = [
 
   // GET /api/sessions/:id
   [/^\/api\/sessions\/(?<id>[^/]+)$/, ({ id }) => {
-    return getSession(id)
+    return getSession(id!)
   }],
 
   // GET /api/events/:sessionId
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, ({ sessionId }, url) => {
     const eventType = url.searchParams.get("type")
-    if (eventType) return getEventsByType(sessionId, eventType)
-    return getEventsBySession(sessionId)
+    if (eventType) return getEventsByType(sessionId!, eventType)
+    return getEventsBySession(sessionId!)
   }],
 
   // GET /api/stats/:sessionId
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    return getSessionStats(sessionId)
+    return getSessionStats(sessionId!)
   }],
 ]
 

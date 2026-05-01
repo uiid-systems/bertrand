@@ -143,9 +143,9 @@ describe("enrichAll", () => {
     const rows = [row("session.started"), row("claude.started"), row("session.waiting", { question: "q?" })];
     const enriched = enrichAll(rows);
     expect(enriched).toHaveLength(3);
-    expect(enriched[0].label).toBe("started");
-    expect(enriched[1].label).toBe("claude started");
-    expect(enriched[2].summary).toBe("q?");
+    expect(enriched[0]!.label).toBe("started");
+    expect(enriched[1]!.label).toBe("claude started");
+    expect(enriched[2]!.summary).toBe("q?");
   });
 
   test("empty array returns empty", () => {
