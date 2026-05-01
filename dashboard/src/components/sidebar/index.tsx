@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 
 import {
@@ -52,17 +52,52 @@ function groupSessions(sessions: SessionWithGroup[]): ListItemGroupProps[] {
 }
 
 export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
-  const items = useMemo(() => groupSessions(sessions), [sessions]);
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const items = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? sessions.filter(
+          (s) =>
+            s.session.slug.toLowerCase().includes(q) ||
+            s.session.name.toLowerCase().includes(q) ||
+            s.groupPath.toLowerCase().includes(q),
+        )
+      : sessions;
+    return groupSessions(filtered);
+  }, [sessions, query]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <SidebarWrapper {...WrapperProps}>
       <Input
+        ref={inputRef}
         placeholder="Search for a session"
         before={<SearchIcon />}
         after={<Kbd hotkey={["meta", "k"]} />}
         size="small"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
       />
-      <List items={items} line />
+      {items.length === 0 ? (
+        <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
+          No sessions match "{query}".
+        </Text>
+      ) : (
+        <List items={items} line size="small" />
+      )}
     </SidebarWrapper>
   );
 };
