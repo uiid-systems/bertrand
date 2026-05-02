@@ -1,12 +1,37 @@
-import { Card, Stack, Text } from "@uiid/design-system";
+import { Card, List, Stack, Text } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 
 type Annotation = { notes?: string; preview?: string };
 
+type QuestionOption = {
+  label: string;
+  description?: string;
+  preview?: string;
+};
+
+type QuestionDef = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: QuestionOption[];
+};
+
 type InteractionContentProps = {
   event: EventRow;
 };
+
+function findQuestion(
+  questions: QuestionDef[] | undefined,
+  question: string,
+): QuestionDef | undefined {
+  return questions?.find((q) => q.question === question);
+}
+
+function isPicked(label: string, selection: string, multiSelect: boolean) {
+  if (!multiSelect) return label === selection;
+  return selection.split(", ").includes(label);
+}
 
 /**
  * AskUserQuestion concatenates the user's free-text note onto the answer string
@@ -38,6 +63,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
     const annotations = meta?.annotations as
       | Record<string, Annotation>
       | undefined;
+    const questions = meta?.questions as QuestionDef[] | undefined;
 
     return (
       <Stack gap={2} maxw={560} py={4}>
@@ -46,12 +72,28 @@ export function InteractionContent({ event }: InteractionContentProps) {
             answer,
             annotations?.[question]?.notes,
           );
+          const qDef = findQuestion(questions, question);
+          const multiSelect = qDef?.multiSelect ?? false;
+          const options = qDef?.options ?? [];
           return (
             <Card key={question} gap={4}>
+              {options.length > 0 && (
+                <List
+                  mb={4}
+                  type="unordered"
+                  size="small"
+                  items={options.map((o) => ({
+                    value: o.label,
+                    label: o.label,
+                    description: o.description,
+                    disabled: !isPicked(o.label, selection, multiSelect),
+                  }))}
+                />
+              )}
               <Text size={1} weight="bold">
                 {selection}
               </Text>
-              {note && (
+              {note && note !== selection && (
                 <Text shade="muted" style={{ fontStyle: "italic" }}>
                   <strong style={{ textTransform: "uppercase" }}>Note:</strong>{" "}
                   {note}

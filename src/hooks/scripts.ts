@@ -69,13 +69,14 @@ sid="\${BERTRAND_SESSION:-}"
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
-# Capture the structured answers object (and any annotations) so the UI can
-# render each Q→A pair distinctly. We do not store a joined string — the
-# Done-for-now check derives from the raw values inline.
+# Capture the full AskUserQuestion payload so the UI can render picked vs
+# unpicked options alongside the user's answer. tool_input.questions carries
+# the question definitions (label/description/multiSelect) the agent passed.
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '
   {
     answers: ((.tool_input.answers // .tool_response.answers) // {}),
     annotations: ((.tool_input.annotations // .tool_response.annotations) // {}),
+    questions: (.tool_input.questions // []),
     claude_id: $cid
   }
 ' 2>/dev/null)"
