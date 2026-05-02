@@ -33,7 +33,7 @@ input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
 # Extract question — grep for simple field extraction (~1ms vs jq ~15ms)
-question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-120)"
+question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-2000)"
 [ -z "$question" ] && question="Waiting for input"
 
 # Clear working debounce marker so next resume→working transition fires
@@ -69,20 +69,27 @@ sid="\${BERTRAND_SESSION:-}"
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
-# Extract user answer — jq needed here for complex nested extraction
-answer="$(printf '%s' "$input" | jq -r '
-  (.tool_input.answers // {} | to_entries | map(.value | tostring) | join(", ") | select(. != "")) //
-  (.tool_response | objects | .answers // {} | to_entries | map(.value | tostring) | join(", ") | select(. != "")) //
-  empty
-' 2>/dev/null | head -1 | cut -c1-200)"
+# Capture the structured answers object (and any annotations) so the UI can
+# render each Q→A pair distinctly. We do not store a joined string — the
+# Done-for-now check derives from the raw values inline.
+meta="$(printf '%s' "$input" | jq --arg cid "$cid" '
+  {
+    answers: ((.tool_input.answers // .tool_response.answers) // {}),
+    annotations: ((.tool_input.annotations // .tool_response.annotations) // {}),
+    claude_id: $cid
+  }
+' 2>/dev/null)"
 
-${BIN} update --session-id "$sid" --event session.answered --meta "$(jq -n --arg a "$answer" --arg cid "$cid" '{answer:$a, claude_id:$cid}')"
+# Concatenate all answer values into a single string for the Done-for-now check.
+done_check="$(printf '%s' "$meta" | jq -r '.answers | to_entries | map(.value | tostring) | join(" ")' 2>/dev/null)"
+
+${BIN} update --session-id "$sid" --event session.answered --meta "$meta"
 
 ${BIN} badge --clear &
 
 # Halt the agent loop if the user signaled Done for now. The Stop hook
 # (on-done.sh) will fire afterwards and mark the session as paused.
-if printf '%s' "$answer" | grep -q "Done for now"; then
+if printf '%s' "$done_check" | grep -q "Done for now"; then
   printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
 fi
 
@@ -134,8 +141,8 @@ touch "/tmp/bertrand-perm-pending-$sid"
 # Extract detail from tool_input via grep (avoid jq for simple fields)
 detail=""
 case "$tool" in
-  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
-  Edit|Write|Read) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
+  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
+  Edit|Write|Read) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
@@ -178,7 +185,7 @@ cid="\${BERTRAND_CLAUDE_ID:-}"
 
 case "$tool" in
   Edit|Write|MultiEdit)
-    detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)"
+    detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)"
     case "$tool" in
       Write) summary="wrote a file" ;;
       *) summary="edited a file" ;;
@@ -210,7 +217,7 @@ esac
 
 detail=""
 case "$tool" in
-  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-80)" ;;
+  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
 esac
 
 ${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"

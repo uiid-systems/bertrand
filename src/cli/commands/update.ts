@@ -75,12 +75,22 @@ register("update", async (args) => {
   const conversationId =
     rawConvoId && getConversation(rawConvoId) ? rawConvoId : undefined;
 
-  // Insert event
+  // Derive summary fallback. For session.answered, build a joined string from
+  // meta.answers values (the new structured shape replaces the legacy meta.answer).
+  const answersObj = meta?.answers as Record<string, string> | undefined;
+  const joinedAnswers = answersObj
+    ? Object.values(answersObj).join(", ") || undefined
+    : undefined;
+
   insertEvent({
     sessionId,
     conversationId,
     event,
-    summary: summaryArg || (meta?.question as string) || (meta?.answer as string) || undefined,
+    summary:
+      summaryArg ||
+      (meta?.question as string) ||
+      joinedAnswers ||
+      undefined,
     meta,
   });
 

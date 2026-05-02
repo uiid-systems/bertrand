@@ -123,8 +123,10 @@ function extractSummary(row: EventRow): string {
   switch (row.event) {
     case "session.waiting":
       return (meta.question as string) ?? "";
-    case "session.answered":
-      return (meta.answer as string) ?? "";
+    case "session.answered": {
+      const answers = meta.answers as Record<string, string> | undefined;
+      return answers ? Object.values(answers).join(", ") : "";
+    }
     case "permission.request":
     case "permission.resolve": {
       const tool = (meta.tool as string) ?? "";
