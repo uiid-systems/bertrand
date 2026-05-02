@@ -57,7 +57,8 @@ register("assistant-message", async (args) => {
     meta: {
       model: turn.model,
       text: turn.text,
-      thinking: turn.thinking,
+      thinkingBlocks: turn.thinkingBlocks,
+      thinkingBytes: turn.thinkingBytes,
       claude_id: convoId,
     },
   });

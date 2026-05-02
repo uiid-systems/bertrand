@@ -34,7 +34,8 @@ export interface TranscriptSummary {
 export interface AssistantTurn {
   model: string;
   text: string;
-  thinking: string;
+  thinkingBlocks: number;
+  thinkingBytes: number;
 }
 
 export interface ContextSnapshot {
@@ -134,9 +135,13 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
 }
 
 /**
- * Extract text + thinking blocks from the most recent assistant entry in the
- * transcript. Reads from the end of the file. Returns null if no assistant
- * entry has any text/thinking content (e.g. tool-use only).
+ * Extract the latest assistant turn — all consecutive assistant entries since
+ * the most recent user entry. Claude Code splits a turn across multiple
+ * assistant entries (thinking is its own entry, response is another), so we
+ * collect them all and aggregate.
+ *
+ * Thinking blocks on Opus 4.7 are signature-only ({"thinking":"","signature":...})
+ * — we surface the count and total signature byte size as a depth proxy.
  */
 export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
   if (!existsSync(filePath)) return null;
@@ -144,6 +149,7 @@ export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
   const text = readFileSync(filePath, "utf-8");
   const lines = text.split("\n");
 
+  const assistantEntries: Record<string, unknown>[] = [];
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (!line) continue;
@@ -155,35 +161,46 @@ export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
       continue;
     }
 
-    if (entry.type !== "assistant") continue;
+    if (entry.type === "user") break;
+    if (entry.type === "assistant") assistantEntries.push(entry);
+  }
 
+  if (assistantEntries.length === 0) return null;
+
+  assistantEntries.reverse();
+
+  let model = "";
+  const textParts: string[] = [];
+  let thinkingBlocks = 0;
+  let thinkingBytes = 0;
+
+  for (const entry of assistantEntries) {
     const message = entry.message as Record<string, unknown> | undefined;
     if (!message) continue;
+    if (message.model) model = message.model as string;
 
-    const model = (message.model as string) ?? "";
     const content = message.content as Array<Record<string, unknown>> | undefined;
     if (!content) continue;
 
-    const textParts: string[] = [];
-    const thinkingParts: string[] = [];
     for (const block of content) {
       if (block.type === "text" && typeof block.text === "string") {
         textParts.push(block.text);
-      } else if (block.type === "thinking" && typeof block.thinking === "string") {
-        thinkingParts.push(block.thinking);
+      } else if (block.type === "thinking") {
+        thinkingBlocks++;
+        const sig = block.signature;
+        if (typeof sig === "string") thinkingBytes += sig.length;
       }
     }
-
-    if (textParts.length === 0 && thinkingParts.length === 0) continue;
-
-    return {
-      model,
-      text: textParts.join("\n\n"),
-      thinking: thinkingParts.join("\n\n"),
-    };
   }
 
-  return null;
+  if (textParts.length === 0 && thinkingBlocks === 0) return null;
+
+  return {
+    model,
+    text: textParts.join("\n\n"),
+    thinkingBlocks,
+    thinkingBytes,
+  };
 }
 
 /**

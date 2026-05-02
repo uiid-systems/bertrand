@@ -67,7 +67,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
     const questions = meta?.questions as QuestionDef[] | undefined;
 
     return (
-      <Stack gap={2} maxw={560} py={4}>
+      <Stack gap={2} py={4}>
         {Object.entries(answers).map(([question, answer]) => {
           const { selection, note } = splitSelectionAndNote(
             answer,
@@ -101,7 +101,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
                 />
               )}
               {note && (
-                <Stack gap={2} m={2}>
+                <Stack gap={4} m={2}>
                   <Text color="green" weight="bold">
                     {options.length > 0
                       ? "Additional notes:"

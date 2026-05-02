@@ -5,11 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Breadcrumbs, Stack, Timeline } from "@uiid/design-system";
 
 import { eventsQuery, sessionsQuery } from "../../api/queries";
-import {
-  eventColor,
-  eventTitle,
-  formatTimestamp,
-} from "../../lib/format";
+import { eventColor, eventTitle, formatTimestamp } from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
 
