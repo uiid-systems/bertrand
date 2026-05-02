@@ -1,5 +1,4 @@
-import { Accordion, List, Stack, Text } from "@uiid/design-system";
-import { CheckIcon } from "@uiid/icons";
+import { Accordion, Stack, Text } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 
@@ -52,9 +51,9 @@ function DiffContent({ permission }: { permission: PermissionDetail }) {
   return <DiffLines oldStr={permission.oldStr} newStr={permission.newStr} />;
 }
 
-function formatPermissionLine(p: PermissionDetail): string {
+function permissionTrigger(p: PermissionDetail): string {
   const prefix = p.count > 1 ? `${p.count}× ` : "";
-  return p.detail ? `${prefix}${p.tool}: ${p.detail}` : `${prefix}${p.tool}`;
+  return p.detail ? `${prefix}${p.detail}` : `${prefix}${p.tool}`;
 }
 
 type WorkContentProps = {
@@ -94,24 +93,27 @@ export function WorkContent({ event }: WorkContentProps) {
     );
   }
 
-  // Multiple permissions — accordion with details
-  const totalCount = permissions.reduce((sum, p) => sum + p.count, 0);
-  const items = permissions.map((p, i) => ({
-    label: formatPermissionLine(p),
-    value: `permission-${i}`,
-  }));
-
+  // Multiple permissions — one accordion item per file, each expanding to its diff
   return (
-    <Accordion
-      items={[
-        {
-          icon: CheckIcon,
-          value: "permissions",
-          trigger: `${totalCount} approved tool${totalCount === 1 ? "" : "s"}`,
-          content: <List type="ordered" size="small" items={items} />,
-        },
-      ]}
-    />
+    <Stack gap={2}>
+      <Text size={-1} shade="muted">
+        {`${permissions.length} files`}
+      </Text>
+      <Accordion
+        multiple
+        items={permissions.map((p, i) => ({
+          value: `permission-${i}`,
+          trigger: permissionTrigger(p),
+          content: hasDiff(p) ? (
+            <DiffContent permission={p} />
+          ) : (
+            <Text size={-1} shade="muted">
+              No diff captured
+            </Text>
+          ),
+        }))}
+      />
+    </Stack>
   );
 }
 WorkContent.displayName = "WorkContent";

@@ -214,14 +214,80 @@ const TOOL_APPLIED_TITLES: Record<string, string> = {
 }
 
 /**
+ * Merge runs of consecutive tool.applied events into a single event whose
+ * meta.permissions[] aggregates per-file diffs from each run member. Any non-
+ * tool.applied event (turn boundaries like session.answered/user.prompt, or
+ * tool.work cards) breaks the run, mirroring consolidatePermissions.
+ */
+export const consolidateToolApplied: TimelineTransform = (events) => {
+  const result: EventRow[] = []
+  let i = 0
+
+  while (i < events.length) {
+    const ev = events[i]
+
+    if (ev.event !== "tool.applied") {
+      result.push(ev)
+      i++
+      continue
+    }
+
+    const batch: EventRow[] = []
+    while (i < events.length && events[i].event === "tool.applied") {
+      batch.push(events[i])
+      i++
+    }
+
+    if (batch.length === 1) {
+      result.push(batch[0])
+      continue
+    }
+
+    const collected: PermissionDetail[] = []
+    for (const e of batch) {
+      const meta = e.meta as Record<string, unknown> | null
+      const perms = meta?.permissions
+      if (Array.isArray(perms)) {
+        for (const p of perms as PermissionDetail[]) collected.push(p)
+      }
+    }
+
+    const dedupMap = new Map<string, PermissionDetail & { count: number }>()
+    for (const p of collected) {
+      const key = `${p.tool}::${p.detail}`
+      const existing = dedupMap.get(key)
+      const incoming = (p as PermissionDetail & { count?: number }).count ?? 1
+      if (existing) {
+        existing.count += incoming
+      } else {
+        dedupMap.set(key, { ...p, count: incoming })
+      }
+    }
+    const deduped = [...dedupMap.values()]
+
+    const last = batch[batch.length - 1]
+    result.push({
+      ...last,
+      meta: { ...(last.meta as Record<string, unknown> | null), permissions: deduped },
+    })
+  }
+
+  return result
+}
+
+/**
  * Set summary on tool.applied events if missing. The hook passes --summary, but older
  * compiled binaries silently ignore it; this transform fills the gap based on meta.
+ * For consolidated runs, summarize as "edited N files".
  */
 export const decorateToolApplied: TimelineTransform = (events) =>
   events.map((e) => {
     if (e.event !== "tool.applied" || e.summary) return e
     const meta = e.meta as Record<string, unknown> | null
     const permissions = (meta?.permissions ?? []) as Array<{ tool?: string }>
+    if (permissions.length > 1) {
+      return { ...e, summary: `edited ${permissions.length} files` }
+    }
     const tool = permissions[0]?.tool
     if (!tool) return e
     return { ...e, summary: TOOL_APPLIED_TITLES[tool] ?? `${tool} applied` }
@@ -231,6 +297,7 @@ const transforms: TimelineTransform[] = [
   consolidateLifecycle,
   consolidateInteractions,
   consolidatePermissions,
+  consolidateToolApplied,
   decorateToolApplied,
 ]
 
