@@ -1,6 +1,7 @@
 import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
+import { computeEngagementStats } from "@/lib/engagement_stats"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
@@ -28,6 +29,11 @@ const routes: [RegExp, RouteHandler][] = [
   // GET /api/stats/:sessionId
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
     return getSessionStats(sessionId!)
+  }],
+
+  // GET /api/engagement/:sessionId
+  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
+    return computeEngagementStats(sessionId!)
   }],
 ]
 

@@ -42,3 +42,10 @@ export type SessionStatsRow = {
   filesTouched: number
   updatedAt: string
 }
+
+export type EngagementStats = {
+  toolUsage: Record<string, number>
+  contextTokens: { avg: number; max: number; latest: number }
+  permissionDenials: number
+  discardRate: { discarded: number; total: number }
+}

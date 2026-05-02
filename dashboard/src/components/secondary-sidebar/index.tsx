@@ -8,14 +8,18 @@ import {
   CpuIcon,
   FileDiffIcon,
   FilesIcon,
+  GaugeIcon,
   GitPullRequestIcon,
   HandshakeIcon,
   HourglassIcon,
   MessageSquareMoreIcon,
+  ShieldOffIcon,
+  Trash2Icon,
+  WrenchIcon,
 } from "@uiid/icons";
 
-import { sessionsQuery, statsQuery } from "../../api/queries";
-import type { SessionStatsRow } from "../../api/types";
+import { engagementQuery, sessionsQuery, statsQuery } from "../../api/queries";
+import type { EngagementStats, SessionStatsRow } from "../../api/types";
 import { formatDuration } from "../../lib/format";
 import {
   SidebarWrapper,
@@ -40,9 +44,14 @@ export const SecondarySidebar = (
     enabled: !!sessionId,
   });
 
+  const { data: engagement } = useQuery({
+    ...engagementQuery(sessionId),
+    enabled: !!sessionId,
+  });
+
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
-      {stats && <SessionStats stats={stats} />}
+      {stats && <SessionStats stats={stats} engagement={engagement} />}
     </SidebarWrapper>
   );
 };
@@ -50,11 +59,35 @@ SecondarySidebar.displayName = "SecondarySidebar";
 
 type SessionStatsProps = {
   stats: SessionStatsRow;
+  engagement?: EngagementStats;
 };
 
-const SessionStats = ({ stats }: SessionStatsProps) => {
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function topToolsLabel(toolUsage: Record<string, number>): string {
+  return Object.entries(toolUsage)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .map(([tool, count]) => `${tool} ${count}`)
+    .join(" · ");
+}
+
+const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
   const hasDiff = stats.linesAdded > 0 || stats.linesRemoved > 0;
   const hasFiles = stats.filesTouched > 0;
+
+  const toolTotal = engagement
+    ? Object.values(engagement.toolUsage).reduce((a, b) => a + b, 0)
+    : 0;
+  const hasContext = (engagement?.contextTokens.max ?? 0) > 0;
+  const denials = engagement?.permissionDenials ?? 0;
+  const discardTotal = engagement?.discardRate.total ?? 0;
+  const hasEngagement =
+    toolTotal > 0 || hasContext || denials > 0 || discardTotal > 0;
 
   return (
     <Stack gap={6} ax="stretch">
@@ -123,6 +156,43 @@ const SessionStats = ({ stats }: SessionStatsProps) => {
               description="Pull requests created"
               icon={GitPullRequestIcon}
               action={<Stat value={stats.prCount} />}
+            />
+          )}
+        </Section>
+      )}
+
+      {engagement && hasEngagement && (
+        <Section title="Engagement">
+          {toolTotal > 0 && (
+            <Card
+              title="Tools used"
+              description={topToolsLabel(engagement.toolUsage)}
+              icon={WrenchIcon}
+              action={<Stat value={toolTotal} />}
+            />
+          )}
+          {hasContext && (
+            <Card
+              title="Context tokens"
+              description={`avg ${formatTokens(engagement.contextTokens.avg)} · max ${formatTokens(engagement.contextTokens.max)}`}
+              icon={GaugeIcon}
+              action={<Stat label={formatTokens(engagement.contextTokens.latest)} />}
+            />
+          )}
+          {denials > 0 && (
+            <Card
+              title="Permission denials"
+              description="Tool requests denied"
+              icon={ShieldOffIcon}
+              action={<Stat value={denials} />}
+            />
+          )}
+          {discardTotal > 0 && (
+            <Card
+              title="Discarded conversations"
+              description={`${engagement.discardRate.discarded} of ${discardTotal}`}
+              icon={Trash2Icon}
+              action={<Stat value={engagement.discardRate.discarded} />}
             />
           )}
         </Section>

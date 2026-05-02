@@ -1,5 +1,10 @@
 import { queryOptions } from "@tanstack/react-query"
-import type { SessionWithGroup, EventRow, SessionStatsRow } from "./types"
+import type {
+  SessionWithGroup,
+  EventRow,
+  SessionStatsRow,
+  EngagementStats,
+} from "./types"
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -23,5 +28,12 @@ export const statsQuery = (sessionId: string) =>
   queryOptions({
     queryKey: ["stats", sessionId],
     queryFn: () => fetchJson<SessionStatsRow | null>(`/api/stats/${sessionId}`),
+    enabled: !!sessionId,
+  })
+
+export const engagementQuery = (sessionId: string) =>
+  queryOptions({
+    queryKey: ["engagement", sessionId],
+    queryFn: () => fetchJson<EngagementStats>(`/api/engagement/${sessionId}`),
     enabled: !!sessionId,
   })
