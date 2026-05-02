@@ -241,6 +241,7 @@ ${BIN} update --session-id "$sid" --event session.paused --meta "$(jq -n --arg c
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
   ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  ${BIN} assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
 ${BIN} badge check --color '#58c142' --priority 10

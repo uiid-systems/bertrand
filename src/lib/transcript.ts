@@ -31,6 +31,12 @@ export interface TranscriptSummary {
   lastTimestamp: string | null;
 }
 
+export interface AssistantTurn {
+  model: string;
+  text: string;
+  thinking: string;
+}
+
 export interface ContextSnapshot {
   model: string;
   inputTokens: number;
@@ -125,6 +131,59 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
   }
 
   return summary;
+}
+
+/**
+ * Extract text + thinking blocks from the most recent assistant entry in the
+ * transcript. Reads from the end of the file. Returns null if no assistant
+ * entry has any text/thinking content (e.g. tool-use only).
+ */
+export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
+  if (!existsSync(filePath)) return null;
+
+  const text = readFileSync(filePath, "utf-8");
+  const lines = text.split("\n");
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line) continue;
+
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (entry.type !== "assistant") continue;
+
+    const message = entry.message as Record<string, unknown> | undefined;
+    if (!message) continue;
+
+    const model = (message.model as string) ?? "";
+    const content = message.content as Array<Record<string, unknown>> | undefined;
+    if (!content) continue;
+
+    const textParts: string[] = [];
+    const thinkingParts: string[] = [];
+    for (const block of content) {
+      if (block.type === "text" && typeof block.text === "string") {
+        textParts.push(block.text);
+      } else if (block.type === "thinking" && typeof block.thinking === "string") {
+        thinkingParts.push(block.thinking);
+      }
+    }
+
+    if (textParts.length === 0 && thinkingParts.length === 0) continue;
+
+    return {
+      model,
+      text: textParts.join("\n\n"),
+      thinking: thinkingParts.join("\n\n"),
+    };
+  }
+
+  return null;
 }
 
 /**

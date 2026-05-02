@@ -1,5 +1,6 @@
 import type { EventRow } from "../../api/types";
 import { categoryOf } from "../../lib/timeline/categories";
+import { AssistantContent } from "./assistant_content";
 import { InteractionContent } from "./interaction_content";
 import { MilestoneContent } from "./milestone_content";
 import { WorkContent } from "./work_content";
@@ -18,6 +19,8 @@ export function EventContent({ event }: EventContentProps) {
       return <WorkContent event={event} />;
     case "milestone":
       return <MilestoneContent event={event} />;
+    case "assistant":
+      return <AssistantContent event={event} />;
     default:
       return null;
   }

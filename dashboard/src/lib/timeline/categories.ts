@@ -5,6 +5,7 @@ export type EventCategory =
   | "integration"
   | "lifecycle"
   | "context"
+  | "assistant"
 
 export type TimelineColor =
   | "red"
@@ -44,6 +45,7 @@ const EVENT_CATALOG: Record<string, EventInfo> = {
   "context.snapshot": { category: "context", color: "neutral", label: "context" },
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
   "tool.applied": { category: "work", color: "yellow", label: "applied" },
+  "assistant.message": { category: "assistant", color: "indigo", label: "assistant" },
 }
 
 const DEFAULT_INFO: EventInfo = {
