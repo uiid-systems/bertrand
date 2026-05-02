@@ -12,6 +12,7 @@ node_modules/
 dashboard/dist/
 dashboard/.vite/
 *.tsbuildinfo
+bertrand-dev
 
 # Local dev DB
 bertrand.db
