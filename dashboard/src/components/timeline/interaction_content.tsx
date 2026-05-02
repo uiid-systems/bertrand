@@ -1,6 +1,7 @@
 import { Card, List, Stack, Text } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
+import { Markdown } from "../markdown";
 
 type Annotation = { notes?: string; preview?: string };
 
@@ -79,25 +80,35 @@ export function InteractionContent({ event }: InteractionContentProps) {
             <Card key={question} gap={4}>
               {options.length > 0 && (
                 <List
-                  mb={4}
-                  type="unordered"
-                  size="small"
+                  type="ordered"
                   items={options.map((o) => ({
                     value: o.label,
-                    label: o.label,
+                    label: (
+                      <Text
+                        weight="bold"
+                        color={
+                          isPicked(o.label, selection, multiSelect)
+                            ? "green"
+                            : undefined
+                        }
+                      >
+                        {o.label}
+                      </Text>
+                    ),
                     description: o.description,
                     disabled: !isPicked(o.label, selection, multiSelect),
                   }))}
                 />
               )}
-              <Text size={1} weight="bold">
-                {selection}
-              </Text>
-              {note && note !== selection && (
-                <Text shade="muted" style={{ fontStyle: "italic" }}>
-                  <strong style={{ textTransform: "uppercase" }}>Note:</strong>{" "}
-                  {note}
-                </Text>
+              {note && (
+                <Stack gap={2} m={2}>
+                  <Text color="green" weight="bold">
+                    {options.length > 0
+                      ? "Additional notes:"
+                      : "Answered manually:"}
+                  </Text>
+                  <Markdown>{note}</Markdown>
+                </Stack>
               )}
             </Card>
           );
@@ -109,11 +120,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
   if (event.event === "user.prompt") {
     const prompt = meta?.prompt as string | undefined;
 
-    return prompt ? (
-      <Text size={1} color="neutral">
-        {prompt}
-      </Text>
-    ) : null;
+    return prompt ? <Markdown>{prompt}</Markdown> : null;
   }
 
   return null;

@@ -1,6 +1,7 @@
-import { Accordion, Stack, Text } from "@uiid/design-system";
+import { Accordion, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
+import { Markdown } from "../markdown";
 
 type AssistantContentProps = {
   event: EventRow;
@@ -15,27 +16,14 @@ export function AssistantContent({ event }: AssistantContentProps) {
 
   return (
     <Stack gap={2} maxw={680}>
-      {text && (
-        <Text size={1} style={{ whiteSpace: "pre-wrap" }}>
-          {text}
-        </Text>
-      )}
+      {text && <Markdown>{text}</Markdown>}
       {thinking && (
         <Accordion
           items={[
             {
               value: "thinking",
               trigger: "Thinking",
-              content: (
-                <Text
-                  size={-1}
-                  family="mono"
-                  shade="muted"
-                  style={{ whiteSpace: "pre-wrap" }}
-                >
-                  {thinking}
-                </Text>
-              ),
+              content: <Markdown>{thinking}</Markdown>,
             },
           ]}
         />

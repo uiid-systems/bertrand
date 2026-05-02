@@ -15,7 +15,9 @@
     "@uiid/design-system": "^0.0.22",
     "@uiid/icons": "^0.0.22",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tanstack/router-plugin": "^1.167.22",
