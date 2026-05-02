@@ -168,6 +168,9 @@ export const sessionStats = sqliteTable("session_stats", {
   userWaitS: integer("user_wait_s").notNull().default(0),
   activePct: integer("active_pct").notNull().default(0),
   durationS: integer("duration_s").notNull().default(0),
+  linesAdded: integer("lines_added").notNull().default(0),
+  linesRemoved: integer("lines_removed").notNull().default(0),
+  filesTouched: integer("files_touched").notNull().default(0),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),

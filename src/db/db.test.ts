@@ -175,6 +175,9 @@ describe("stats", () => {
       userWaitS: 120,
       activePct: 71,
       durationS: 420,
+      linesAdded: 0,
+      linesRemoved: 0,
+      filesTouched: 0,
     });
 
     const stats = getSessionStats(session.id);
@@ -192,6 +195,9 @@ describe("stats", () => {
       userWaitS: 150,
       activePct: 73,
       durationS: 550,
+      linesAdded: 0,
+      linesRemoved: 0,
+      filesTouched: 0,
     });
 
     const updated = getSessionStats(session.id);

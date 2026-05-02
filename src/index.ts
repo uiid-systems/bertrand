@@ -24,6 +24,7 @@ if (command && command in hotPath) {
     import("./cli/commands/list"),
     import("./cli/commands/log"),
     import("./cli/commands/stats"),
+    import("./cli/commands/backfill-stats"),
     import("./cli/commands/archive"),
     import("./cli/commands/update"),
     import("./cli/commands/snapshot"),

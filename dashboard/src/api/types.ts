@@ -37,5 +37,8 @@ export type SessionStatsRow = {
   userWaitS: number
   activePct: number
   durationS: number
+  linesAdded: number
+  linesRemoved: number
+  filesTouched: number
   updatedAt: string
 }

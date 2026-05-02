@@ -21,6 +21,9 @@ export function upsertSessionStats(
     userWaitS: number;
     activePct: number;
     durationS: number;
+    linesAdded: number;
+    linesRemoved: number;
+    filesTouched: number;
   }
 ) {
   return getDb()

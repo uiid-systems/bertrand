@@ -1,5 +1,6 @@
 import { getEventsBySession, getEventsByType } from "@/db/queries/events";
 import { upsertSessionStats } from "@/db/queries/stats";
+import { computeDiffStats } from "@/lib/diff_stats";
 
 // --- Types ---
 
@@ -173,6 +174,8 @@ export function computeAndPersist(sessionId: string): TimingSummary {
     (e) => e.event === "session.waiting" || e.event === "session.answered"
   ).length;
 
+  const diff = computeDiffStats(sessionId);
+
   upsertSessionStats(sessionId, {
     eventCount: events.length,
     conversationCount: conversationIds.size,
@@ -182,6 +185,9 @@ export function computeAndPersist(sessionId: string): TimingSummary {
     userWaitS: Math.round(summary.totalUserWaitMs / 1000),
     activePct: summary.activePct,
     durationS: summary.durationS,
+    linesAdded: diff.linesAdded,
+    linesRemoved: diff.linesRemoved,
+    filesTouched: diff.filesTouched,
   });
 
   return summary;

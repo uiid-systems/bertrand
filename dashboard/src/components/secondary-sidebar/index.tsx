@@ -6,6 +6,8 @@ import {
   ArrowLeftRightIcon,
   ClockIcon,
   CpuIcon,
+  FileDiffIcon,
+  FilesIcon,
   GitPullRequestIcon,
   HandshakeIcon,
   HourglassIcon,
@@ -50,55 +52,103 @@ type SessionStatsProps = {
   stats: SessionStatsRow;
 };
 
-const SessionStats = ({ stats }: SessionStatsProps) => (
-  <Stack gap={4} ax="stretch">
-    <Card
-      title="Events"
-      description="Total events emitted"
-      icon={ArrowLeftRightIcon}
-      action={<Stat value={stats.eventCount} />}
-    />
-    <Card
-      title="Interactions"
-      description="User-Claude exchanges"
-      icon={HandshakeIcon}
-      action={<Stat value={stats.interactionCount} />}
-    />
-    <Card
-      title="Conversations"
-      description="Distinct conversation threads"
-      icon={MessageSquareMoreIcon}
-      action={<Stat value={stats.conversationCount} />}
-    />
-    <Card
-      title="Duration"
-      description="Total session time"
-      icon={ClockIcon}
-      action={<Stat label={formatDuration(stats.durationS)} />}
-    />
-    <Card
-      title="Claude work"
-      description="Time Claude spent active"
-      icon={CpuIcon}
-      action={<Stat label={formatDuration(stats.claudeWorkS)} />}
-    />
-    <Card
-      title="User wait"
-      description="Time user spent waiting"
-      icon={HourglassIcon}
-      action={<Stat label={formatDuration(stats.userWaitS)} />}
-    />
-    {stats.prCount > 0 && (
-      <Card
-        title="PRs"
-        description="Pull requests created"
-        icon={GitPullRequestIcon}
-        action={<Stat value={stats.prCount} />}
-      />
-    )}
+const SessionStats = ({ stats }: SessionStatsProps) => {
+  const hasDiff = stats.linesAdded > 0 || stats.linesRemoved > 0;
+  const hasFiles = stats.filesTouched > 0;
+
+  return (
+    <Stack gap={6} ax="stretch">
+      <Section title="Activity">
+        <Card
+          title="Events"
+          description="Total events emitted"
+          icon={ArrowLeftRightIcon}
+          action={<Stat value={stats.eventCount} />}
+        />
+        <Card
+          title="Interactions"
+          description="User-Claude exchanges"
+          icon={HandshakeIcon}
+          action={<Stat value={stats.interactionCount} />}
+        />
+        <Card
+          title="Conversations"
+          description="Distinct conversation threads"
+          icon={MessageSquareMoreIcon}
+          action={<Stat value={stats.conversationCount} />}
+        />
+        <Card
+          title="Duration"
+          description="Total session time"
+          icon={ClockIcon}
+          action={<Stat label={formatDuration(stats.durationS)} />}
+        />
+        <Card
+          title="Claude work"
+          description="Time Claude spent active"
+          icon={CpuIcon}
+          action={<Stat label={formatDuration(stats.claudeWorkS)} />}
+        />
+        <Card
+          title="User wait"
+          description="Time user spent waiting"
+          icon={HourglassIcon}
+          action={<Stat label={formatDuration(stats.userWaitS)} />}
+        />
+      </Section>
+
+      {(hasDiff || hasFiles || stats.prCount > 0) && (
+        <Section title="Code">
+          {hasDiff && (
+            <Card
+              title="Lines changed"
+              description="Across all edits"
+              icon={FileDiffIcon}
+              action={
+                <DiffStat added={stats.linesAdded} removed={stats.linesRemoved} />
+              }
+            />
+          )}
+          {hasFiles && (
+            <Card
+              title="Files touched"
+              description="Distinct files edited"
+              icon={FilesIcon}
+              action={<Stat value={stats.filesTouched} />}
+            />
+          )}
+          {stats.prCount > 0 && (
+            <Card
+              title="PRs"
+              description="Pull requests created"
+              icon={GitPullRequestIcon}
+              action={<Stat value={stats.prCount} />}
+            />
+          )}
+        </Section>
+      )}
+    </Stack>
+  );
+};
+SessionStats.displayName = "SessionStats";
+
+const Section = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <Stack gap={2} ax="stretch">
+    <Text size={-1} shade="muted" weight="bold">
+      {title.toUpperCase()}
+    </Text>
+    <Stack gap={4} ax="stretch">
+      {children}
+    </Stack>
   </Stack>
 );
-SessionStats.displayName = "SessionStats";
+Section.displayName = "Section";
 
 const Stat = ({ value, label }: { value?: number; label?: string }) => (
   <Text size={3} family="mono" weight="bold">
@@ -106,3 +156,16 @@ const Stat = ({ value, label }: { value?: number; label?: string }) => (
   </Text>
 );
 Stat.displayName = "Stat";
+
+const DiffStat = ({ added, removed }: { added: number; removed: number }) => (
+  <Text size={3} family="mono" weight="bold">
+    <Text color="green" family="mono" weight="bold">
+      {`+${added}`}
+    </Text>
+    {" / "}
+    <Text color="red" family="mono" weight="bold">
+      {`-${removed}`}
+    </Text>
+  </Text>
+);
+DiffStat.displayName = "DiffStat";
