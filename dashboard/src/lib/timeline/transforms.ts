@@ -80,6 +80,14 @@ function extractEdits(meta: Record<string, unknown> | null): EditEntry[] | undef
   return parsed.length > 0 ? parsed : undefined
 }
 
+function asEdits(p: PermissionDetail): EditEntry[] {
+  if (p.edits && p.edits.length > 0) return p.edits
+  if (p.oldStr || p.newStr) {
+    return [{ oldStr: p.oldStr ?? "", newStr: p.newStr ?? "" }]
+  }
+  return []
+}
+
 function extractPermissionDetail(event: EventRow): PermissionDetail {
   const meta = event.meta as Record<string, unknown> | null
   const oldStr = meta?.old_str
@@ -158,13 +166,19 @@ export const consolidatePermissions: TimelineTransform = (events) => {
     // Check if there's a resolve for each request (batch has both)
     const hasResolves = batch.some((e) => e.event === "permission.resolve")
 
-    // Deduplicate identical tool+detail pairs, adding counts
+    // Deduplicate identical tool+detail pairs, adding counts and accumulating diffs
     const dedupMap = new Map<string, PermissionDetail & { count: number }>()
     for (const p of permissions) {
       const key = `${p.tool}::${p.detail}`
       const existing = dedupMap.get(key)
       if (existing) {
         existing.count++
+        const merged = [...asEdits(existing), ...asEdits(p)]
+        if (merged.length > 0) {
+          existing.edits = merged
+          existing.oldStr = undefined
+          existing.newStr = undefined
+        }
       } else {
         dedupMap.set(key, { ...p, count: 1 })
       }
@@ -259,6 +273,12 @@ export const consolidateToolApplied: TimelineTransform = (events) => {
       const incoming = (p as PermissionDetail & { count?: number }).count ?? 1
       if (existing) {
         existing.count += incoming
+        const merged = [...asEdits(existing), ...asEdits(p)]
+        if (merged.length > 0) {
+          existing.edits = merged
+          existing.oldStr = undefined
+          existing.newStr = undefined
+        }
       } else {
         dedupMap.set(key, { ...p, count: incoming })
       }

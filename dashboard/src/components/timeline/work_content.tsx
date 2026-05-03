@@ -78,7 +78,7 @@ export function WorkContent({ event }: WorkContentProps) {
           items={[
             {
               value: "diff",
-              trigger: p.detail,
+              trigger: permissionTrigger(p),
               content: <DiffContent permission={p} />,
             },
           ]}
@@ -88,7 +88,7 @@ export function WorkContent({ event }: WorkContentProps) {
 
     return (
       <Text size={-1} family="mono" shade="muted">
-        {p.detail}
+        {permissionTrigger(p)}
       </Text>
     );
   }
