@@ -49,6 +49,14 @@ function isCheckboxInput(node: ReactNode): node is InputElement {
   );
 }
 
+function isTaskList(children: ReactNode): boolean {
+  return Children.toArray(children).some((c) => {
+    if (!isValidElement(c)) return false;
+    const liChildren = Children.toArray((c as LiElement).props.children);
+    return isCheckboxInput(liChildren[0]);
+  });
+}
+
 function buildListItems(children: ReactNode): ListItemProps[] {
   return Children.toArray(children)
     .filter((c): c is LiElement => isValidElement(c))
@@ -130,7 +138,10 @@ export const defaultComponents: Components = {
     </a>
   ),
   ul: ({ children }) => (
-    <List type="unordered" items={buildListItems(children)} />
+    <List
+      type={isTaskList(children) ? "none" : "unordered"}
+      items={buildListItems(children)}
+    />
   ),
   ol: ({ children }) => (
     <List type="ordered" items={buildListItems(children)} />
