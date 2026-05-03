@@ -1,16 +1,12 @@
 import { Badge, Card, Group, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
+import { modelLabel } from "../../lib/format";
 import { Markdown } from "../markdown";
 
 type LifecycleContentProps = {
   event: EventRow;
 };
-
-function modelLabel(model: string | undefined): string | undefined {
-  if (!model) return undefined;
-  return model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
-}
 
 function shortId(id: string | undefined): string | undefined {
   if (!id) return undefined;

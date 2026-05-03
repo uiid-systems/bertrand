@@ -30,8 +30,6 @@ if (command && command in hotPath) {
     import("./cli/commands/snapshot"),
     import("./cli/commands/assistant-message"),
     import("./cli/commands/serve"),
-    import("./cli/commands/import"),
-    import("./cli/commands/completion"),
     import("./cli/commands/badge"),
     import("./cli/commands/notify"),
   ]);

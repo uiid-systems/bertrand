@@ -28,6 +28,11 @@ export function formatDuration(seconds: number): string {
   return `${s}s`
 }
 
+export function modelLabel(model: string | undefined): string | undefined {
+  if (!model) return undefined
+  return model.replace(/^claude-/, "").replace(/-\d{8}$/, "")
+}
+
 export function formatRelativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
 

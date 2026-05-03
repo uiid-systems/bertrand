@@ -51,9 +51,14 @@ const routes: [RegExp, RouteHandler][] = [
 function match(pathname: string, url: URL): Response {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
-    if (m) {
+    if (!m) continue
+    try {
       const result = handler(m.groups ?? {}, url)
       return Response.json(result ?? null)
+    } catch (err) {
+      console.error(`[server] ${pathname} failed:`, err)
+      const message = err instanceof Error ? err.message : "Internal server error"
+      return Response.json({ error: message }, { status: 500 })
     }
   }
   return Response.json({ error: "Not found" }, { status: 404 })
