@@ -184,10 +184,16 @@ export const defaultComponents: Components = {
       type={isTaskList(children) ? "none" : "unordered"}
       size="large"
       items={buildListItems(children)}
+      style={{ display: "block" }}
     />
   ),
   ol: ({ children }) => (
-    <List type="ordered" size="large" items={buildListItems(children)} />
+    <List
+      type="ordered"
+      size="large"
+      items={buildListItems(children)}
+      style={{ display: "block" }}
+    />
   ),
   blockquote: ({ children }) => <blockquote>{children}</blockquote>,
   hr: () => <Separator />,
