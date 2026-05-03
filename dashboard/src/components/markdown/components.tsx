@@ -49,6 +49,10 @@ function isCheckboxInput(node: ReactNode): node is InputElement {
   );
 }
 
+function isNestedList(node: ReactNode): boolean {
+  return isValidElement(node) && (node.type as unknown) === List;
+}
+
 function isTaskList(children: ReactNode): boolean {
   return Children.toArray(children).some((c) => {
     if (!isValidElement(c)) return false;
@@ -76,8 +80,28 @@ function buildListItems(children: ReactNode): ListItemProps[] {
           label: (
             <Group ay="center" gap={2}>
               <Checkbox checked={checked} disabled />
-              <Text size={1}>{rest}</Text>
+              <Text>{rest}</Text>
             </Group>
+          ),
+        };
+      }
+
+      // Nested ul/ol: split parent text from the nested List so the inner
+      // list renders in ListItem's `content` slot (under the label) instead
+      // of inline within it.
+      const nestedIndex = liChildren.findIndex(isNestedList);
+      if (nestedIndex >= 0) {
+        const before = liChildren.slice(0, nestedIndex);
+        const nested = liChildren[nestedIndex];
+        const after = liChildren.slice(nestedIndex + 1);
+        return {
+          value: `item-${i}`,
+          label: <>{before}</>,
+          content: (
+            <>
+              {nested}
+              {after}
+            </>
           ),
         };
       }
@@ -140,11 +164,12 @@ export const defaultComponents: Components = {
   ul: ({ children }) => (
     <List
       type={isTaskList(children) ? "none" : "unordered"}
+      size="large"
       items={buildListItems(children)}
     />
   ),
   ol: ({ children }) => (
-    <List type="ordered" items={buildListItems(children)} />
+    <List type="ordered" size="large" items={buildListItems(children)} />
   ),
   blockquote: ({ children }) => <blockquote>{children}</blockquote>,
   hr: () => <Separator />,
