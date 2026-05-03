@@ -5,7 +5,11 @@ import {
   getSession,
   getSessionByGroupSlug,
 } from "@/db/queries/sessions";
-import { createConversation, endConversation } from "@/db/queries/conversations";
+import {
+  createConversation,
+  endConversation,
+  getConversation,
+} from "@/db/queries/conversations";
 import { insertEvent } from "@/db/queries/events";
 import { getOrCreateGroupPath, getGroup, getGroupByPath } from "@/db/queries/groups";
 import { buildContract } from "@/contract/template";
@@ -86,28 +90,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     contract,
   });
 
-  // Cleanup
-  endConversation(claudeId);
-  insertEvent({
-    sessionId: session.id,
-    conversationId: claudeId,
-    event: "claude.ended",
-    meta: { claude_id: claudeId, exit_code: exitCode },
-  });
-
-  updateSession(session.id, {
-    status: "paused",
-    pid: null,
-    endedAt: new Date().toISOString(),
-  });
-
-  insertEvent({
-    sessionId: session.id,
-    event: "session.end",
-  });
-
-  computeAndPersist(session.id);
-
+  finalizeSession(session.id, claudeId, exitCode);
   return session.id;
 }
 
@@ -143,26 +126,47 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     resume: true,
   });
 
-  endConversation(opts.conversationId);
+  finalizeSession(session.id, opts.conversationId, exitCode);
+  return session.id;
+}
+
+/**
+ * Run end-of-Claude cleanup defensively. If the session or conversation row
+ * was deleted while Claude was running (parallel bertrand instance, manual
+ * delete, etc.), skip the writes that would violate FK constraints rather
+ * than crashing the post-Claude TUI flow.
+ */
+function finalizeSession(
+  sessionId: string,
+  conversationId: string,
+  exitCode: number
+): void {
+  if (!getSession(sessionId)) return;
+
+  const conversationExists = !!getConversation(conversationId);
+  const safeConversationId = conversationExists ? conversationId : undefined;
+
+  if (conversationExists) {
+    endConversation(conversationId);
+  }
+
   insertEvent({
-    sessionId: session.id,
-    conversationId: opts.conversationId,
+    sessionId,
+    conversationId: safeConversationId,
     event: "claude.ended",
-    meta: { claude_id: opts.conversationId, exit_code: exitCode },
+    meta: { claude_id: conversationId, exit_code: exitCode },
   });
 
-  updateSession(session.id, {
+  updateSession(sessionId, {
     status: "paused",
     pid: null,
     endedAt: new Date().toISOString(),
   });
 
   insertEvent({
-    sessionId: session.id,
+    sessionId,
     event: "session.end",
   });
 
-  computeAndPersist(session.id);
-
-  return session.id;
+  computeAndPersist(sessionId);
 }
