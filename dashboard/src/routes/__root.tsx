@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -20,6 +20,23 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  if (pathname.startsWith("/dev/")) {
+    return (
+      <Stack
+        fullwidth
+        render={<main />}
+        style={{ position: "fixed", inset: 0, height: "100dvh", overflow: "auto" }}
+      >
+        <Outlet />
+      </Stack>
+    );
+  }
+
+  return <AppShell />;
+}
+
+function AppShell() {
   const { data: sessions = [] } = useQuery(sessionsQuery);
 
   return (

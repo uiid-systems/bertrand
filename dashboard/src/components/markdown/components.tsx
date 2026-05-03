@@ -1,7 +1,9 @@
 import {
+  Checkbox,
   CodeBlock,
   CodeInline,
   LANGUAGE_DISPLAY_NAMES,
+  List,
   TableBody,
   TableCell,
   TableContainer,
@@ -71,24 +73,31 @@ export const defaultComponents: Components = {
     </Text>
   ),
   strong: ({ children }) => <Text weight="bold">{children}</Text>,
-  em: ({ children }) => <em>{children}</em>,
-  del: ({ children }) => <del>{children}</del>,
+  em: ({ children }) => (
+    <Text render={<em />}>{children}</Text>
+  ),
+  del: ({ children }) => (
+    <Text strikethrough render={<del />}>
+      {children}
+    </Text>
+  ),
   a: ({ children, href }) => (
     <a href={href} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   ),
-  ul: ({ children }) => <ul>{children}</ul>,
-  ol: ({ children }) => <ol>{children}</ol>,
+  ul: ({ children }) => <List type="unordered">{children}</List>,
+  ol: ({ children }) => <List type="ordered">{children}</List>,
   li: ({ children }) => (
     <li>
       <Text size={1}>{children}</Text>
     </li>
   ),
-  // GFM task-list checkbox — disabled, render-only.
-  input: ({ type, checked, disabled }) =>
+  // GFM task-list checkbox — disabled, render-only. react-markdown also fires
+  // this for non-checkbox inputs, which we drop.
+  input: ({ type, checked }) =>
     type === "checkbox" ? (
-      <input type="checkbox" checked={!!checked} disabled={disabled ?? true} readOnly />
+      <Checkbox checked={!!checked} disabled />
     ) : null,
   blockquote: ({ children }) => <blockquote>{children}</blockquote>,
   hr: () => <hr />,
