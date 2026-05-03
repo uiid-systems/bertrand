@@ -56,6 +56,10 @@ export function eventTitle(event: EventRow): string {
     }
     case "tool.work":
       return event.summary ?? label
+    case "context.snapshot": {
+      const pct = meta.remaining_pct as string | undefined
+      return pct ? `${pct}% remaining` : label
+    }
     default:
       return label
   }

@@ -64,22 +64,6 @@ export type PermissionDetail = {
   edits?: EditEntry[]
 }
 
-function extractEdits(meta: Record<string, unknown> | null): EditEntry[] | undefined {
-  const raw = meta?.edits
-  if (!Array.isArray(raw)) return undefined
-  const parsed: EditEntry[] = []
-  for (const entry of raw) {
-    if (entry && typeof entry === "object") {
-      const e = entry as Record<string, unknown>
-      parsed.push({
-        oldStr: typeof e.old_str === "string" ? e.old_str : "",
-        newStr: typeof e.new_str === "string" ? e.new_str : "",
-      })
-    }
-  }
-  return parsed.length > 0 ? parsed : undefined
-}
-
 function asEdits(p: PermissionDetail): EditEntry[] {
   if (p.edits && p.edits.length > 0) return p.edits
   if (p.oldStr || p.newStr) {
@@ -88,17 +72,15 @@ function asEdits(p: PermissionDetail): EditEntry[] {
   return []
 }
 
+// permission.request / permission.resolve events carry only {tool, detail, outcome}.
+// Diff data lives on tool.applied events (camelCase) and is read directly by
+// consolidateToolApplied, never via this helper.
 function extractPermissionDetail(event: EventRow): PermissionDetail {
   const meta = event.meta as Record<string, unknown> | null
-  const oldStr = meta?.old_str
-  const newStr = meta?.new_str
   return {
     tool: (meta?.tool as string) ?? "unknown",
     detail: (meta?.detail as string) ?? "",
     outcome: (meta?.outcome as string) ?? (event.event === "permission.resolve" ? "approved" : "pending"),
-    oldStr: typeof oldStr === "string" ? oldStr : undefined,
-    newStr: typeof newStr === "string" ? newStr : undefined,
-    edits: extractEdits(meta),
   }
 }
 
@@ -141,27 +123,16 @@ export const consolidatePermissions: TimelineTransform = (events) => {
       i++
     }
 
-    // Extract permission details from requests; merge diff data from the paired resolve.
-    // Hook emits request+resolve in order, so position-based pairing matches them up.
-    // Rejected requests have no resolve at their index → entry stays without diff.
+    // Extract permission details from requests. Resolves carry no extra payload
+    // beyond outcome=approved (diffs live on tool.applied), so we just need the
+    // requests and the presence/absence of paired resolves.
     const requests = batch.filter((e) => e.event === "permission.request")
-    const resolves = batch.filter((e) => e.event === "permission.resolve")
 
     // Orphan resolves with no matching request — drop the batch entirely.
     // These can occur from stale /tmp markers or partial event-write failures.
     if (requests.length === 0) continue
 
-    const permissions: PermissionDetail[] = requests.map((req, idx) => {
-      const detail = extractPermissionDetail(req)
-      const resolve = resolves[idx]
-      if (resolve) {
-        const resolveDetail = extractPermissionDetail(resolve)
-        if (resolveDetail.oldStr) detail.oldStr = resolveDetail.oldStr
-        if (resolveDetail.newStr) detail.newStr = resolveDetail.newStr
-        if (resolveDetail.edits) detail.edits = resolveDetail.edits
-      }
-      return detail
-    })
+    const permissions: PermissionDetail[] = requests.map(extractPermissionDetail)
 
     // Check if there's a resolve for each request (batch has both)
     const hasResolves = batch.some((e) => e.event === "permission.resolve")
@@ -313,12 +284,47 @@ export const decorateToolApplied: TimelineTransform = (events) =>
     return { ...e, summary: TOOL_APPLIED_TITLES[tool] ?? `${tool} applied` }
   })
 
+/**
+ * Lifecycle events (claude.started/ended/discarded) only carry claude_id; the
+ * model surfaces on context.snapshot. Pull the nearest snapshot's model onto
+ * each lifecycle event in the same conversation so renderers can show it.
+ */
+export const decorateLifecycleModel: TimelineTransform = (events) => {
+  const lifecycleTypes = new Set(["claude.started", "claude.ended", "claude.discarded"])
+  return events.map((e, i) => {
+    if (!lifecycleTypes.has(e.event)) return e
+    const meta = e.meta as Record<string, unknown> | null
+    if (meta?.model) return e
+
+    const cid = (meta?.claude_id as string | undefined) ?? e.conversationId
+    if (!cid) return e
+
+    // claude.started → look forward for first snapshot; ended/discarded → look back
+    const forward = e.event === "claude.started"
+    const range = forward
+      ? events.slice(i + 1)
+      : events.slice(0, i).reverse()
+
+    for (const candidate of range) {
+      if (candidate.event !== "context.snapshot") continue
+      const cMeta = candidate.meta as Record<string, unknown> | null
+      const cCid = (cMeta?.claude_id as string | undefined) ?? candidate.conversationId
+      if (cCid !== cid) continue
+      const model = cMeta?.model as string | undefined
+      if (!model) continue
+      return { ...e, meta: { ...meta, model } }
+    }
+    return e
+  })
+}
+
 const transforms: TimelineTransform[] = [
   consolidateLifecycle,
   consolidateInteractions,
   consolidatePermissions,
   consolidateToolApplied,
   decorateToolApplied,
+  decorateLifecycleModel,
 ]
 
 export function applyTransforms(events: EventRow[]): EventRow[] {
