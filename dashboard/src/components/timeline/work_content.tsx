@@ -95,7 +95,7 @@ export function WorkContent({ event }: WorkContentProps) {
 
   // Multiple permissions — one accordion item per file, each expanding to its diff
   return (
-    <Stack gap={2}>
+    <Stack data-slot="work-content" gap={2} fullwidth>
       <Text size={-1} shade="muted">
         {`${permissions.length} files`}
       </Text>

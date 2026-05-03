@@ -22,7 +22,7 @@ export function AssistantContent({ event }: AssistantContentProps) {
   if (!text && thinkingBlocks === 0) return null;
 
   return (
-    <Stack gap={2} maxw={680}>
+    <Stack data-slot="assistant-content" gap={2} maxw={680}>
       {thinkingBlocks > 0 && (
         <Badge color="indigo">{`Thought ${thoughtDots(thinkingBytes)}`}</Badge>
       )}

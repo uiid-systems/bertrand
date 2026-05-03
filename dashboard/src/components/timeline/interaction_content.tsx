@@ -67,7 +67,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
     const questions = meta?.questions as QuestionDef[] | undefined;
 
     return (
-      <Stack gap={2} py={4}>
+      <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
         {Object.entries(answers).map(([question, answer]) => {
           const { selection, note } = splitSelectionAndNote(
             answer,
@@ -77,7 +77,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
           const multiSelect = qDef?.multiSelect ?? false;
           const options = qDef?.options ?? [];
           return (
-            <Card key={question} gap={4}>
+            <Card key={question} gap={4} fullwidth>
               {options.length > 0 && (
                 <List
                   type="ordered"
@@ -101,7 +101,12 @@ export function InteractionContent({ event }: InteractionContentProps) {
                 />
               )}
               {note && (
-                <Stack gap={4} m={2}>
+                <Stack
+                  data-slot="interaction-content-note"
+                  gap={4}
+                  m={2}
+                  fullwidth
+                >
                   <Text color="green" weight="bold">
                     {options.length > 0
                       ? "Additional notes:"

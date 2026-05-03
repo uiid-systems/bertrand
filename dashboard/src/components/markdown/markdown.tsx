@@ -22,7 +22,7 @@ function normalizeMarkdown(input: string): string {
 
 export function Markdown({ children, components }: MarkdownProps) {
   return (
-    <Stack gap={2}>
+    <Stack gap={4} fullwidth>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{ ...defaultComponents, ...components }}
