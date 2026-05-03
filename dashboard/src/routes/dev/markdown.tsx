@@ -131,17 +131,17 @@ function MarkdownDevPage() {
   return (
     <Stack gap={4} p={6} fullwidth style={{ overflow: "auto" }}>
       <Stack gap={2}>
-        <Text size={2} weight="bold">
+        <Text size={3} weight="bold">
           Markdown kitchen sink
         </Text>
-        <Text size={1} shade="muted">
+        <Text size={2} shade="muted">
           Edit the source on the left, see it rendered on the right. Reset by
           reloading the page.
         </Text>
       </Stack>
 
-      <Group gap={4} fullwidth ay="stretch" style={{ minHeight: 0 }}>
-        <Stack gap={2} fullwidth style={{ flex: 1, minWidth: 0 }}>
+      <Group gap={4} fullwidth ay="stretch" evenly>
+        <Stack gap={2} ax="stretch">
           <Text size={0} shade="muted">
             source
           </Text>
@@ -165,7 +165,7 @@ function MarkdownDevPage() {
           />
         </Stack>
 
-        <Stack gap={2} fullwidth style={{ flex: 1, minWidth: 0 }}>
+        <Stack gap={2}>
           <Text size={0} shade="muted">
             rendered
           </Text>
