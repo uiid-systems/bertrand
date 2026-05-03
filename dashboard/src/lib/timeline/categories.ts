@@ -43,6 +43,7 @@ const EVENT_CATALOG: Record<string, EventInfo> = {
   "vercel.deploy": { category: "milestone", color: "purple", label: "deploy" },
   "user.prompt": { category: "interaction", color: "green", label: "prompt" },
   "context.snapshot": { category: "context", color: "neutral", label: "context" },
+  "session.recap": { category: "lifecycle", color: "blue", label: "session recap" },
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
   "tool.applied": { category: "work", color: "yellow", label: "applied" },
   "assistant.message": { category: "assistant", color: "indigo", label: "assistant" },

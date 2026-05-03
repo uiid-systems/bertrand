@@ -91,6 +91,18 @@ ${BIN} badge --clear &
 # Halt the agent loop if the user signaled Done for now. The Stop hook
 # (on-done.sh) will fire afterwards and mark the session as paused.
 if printf '%s' "$done_check" | grep -q "Done for now"; then
+  # Promote the picked Done-for-now option's description into a session.recap
+  # event so the timeline has a dedicated end-of-session summary row. Bertrand
+  # forces session exit before Claude can write a closing message, so this
+  # reuses the agent-authored recap that already lives on the option.
+  recap="$(printf '%s' "$meta" | jq -r '
+    [.questions[]?.options[]? | select(.label == "Done for now") | .description] | first // empty
+  ' 2>/dev/null)"
+  if [ -n "$recap" ]; then
+    ${BIN} update --session-id "$sid" --event session.recap \
+      --meta "$(jq -n --arg recap "$recap" --arg cid "$cid" '{recap:$recap, claude_id:$cid}')"
+  fi
+
   printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
 fi
 

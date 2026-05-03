@@ -21,6 +21,7 @@ const ALL_EVENT_TYPES: EventType[] = [
   "vercel.deploy",
   "user.prompt",
   "context.snapshot",
+  "session.recap",
 ];
 
 function row(event: string, meta?: unknown) {
@@ -127,6 +128,11 @@ describe("enrich", () => {
   test("extracts context remaining pct", () => {
     const enriched = enrich(row("context.snapshot", { remaining_pct: "45" }));
     expect(enriched.summary).toBe("45% remaining");
+  });
+
+  test("extracts recap text from session.recap", () => {
+    const enriched = enrich(row("session.recap", { recap: "Shipped the timeline content" }));
+    expect(enriched.summary).toBe("Shipped the timeline content");
   });
 
   test("no meta returns empty summary", () => {

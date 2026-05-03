@@ -21,6 +21,7 @@ const EVENT_TYPES = [
   "user.prompt",
   "context.snapshot",
   "tool.work",
+  "session.recap",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -61,6 +62,7 @@ const catalog = {
   "user.prompt": { label: "prompt", category: "interaction", color: 36, detailColor: 245, skip: false },
   "context.snapshot": { label: "context", category: "context", color: 245, detailColor: 245, skip: true },
   "tool.work": { label: "tool work", category: "work", color: 214, detailColor: 245, skip: false },
+  "session.recap": { label: "session recap", category: "lifecycle", color: 33, detailColor: 245, skip: false },
 } satisfies Record<EventType, EventInfo>;
 
 const DEFAULT_INFO: EventInfo = {
@@ -152,6 +154,8 @@ function extractSummary(row: EventRow): string {
       return (meta.prompt as string) ?? "";
     case "context.snapshot":
       return (meta.remaining_pct as string) ? `${meta.remaining_pct}% remaining` : "";
+    case "session.recap":
+      return (meta.recap as string) ?? "";
     default:
       return "";
   }

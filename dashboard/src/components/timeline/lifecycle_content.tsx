@@ -1,6 +1,7 @@
-import { Badge, Group } from "@uiid/design-system";
+import { Badge, Card, Group, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
+import { Markdown } from "../markdown";
 
 type LifecycleContentProps = {
   event: EventRow;
@@ -18,6 +19,19 @@ function shortId(id: string | undefined): string | undefined {
 
 export function LifecycleContent({ event }: LifecycleContentProps) {
   const meta = event.meta as Record<string, unknown> | null;
+
+  if (event.event === "session.recap") {
+    const recap = meta?.recap as string | undefined;
+    if (!recap) return null;
+    return (
+      <Stack py={4}>
+        <Card>
+          <Markdown>{recap}</Markdown>
+        </Card>
+      </Stack>
+    );
+  }
+
   const claudeId =
     (meta?.claude_id as string | undefined) ??
     event.conversationId ??
