@@ -16,8 +16,14 @@ import {
   TableRow,
   Text,
 } from "@uiid/design-system";
-import type { BundledLanguage, ListItemProps } from "@uiid/design-system";
+import type {
+  BundledLanguage,
+  ListItemGroupProps,
+  ListItemProps,
+} from "@uiid/design-system";
 import type { Components } from "react-markdown";
+
+type ListItemOrGroup = ListItemProps | ListItemGroupProps;
 
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
 
@@ -61,10 +67,22 @@ function isTaskList(children: ReactNode): boolean {
   });
 }
 
-function buildListItems(children: ReactNode): ListItemProps[] {
+function extractText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (isValidElement(node)) {
+    const children = (node.props as { children?: ReactNode }).children;
+    return extractText(children);
+  }
+  return "";
+}
+
+function buildListItems(children: ReactNode): ListItemOrGroup[] {
   return Children.toArray(children)
     .filter((c): c is LiElement => isValidElement(c))
-    .map((li, i): ListItemProps => {
+    .map((li, i): ListItemOrGroup => {
       const liChildren = Children.toArray(li.props.children);
       const first = liChildren[0];
 
@@ -86,23 +104,23 @@ function buildListItems(children: ReactNode): ListItemProps[] {
         };
       }
 
-      // Nested ul/ol: split parent text from the nested List so the inner
-      // list renders in ListItem's `content` slot (under the label) instead
-      // of inline within it.
+      // Nested ul/ol: convert into a ListItemGroup whose items are the
+      // nested List's own items. ListItemGroupProps.category is typed
+      // `string`, so we extract the parent's text — rich formatting on a
+      // parent that has children is rare in markdown.
       const nestedIndex = liChildren.findIndex(isNestedList);
       if (nestedIndex >= 0) {
-        const before = liChildren.slice(0, nestedIndex);
-        const nested = liChildren[nestedIndex];
-        const after = liChildren.slice(nestedIndex + 1);
+        const nested = liChildren[nestedIndex] as ReactElement<{
+          items?: ListItemOrGroup[];
+        }>;
+        const beforeAndAfter = [
+          ...liChildren.slice(0, nestedIndex),
+          ...liChildren.slice(nestedIndex + 1),
+        ];
         return {
-          value: `item-${i}`,
-          label: <>{before}</>,
-          content: (
-            <>
-              {nested}
-              {after}
-            </>
-          ),
+          id: `group-${i}`,
+          category: extractText(beforeAndAfter).trim(),
+          items: nested.props.items ?? [],
         };
       }
 
