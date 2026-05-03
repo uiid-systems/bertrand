@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SessionsSlugRouteImport } from './routes/sessions/$slug'
 import { Route as GroupsSplatRouteImport } from './routes/groups/$'
+import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,33 +29,42 @@ const GroupsSplatRoute = GroupsSplatRouteImport.update({
   path: '/groups/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevMarkdownRoute = DevMarkdownRouteImport.update({
+  id: '/dev/markdown',
+  path: '/dev/markdown',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/groups/$' | '/sessions/$slug'
+  fullPaths: '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/groups/$' | '/sessions/$slug'
-  id: '__root__' | '/' | '/groups/$' | '/sessions/$slug'
+  to: '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
+  id: '__root__' | '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DevMarkdownRoute: typeof DevMarkdownRoute
   GroupsSplatRoute: typeof GroupsSplatRoute
   SessionsSlugRoute: typeof SessionsSlugRoute
 }
@@ -82,11 +92,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GroupsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dev/markdown': {
+      id: '/dev/markdown'
+      path: '/dev/markdown'
+      fullPath: '/dev/markdown'
+      preLoaderRoute: typeof DevMarkdownRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevMarkdownRoute: DevMarkdownRoute,
   GroupsSplatRoute: GroupsSplatRoute,
   SessionsSlugRoute: SessionsSlugRoute,
 }

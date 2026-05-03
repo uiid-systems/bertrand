@@ -95,7 +95,7 @@ cd dashboard
 bun run dev
 ```
 
-This spawns `bertrand serve` (API on `:5200`) and `vite` (dashboard on `:5173`). Visit [http://localhost:5173](http://localhost:5173).
+This spawns `bertrand serve` (API on `:5200`) and `vite` (dashboard on `:5199`). Visit [http://localhost:5199](http://localhost:5199). The dashboard proxies `/api` to `:5200`.
 
 > The dashboard is currently dev-mode only. There's no production build/serve path yet.
 
