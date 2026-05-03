@@ -9,10 +9,15 @@ type MarkdownProps = {
   components?: Partial<Components>;
 };
 
-// AskUserQuestion stores user-typed notes with `\r` line breaks, which
-// react-markdown ignores — collapsing fenced code blocks and lists onto one line.
-function normalizeLineEndings(input: string): string {
-  return input.replace(/\r\n?/g, "\n");
+// AskUserQuestion captures user-typed notes with `\r` line breaks and tends to
+// flatten pasted content — leaving fenced code markers (```) mid-line, which
+// remark-gfm refuses to parse as code blocks. Force every ``` onto its own
+// line so multi-line pastes still render as code.
+function normalizeMarkdown(input: string): string {
+  let out = input.replace(/\r\n?/g, "\n");
+  out = out.replace(/([^\n])```/g, "$1\n```");
+  out = out.replace(/```([^\n])/g, "```\n$1");
+  return out;
 }
 
 export function Markdown({ children, components }: MarkdownProps) {
@@ -22,7 +27,7 @@ export function Markdown({ children, components }: MarkdownProps) {
         remarkPlugins={[remarkGfm]}
         components={{ ...defaultComponents, ...components }}
       >
-        {normalizeLineEndings(children)}
+        {normalizeMarkdown(children)}
       </ReactMarkdown>
     </Stack>
   );
