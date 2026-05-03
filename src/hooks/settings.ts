@@ -53,6 +53,12 @@ const BERTRAND_HOOKS: HooksByEvent = {
       hooks: [{ type: "command", command: `${paths.hooks}/on-done.sh` }],
     },
   ],
+  UserPromptSubmit: [
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-user-prompt.sh` }],
+    },
+  ],
 };
 
 function isBertrandGroup(group: HookGroup): boolean {

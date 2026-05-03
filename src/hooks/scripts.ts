@@ -226,6 +226,27 @@ wait
 `;
 }
 
+/**
+ * UserPromptSubmit → record user free-text prompt as user.prompt event.
+ * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
+ * handling is fine — grep would mangle prompts containing quotes or newlines.
+ */
+export function userPromptScript(): string {
+  return `#!/usr/bin/env bash
+# Hook: UserPromptSubmit → record user free-text prompt
+sid="\${BERTRAND_SESSION:-}"
+[ -z "$sid" ] && exit 0
+
+input="$(cat)"
+cid="\${BERTRAND_CLAUDE_ID:-}"
+
+meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
+[ -z "$meta" ] && exit 0
+
+${BIN} update --session-id "$sid" --event user.prompt --meta "$meta"
+`;
+}
+
 /** Stop hook → mark session as paused + final context snapshot */
 export function doneScript(): string {
   return `#!/usr/bin/env bash
@@ -254,5 +275,6 @@ export const HOOK_SCRIPTS = {
   "on-active.sh": activeScript,
   "on-permission-wait.sh": permissionWaitScript,
   "on-permission-done.sh": permissionDoneScript,
+  "on-user-prompt.sh": userPromptScript,
   "on-done.sh": doneScript,
 } as const;
