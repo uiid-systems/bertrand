@@ -90,9 +90,18 @@ describe("enrich", () => {
     expect(enriched.summary).toBe("What file?");
   });
 
-  test("extracts summary from session.answered answer", () => {
-    const enriched = enrich(row("session.answered", { answer: "src/index.ts" }));
+  test("extracts summary from session.answered answers", () => {
+    const enriched = enrich(
+      row("session.answered", { answers: { "Which file?": "src/index.ts" } }),
+    );
     expect(enriched.summary).toBe("src/index.ts");
+  });
+
+  test("joins multiple session.answered answers", () => {
+    const enriched = enrich(
+      row("session.answered", { answers: { Q1: "yes", Q2: "no" } }),
+    );
+    expect(enriched.summary).toBe("yes, no");
   });
 
   test("extracts summary from permission events", () => {

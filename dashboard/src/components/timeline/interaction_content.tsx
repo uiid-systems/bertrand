@@ -119,8 +119,15 @@ export function InteractionContent({ event }: InteractionContentProps) {
 
   if (event.event === "user.prompt") {
     const prompt = meta?.prompt as string | undefined;
+    if (!prompt) return null;
 
-    return prompt ? <Markdown>{prompt}</Markdown> : null;
+    return (
+      <Stack py={4}>
+        <Card>
+          <Markdown>{prompt}</Markdown>
+        </Card>
+      </Stack>
+    );
   }
 
   return null;

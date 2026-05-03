@@ -42,17 +42,19 @@ function contextTokenStats(sessionId: string) {
 
   for (const ev of snapshots) {
     const meta = ev.meta as Record<string, unknown> | null;
-    const input = parseInt((meta?.input_tokens as string) ?? "0", 10);
-    const cacheRead = parseInt((meta?.cache_read_tokens as string) ?? "0", 10);
-    const total = (Number.isFinite(input) ? input : 0) + (Number.isFinite(cacheRead) ? cacheRead : 0);
-    if (total > 0) samples.push(total);
+    const total = parseInt((meta?.context_window_tokens as string) ?? "0", 10);
+    if (Number.isFinite(total) && total > 0) samples.push(total);
   }
 
   if (samples.length === 0) return { avg: 0, max: 0, latest: 0 };
 
-  const sum = samples.reduce((a, b) => a + b, 0);
+  let sum = 0;
+  let max = 0;
+  for (const n of samples) {
+    sum += n;
+    if (n > max) max = n;
+  }
   const avg = Math.round(sum / samples.length);
-  const max = Math.max(...samples);
   const latest = samples[samples.length - 1] ?? 0;
   return { avg, max, latest };
 }

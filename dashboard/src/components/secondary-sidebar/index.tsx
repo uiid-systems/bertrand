@@ -1,7 +1,7 @@
 import { useMatch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { Card, Stack, Text } from "@uiid/design-system";
+import { Card, Stack, Tabs, Text, type TabProps } from "@uiid/design-system";
 import {
   ArrowLeftRightIcon,
   ClockIcon,
@@ -79,6 +79,7 @@ function topToolsLabel(toolUsage: Record<string, number>): string {
 const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
   const hasDiff = stats.linesAdded > 0 || stats.linesRemoved > 0;
   const hasFiles = stats.filesTouched > 0;
+  const hasCode = hasDiff || hasFiles || stats.prCount > 0;
 
   const toolTotal = engagement
     ? Object.values(engagement.toolUsage).reduce((a, b) => a + b, 0)
@@ -87,58 +88,72 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
   const denials = engagement?.permissionDenials ?? 0;
   const discardTotal = engagement?.discardRate.total ?? 0;
   const hasEngagement =
-    toolTotal > 0 || hasContext || denials > 0 || discardTotal > 0;
+    !!engagement &&
+    (toolTotal > 0 || hasContext || denials > 0 || discardTotal > 0);
 
-  return (
-    <Stack gap={6} ax="stretch">
-      <Section title="Activity">
-        <Card
-          title="Events"
-          description="Total events emitted"
-          icon={ArrowLeftRightIcon}
-          action={<Stat value={stats.eventCount} />}
-        />
-        <Card
-          title="Interactions"
-          description="User-Claude exchanges"
-          icon={HandshakeIcon}
-          action={<Stat value={stats.interactionCount} />}
-        />
-        <Card
-          title="Conversations"
-          description="Distinct conversation threads"
-          icon={MessageSquareMoreIcon}
-          action={<Stat value={stats.conversationCount} />}
-        />
-        <Card
-          title="Duration"
-          description="Total session time"
-          icon={ClockIcon}
-          action={<Stat label={formatDuration(stats.durationS)} />}
-        />
-        <Card
-          title="Claude work"
-          description="Time Claude spent active"
-          icon={CpuIcon}
-          action={<Stat label={formatDuration(stats.claudeWorkS)} />}
-        />
-        <Card
-          title="User wait"
-          description="Time user spent waiting"
-          icon={HourglassIcon}
-          action={<Stat label={formatDuration(stats.userWaitS)} />}
-        />
-      </Section>
+  const tabs: TabProps[] = [
+    {
+      label: "Activity",
+      value: "activity",
+      render: (
+        <SectionStack>
+          <Card
+            title="Events"
+            description="Total events emitted"
+            icon={ArrowLeftRightIcon}
+            action={<Stat value={stats.eventCount} />}
+          />
+          <Card
+            title="Interactions"
+            description="User-Claude exchanges"
+            icon={HandshakeIcon}
+            action={<Stat value={stats.interactionCount} />}
+          />
+          <Card
+            title="Conversations"
+            description="Distinct conversation threads"
+            icon={MessageSquareMoreIcon}
+            action={<Stat value={stats.conversationCount} />}
+          />
+          <Card
+            title="Duration"
+            description="Total session time"
+            icon={ClockIcon}
+            action={<Stat label={formatDuration(stats.durationS)} />}
+          />
+          <Card
+            title="Claude work"
+            description="Time Claude spent active"
+            icon={CpuIcon}
+            action={<Stat label={formatDuration(stats.claudeWorkS)} />}
+          />
+          <Card
+            title="User wait"
+            description="Time user spent waiting"
+            icon={HourglassIcon}
+            action={<Stat label={formatDuration(stats.userWaitS)} />}
+          />
+        </SectionStack>
+      ),
+    },
+  ];
 
-      {(hasDiff || hasFiles || stats.prCount > 0) && (
-        <Section title="Code">
+  if (hasCode) {
+    tabs.push({
+      label: "Code",
+      value: "code",
+      render: (
+        <SectionStack>
           {hasDiff && (
             <Card
               title="Lines changed"
               description="Across all edits"
               icon={FileDiffIcon}
               action={
-                <DiffStat added={stats.linesAdded} removed={stats.linesRemoved} />
+                <DiffStat
+                  added={stats.linesAdded}
+                  removed={stats.linesRemoved}
+                />
               }
             />
           )}
@@ -158,14 +173,20 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
               action={<Stat value={stats.prCount} />}
             />
           )}
-        </Section>
-      )}
+        </SectionStack>
+      ),
+    });
+  }
 
-      {engagement && hasEngagement && (
-        <Section title="Engagement">
+  if (hasEngagement) {
+    tabs.push({
+      label: "Engagement",
+      value: "engagement",
+      render: (
+        <SectionStack>
           {toolTotal > 0 && (
             <Card
-              title="Tools used"
+              title="Tracked tool calls"
               description={topToolsLabel(engagement.toolUsage)}
               icon={WrenchIcon}
               action={<Stat value={toolTotal} />}
@@ -176,7 +197,9 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
               title="Context tokens"
               description={`avg ${formatTokens(engagement.contextTokens.avg)} · max ${formatTokens(engagement.contextTokens.max)}`}
               icon={GaugeIcon}
-              action={<Stat label={formatTokens(engagement.contextTokens.latest)} />}
+              action={
+                <Stat label={formatTokens(engagement.contextTokens.latest)} />
+              }
             />
           )}
           {denials > 0 && (
@@ -195,34 +218,33 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
               action={<Stat value={engagement.discardRate.discarded} />}
             />
           )}
-        </Section>
-      )}
-    </Stack>
+        </SectionStack>
+      ),
+    });
+  }
+
+  return (
+    <Tabs
+      items={tabs}
+      size="sm"
+      fullwidth
+      ContainerProps={{ fullwidth: true }}
+    />
   );
 };
 SessionStats.displayName = "SessionStats";
 
-const Section = ({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) => (
-  <Stack gap={2} ax="stretch">
-    <Text size={-1} shade="muted" weight="bold">
-      {title.toUpperCase()}
-    </Text>
-    <Stack gap={4} ax="stretch">
-      {children}
-    </Stack>
+const SectionStack = ({ children }: { children: React.ReactNode }) => (
+  <Stack gap={4} ax="stretch" pt={4} fullwidth>
+    {children}
   </Stack>
 );
-Section.displayName = "Section";
+SectionStack.displayName = "SectionStack";
 
-const Stat = ({ value, label }: { value?: number; label?: string }) => (
+type StatProps = { value: number } | { label: string };
+const Stat = (props: StatProps) => (
   <Text size={3} family="mono" weight="bold">
-    {label ?? value}
+    {"label" in props ? props.label : props.value}
   </Text>
 );
 Stat.displayName = "Stat";

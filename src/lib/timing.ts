@@ -158,11 +158,22 @@ export function computeTimings(events: EventRow[]): TimingSummary {
 
 // --- DB-wired helpers ---
 
-/**
- * Compute timing from persisted events for a session and upsert into sessionStats.
- * Called at session end.
- */
-export function computeAndPersist(sessionId: string): TimingSummary {
+export interface SessionStatsData {
+  eventCount: number;
+  conversationCount: number;
+  interactionCount: number;
+  prCount: number;
+  claudeWorkS: number;
+  userWaitS: number;
+  activePct: number;
+  durationS: number;
+  linesAdded: number;
+  linesRemoved: number;
+  filesTouched: number;
+}
+
+/** Walk events for a session and produce the full stats payload. */
+export function computeSessionStats(sessionId: string): SessionStatsData {
   const events = getEventsBySession(sessionId);
   const summary = computeTimings(events);
 
@@ -176,7 +187,7 @@ export function computeAndPersist(sessionId: string): TimingSummary {
 
   const diff = computeDiffStats(sessionId);
 
-  upsertSessionStats(sessionId, {
+  return {
     eventCount: events.length,
     conversationCount: conversationIds.size,
     interactionCount,
@@ -188,16 +199,23 @@ export function computeAndPersist(sessionId: string): TimingSummary {
     linesAdded: diff.linesAdded,
     linesRemoved: diff.linesRemoved,
     filesTouched: diff.filesTouched,
-  });
-
-  return summary;
+  };
 }
 
 /**
- * Live timing computation for active sessions (no persisted stats yet).
- * Walks events on demand — use sessionStats fast path when available.
+ * Compute and persist stats. Called at session end so the materialized
+ * row stays warm for paused/archived sessions.
+ */
+export function computeAndPersist(sessionId: string): SessionStatsData {
+  const data = computeSessionStats(sessionId);
+  upsertSessionStats(sessionId, data);
+  return data;
+}
+
+/**
+ * Live timing-only computation for CLI rendering. The dashboard prefers
+ * computeSessionStats which returns the full row.
  */
 export function computeTimingsLive(sessionId: string): TimingSummary {
-  const events = getEventsBySession(sessionId);
-  return computeTimings(events);
+  return computeTimings(getEventsBySession(sessionId));
 }

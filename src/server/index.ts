@@ -1,6 +1,7 @@
 import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
+import { computeSessionStats } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
@@ -27,8 +28,18 @@ const routes: [RegExp, RouteHandler][] = [
   }],
 
   // GET /api/stats/:sessionId
+  // Live compute for active/waiting sessions (materialized row would be stale or absent).
+  // Paused/archived sessions read the materialized row, falling back to live if missing.
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    return getSessionStats(sessionId!)
+    const session = getSession(sessionId!)
+    if (!session) return null
+    const isLive = session.status === "active" || session.status === "waiting"
+    if (isLive) {
+      return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
+    }
+    const stored = getSessionStats(sessionId!)
+    if (stored) return stored
+    return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
   }],
 
   // GET /api/engagement/:sessionId
