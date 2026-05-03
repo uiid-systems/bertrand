@@ -9,6 +9,12 @@ type MarkdownProps = {
   components?: Partial<Components>;
 };
 
+// AskUserQuestion stores user-typed notes with `\r` line breaks, which
+// react-markdown ignores — collapsing fenced code blocks and lists onto one line.
+function normalizeLineEndings(input: string): string {
+  return input.replace(/\r\n?/g, "\n");
+}
+
 export function Markdown({ children, components }: MarkdownProps) {
   return (
     <Stack gap={2}>
@@ -16,7 +22,7 @@ export function Markdown({ children, components }: MarkdownProps) {
         remarkPlugins={[remarkGfm]}
         components={{ ...defaultComponents, ...components }}
       >
-        {children}
+        {normalizeLineEndings(children)}
       </ReactMarkdown>
     </Stack>
   );
