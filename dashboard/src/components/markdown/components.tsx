@@ -1,9 +1,12 @@
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import {
   Checkbox,
   CodeBlock,
   CodeInline,
+  Group,
   LANGUAGE_DISPLAY_NAMES,
   List,
+  Separator,
   TableBody,
   TableCell,
   TableContainer,
@@ -13,7 +16,7 @@ import {
   TableRow,
   Text,
 } from "@uiid/design-system";
-import type { BundledLanguage } from "@uiid/design-system";
+import type { BundledLanguage, ListItemProps } from "@uiid/design-system";
 import type { Components } from "react-markdown";
 
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
@@ -36,6 +39,48 @@ function resolveLanguage(className: string | undefined): BundledLanguage | undef
   return undefined;
 }
 
+type LiElement = ReactElement<{ children?: ReactNode }>;
+type InputElement = ReactElement<{ type?: string; checked?: boolean }>;
+
+function isCheckboxInput(node: ReactNode): node is InputElement {
+  return (
+    isValidElement(node) &&
+    (node as InputElement).props?.type === "checkbox"
+  );
+}
+
+function buildListItems(children: ReactNode): ListItemProps[] {
+  return Children.toArray(children)
+    .filter((c): c is LiElement => isValidElement(c))
+    .map((li, i): ListItemProps => {
+      const liChildren = Children.toArray(li.props.children);
+      const first = liChildren[0];
+
+      // GFM task-list: li starts with `<input type="checkbox">`. Pair the
+      // design-system Checkbox with the remaining rich content (links, code,
+      // etc.) — Checkbox's own `label` prop is typed `string` and would drop
+      // any inline formatting.
+      if (isCheckboxInput(first)) {
+        const checked = !!first.props.checked;
+        const rest = liChildren.slice(1);
+        return {
+          value: `item-${i}`,
+          label: (
+            <Group ay="center" gap={2}>
+              <Checkbox checked={checked} disabled />
+              <Text size={1}>{rest}</Text>
+            </Group>
+          ),
+        };
+      }
+
+      return {
+        value: `item-${i}`,
+        label: <>{liChildren}</>,
+      };
+    });
+}
+
 export const defaultComponents: Components = {
   p: ({ children }) => (
     <Text size={1} render={<p />}>
@@ -43,17 +88,17 @@ export const defaultComponents: Components = {
     </Text>
   ),
   h1: ({ children, id }) => (
-    <Text weight="bold" size={2} render={<h1 id={id} />}>
+    <Text weight="bold" size={4} render={<h1 id={id} />}>
       {children}
     </Text>
   ),
   h2: ({ children, id }) => (
-    <Text weight="bold" size={2} render={<h2 id={id} />}>
+    <Text weight="bold" size={3} render={<h2 id={id} />}>
       {children}
     </Text>
   ),
   h3: ({ children, id }) => (
-    <Text weight="bold" size={1} render={<h3 id={id} />}>
+    <Text weight="bold" size={2} render={<h3 id={id} />}>
       {children}
     </Text>
   ),
@@ -63,19 +108,17 @@ export const defaultComponents: Components = {
     </Text>
   ),
   h5: ({ children, id }) => (
-    <Text weight="bold" render={<h5 id={id} />}>
+    <Text weight="bold" size={0} render={<h5 id={id} />}>
       {children}
     </Text>
   ),
   h6: ({ children, id }) => (
-    <Text weight="bold" render={<h6 id={id} />}>
+    <Text weight="bold" size={-1} render={<h6 id={id} />}>
       {children}
     </Text>
   ),
   strong: ({ children }) => <Text weight="bold">{children}</Text>,
-  em: ({ children }) => (
-    <Text render={<em />}>{children}</Text>
-  ),
+  em: ({ children }) => <Text render={<em />}>{children}</Text>,
   del: ({ children }) => (
     <Text strikethrough render={<del />}>
       {children}
@@ -86,24 +129,17 @@ export const defaultComponents: Components = {
       {children}
     </a>
   ),
-  ul: ({ children }) => <List type="unordered">{children}</List>,
-  ol: ({ children }) => <List type="ordered">{children}</List>,
-  li: ({ children }) => (
-    <li>
-      <Text size={1}>{children}</Text>
-    </li>
+  ul: ({ children }) => (
+    <List type="unordered" items={buildListItems(children)} />
   ),
-  // GFM task-list checkbox — disabled, render-only. react-markdown also fires
-  // this for non-checkbox inputs, which we drop.
-  input: ({ type, checked }) =>
-    type === "checkbox" ? (
-      <Checkbox checked={!!checked} disabled />
-    ) : null,
+  ol: ({ children }) => (
+    <List type="ordered" items={buildListItems(children)} />
+  ),
   blockquote: ({ children }) => <blockquote>{children}</blockquote>,
-  hr: () => <hr />,
+  hr: () => <Separator />,
   table: ({ children }) => (
     <TableContainer>
-      <TableRoot>{children}</TableRoot>
+      <TableRoot bordered>{children}</TableRoot>
     </TableContainer>
   ),
   thead: ({ children }) => <TableHeader>{children}</TableHeader>,
@@ -122,6 +158,7 @@ export const defaultComponents: Components = {
         code={text.replace(/\n$/, "")}
         language={resolveLanguage(className)}
         copyable
+        style={{ width: "100%" }}
       />
     );
   },
