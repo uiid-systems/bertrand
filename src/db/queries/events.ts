@@ -1,6 +1,7 @@
 import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { events } from "@/db/schema";
+import { normalizeEventMeta } from "@/lib/markdown";
 
 export function insertEvent(opts: {
   sessionId: string;
@@ -16,7 +17,7 @@ export function insertEvent(opts: {
       conversationId: opts.conversationId,
       event: opts.event,
       summary: opts.summary,
-      meta: opts.meta,
+      meta: normalizeEventMeta(opts.event, opts.meta),
     })
     .returning()
     .get();

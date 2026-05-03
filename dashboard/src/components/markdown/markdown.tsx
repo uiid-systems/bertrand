@@ -1,5 +1,7 @@
 import { Stack } from "@uiid/design-system";
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 
 import { defaultComponents } from "./components";
@@ -9,26 +11,21 @@ type MarkdownProps = {
   components?: Partial<Components>;
 };
 
-// AskUserQuestion captures user-typed notes with `\r` line breaks and tends to
-// flatten pasted content — leaving fenced code markers (```) mid-line, which
-// remark-gfm refuses to parse as code blocks. Force every ``` onto its own
-// line so multi-line pastes still render as code.
-function normalizeMarkdown(input: string): string {
-  let out = input.replace(/\r\n?/g, "\n");
-  out = out.replace(/([^\n])```/g, "$1\n```");
-  out = out.replace(/```([^\n])/g, "```\n$1");
-  return out;
-}
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeSlug];
 
-export function Markdown({ children, components }: MarkdownProps) {
+function MarkdownImpl({ children, components }: MarkdownProps) {
   return (
     <Stack gap={4} fullwidth>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
         components={{ ...defaultComponents, ...components }}
       >
-        {normalizeMarkdown(children)}
+        {children}
       </ReactMarkdown>
     </Stack>
   );
 }
+
+export const Markdown = memo(MarkdownImpl);
