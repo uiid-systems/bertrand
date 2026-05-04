@@ -1,0 +1,86 @@
+/* DiffBlock-scoped overrides.
+ *
+ * The DS bundle's `.shiki-theme .shiki span { background-color: ... !important }`
+ * lives inside `@layer uiid.components`. Per CSS Cascade Level 5, an `!important`
+ * declaration inside a named layer outranks an `!important` declaration in the
+ * unlayered cascade — so a higher-specificity unlayered override would still
+ * lose. Placing this override in the same layer puts the contest back on
+ * specificity, where (0,5,0) beats the catchall's (0,2,1). */
+
+@layer uiid.components {
+  .bertrand-diff-block .shiki .line span {
+    background-color: transparent !important;
+  }
+
+  /* Suppress the DS .line.diff::before marker — DiffBlock injects its own
+   * <span class="diff-marker"> on every line so context and diff lines share
+   * one layout (the DS pseudo only reserved space for diff lines). */
+  .bertrand-diff-block .shiki .line.diff::before {
+    content: none !important;
+  }
+
+  /* Layout (flex order): diff-num-old | diff-num-new | marker | code.
+   * Column width is driven by --diff-num-width set on the wrapper, sized
+   * to the digit count of the largest line number in the diff. */
+  .bertrand-diff-block .shiki .line .diff-num {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: var(--diff-num-width, 3ch);
+    padding-right: 0.5ch;
+    text-align: right;
+    color: var(--shade-muted);
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bertrand-diff-block .shiki .line .diff-num-old {
+    order: 0 !important;
+  }
+
+  .bertrand-diff-block .shiki .line .diff-num-new {
+    order: 1 !important;
+    border-right: 1px solid var(--globals-border-color);
+  }
+
+  .bertrand-diff-block .shiki .line .diff-marker {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 1ch;
+    margin-inline: 1ch;
+    text-align: center;
+    user-select: none;
+    order: 2 !important;
+  }
+
+  .bertrand-diff-block .shiki .line .diff-marker.add {
+    color: var(--theme-positive-foreground);
+  }
+
+  .bertrand-diff-block .shiki .line .diff-marker.remove {
+    color: var(--theme-critical-foreground);
+  }
+
+  .bertrand-diff-block .shiki .line.diff.add {
+    background-color: var(--theme-positive-surface) !important;
+  }
+
+  .bertrand-diff-block .shiki .line.diff.remove {
+    background-color: var(--theme-critical-surface) !important;
+  }
+
+  .bertrand-diff-block .shiki .line .diff-word.add {
+    background-color: light-dark(
+      color-mix(in oklch, var(--theme-positive) 55%, transparent),
+      color-mix(in oklch, var(--theme-positive) 60%, transparent)
+    ) !important;
+    border-radius: 2px;
+  }
+
+  .bertrand-diff-block .shiki .line .diff-word.remove {
+    background-color: light-dark(
+      color-mix(in oklch, var(--theme-critical) 55%, transparent),
+      color-mix(in oklch, var(--theme-critical) 60%, transparent)
+    ) !important;
+    border-radius: 2px;
+  }
+}

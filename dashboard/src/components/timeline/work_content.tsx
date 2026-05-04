@@ -1,6 +1,15 @@
-import { Accordion, Stack, Text } from "@uiid/design-system";
+import { useState } from "react";
+import {
+  Accordion,
+  Group,
+  Stack,
+  Text,
+  ToggleButton,
+} from "@uiid/design-system";
+import { ChevronsDownUp, ChevronsUpDown } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
+import { DiffBlock } from "../diff/diff-block";
 
 type EditEntry = { oldStr: string; newStr: string };
 
@@ -18,37 +27,26 @@ function hasDiff(p: PermissionDetail): boolean {
   return Boolean(p.oldStr || p.newStr || (p.edits && p.edits.length > 0));
 }
 
-function DiffLines({ oldStr, newStr }: { oldStr?: string; newStr?: string }) {
-  const oldLines = oldStr ? oldStr.split("\n") : [];
-  const newLines = newStr ? newStr.split("\n") : [];
-
-  return (
-    <Stack gap={0}>
-      {oldLines.map((line, i) => (
-        <Text key={`old-${i}`} size={-1} family="mono" color="red">
-          {`- ${line}`}
-        </Text>
-      ))}
-      {newLines.map((line, i) => (
-        <Text key={`new-${i}`} size={-1} family="mono" color="green">
-          {`+ ${line}`}
-        </Text>
-      ))}
-    </Stack>
-  );
-}
-
 function DiffContent({ permission }: { permission: PermissionDetail }) {
   if (permission.edits && permission.edits.length > 0) {
     return (
-      <Stack gap={2}>
+      <Stack gap={2} fullwidth>
         {permission.edits.map((edit, i) => (
-          <DiffLines key={i} oldStr={edit.oldStr} newStr={edit.newStr} />
+          <DiffBlock
+            key={i}
+            oldStr={edit.oldStr ?? ""}
+            newStr={edit.newStr ?? ""}
+          />
         ))}
       </Stack>
     );
   }
-  return <DiffLines oldStr={permission.oldStr} newStr={permission.newStr} />;
+  return (
+    <DiffBlock
+      oldStr={permission.oldStr ?? ""}
+      newStr={permission.newStr ?? ""}
+    />
+  );
 }
 
 function permissionTrigger(p: PermissionDetail): string {
@@ -75,6 +73,7 @@ export function WorkContent({ event }: WorkContentProps) {
     if (hasDiff(p)) {
       return (
         <Accordion
+          ContentProps={{ fullwidth: true, p: 0 }}
           items={[
             {
               value: "diff",
@@ -93,26 +92,64 @@ export function WorkContent({ event }: WorkContentProps) {
     );
   }
 
-  // Multiple permissions — one accordion item per file, each expanding to its diff
+  return <MultiPermissionContent permissions={permissions} />;
+}
+
+function MultiPermissionContent({
+  permissions,
+}: {
+  permissions: PermissionDetail[];
+}) {
+  // Multiple permissions — split diff-bearing entries (accordion, expandable to
+  // their diffs) from info-only entries (plain text rows). Mixing them in one
+  // accordion misleads: non-edit tools have no diff to surface.
+  const diffPermissions = permissions.filter(hasDiff);
+  const infoPermissions = permissions.filter((p) => !hasDiff(p));
+  const allValues = diffPermissions.map((_, i) => `permission-${i}`);
+  const [openValues, setOpenValues] = useState<string[]>([]);
+  const allOpen =
+    allValues.length > 0 && openValues.length === allValues.length;
+
   return (
     <Stack data-slot="work-content" gap={2} fullwidth>
-      <Text size={-1} shade="muted">
-        {`${permissions.length} files`}
-      </Text>
-      <Accordion
-        multiple
-        items={permissions.map((p, i) => ({
-          value: `permission-${i}`,
-          trigger: permissionTrigger(p),
-          content: hasDiff(p) ? (
-            <DiffContent permission={p} />
-          ) : (
-            <Text size={-1} shade="muted">
-              No diff captured
+      {diffPermissions.length > 0 && (
+        <Stack gap={1} fullwidth>
+          <Group ax="end" fullwidth>
+            <ToggleButton
+              size="small"
+              variant="subtle"
+              tooltip={allOpen ? "Collapse all" : "Expand all"}
+              pressed={!allOpen}
+              onPressedChange={() => setOpenValues(allOpen ? [] : allValues)}
+              icon={{
+                unpressed: <ChevronsDownUp />,
+                pressed: <ChevronsUpDown />,
+              }}
+              text={{ unpressed: "Collapse all", pressed: "Expand all" }}
+            />
+          </Group>
+          <Accordion
+            multiple
+            value={openValues}
+            onValueChange={(v) => setOpenValues(v as string[])}
+            ContentProps={{ fullwidth: true, p: 0 }}
+            items={diffPermissions.map((p, i) => ({
+              value: `permission-${i}`,
+              trigger: permissionTrigger(p),
+              content: <DiffContent permission={p} />,
+            }))}
+          />
+        </Stack>
+      )}
+      {infoPermissions.length > 0 && (
+        <Stack gap={1} fullwidth>
+          {infoPermissions.map((p, i) => (
+            <Text key={`info-${i}`} size={-1} family="mono" shade="muted">
+              {permissionTrigger(p)}
             </Text>
-          ),
-        }))}
-      />
+          ))}
+        </Stack>
+      )}
     </Stack>
   );
 }

@@ -1,4 +1,11 @@
-import { Card, List, Stack, Text } from "@uiid/design-system";
+import {
+  Card,
+  List,
+  Stack,
+  Tabs,
+  Text,
+  type TabProps,
+} from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
@@ -66,58 +73,99 @@ export function InteractionContent({ event }: InteractionContentProps) {
       | undefined;
     const questions = meta?.questions as QuestionDef[] | undefined;
 
+    const entries = Object.entries(answers);
+
+    const renderQuestionBody = (question: string, answer: string) => {
+      const { selection, note } = splitSelectionAndNote(
+        answer,
+        annotations?.[question]?.notes,
+      );
+      const qDef = findQuestion(questions, question);
+      const multiSelect = qDef?.multiSelect ?? false;
+      const options = qDef?.options ?? [];
+      const hasSelection = options.some((o) =>
+        isPicked(o.label, selection, multiSelect),
+      );
+
+      return (
+        <Stack gap={4} fullwidth>
+          {note && !hasSelection && (
+            <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
+              <Text color="yellow" weight="bold" size={1}>
+                Answered manually:
+              </Text>
+              <Markdown>{note}</Markdown>
+            </Stack>
+          )}
+          {!note && !hasSelection && (
+            <Text color="red" weight="bold" size={1} m={2}>
+              Didn't answer.
+            </Text>
+          )}
+          {options.length > 0 && (
+            <List
+              type="ordered"
+              items={options.map((o) => ({
+                value: o.label,
+                label: (
+                  <Text
+                    weight="bold"
+                    color={
+                      isPicked(o.label, selection, multiSelect)
+                        ? "green"
+                        : undefined
+                    }
+                  >
+                    {o.label}
+                  </Text>
+                ),
+                description: o.description,
+                disabled: !isPicked(o.label, selection, multiSelect),
+              }))}
+            />
+          )}
+          {note && hasSelection && (
+            <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
+              <Text color="green" weight="bold" size={1}>
+                Additional notes:
+              </Text>
+              <Markdown>{note}</Markdown>
+            </Stack>
+          )}
+        </Stack>
+      );
+    };
+
+    if (entries.length === 1) {
+      const [question, answer] = entries[0];
+      return (
+        <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
+          <Card gap={4} fullwidth>
+            {renderQuestionBody(question, answer)}
+          </Card>
+        </Stack>
+      );
+    }
+
+    const tabs: TabProps[] = entries.map(([question, answer], i) => {
+      const qDef = findQuestion(questions, question);
+      return {
+        label: qDef?.header ?? `Question ${i + 1}`,
+        value: question,
+        render: renderQuestionBody(question, answer),
+      };
+    });
+
     return (
       <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
-        {Object.entries(answers).map(([question, answer]) => {
-          const { selection, note } = splitSelectionAndNote(
-            answer,
-            annotations?.[question]?.notes,
-          );
-          const qDef = findQuestion(questions, question);
-          const multiSelect = qDef?.multiSelect ?? false;
-          const options = qDef?.options ?? [];
-          return (
-            <Card key={question} gap={4} fullwidth>
-              {options.length > 0 && (
-                <List
-                  type="ordered"
-                  items={options.map((o) => ({
-                    value: o.label,
-                    label: (
-                      <Text
-                        weight="bold"
-                        color={
-                          isPicked(o.label, selection, multiSelect)
-                            ? "green"
-                            : undefined
-                        }
-                      >
-                        {o.label}
-                      </Text>
-                    ),
-                    description: o.description,
-                    disabled: !isPicked(o.label, selection, multiSelect),
-                  }))}
-                />
-              )}
-              {note && (
-                <Stack
-                  data-slot="interaction-content-note"
-                  gap={4}
-                  m={2}
-                  fullwidth
-                >
-                  <Text color="green" weight="bold">
-                    {options.length > 0
-                      ? "Additional notes:"
-                      : "Answered manually:"}
-                  </Text>
-                  <Markdown>{note}</Markdown>
-                </Stack>
-              )}
-            </Card>
-          );
-        })}
+        <Card gap={4} fullwidth>
+          <Tabs
+            items={tabs}
+            size="sm"
+            // fullwidth
+            ContainerProps={{ fullwidth: true, mt: 6 }}
+          />
+        </Card>
       </Stack>
     );
   }

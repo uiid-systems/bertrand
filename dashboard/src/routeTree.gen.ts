@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SessionsSlugRouteImport } from './routes/sessions/$slug'
 import { Route as GroupsSplatRouteImport } from './routes/groups/$'
 import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
+import { Route as DevDiffRouteImport } from './routes/dev/diff'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,15 +35,22 @@ const DevMarkdownRoute = DevMarkdownRouteImport.update({
   path: '/dev/markdown',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevDiffRoute = DevDiffRouteImport.update({
+  id: '/dev/diff',
+  path: '/dev/diff',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
@@ -50,20 +58,33 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/groups/$': typeof GroupsSplatRoute
   '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
+  fullPaths:
+    | '/'
+    | '/dev/diff'
+    | '/dev/markdown'
+    | '/groups/$'
+    | '/sessions/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
-  id: '__root__' | '/' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
+  to: '/' | '/dev/diff' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
+  id:
+    | '__root__'
+    | '/'
+    | '/dev/diff'
+    | '/dev/markdown'
+    | '/groups/$'
+    | '/sessions/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DevDiffRoute: typeof DevDiffRoute
   DevMarkdownRoute: typeof DevMarkdownRoute
   GroupsSplatRoute: typeof GroupsSplatRoute
   SessionsSlugRoute: typeof SessionsSlugRoute
@@ -99,11 +120,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevMarkdownRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dev/diff': {
+      id: '/dev/diff'
+      path: '/dev/diff'
+      fullPath: '/dev/diff'
+      preLoaderRoute: typeof DevDiffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevDiffRoute: DevDiffRoute,
   DevMarkdownRoute: DevMarkdownRoute,
   GroupsSplatRoute: GroupsSplatRoute,
   SessionsSlugRoute: SessionsSlugRoute,

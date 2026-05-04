@@ -14,6 +14,7 @@
     "@tanstack/react-router": "^1.168.23",
     "@uiid/design-system": "^0.0.22",
     "@uiid/icons": "^0.0.22",
+    "diff": "^9.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@tanstack/router-plugin": "^1.167.22",
+    "@types/diff": "^8.0.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
