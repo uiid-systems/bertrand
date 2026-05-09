@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  CodeBlock,
-  getHighlighter,
-  loadLanguage,
-} from "@uiid/design-system";
+import { CodeBlock, getHighlighter, loadLanguage } from "@uiid/design-system";
 import type { BundledLanguage } from "@uiid/design-system";
 import { diffLines, diffWordsWithSpace } from "diff";
 
@@ -36,12 +32,35 @@ type DiffComputed = {
   maxLineNum: number;
 };
 
+// Strip the common leading whitespace from both inputs so a snippet pulled
+// from deep inside a file doesn't render with a giant gap after the +/-
+// marker. Considers all non-blank lines across old and new together so the
+// two stay aligned.
+function dedent(oldStr: string, newStr: string): [string, string] {
+  const lines = [...oldStr.split("\n"), ...newStr.split("\n")];
+  let min = Infinity;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    const m = line.match(/^[ \t]*/);
+    const n = m ? m[0].length : 0;
+    if (n < min) min = n;
+  }
+  if (min === Infinity || min === 0) return [oldStr, newStr];
+  const strip = (s: string) =>
+    s
+      .split("\n")
+      .map((l) => (l.length >= min ? l.slice(min) : l))
+      .join("\n");
+  return [strip(oldStr), strip(newStr)];
+}
+
 function computeDiff(
   oldStr: string,
   newStr: string,
   wordDiff: boolean,
 ): DiffComputed {
-  const changes = diffLines(oldStr, newStr);
+  const [dOld, dNew] = dedent(oldStr, newStr);
+  const changes = diffLines(dOld, dNew);
   const codeLines: string[] = [];
   const lineKinds: LineKind[] = [];
   const decorations: Decoration[] = [];
@@ -69,7 +88,9 @@ function computeDiff(
       const removed = pushBlock(c.value, "remove");
       const added = pushBlock(changes[i + 1]!.value, "add");
 
-      const pairs = wordDiff ? Math.min(removed.lns.length, added.lns.length) : 0;
+      const pairs = wordDiff
+        ? Math.min(removed.lns.length, added.lns.length)
+        : 0;
       for (let p = 0; p < pairs; p++) {
         const wordChanges = diffWordsWithSpace(removed.lns[p]!, added.lns[p]!);
         let removedCol = 0;
@@ -208,22 +229,29 @@ export function DiffBlock({
                   : kind === "remove"
                     ? "diff-marker remove"
                     : "diff-marker";
+              // Use nbsp on context lines so the empty marker span still
+              // generates an inline box (gives it height + width so its
+              // border renders).
               const markerText =
-                kind === "add" ? "+" : kind === "remove" ? "-" : "";
-              // Show old# only on removed lines, new# everywhere else.
-              // Drops the redundant old# from context lines so the gutter
-              // is always a single number column.
-              const showOld = kind === "remove";
-              const showNew = kind !== "remove";
+                kind === "add" ? "+" : kind === "remove" ? "-" : " ";
+              // GitHub-style two-column gutter: old# on the left, new# on the
+              // right. Add lines blank the old col, remove lines blank the new
+              // col, context shows both. Blank cells get .diff-num-blank so
+              // CSS can render them with the neutral gutter bg, not the line
+              // tint.
+              const oldCls =
+                "diff-num diff-num-old" +
+                (nums.old == null ? " diff-num-blank" : "");
+              const newCls =
+                "diff-num diff-num-new" +
+                (nums.new == null ? " diff-num-blank" : "");
+              // Empty number cells get nbsp (same trick as the empty marker)
+              // so the inline-block renders with its background.
               const prepend = [
-                showOld && nums.old != null
-                  ? gutterSpan("diff-num diff-num-old", String(nums.old))
-                  : null,
-                showNew && nums.new != null
-                  ? gutterSpan("diff-num diff-num-new", String(nums.new))
-                  : null,
+                gutterSpan(oldCls, nums.old != null ? String(nums.old) : " "),
+                gutterSpan(newCls, nums.new != null ? String(nums.new) : " "),
                 gutterSpan(markerCls, markerText),
-              ].filter((n): n is NonNullable<typeof n> => n != null);
+              ];
               node.children.unshift(...prepend);
               return node;
             },
@@ -247,7 +275,7 @@ export function DiffBlock({
       className="bertrand-diff-block"
       style={
         {
-          "--diff-num-width": `${numWidth}ch`,
+          "--diff-num-width": `${numWidth + 2}ch`,
           width: "100%",
         } as React.CSSProperties
       }

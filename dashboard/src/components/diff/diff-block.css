@@ -8,6 +8,14 @@
  * specificity, where (0,5,0) beats the catchall's (0,2,1). */
 
 @layer uiid.components {
+  /* Local font-size shrink — belongs in the DS CodeBlock long-term, hacked
+   * here while the diff viewer is still in flux. */
+  .bertrand-diff-block .shiki {
+    font-size: 0.85em;
+    line-height: 1.5;
+    padding: 0;
+  }
+
   .bertrand-diff-block .shiki .line span {
     background-color: transparent !important;
   }
@@ -23,14 +31,43 @@
    * Column width is driven by --diff-num-width set on the wrapper, sized
    * to the digit count of the largest line number in the diff. */
   .bertrand-diff-block .shiki .line .diff-num {
+    --p: 1ch;
     display: inline-block;
     flex: 0 0 auto;
-    width: var(--diff-num-width, 3ch);
-    padding-right: 0.5ch;
-    text-align: right;
+    width: calc(var(--diff-num-width, 3ch) + var(--p));
+    padding-inline: var(--p);
     color: var(--shade-muted);
     user-select: none;
+    text-align: center;
     font-variant-numeric: tabular-nums;
+    background-color: light-dark(
+      color-mix(in oklch, var(--globals-foreground) 4%, transparent),
+      color-mix(in oklch, var(--globals-foreground) 6%, transparent)
+    ) !important;
+  }
+
+  /* Diff lines tint the gutter to match the line bg. */
+  .bertrand-diff-block .shiki .line.diff.add .diff-num {
+    background-color: light-dark(
+      color-mix(in oklch, var(--theme-positive) 18%, transparent),
+      color-mix(in oklch, var(--theme-positive) 22%, transparent)
+    ) !important;
+  }
+
+  .bertrand-diff-block .shiki .line.diff.remove .diff-num {
+    background-color: light-dark(
+      color-mix(in oklch, var(--theme-critical) 18%, transparent),
+      color-mix(in oklch, var(--theme-critical) 22%, transparent)
+    ) !important;
+  }
+
+  /* Blank cells (the absent number on an add/remove line) keep the neutral
+   * gutter bg so the diff tint only marks the present column. */
+  .bertrand-diff-block .shiki .line .diff-num.diff-num-blank {
+    background-color: light-dark(
+      color-mix(in oklch, var(--globals-foreground) 4%, transparent),
+      color-mix(in oklch, var(--globals-foreground) 6%, transparent)
+    ) !important;
   }
 
   .bertrand-diff-block .shiki .line .diff-num-old {
@@ -39,25 +76,37 @@
 
   .bertrand-diff-block .shiki .line .diff-num-new {
     order: 1 !important;
-    border-right: 1px solid var(--globals-border-color);
   }
 
   .bertrand-diff-block .shiki .line .diff-marker {
     display: inline-block;
     flex: 0 0 auto;
     width: 1ch;
-    margin-inline: 1ch;
+    padding-inline-start: 1ch;
+    margin-inline-end: 2ch;
+    padding-inline-end: 2ch;
     text-align: center;
     user-select: none;
     order: 2 !important;
+    /* Subtle neutral on context lines; add/remove lines override below to
+     * match the gutter tint. */
+    border-inline: 1px solid var(--globals-border-color);
   }
 
-  .bertrand-diff-block .shiki .line .diff-marker.add {
+  .bertrand-diff-block .shiki .line.diff.add .diff-marker {
     color: var(--theme-positive-foreground);
+    border-inline-color: light-dark(
+      color-mix(in oklch, var(--theme-positive) 18%, transparent),
+      color-mix(in oklch, var(--theme-positive) 22%, transparent)
+    );
   }
 
-  .bertrand-diff-block .shiki .line .diff-marker.remove {
+  .bertrand-diff-block .shiki .line.diff.remove .diff-marker {
     color: var(--theme-critical-foreground);
+    border-inline-color: light-dark(
+      color-mix(in oklch, var(--theme-critical) 18%, transparent),
+      color-mix(in oklch, var(--theme-critical) 22%, transparent)
+    );
   }
 
   .bertrand-diff-block .shiki .line.diff.add {
