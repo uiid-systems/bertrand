@@ -98,10 +98,10 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
       render: (
         <SectionStack>
           <Card
-            title="Events"
-            description="Total events emitted"
-            icon={ArrowLeftRightIcon}
-            action={<Stat value={stats.eventCount} />}
+            title="Conversations"
+            description="Distinct conversation threads"
+            icon={MessageSquareMoreIcon}
+            action={<Stat value={stats.conversationCount} />}
           />
           <Card
             title="Interactions"
@@ -110,10 +110,10 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
             action={<Stat value={stats.interactionCount} />}
           />
           <Card
-            title="Conversations"
-            description="Distinct conversation threads"
-            icon={MessageSquareMoreIcon}
-            action={<Stat value={stats.conversationCount} />}
+            title="Events"
+            description="Total events emitted"
+            icon={ArrowLeftRightIcon}
+            action={<Stat value={stats.eventCount} />}
           />
           <Card
             title="Duration"
