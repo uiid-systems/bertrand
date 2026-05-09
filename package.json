@@ -1,15 +1,46 @@
 {
   "name": "bertrand",
   "version": "0.0.1",
+  "description": "Multi-session workflow manager for Claude Code.",
   "type": "module",
-  "private": true,
   "module": "src/index.ts",
+  "bin": {
+    "bertrand": "./dist/bertrand.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uiid-systems/bertrand.git"
+  },
+  "homepage": "https://github.com/uiid-systems/bertrand#readme",
+  "bugs": {
+    "url": "https://github.com/uiid-systems/bertrand/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "workflow",
+    "session-manager",
+    "tui",
+    "cli"
+  ],
+  "author": "Adam Fratino <hello@fratino.dev>",
+  "license": "MIT",
   "scripts": {
     "dev": "bun run src/index.ts",
+    "build": "bun run build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run src/db/migrate.ts"
+    "db:migrate": "bun run src/db/migrate.ts",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@orchetron/storm": "^0.2.0",

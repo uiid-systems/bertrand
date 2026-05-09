@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { readFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
 import type { LaunchSelection } from "./screens/launch/launch.types";
@@ -13,7 +13,13 @@ import {
 import { launch, resume } from "@/engine/session";
 import { randomUUID } from "crypto";
 
-const SCREEN_ENTRY = join(import.meta.dir, "run-screen.tsx");
+// In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
+// sibling. After `bun run build`, both bundle into dist/ as .js files —
+// detect the bundled artifact first and fall back to the source.
+const SCREEN_ENTRY = (() => {
+  const built = join(import.meta.dir, "run-screen.js");
+  return existsSync(built) ? built : join(import.meta.dir, "run-screen.tsx");
+})();
 
 /**
  * Run a TUI screen in a subprocess.

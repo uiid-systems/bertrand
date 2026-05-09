@@ -9,6 +9,7 @@
 node_modules/
 
 # Build artifacts
+dist/
 dashboard/dist/
 dashboard/.vite/
 *.tsbuildinfo
