@@ -21,7 +21,15 @@ When a session calls `AskUserQuestion`, bertrand marks it `waiting`, sets a Wave
 - **[Bun](https://bun.sh/)** ≥ 1.3 — runtime for bertrand and the dashboard.
 - **[Wave Terminal](https://www.waveterm.dev/)** — optional, but the only supported terminal for badges/notifications. Without it, bertrand still tracks state; you just don't get focus management.
 
-## Install (from source)
+## Install
+
+```sh
+bun i -g @uiid/bertrand    # or: npm i -g @uiid/bertrand
+```
+
+The first run of `bertrand` auto-runs `init`; you can also invoke `bertrand init` explicitly.
+
+### From source
 
 ```sh
 git clone https://github.com/uiid-systems/bertrand.git
@@ -30,7 +38,7 @@ bun install
 bun run src/index.ts init
 ```
 
-Then add `~/.bertrand/bin` (or wherever `init` writes the launcher) to your `PATH`, or invoke `bun run src/index.ts <command>` directly.
+Invoke via `bun run src/index.ts <command>` while developing.
 
 ## Setup
 

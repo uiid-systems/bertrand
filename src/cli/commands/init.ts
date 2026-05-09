@@ -85,7 +85,7 @@ register("init", async () => {
     console.error(
       "\nError: couldn't locate the bertrand binary on PATH.\n" +
         "Install it globally first:\n" +
-        "  bun i -g bertrand    # or: npm i -g bertrand\n" +
+        "  bun i -g @uiid/bertrand    # or: npm i -g @uiid/bertrand\n" +
         "Then re-run `bertrand init`.",
     );
     process.exit(1);

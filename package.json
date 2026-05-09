@@ -1,6 +1,9 @@
 {
-  "name": "bertrand",
-  "version": "0.0.1",
+  "name": "@uiid/bertrand",
+  "version": "0.10.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Multi-session workflow manager for Claude Code.",
   "type": "module",
   "module": "src/index.ts",
