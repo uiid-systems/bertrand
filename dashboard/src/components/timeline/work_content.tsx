@@ -1,11 +1,13 @@
 import { useState } from "react";
 import {
   Accordion,
+  CodeBlock,
   Group,
   Stack,
   Text,
   ToggleButton,
 } from "@uiid/design-system";
+import type { BundledLanguage } from "@uiid/design-system";
 import { ChevronsDownUp, ChevronsUpDown } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
@@ -23,8 +25,42 @@ type PermissionDetail = {
   edits?: EditEntry[];
 };
 
-function hasDiff(p: PermissionDetail): boolean {
+const EXT_TO_LANGUAGE: Record<string, BundledLanguage> = {
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  py: "python",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  json: "json",
+  css: "css",
+  html: "html",
+};
+
+function languageFromPath(path: string | undefined): BundledLanguage | undefined {
+  const ext = path?.match(/\.(\w+)$/)?.[1]?.toLowerCase();
+  return ext ? EXT_TO_LANGUAGE[ext] : undefined;
+}
+
+function isWrite(p: PermissionDetail): boolean {
+  return p.tool === "Write";
+}
+
+function hasExpandableContent(p: PermissionDetail): boolean {
   return Boolean(p.oldStr || p.newStr || (p.edits && p.edits.length > 0));
+}
+
+function WriteContent({ permission }: { permission: PermissionDetail }) {
+  return (
+    <CodeBlock
+      code={permission.newStr ?? ""}
+      language={languageFromPath(permission.detail)}
+      copyable
+      style={{ width: "100%" }}
+    />
+  );
 }
 
 function DiffContent({ permission }: { permission: PermissionDetail }) {
@@ -49,6 +85,11 @@ function DiffContent({ permission }: { permission: PermissionDetail }) {
   );
 }
 
+function ExpandableContent({ permission }: { permission: PermissionDetail }) {
+  if (isWrite(permission)) return <WriteContent permission={permission} />;
+  return <DiffContent permission={permission} />;
+}
+
 function permissionTrigger(p: PermissionDetail): string {
   const prefix = p.count > 1 ? `${p.count}× ` : "";
   return p.detail ? `${prefix}${p.detail}` : `${prefix}${p.tool}`;
@@ -70,7 +111,7 @@ export function WorkContent({ event }: WorkContentProps) {
     const p = permissions[0];
     if (!p.detail) return null;
 
-    if (hasDiff(p)) {
+    if (hasExpandableContent(p)) {
       return (
         <Accordion
           ContentProps={{ fullwidth: true, p: 0 }}
@@ -78,7 +119,7 @@ export function WorkContent({ event }: WorkContentProps) {
             {
               value: "diff",
               trigger: permissionTrigger(p),
-              content: <DiffContent permission={p} />,
+              content: <ExpandableContent permission={p} />,
             },
           ]}
         />
@@ -103,8 +144,8 @@ function MultiPermissionContent({
   // Multiple permissions — split diff-bearing entries (accordion, expandable to
   // their diffs) from info-only entries (plain text rows). Mixing them in one
   // accordion misleads: non-edit tools have no diff to surface.
-  const diffPermissions = permissions.filter(hasDiff);
-  const infoPermissions = permissions.filter((p) => !hasDiff(p));
+  const diffPermissions = permissions.filter(hasExpandableContent);
+  const infoPermissions = permissions.filter((p) => !hasExpandableContent(p));
   const allValues = diffPermissions.map((_, i) => `permission-${i}`);
   const [openValues, setOpenValues] = useState<string[]>([]);
   const allOpen =
@@ -136,7 +177,7 @@ function MultiPermissionContent({
             items={diffPermissions.map((p, i) => ({
               value: `permission-${i}`,
               trigger: permissionTrigger(p),
-              content: <DiffContent permission={p} />,
+              content: <ExpandableContent permission={p} />,
             }))}
           />
         </Stack>
