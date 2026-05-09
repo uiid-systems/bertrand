@@ -5,13 +5,19 @@ import { mkdirSync } from "fs";
 import { dirname } from "path";
 import { paths } from "@/lib/paths";
 
-mkdirSync(dirname(paths.db), { recursive: true });
-const sqlite = new Database(paths.db);
-sqlite.exec("PRAGMA journal_mode = WAL");
-sqlite.exec("PRAGMA foreign_keys = ON");
+const MIGRATIONS_FOLDER = import.meta.dir + "/migrations";
 
-const db = drizzle(sqlite);
-migrate(db, { migrationsFolder: import.meta.dir + "/migrations" });
+export function runMigrations(): void {
+  mkdirSync(dirname(paths.db), { recursive: true });
+  const sqlite = new Database(paths.db);
+  sqlite.exec("PRAGMA journal_mode = WAL");
+  sqlite.exec("PRAGMA foreign_keys = ON");
+  const db = drizzle(sqlite);
+  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+  sqlite.close();
+}
 
-console.log("Migrations applied successfully");
-sqlite.close();
+if (import.meta.main) {
+  runMigrations();
+  console.log("Migrations applied successfully");
+}

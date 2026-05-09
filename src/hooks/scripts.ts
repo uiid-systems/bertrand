@@ -14,16 +14,12 @@
  *   - activeScript has a debounce guard to skip redundant updates
  */
 
-import { paths } from "@/lib/paths";
-
-/** Absolute path to the TS bertrand binary — avoids resolving the Go binary from PATH */
-const BIN = paths.bin;
-
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
 
 /** PreToolUse AskUserQuestion → mark session as waiting */
-export function waitingScript(): string {
+export function waitingScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → mark session as waiting
 sid="\${BERTRAND_SESSION:-}"
@@ -55,7 +51,8 @@ wait
 }
 
 /** PostToolUse AskUserQuestion → mark session as active (user answered) */
-export function answeredScript(): string {
+export function answeredScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
 #
@@ -111,7 +108,8 @@ wait
 }
 
 /** PreToolUse (catch-all) → flip waiting to active */
-export function activeScript(): string {
+export function activeScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PreToolUse (catch-all) → flip waiting to active
 sid="\${BERTRAND_SESSION:-}"
@@ -138,7 +136,8 @@ ${BIN} update --session-id "$sid" --event session.active --meta "$(jq -n --arg c
 }
 
 /** PermissionRequest → write pending marker + emit permission.request */
-export function permissionWaitScript(): string {
+export function permissionWaitScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PermissionRequest → mark pending, emit permission.request
 sid="\${BERTRAND_SESSION:-}"
@@ -169,7 +168,8 @@ wait
 }
 
 /** PostToolUse (catch-all) → emit tool.applied for edits, permission.resolve for prompted tools */
-export function permissionDoneScript(): string {
+export function permissionDoneScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
@@ -243,7 +243,8 @@ wait
  * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
  * handling is fine — grep would mangle prompts containing quotes or newlines.
  */
-export function userPromptScript(): string {
+export function userPromptScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: UserPromptSubmit → record user free-text prompt
 sid="\${BERTRAND_SESSION:-}"
@@ -260,7 +261,8 @@ ${BIN} update --session-id "$sid" --event user.prompt --meta "$meta"
 }
 
 /** Stop hook → mark session as paused + final context snapshot */
-export function doneScript(): string {
+export function doneScript(bin: string): string {
+  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: Stop → mark session as paused
 sid="\${BERTRAND_SESSION:-}"
