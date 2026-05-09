@@ -26,6 +26,13 @@ async function build(label: string, opts: Parameters<typeof Bun.build>[0]) {
   }
 }
 
+// Keep runtime deps un-bundled so they resolve from node_modules. Bun's
+// `__toESM` wrapper turns bundled CJS exports into getter-only properties,
+// which breaks Storm's React.useEffect monkey-patch. Externalizing also
+// trims dist size dramatically.
+const pkg = JSON.parse(await Bun.file(join(ROOT, "package.json")).text());
+const external = Object.keys(pkg.dependencies ?? {});
+
 console.log("Building main CLI…");
 await build("main", {
   entrypoints: [join(SRC, "index.ts")],
@@ -33,6 +40,7 @@ await build("main", {
   naming: "bertrand.js",
   target: "bun",
   banner: "#!/usr/bin/env bun",
+  external,
 });
 chmodSync(join(DIST, "bertrand.js"), 0o755);
 
@@ -42,6 +50,7 @@ await build("tui", {
   outdir: DIST,
   naming: "run-screen.js",
   target: "bun",
+  external,
 });
 
 console.log("Copying migrations…");
