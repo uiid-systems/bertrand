@@ -1,3 +1,6 @@
+import { existsSync } from "fs";
+import { paths } from "@/lib/paths";
+
 type CommandHandler = (args: string[]) => void | Promise<void>;
 
 const commands = new Map<string, CommandHandler>();
@@ -11,13 +14,37 @@ export function alias(from: string, to: string) {
   aliases.set(from, to);
 }
 
+/**
+ * Run init silently before falling through to launch on a fresh install.
+ *
+ * Detected by the absence of the SQLite db file. Init's success logs are
+ * suppressed so the first-run experience is just one line + the TUI;
+ * errors stay visible. Failures abort with init's own exit code.
+ */
+async function autoInitIfFirstRun() {
+  if (existsSync(paths.db)) return;
+
+  const init = commands.get("init");
+  if (!init) return; // hot-path entrypoints don't load init; skip silently
+
+  console.log("Setting up bertrand for first use…");
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    await init([]);
+  } finally {
+    console.log = origLog;
+  }
+}
+
 export async function route(argv: string[]) {
   // argv: ["bun", "src/index.ts", ...args]
   const args = argv.slice(2);
   const command = args[0];
 
-  // No args → launch TUI
+  // No args → launch TUI (auto-init on fresh install first)
   if (!command) {
+    await autoInitIfFirstRun();
     const handler = commands.get("launch");
     if (!handler) throw new Error("No launch command registered");
     return handler(args);
