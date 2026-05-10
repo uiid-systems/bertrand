@@ -1,5 +1,5 @@
 import { getAllSessions, getSession } from "@/db/queries/sessions"
-import { getEventsBySession, getEventsByType } from "@/db/queries/events"
+import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
@@ -63,6 +63,12 @@ const routes: [RegExp, RouteHandler][] = [
   // GET /api/engagement/:sessionId
   [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
     return computeEngagementStats(sessionId!)
+  }],
+
+  // GET /api/recaps
+  // Bulk: latest session.recap event per session, returns {sessionId -> {recap, createdAt}}.
+  [/^\/api\/recaps$/, () => {
+    return getLatestRecaps()
   }],
 ]
 

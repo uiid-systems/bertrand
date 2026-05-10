@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { allStatsQuery } from "../../api/queries";
-
 import {
   Badge,
   Group,
@@ -12,6 +10,8 @@ import {
   List,
   type ListItemGroupProps,
   type ListItemProps,
+  Popover,
+  Stack,
   type StatusProps,
   Text,
   Toggle,
@@ -20,18 +20,21 @@ import {
   Tooltip,
 } from "@uiid/design-system";
 import {
-  ChartNoAxesColumn,
+  TagsIcon,
   ChevronsDownUp,
   ChevronsUpDown,
   ClockIcon,
   FilesIcon,
   GroupIcon,
+  MessageSquareTextIcon,
   SearchIcon,
 } from "@uiid/icons";
 
+import { allStatsQuery, recapsQuery } from "../../api/queries";
 import type { SessionRow, SessionWithGroup } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
+import { Markdown } from "../markdown";
 import { SidebarWrapper, type SidebarWrapperProps } from "./sidebar-wrapper";
 
 export type SidebarProps = {
@@ -245,7 +248,7 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
             <Tooltip trigger={<GroupIcon />}>Group by group</Tooltip>
           </Toggle>
           <Toggle value="status" aria-label="Group by status">
-            <Tooltip trigger={<ChartNoAxesColumn />}>Group by status</Tooltip>
+            <Tooltip trigger={<TagsIcon />}>Group by status</Tooltip>
           </Toggle>
           <Toggle value="recent" aria-label="Group by recent">
             <Tooltip trigger={<ClockIcon />}>Group by recent</Tooltip>
@@ -287,7 +290,9 @@ SessionLabel.displayName = "SessionLabel";
 
 const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
   const { data: allStats } = useQuery(allStatsQuery);
+  const { data: recaps } = useQuery(recapsQuery);
   const stats = allStats?.[s.session.id];
+  const recap = recaps?.[s.session.id];
   const linesAdded = stats?.linesAdded ?? 0;
   const linesRemoved = stats?.linesRemoved ?? 0;
   const filesTouched = stats?.filesTouched ?? 0;
@@ -295,6 +300,26 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
 
   return (
     <Group ay="center" gap={2}>
+      {recap && (
+        <Popover
+          TriggerProps={{ openOnHover: true }}
+          trigger={
+            <MessageSquareTextIcon
+              size={12}
+              aria-label="Session recap"
+              // style={{ color: "var(--shade-muted)" }}
+            />
+          }
+          title="Session recap"
+          description={formatRelativeTime(recap.createdAt)}
+          PositionerProps={{ sideOffset: 8, side: "right" }}
+          PopupProps={{ style: { maxWidth: 420 } }}
+        >
+          <Stack my={2}>
+            <Markdown>{recap.recap}</Markdown>
+          </Stack>
+        </Popover>
+      )}
       <Text size={-1} shade="muted">
         {formatRelativeTime(s.session.startedAt)}
       </Text>

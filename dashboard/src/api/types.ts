@@ -49,3 +49,8 @@ export type EngagementStats = {
   permissionDenials: number
   discardRate: { discarded: number; total: number }
 }
+
+export type SessionRecap = {
+  recap: string
+  createdAt: string
+}

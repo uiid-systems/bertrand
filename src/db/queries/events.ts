@@ -59,3 +59,29 @@ export function getLatestEvent(sessionId: string) {
     .limit(1)
     .get();
 }
+
+export function getLatestRecaps(): Record<
+  string,
+  { recap: string; createdAt: string }
+> {
+  const rows = getDb()
+    .select({
+      sessionId: events.sessionId,
+      meta: events.meta,
+      createdAt: events.createdAt,
+    })
+    .from(events)
+    .where(eq(events.event, "session.recap"))
+    .orderBy(desc(events.createdAt))
+    .all();
+
+  const result: Record<string, { recap: string; createdAt: string }> = {};
+  for (const row of rows) {
+    if (result[row.sessionId]) continue;
+    const meta = row.meta as Record<string, unknown> | null;
+    const recap = typeof meta?.recap === "string" ? meta.recap : null;
+    if (!recap) continue;
+    result[row.sessionId] = { recap, createdAt: row.createdAt };
+  }
+  return result;
+}

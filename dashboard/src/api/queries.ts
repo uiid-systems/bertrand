@@ -4,6 +4,7 @@ import type {
   EventRow,
   SessionStatsRow,
   EngagementStats,
+  SessionRecap,
 } from "./types"
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -42,3 +43,8 @@ export const engagementQuery = (sessionId: string) =>
     queryFn: () => fetchJson<EngagementStats>(`/api/engagement/${sessionId}`),
     enabled: !!sessionId,
   })
+
+export const recapsQuery = queryOptions({
+  queryKey: ["recaps"],
+  queryFn: () => fetchJson<Record<string, SessionRecap>>("/api/recaps"),
+})
