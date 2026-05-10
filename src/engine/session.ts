@@ -12,6 +12,10 @@ import {
 } from "@/db/queries/conversations";
 import { insertEvent } from "@/db/queries/events";
 import { getOrCreateGroupPath, getGroup, getGroupByPath } from "@/db/queries/groups";
+import {
+  addLabelToSession,
+  getOrCreateLabelByName,
+} from "@/db/queries/labels";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { launchClaude } from "./process";
@@ -24,6 +28,8 @@ export interface LaunchOpts {
   slug: string;
   /** Display name (defaults to slug) */
   name?: string;
+  /** Label names to attach. Created if they don't exist. */
+  labelNames?: string[];
 }
 
 export interface ResumeOpts {
@@ -53,6 +59,11 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     slug: opts.slug,
     name: opts.name ?? opts.slug,
   });
+
+  for (const name of opts.labelNames ?? []) {
+    const label = getOrCreateLabelByName(name);
+    addLabelToSession(session.id, label.id);
+  }
 
   const claudeId = randomUUID();
   const conversation = createConversation({

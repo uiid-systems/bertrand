@@ -23,6 +23,12 @@ export function getAllLabels() {
   return getDb().select().from(labels).all();
 }
 
+export function getOrCreateLabelByName(name: string) {
+  const existing = getLabelByName(name);
+  if (existing) return existing;
+  return createLabel({ name });
+}
+
 export function addLabelToSession(sessionId: string, labelId: string) {
   return getDb()
     .insert(sessionLabels)
