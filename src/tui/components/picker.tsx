@@ -177,18 +177,26 @@ export function Picker(props: PickerProps) {
         {slice.map((row, i) => {
           const idx = visibleStart + i;
           const isCursor = idx === cursor && isFocused;
+          const isNew = row.value === NEW_KEY;
+          // Visual divider above "+ new" when there are real items above it.
+          const showDivider =
+            isNew && filtered.length > 0 && i > 0;
 
-          if (row.value === NEW_KEY) {
+          if (isNew) {
             return (
-              <Box
-                key="__new__"
-                flexDirection="row"
-                gap={1}
-                backgroundColor={isCursor ? "green" : undefined}
-              >
-                <Text color={isCursor ? "black" : "green"} bold={isCursor}>
-                  + new “{filter.trim()}”
-                </Text>
+              <Box key="__new__" flexDirection="column">
+                {showDivider && (
+                  <Text dim>{"─".repeat(Math.min(20, filter.length + 12))}</Text>
+                )}
+                <Box
+                  flexDirection="row"
+                  gap={1}
+                  backgroundColor={isCursor ? "green" : undefined}
+                >
+                  <Text color={isCursor ? "black" : "cyan"} bold>
+                    ✚ create “{filter.trim()}”
+                  </Text>
+                </Box>
               </Box>
             );
           }
@@ -202,6 +210,7 @@ export function Picker(props: PickerProps) {
             <Box
               key={item.value}
               flexDirection="row"
+              justifyContent="space-between"
               gap={1}
               backgroundColor={isCursor ? "green" : undefined}
             >
@@ -213,9 +222,14 @@ export function Picker(props: PickerProps) {
                 {item.label}
               </Text>
               {item.meta && (
-                <Text color={isCursor ? "black" : undefined} dim={!isCursor}>
-                  {item.meta}
-                </Text>
+                <Box
+                  paddingX={1}
+                  backgroundColor={isCursor ? "black" : "#3a3a3a"}
+                >
+                  <Text color={isCursor ? "green" : "white"} bold>
+                    {item.meta}
+                  </Text>
+                </Box>
               )}
             </Box>
           );

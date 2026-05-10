@@ -42,14 +42,18 @@ export function CreateScreen({
   // Only show groups that have at least one non-archived session.
   const groupItems = useMemo<PickerItem[]>(() => {
     const activeSessions = getAllSessions({ excludeArchived: true });
-    const activePaths = new Set(activeSessions.map((s) => s.groupPath));
+    const counts = new Map<string, number>();
+    for (const s of activeSessions) {
+      counts.set(s.groupPath, (counts.get(s.groupPath) ?? 0) + 1);
+    }
     return getAllGroups()
-      .filter((g) => activePaths.has(g.path))
+      .filter((g) => counts.has(g.path))
       .sort((a, b) => a.path.localeCompare(b.path))
       .map((g) => ({
         value: g.path,
         label: g.path,
         color: g.color,
+        meta: `${counts.get(g.path)}`,
       }));
   }, []);
 
