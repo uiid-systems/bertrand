@@ -31,6 +31,11 @@ export const statsQuery = (sessionId: string) =>
     enabled: !!sessionId,
   })
 
+export const allStatsQuery = queryOptions({
+  queryKey: ["stats"],
+  queryFn: () => fetchJson<Record<string, SessionStatsRow>>("/api/stats"),
+})
+
 export const engagementQuery = (sessionId: string) =>
   queryOptions({
     queryKey: ["engagement", sessionId],

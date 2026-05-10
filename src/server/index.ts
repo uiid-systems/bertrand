@@ -27,6 +27,24 @@ const routes: [RegExp, RouteHandler][] = [
     return getEventsBySession(sessionId!)
   }],
 
+  // GET /api/stats
+  // Bulk variant: returns a {sessionId -> stats} map for every session.
+  [/^\/api\/stats$/, () => {
+    const all = getAllSessions()
+    const now = new Date().toISOString()
+    const result: Record<string, unknown> = {}
+    for (const { session } of all) {
+      const isLive = session.status === "active" || session.status === "waiting"
+      if (isLive) {
+        result[session.id] = { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
+        continue
+      }
+      const stored = getSessionStats(session.id)
+      result[session.id] = stored ?? { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
+    }
+    return result
+  }],
+
   // GET /api/stats/:sessionId
   // Live compute for active/waiting sessions (materialized row would be stale or absent).
   // Paused/archived sessions read the materialized row, falling back to live if missing.
