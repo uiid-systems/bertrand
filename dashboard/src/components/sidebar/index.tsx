@@ -122,14 +122,17 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+      </Group>
+      <Group ay="center" ax="end">
         {items.length > 0 && (
           <ToggleButton
             size="small"
             variant="subtle"
-            shape="square"
+            // shape="square"
             tooltip={allOpen ? "Collapse all" : "Expand all"}
             pressed={!allOpen}
             onPressedChange={() => toggleAll()}
+            text={{ unpressed: "Collapse all", pressed: "Expand all" }}
             icon={{
               unpressed: <ChevronsDownUp />,
               pressed: <ChevronsUpDown />,
