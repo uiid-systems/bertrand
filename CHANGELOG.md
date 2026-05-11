@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.11.0](https://github.com/uiid-systems/bertrand/compare/v0.10.1...v0.11.0) (2026-05-11)
+
+
+### Features
+
+* **sidebar:** show session recaps in popover from metadata row ([bf41788](https://github.com/uiid-systems/bertrand/commit/bf41788d5c5a3e329c6fbf8834ce4c4e533274c1))
+* **sidebar:** three-axis grouping with inline diff stats ([53b5ce0](https://github.com/uiid-systems/bertrand/commit/53b5ce0837696b98210e2b9d58cb48b199a6b63f))
+* **timeline:** capture inter-AUQ thinking recaps ([74c9d9c](https://github.com/uiid-systems/bertrand/commit/74c9d9c0e46fab0332d709d1904cf03942fe4f13))
+* **timeline:** render assistant.recap as its own row ([828ecd3](https://github.com/uiid-systems/bertrand/commit/828ecd36f2e62799491b10e1a74000d9327e6d20))
+* **tui:** polish create picker with group counts and badged "+ new" ([f998819](https://github.com/uiid-systems/bertrand/commit/f9988194d7e6281b2fdfcdd7c505b91090049727))
+* **tui:** rebuild launch screen as create-first wizard ([1f1e102](https://github.com/uiid-systems/bertrand/commit/1f1e1028645ca1c3e6d18df349981984a2f76d9a))
+
+
+### Bug Fixes
+
+* **timeline:** preserve Q&A merge when assistant.recap interleaves ([56caf7f](https://github.com/uiid-systems/bertrand/commit/56caf7f073d2be2f5b8449c553d23659387e7791))
+* **timeline:** treat Other-only AUQ answers as manual, not "Didn't answer" ([1af4dc1](https://github.com/uiid-systems/bertrand/commit/1af4dc15b8e0d6c5ea87f86e06f7fc38b9131142))
+
+
+### Refactoring
+
+* sidebar tinkering ([0336508](https://github.com/uiid-systems/bertrand/commit/03365086ce39a8a28a6f8cea4ee80ffea354a06f))
+
 ## [0.9.1](https://github.com/uiid-systems/bertrand/compare/v0.9.0...v0.9.1) (2026-04-07)
 
 
