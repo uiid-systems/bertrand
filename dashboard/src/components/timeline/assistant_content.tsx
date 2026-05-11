@@ -1,4 +1,4 @@
-import { Badge, Stack } from "@uiid/design-system";
+import { Badge, Card, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
@@ -17,6 +17,19 @@ const RECAP_TAG_RE = /<recap>[\s\S]*?<\/recap>/gi;
 
 export function AssistantContent({ event }: AssistantContentProps) {
   const meta = event.meta as Record<string, unknown> | null;
+
+  if (event.event === "assistant.recap") {
+    const recap = (meta?.recap as string | undefined)?.trim();
+    if (!recap) return null;
+    return (
+      <Stack data-slot="assistant-recap" py={4} maxw={680}>
+        <Card>
+          <Markdown>{recap}</Markdown>
+        </Card>
+      </Stack>
+    );
+  }
+
   const rawText = (meta?.text as string) ?? "";
   const text = rawText.replace(RECAP_TAG_RE, "").trim();
   const thinkingBlocks = (meta?.thinkingBlocks as number) ?? 0;

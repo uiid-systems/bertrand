@@ -47,6 +47,7 @@ const EVENT_CATALOG: Record<string, EventInfo> = {
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
   "tool.applied": { category: "work", color: "yellow", label: "applied" },
   "assistant.message": { category: "assistant", color: "indigo", label: "assistant" },
+  "assistant.recap": { category: "assistant", color: "indigo", label: "recap" },
 }
 
 const DEFAULT_INFO: EventInfo = {
