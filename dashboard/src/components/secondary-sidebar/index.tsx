@@ -38,14 +38,17 @@ export const SecondarySidebar = (
   const { data: sessions = [] } = useQuery(sessionsQuery);
   const session = sessions.find((s) => s.session.slug === slug);
   const sessionId = session?.session.id ?? "";
+  const isLive =
+    session?.session.status === "active" ||
+    session?.session.status === "waiting";
 
   const { data: stats } = useQuery({
-    ...statsQuery(sessionId),
+    ...statsQuery(sessionId, isLive),
     enabled: !!sessionId,
   });
 
   const { data: engagement } = useQuery({
-    ...engagementQuery(sessionId),
+    ...engagementQuery(sessionId, isLive),
     enabled: !!sessionId,
   });
 

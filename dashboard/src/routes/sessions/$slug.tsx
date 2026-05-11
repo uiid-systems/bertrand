@@ -38,8 +38,10 @@ function SessionDetail() {
   const { data: sessions = [] } = useQuery(sessionsQuery);
   const match = sessions.find((s) => s.session.slug === slug);
   const sessionId = match?.session.id ?? "";
+  const isLive =
+    match?.session.status === "active" || match?.session.status === "waiting";
 
-  const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId));
+  const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
   const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
 
   const breadcrumbs = match

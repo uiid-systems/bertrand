@@ -30,7 +30,7 @@ import {
   SearchIcon,
 } from "@uiid/icons";
 
-import { allStatsQuery, recapsQuery } from "../../api/queries";
+import { allStatsQuery, recapsQuery, sessionsQuery } from "../../api/queries";
 import type { SessionRow, SessionWithGroup } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
@@ -295,7 +295,11 @@ const SessionLabel = ({ session: s }: { session: SessionWithGroup }) => (
 SessionLabel.displayName = "SessionLabel";
 
 const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
-  const { data: allStats } = useQuery(allStatsQuery);
+  const { data: sessions = [] } = useQuery(sessionsQuery);
+  const hasLiveSession = sessions.some(
+    (x) => x.session.status === "active" || x.session.status === "waiting",
+  );
+  const { data: allStats } = useQuery(allStatsQuery(hasLiveSession));
   const { data: recaps } = useQuery(recapsQuery);
   const stats = allStats?.[s.session.id];
   const recap = recaps?.[s.session.id];
