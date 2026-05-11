@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/uiid-systems/bertrand/compare/v0.11.0...v0.12.0) (2026-05-11)
+
+
+### Features
+
+* **dashboard:** status-gated polling for streaming timeline ([bf3c31a](https://github.com/uiid-systems/bertrand/commit/bf3c31a626e18af2be7bc335cdbc98f0ddf18fae))
+
 ## [0.11.0](https://github.com/uiid-systems/bertrand/compare/v0.10.1...v0.11.0) (2026-05-11)
 
 
