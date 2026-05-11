@@ -202,9 +202,9 @@ Releases are driven by [release-please](https://github.com/googleapis/release-pl
 1. Land commits in conventional format (`feat:`, `fix:`, `refactor:`, etc.). Hidden types — `chore`, `docs`, `test`, `ci` — don't trigger a release.
 2. The `Release Please` workflow opens or updates a release PR with the next version + `CHANGELOG.md` entries.
 3. Merging the release PR creates the git tag and a GitHub Release.
-4. Locally, on `main` at the new tag: `bun publish` (runs `prepublishOnly: bun run build` first).
+4. The same workflow then publishes to npm with provenance (typecheck + tests run first).
 
-The `.release-please-manifest.json` file tracks the last released version; release-please updates it automatically.
+The `.release-please-manifest.json` file tracks the last released version; release-please updates it automatically. Publishing relies on the `NPM_TOKEN` repo secret (npm Automation token).
 
 ## License
 
