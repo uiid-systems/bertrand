@@ -31,17 +31,30 @@ export const consolidateInteractions: TimelineTransform = (events) => {
     const curr = events[i]
 
     if (curr.event === "session.waiting") {
-      // Look ahead past context.snapshot to find the matching answered
+      // Look ahead past context.snapshot and assistant.recap to find the matching answered.
+      // Both fire from on-waiting.sh in parallel with session.waiting, so they routinely
+      // sit between waiting and answered without representing user-side activity.
       let j = i + 1
-      while (j < events.length && events[j].event === "context.snapshot") j++
+      const intermediateRecaps: EventRow[] = []
+      while (
+        j < events.length &&
+        (events[j].event === "context.snapshot" || events[j].event === "assistant.recap")
+      ) {
+        if (events[j].event === "assistant.recap") intermediateRecaps.push(events[j])
+        j++
+      }
 
       if (j < events.length && events[j].event === "session.answered") {
+        // Recaps describe work done before the AUQ was asked, so emit them ahead of
+        // the merged Q&A row — reads as "Claude reflected, then asked the next question."
+        for (const r of intermediateRecaps) result.push(r)
+
         const question = (curr.meta as Record<string, unknown> | null)?.question
         result.push({
           ...events[j],
           meta: { ...events[j].meta, question },
         })
-        // Mark waiting, interleaved context snapshots, and answered as consumed
+        // Mark waiting, interleaved context snapshots/recaps, and answered as consumed
         for (let k = i; k <= j; k++) skip.add(k)
         continue
       }
