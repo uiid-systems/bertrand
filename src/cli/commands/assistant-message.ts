@@ -4,6 +4,8 @@ import { getConversation } from "@/db/queries/conversations";
 import { insertEvent } from "@/db/queries/events";
 import { getLatestAssistantTurn } from "@/lib/transcript";
 
+const RECAP_TAG_RE = /<recap>[\s\S]*?<\/recap>/gi;
+
 function summarize(text: string): string {
   const firstLine = text.split("\n").find((l) => l.trim()) ?? "";
   const trimmed = firstLine.trim();
@@ -46,6 +48,8 @@ register("assistant-message", async (args) => {
   const turn = getLatestAssistantTurn(transcriptPath);
   if (!turn) return;
 
+  const text = turn.text.replace(RECAP_TAG_RE, "").trim();
+
   const convoId =
     conversationId && getConversation(conversationId) ? conversationId : undefined;
 
@@ -53,10 +57,10 @@ register("assistant-message", async (args) => {
     sessionId,
     conversationId: convoId,
     event: "assistant.message",
-    summary: turn.text ? summarize(turn.text) : "thinking only",
+    summary: text ? summarize(text) : "thinking only",
     meta: {
       model: turn.model,
-      text: turn.text,
+      text,
       thinkingBlocks: turn.thinkingBlocks,
       thinkingBytes: turn.thinkingBytes,
       claude_id: convoId,
