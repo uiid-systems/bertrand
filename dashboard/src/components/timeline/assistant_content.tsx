@@ -13,9 +13,12 @@ function thoughtDots(bytes: number): string {
   return "●●●";
 }
 
+const RECAP_TAG_RE = /<recap>[\s\S]*?<\/recap>/gi;
+
 export function AssistantContent({ event }: AssistantContentProps) {
   const meta = event.meta as Record<string, unknown> | null;
-  const text = (meta?.text as string) ?? "";
+  const rawText = (meta?.text as string) ?? "";
+  const text = rawText.replace(RECAP_TAG_RE, "").trim();
   const thinkingBlocks = (meta?.thinkingBlocks as number) ?? 0;
   const thinkingBytes = (meta?.thinkingBytes as number) ?? 0;
 

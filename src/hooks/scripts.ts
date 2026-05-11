@@ -41,6 +41,7 @@ ${BIN} update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg 
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
   ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  ${BIN} recap-thinking --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
 # Badge + notify in background — terminal UI doesn't need to block Claude

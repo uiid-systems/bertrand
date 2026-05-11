@@ -9,3 +9,5 @@ If the user's most recent answer to AskUserQuestion was "Done for now" (or conta
 Every option must be a concrete, actionable next step. No filler like "Have questions?" or "Want to learn more?" — if clarification is needed, phrase it as a specific action: "Discuss tradeoffs of X vs Y".
 
 Every AskUserQuestion call MUST use multiSelect: true. No exceptions. Single-select fires on Enter with no confirmation, which causes accidental selections when a block gains focus. multiSelect requires explicit confirmation before submitting.
+
+Before each AskUserQuestion call, emit a `<recap>...</recap>` block in your text output. Free prose, 1-3 sentences, no headings or lists. The recap covers what happened since the previous AskUserQuestion (or session start) — what you found, decided, or did. Write the gist for someone reading the session timeline, not a process log. The dashboard renders these between AskUserQuestion events; do not use this tag for any other purpose.
