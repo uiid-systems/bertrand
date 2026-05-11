@@ -31,10 +31,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
           <Text
             data-slot="session-link"
             render={
-              <Link
-                to="/sessions/$slug"
-                params={{ slug: session.slug }}
-              />
+              <Link to="/sessions/$slug" params={{ slug: session.slug }} />
             }
             weight="bold"
           >

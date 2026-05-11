@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import {
-  Badge,
   Group,
   Input,
   Kbd,
@@ -12,6 +11,7 @@ import {
   type ListItemProps,
   Popover,
   Stack,
+  Status,
   type StatusProps,
   Text,
   Toggle,
@@ -102,8 +102,14 @@ function buildListItem(s: SessionWithGroup): ListItemProps {
   return {
     value: s.session.id,
     label: <SessionLabel session={s} />,
-    content: <SessionContent session={s} />,
-    action: <Badge color={color}>{s.session.status}</Badge>,
+    content: (
+      <Group gap={2} ay="center" mt={1} mb={2}>
+        {/** @todo add {s.session.status} as tooltip */}
+        <Status color={color} />
+        <SessionContent session={s} />
+      </Group>
+    ),
+    action: <></>,
   } as ListItemProps;
 }
 
@@ -300,22 +306,6 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
 
   return (
     <Group ay="center" gap={2}>
-      {recap && (
-        <Popover
-          TriggerProps={{ openOnHover: true }}
-          trigger={
-            <MessageSquareTextIcon size={12} aria-label="Session recap" />
-          }
-          title="Session recap"
-          description={formatRelativeTime(recap.createdAt)}
-          PositionerProps={{ sideOffset: 8, side: "right" }}
-          PopupProps={{ style: { maxWidth: 420 } }}
-        >
-          <Stack my={2}>
-            <Markdown>{recap.recap}</Markdown>
-          </Stack>
-        </Popover>
-      )}
       <Text size={-1} shade="muted">
         {formatRelativeTime(s.session.startedAt)}
       </Text>
@@ -336,6 +326,22 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
             {filesTouched}
           </Text>
         </Group>
+      )}
+      {recap && (
+        <Popover
+          TriggerProps={{ openOnHover: true }}
+          trigger={
+            <MessageSquareTextIcon size={12} aria-label="Session recap" />
+          }
+          title="Session recap"
+          description={formatRelativeTime(recap.createdAt)}
+          PositionerProps={{ sideOffset: 8, side: "right" }}
+          PopupProps={{ style: { maxWidth: 420 } }}
+        >
+          <Stack my={2}>
+            <Markdown>{recap.recap}</Markdown>
+          </Stack>
+        </Popover>
       )}
     </Group>
   );
