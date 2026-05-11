@@ -42,11 +42,16 @@ function isPicked(label: string, selection: string, multiSelect: boolean) {
 }
 
 /**
- * AskUserQuestion concatenates the user's free-text note onto the answer string
- * (as ", <note>"), and also stores it on annotations[question].notes. The note
- * portion in the answer is sometimes truncated by a character or two compared
- * to annotations.notes, so we walk back to find the longest prefix of ", <note>"
- * that the answer ends with — strip that and render the note from annotations.
+ * AskUserQuestion answer shapes:
+ *   1. Selection only           → answer = "Label",            annotations = {}
+ *   2. Selection + note         → answer = "Label, note text", annotations.notes = "note text"
+ *   3. Other-only (typed text)  → answer = "typed text",       annotations = {}
+ *
+ * For (2) the note in the answer is sometimes truncated by a character or two
+ * vs. annotations.notes, so we walk back to find the longest suffix of ", <note>"
+ * that the answer ends with and strip it. For (1) and (3), annotations is empty
+ * and we leave the answer untouched — the caller decides whether the resulting
+ * selection matches a real option (case 1) or is a manual answer (case 3).
  */
 function splitSelectionAndNote(answer: string, note: string | undefined) {
   if (!note) return { selection: answer, note: undefined };
@@ -86,18 +91,21 @@ export function InteractionContent({ event }: InteractionContentProps) {
       const hasSelection = options.some((o) =>
         isPicked(o.label, selection, multiSelect),
       );
+      const manualAnswer =
+        !hasSelection && selection.trim() ? selection : note;
+      const additionalNote = hasSelection ? note : undefined;
 
       return (
         <Stack gap={4} fullwidth>
-          {note && !hasSelection && (
+          {manualAnswer && (
             <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
               <Text color="yellow" weight="bold" size={1}>
                 Answered manually:
               </Text>
-              <Markdown>{note}</Markdown>
+              <Markdown>{manualAnswer}</Markdown>
             </Stack>
           )}
-          {!note && !hasSelection && (
+          {!hasSelection && !manualAnswer && (
             <Text color="red" weight="bold" size={1} m={2}>
               Didn't answer.
             </Text>
@@ -124,12 +132,12 @@ export function InteractionContent({ event }: InteractionContentProps) {
               }))}
             />
           )}
-          {note && hasSelection && (
+          {additionalNote && (
             <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
               <Text color="green" weight="bold" size={1}>
                 Additional notes:
               </Text>
-              <Markdown>{note}</Markdown>
+              <Markdown>{additionalNote}</Markdown>
             </Stack>
           )}
         </Stack>
