@@ -304,11 +304,7 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
         <Popover
           TriggerProps={{ openOnHover: true }}
           trigger={
-            <MessageSquareTextIcon
-              size={12}
-              aria-label="Session recap"
-              // style={{ color: "var(--shade-muted)" }}
-            />
+            <MessageSquareTextIcon size={12} aria-label="Session recap" />
           }
           title="Session recap"
           description={formatRelativeTime(recap.createdAt)}
