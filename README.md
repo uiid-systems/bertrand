@@ -195,6 +195,17 @@ bun run db:migrate      # Apply migrations to ~/.bertrand/bertrand.db
 
 The dashboard has its own `tsc -b` typecheck — run from `dashboard/`.
 
+## Releasing
+
+Releases are driven by [release-please](https://github.com/googleapis/release-please) from conventional commits on `main`.
+
+1. Land commits in conventional format (`feat:`, `fix:`, `refactor:`, etc.). Hidden types — `chore`, `docs`, `test`, `ci` — don't trigger a release.
+2. The `Release Please` workflow opens or updates a release PR with the next version + `CHANGELOG.md` entries.
+3. Merging the release PR creates the git tag and a GitHub Release.
+4. Locally, on `main` at the new tag: `bun publish` (runs `prepublishOnly: bun run build` first).
+
+The `.release-please-manifest.json` file tracks the last released version; release-please updates it automatically.
+
 ## License
 
 MIT
