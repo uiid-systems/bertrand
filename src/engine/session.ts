@@ -19,6 +19,7 @@ import {
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { launchClaude } from "./process";
+import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
 
 export interface LaunchOpts {
@@ -74,21 +75,39 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // Update session to working with PID
   updateSession(session.id, { status: "active", pid: process.pid });
 
-  // Log start events
+  // Capture spawn context (model, claude version, git, cwd) in parallel before
+  // logging start events so the frozen-in-time meta on session.started /
+  // claude.started reflects what was true at launch.
+  const spawnContext = await captureSpawnContext();
+  const sessionName = `${opts.groupPath}/${opts.slug}`;
+
   insertEvent({
     sessionId: session.id,
     conversationId: claudeId,
     event: "session.started",
+    meta: {
+      group_path: opts.groupPath,
+      session_name: opts.name ?? opts.slug,
+      session_slug: opts.slug,
+      labels: opts.labelNames ?? [],
+      summary: session.summary ?? null,
+    },
   });
   insertEvent({
     sessionId: session.id,
     conversationId: claudeId,
     event: "claude.started",
-    meta: { claude_id: claudeId },
+    meta: {
+      claude_id: claudeId,
+      model: spawnContext.model,
+      claude_version: spawnContext.claudeVersion,
+      git: spawnContext.git,
+      cwd: spawnContext.cwd,
+      // worktree: spawnContext.worktree, // STUB — wired when worktree support lands
+    },
   });
 
   // Build contract with context
-  const sessionName = `${opts.groupPath}/${opts.slug}`;
   const siblingContext = buildSiblingContext(groupId, session.id);
   const contract = buildContract(sessionName, siblingContext);
 
