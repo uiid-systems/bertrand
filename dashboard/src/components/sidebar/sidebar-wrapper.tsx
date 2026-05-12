@@ -8,7 +8,7 @@ export const SidebarWrapper = ({ children, ...props }: SidebarWrapperProps) => (
     render={<nav />}
     ax="stretch"
     fullwidth
-    gap={4}
+    gap={3}
     p={4}
     {...props}
   >

@@ -241,7 +241,7 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
           onChange={(e) => setQuery(e.target.value)}
         />
       </Group>
-      <Group ay="center" gap={2}>
+      <Group ay="center" ax="space-between" gap={2}>
         <ToggleGroup
           size="sm"
           value={[groupBy]}
