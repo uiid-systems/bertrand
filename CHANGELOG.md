@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0](https://github.com/uiid-systems/bertrand/compare/v0.12.0...v0.13.0) (2026-05-12)
+
+
+### Features
+
+* **dashboard:** action buttons on session-start CWD row ([d41aaf4](https://github.com/uiid-systems/bertrand/commit/d41aaf49df39bd53133bf6a89e318c1e2e4305e9))
+* **dashboard:** link session-start CWD to cursor://file ([54bf9c2](https://github.com/uiid-systems/bertrand/commit/54bf9c289f92f6a005d0b6ee8993b991dacc8d6a))
+* **dashboard:** richer session-started timeline card ([6874b98](https://github.com/uiid-systems/bertrand/commit/6874b989f7ffd68f8c08da0a7acbb26683831ac6))
+* **dashboard:** use session identity as session-started timeline title ([0162a3d](https://github.com/uiid-systems/bertrand/commit/0162a3d7160ce983ffd00d6e2fce92b0e1edafa9))
+* **engine:** capture spawn context for session start events ([60909dc](https://github.com/uiid-systems/bertrand/commit/60909dc51a6936136ff87ce45dedf4e09081b20f))
+* **server:** add POST /api/open for opening paths ([ad631b9](https://github.com/uiid-systems/bertrand/commit/ad631b954f76c070107e04771f2cc564863b3f4e))
+
+
+### Bug Fixes
+
+* **dashboard:** parse AUQ picks from answer string for Claude Code 2.1.123+ ([6ede5a0](https://github.com/uiid-systems/bertrand/commit/6ede5a0bf7e766f053a48a8eb4ca937de3227100))
+
+
+### Refactoring
+
+* **dashboard:** move session stats into right-side sheet ([666c12f](https://github.com/uiid-systems/bertrand/commit/666c12fd3ba732af7af4b8bd1d74fb85c04b3236))
+* tinkering ([e90858d](https://github.com/uiid-systems/bertrand/commit/e90858d8231f4f1ee1245786debb25303a8357ae))
+
 ## [0.12.0](https://github.com/uiid-systems/bertrand/compare/v0.11.0...v0.12.0) (2026-05-11)
 
 
