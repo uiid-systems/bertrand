@@ -118,9 +118,16 @@ export function StartedContent({ event }: StartedContentProps) {
     rows.push({
       field: "CWD",
       value: (
-        <Text family="mono" size={-1} color="neutral">
-          {cwd}
-        </Text>
+        <a
+          href={`cursor://file/${encodeURI(cwd)}`}
+          target="_blank"
+          rel="noreferrer"
+          title="Open in Cursor"
+        >
+          <Text family="mono" size={-1} color="neutral">
+            {cwd}
+          </Text>
+        </a>
       ),
     });
 
