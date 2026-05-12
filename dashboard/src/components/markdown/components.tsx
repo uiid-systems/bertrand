@@ -1,4 +1,9 @@
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   Checkbox,
   CodeBlock,
@@ -36,7 +41,9 @@ const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
   md: "markdown",
 };
 
-function resolveLanguage(className: string | undefined): BundledLanguage | undefined {
+function resolveLanguage(
+  className: string | undefined,
+): BundledLanguage | undefined {
   const match = /language-([\w-]+)/.exec(className ?? "");
   if (!match) return undefined;
   const raw = match[1]!.toLowerCase();
@@ -50,8 +57,7 @@ type InputElement = ReactElement<{ type?: string; checked?: boolean }>;
 
 function isCheckboxInput(node: ReactNode): node is InputElement {
   return (
-    isValidElement(node) &&
-    (node as InputElement).props?.type === "checkbox"
+    isValidElement(node) && (node as InputElement).props?.type === "checkbox"
   );
 }
 
@@ -98,7 +104,7 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
           label: (
             <Group ay="center" gap={2}>
               <Checkbox checked={checked} disabled />
-              <Text>{rest}</Text>
+              <Text size={1}>{rest}</Text>
             </Group>
           ),
         };
@@ -126,29 +132,29 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
 
       return {
         value: `item-${i}`,
-        label: <>{liChildren}</>,
+        label: <Text size={1}>{liChildren}</Text>,
       };
     });
 }
 
 export const defaultComponents: Components = {
   p: ({ children }) => (
-    <Text size={1} render={<p />}>
+    <Text my={1} size={1} render={<p />}>
       {children}
     </Text>
   ),
   h1: ({ children, id }) => (
-    <Text weight="bold" size={4} render={<h1 id={id} />}>
+    <Text weight="bold" size={4} my={2} render={<h1 id={id} />}>
       {children}
     </Text>
   ),
   h2: ({ children, id }) => (
-    <Text weight="bold" size={3} render={<h2 id={id} />}>
+    <Text weight="bold" size={3} mt={2} render={<h2 id={id} />}>
       {children}
     </Text>
   ),
   h3: ({ children, id }) => (
-    <Text weight="bold" size={2} render={<h3 id={id} />}>
+    <Text weight="bold" size={1} my={1} render={<h3 id={id} />}>
       {children}
     </Text>
   ),
@@ -185,6 +191,7 @@ export const defaultComponents: Components = {
       size="large"
       items={buildListItems(children)}
       style={{ display: "block" }}
+      my={2}
     />
   ),
   ol: ({ children }) => (
@@ -193,6 +200,7 @@ export const defaultComponents: Components = {
       size="large"
       items={buildListItems(children)}
       style={{ display: "block" }}
+      my={2}
     />
   ),
   blockquote: ({ children }) => <blockquote>{children}</blockquote>,
@@ -218,7 +226,7 @@ export const defaultComponents: Components = {
         code={text.replace(/\n$/, "")}
         language={resolveLanguage(className)}
         copyable
-        style={{ width: "100%" }}
+        style={{ width: "100%", marginBlockEnd: "0.5rem" }}
       />
     );
   },

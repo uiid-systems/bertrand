@@ -22,7 +22,7 @@ export function AssistantContent({ event }: AssistantContentProps) {
     const recap = (meta?.recap as string | undefined)?.trim();
     if (!recap) return null;
     return (
-      <Stack data-slot="assistant-recap" py={4} maxw={680}>
+      <Stack data-slot="assistant-recap" py={4}>
         <Card>
           <Markdown>{recap}</Markdown>
         </Card>
@@ -38,7 +38,7 @@ export function AssistantContent({ event }: AssistantContentProps) {
   if (!text && thinkingBlocks === 0) return null;
 
   return (
-    <Stack data-slot="assistant-content" gap={2} maxw={680}>
+    <Stack data-slot="assistant-content" gap={2}>
       {thinkingBlocks > 0 && (
         <Badge color="indigo">{`Thought ${thoughtDots(thinkingBytes)}`}</Badge>
       )}

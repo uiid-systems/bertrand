@@ -91,8 +91,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
       const hasSelection = options.some((o) =>
         isPicked(o.label, selection, multiSelect),
       );
-      const manualAnswer =
-        !hasSelection && selection.trim() ? selection : note;
+      const manualAnswer = !hasSelection && selection.trim() ? selection : note;
       const additionalNote = hasSelection ? note : undefined;
 
       return (
@@ -183,14 +182,21 @@ export function InteractionContent({ event }: InteractionContentProps) {
     if (!prompt) return null;
 
     return (
-      <Stack py={4}>
-        <Card>
-          <Markdown>{prompt}</Markdown>
-        </Card>
-      </Stack>
+      <CardContainer>
+        <Markdown>{prompt}</Markdown>
+      </CardContainer>
     );
   }
 
   return null;
 }
 InteractionContent.displayName = "InteractionContent";
+
+const CardContainer = ({ children }: React.PropsWithChildren) => (
+  <Stack data-slot="interaction-content" py={4} fullwidth>
+    <Card gap={4} fullwidth>
+      {children}
+    </Card>
+  </Stack>
+);
+CardContainer.displayName = "CardContainer";
