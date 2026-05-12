@@ -1,17 +1,20 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
   Badge,
+  Button,
   Card,
   Group,
   Stack,
   TableBody,
   TableCell,
+  TableCellActions,
   TableContainer,
   TableRoot,
   TableRow,
   Text,
 } from "@uiid/design-system";
+import { Check, Copy, ExternalLink, FolderOpen } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
 import { modelLabel } from "../../lib/format";
@@ -27,6 +30,26 @@ type GitMeta = {
 };
 
 type Row = { field: string; value: ReactNode };
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="small"
+      variant="ghost"
+      shape="square"
+      tooltip={copied ? "Copied!" : "Copy path"}
+      disabled={copied}
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+    >
+      {copied ? <Check color="green" /> : <Copy />}
+    </Button>
+  );
+}
 
 function shortId(id: string | undefined): string | undefined {
   if (!id) return undefined;
@@ -118,20 +141,50 @@ export function StartedContent({ event }: StartedContentProps) {
     rows.push({
       field: "CWD",
       value: (
-        <a
-          href={`cursor://file/${encodeURI(cwd)}`}
-          target="_blank"
-          rel="noreferrer"
-          title="Open in Cursor"
-        >
-          <Text family="mono" size={-1} color="neutral">
-            {cwd}
-          </Text>
-        </a>
+        <Text family="mono" size={-1} color="neutral">
+          {cwd}
+        </Text>
       ),
     });
 
   if (rows.length === 0) return null;
+
+  const isCwdRow = (row: Row) => row.field === "CWD";
+  const onlyOnCwd = (button: React.ReactElement, row: Row) =>
+    isCwdRow(row) ? button : <></>;
+
+  const actions = {
+    primary: [
+      {
+        icon: ExternalLink,
+        tooltip: "Open in Cursor",
+        onClick: (row: Row) => {
+          if (!isCwdRow(row) || !cwd) return;
+          window.open(`cursor://file/${encodeURI(cwd)}`, "_blank");
+        },
+        wrapper: onlyOnCwd,
+      },
+      {
+        icon: FolderOpen,
+        tooltip: "Open in Finder",
+        onClick: (row: Row) => {
+          if (!isCwdRow(row) || !cwd) return;
+          void fetch("/api/open", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: cwd }),
+          });
+        },
+        wrapper: onlyOnCwd,
+      },
+      {
+        icon: Copy,
+        tooltip: "Copy path",
+        wrapper: (_button: React.ReactElement, row: Row) =>
+          isCwdRow(row) && cwd ? <CopyButton text={cwd} /> : <></>,
+      },
+    ],
+  };
 
   return (
     <Stack py={4} fullwidth>
@@ -145,6 +198,7 @@ export function StartedContent({ event }: StartedContentProps) {
                     <Text weight="bold">{row.field}</Text>
                   </TableCell>
                   <TableCell>{row.value}</TableCell>
+                  <TableCellActions actions={actions} item={row} />
                 </TableRow>
               ))}
             </TableBody>
