@@ -10,8 +10,6 @@ import {
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
 
-type Annotation = { notes?: string; preview?: string };
-
 type QuestionOption = {
   label: string;
   description?: string;
@@ -36,34 +34,42 @@ function findQuestion(
   return questions?.find((q) => q.question === question);
 }
 
-function isPicked(label: string, selection: string, multiSelect: boolean) {
-  if (!multiSelect) return label === selection;
-  return selection.split(", ").includes(label);
-}
-
 /**
- * AskUserQuestion answer shapes:
- *   1. Selection only           → answer = "Label",            annotations = {}
- *   2. Selection + note         → answer = "Label, note text", annotations.notes = "note text"
- *   3. Other-only (typed text)  → answer = "typed text",       annotations = {}
+ * AskUserQuestion answer shapes (Claude Code 2.1.123+):
+ *   1. Selection only           → answer = "Label"  or  "L1, L2, …"
+ *   2. Selection(s) + note      → answer = "Label, note text"  or  "L1, L2, …, note text"
+ *   3. Other-only (typed text)  → answer = "typed text" (matches no option label)
  *
- * For (2) the note in the answer is sometimes truncated by a character or two
- * vs. annotations.notes, so we walk back to find the longest suffix of ", <note>"
- * that the answer ends with and strip it. For (1) and (3), annotations is empty
- * and we leave the answer untouched — the caller decides whether the resulting
- * selection matches a real option (case 1) or is a manual answer (case 3).
+ * Older Claude Code (≤ 2.1.107) also emitted an `annotations` field carrying
+ * the note separately. Newer versions dropped it, so we recover picks + note
+ * by greedily matching option labels from the start of the answer string.
+ * Labels are tried longest-first so a label that prefixes another doesn't
+ * shadow it; whatever remains after the last match is the trailing note.
  */
-function splitSelectionAndNote(answer: string, note: string | undefined) {
-  if (!note) return { selection: answer, note: undefined };
-  const fullSuffix = `, ${note}`;
-  const maxLen = Math.min(fullSuffix.length, answer.length);
-  for (let len = maxLen; len >= 4; len--) {
-    const tail = answer.slice(-len);
-    if (fullSuffix.startsWith(tail)) {
-      return { selection: answer.slice(0, -len), note };
+function parseAnswer(
+  answer: string,
+  options: QuestionOption[],
+  multiSelect: boolean,
+): { selectedLabels: string[]; note: string | undefined } {
+  const sorted = [...options].sort((a, b) => b.label.length - a.label.length);
+  const selectedLabels: string[] = [];
+  let remaining = answer;
+
+  while (remaining) {
+    const match = sorted.find(
+      (o) => remaining === o.label || remaining.startsWith(o.label + ", "),
+    );
+    if (!match) break;
+    selectedLabels.push(match.label);
+    if (remaining === match.label) {
+      remaining = "";
+      break;
     }
+    remaining = remaining.slice(match.label.length + 2);
+    if (!multiSelect) break;
   }
-  return { selection: answer, note };
+
+  return { selectedLabels, note: remaining || undefined };
 }
 
 export function InteractionContent({ event }: InteractionContentProps) {
@@ -73,25 +79,21 @@ export function InteractionContent({ event }: InteractionContentProps) {
     const answers = meta?.answers as Record<string, string> | undefined;
     if (!answers || Object.keys(answers).length === 0) return null;
 
-    const annotations = meta?.annotations as
-      | Record<string, Annotation>
-      | undefined;
     const questions = meta?.questions as QuestionDef[] | undefined;
 
     const entries = Object.entries(answers);
 
     const renderQuestionBody = (question: string, answer: string) => {
-      const { selection, note } = splitSelectionAndNote(
-        answer,
-        annotations?.[question]?.notes,
-      );
       const qDef = findQuestion(questions, question);
       const multiSelect = qDef?.multiSelect ?? false;
       const options = qDef?.options ?? [];
-      const hasSelection = options.some((o) =>
-        isPicked(o.label, selection, multiSelect),
+      const { selectedLabels, note } = parseAnswer(
+        answer,
+        options,
+        multiSelect,
       );
-      const manualAnswer = !hasSelection && selection.trim() ? selection : note;
+      const hasSelection = selectedLabels.length > 0;
+      const manualAnswer = !hasSelection ? (note ?? answer) : undefined;
       const additionalNote = hasSelection ? note : undefined;
 
       return (
@@ -118,16 +120,14 @@ export function InteractionContent({ event }: InteractionContentProps) {
                   <Text
                     weight="bold"
                     color={
-                      isPicked(o.label, selection, multiSelect)
-                        ? "green"
-                        : undefined
+                      selectedLabels.includes(o.label) ? "green" : undefined
                     }
                   >
                     {o.label}
                   </Text>
                 ),
                 description: o.description,
-                disabled: !isPicked(o.label, selection, multiSelect),
+                disabled: !selectedLabels.includes(o.label),
               }))}
             />
           )}
