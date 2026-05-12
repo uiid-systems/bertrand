@@ -14,6 +14,10 @@ function shortId(id: string | undefined): string | undefined {
 }
 
 export function LifecycleContent({ event }: LifecycleContentProps) {
+  // claude.started is handled by StartedContent — this component renders
+  // claude.ended / claude.discarded / session.recap only.
+  if (event.event === "claude.started") return null;
+
   const meta = event.meta as Record<string, unknown> | null;
 
   if (event.event === "session.recap") {

@@ -12,10 +12,36 @@ const REDUNDANT_SESSION_EVENTS = new Set([
 /**
  * Drop session lifecycle events that duplicate claude lifecycle events.
  * claude.started covers session.started/session.resumed,
- * claude.ended covers session.end.
+ * claude.ended covers session.end. Before dropping session.started, merge its
+ * identity meta (group_path, session_name, labels, summary) onto the following
+ * claude.started in the same conversation so StartedContent reads one event.
  */
-export const consolidateLifecycle: TimelineTransform = (events) =>
-  events.filter((e) => !REDUNDANT_SESSION_EVENTS.has(e.event))
+export const consolidateLifecycle: TimelineTransform = (events) => {
+  const mergedMeta = new Map<number, Record<string, unknown>>()
+  for (let i = 0; i < events.length - 1; i++) {
+    const curr = events[i]
+    const next = events[i + 1]
+    if (
+      curr.event === "session.started" &&
+      next.event === "claude.started" &&
+      curr.conversationId === next.conversationId
+    ) {
+      mergedMeta.set(i + 1, {
+        ...((curr.meta as Record<string, unknown> | null) ?? {}),
+        ...((next.meta as Record<string, unknown> | null) ?? {}),
+      })
+    }
+  }
+
+  const result: EventRow[] = []
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i]
+    if (REDUNDANT_SESSION_EVENTS.has(e.event)) continue
+    const merged = mergedMeta.get(i)
+    result.push(merged ? { ...e, meta: merged } : e)
+  }
+  return result
+}
 
 /**
  * Merge adjacent session.waiting + session.answered pairs into a single

@@ -5,6 +5,7 @@ import { ContextContent } from "./context_content";
 import { InteractionContent } from "./interaction_content";
 import { LifecycleContent } from "./lifecycle_content";
 import { MilestoneContent } from "./milestone_content";
+import { StartedContent } from "./started_content";
 import { WorkContent } from "./work_content";
 
 type EventContentProps = {
@@ -12,6 +13,8 @@ type EventContentProps = {
 };
 
 export function EventContent({ event }: EventContentProps) {
+  if (event.event === "claude.started") return <StartedContent event={event} />;
+
   const category = categoryOf(event.event);
 
   switch (category) {
