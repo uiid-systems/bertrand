@@ -15,7 +15,6 @@ import {
 import { sessionsQuery } from "../api/queries";
 import { Sidebar } from "../components/sidebar";
 import { TopBar } from "../components/topbar";
-import { SecondarySidebar } from "../components/secondary-sidebar";
 
 import "../globals.css";
 
@@ -62,10 +61,6 @@ function AppShell() {
           <Stack render={<main />} fullwidth fullheight>
             <Outlet />
           </Stack>
-        </ResizablePanel>
-        <ResizableHandle />
-        <ResizablePanel defaultSize={360} minSize={380} maxSize={540}>
-          <SecondarySidebar />
         </ResizablePanel>
       </Resizable>
     </Stack>

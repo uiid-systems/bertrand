@@ -2,12 +2,21 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Breadcrumbs, Stack, Timeline } from "@uiid/design-system";
+import {
+  Breadcrumbs,
+  Button,
+  Group,
+  Sheet,
+  Stack,
+  Timeline,
+} from "@uiid/design-system";
+import { PanelRightIcon } from "@uiid/icons";
 
 import { eventsQuery, sessionsQuery } from "../../api/queries";
 import { eventColor, eventTitle, formatTimestamp } from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
+import { SecondarySidebar } from "../../components/secondary-sidebar";
 
 export const Route = createFileRoute("/sessions/$slug")({
   component: SessionDetail,
@@ -50,9 +59,25 @@ function SessionDetail() {
 
   return (
     <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
-      <Stack bb={1} p={4}>
+      <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
-      </Stack>
+        <Sheet
+          side="right"
+          title="Session stats"
+          trigger={
+            <Button
+              tooltip="Session stats"
+              variant="subtle"
+              size="small"
+              shape="square"
+            >
+              <PanelRightIcon />
+            </Button>
+          }
+        >
+          <SecondarySidebar />
+        </Sheet>
+      </Group>
       <Stack p={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
         {events.length > 0 && (
           <Timeline

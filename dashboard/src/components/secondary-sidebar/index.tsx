@@ -53,7 +53,7 @@ export const SecondarySidebar = (
   });
 
   return (
-    <SidebarWrapper data-slot="secondary-sidebar" {...props}>
+    <SidebarWrapper data-slot="secondary-sidebar" {...props} p={0} minw={540}>
       {stats && <SessionStats stats={stats} engagement={engagement} />}
     </SidebarWrapper>
   );
@@ -226,19 +226,12 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
     });
   }
 
-  return (
-    <Tabs
-      items={tabs}
-      size="sm"
-      fullwidth
-      ContainerProps={{ fullwidth: true }}
-    />
-  );
+  return <Tabs items={tabs} fullwidth ContainerProps={{ fullwidth: true }} />;
 };
 SessionStats.displayName = "SessionStats";
 
 const SectionStack = ({ children }: { children: React.ReactNode }) => (
-  <Stack gap={4} ax="stretch" pt={4} fullwidth>
+  <Stack data-slot="section-stack" ax="stretch" pt={4} fullwidth gap={2}>
     {children}
   </Stack>
 );
@@ -246,14 +239,14 @@ SectionStack.displayName = "SectionStack";
 
 type StatProps = { value: number } | { label: string };
 const Stat = (props: StatProps) => (
-  <Text size={3} family="mono" weight="bold">
+  <Text data-slot="stat" size={3} family="mono" weight="bold">
     {"label" in props ? props.label : props.value}
   </Text>
 );
 Stat.displayName = "Stat";
 
 const DiffStat = ({ added, removed }: { added: number; removed: number }) => (
-  <Text size={3} family="mono" weight="bold">
+  <Text data-slot="diff-stat" size={3} family="mono" weight="bold">
     <Text color="green" family="mono" weight="bold">
       {`+${added}`}
     </Text>
