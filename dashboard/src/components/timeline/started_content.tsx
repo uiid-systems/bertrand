@@ -65,8 +65,8 @@ export function StartedContent({ event }: StartedContentProps) {
   const meta = event.meta as Record<string, unknown> | null;
   if (!meta) return null;
 
-  const groupPath = meta.group_path as string | undefined;
-  const sessionName = meta.session_name as string | undefined;
+  // group_path / session_name are surfaced as the timeline item title via
+  // eventTitle() in lib/format.ts — no need for a row here.
   const labels = (meta.labels as string[] | undefined) ?? [];
   const summary = meta.summary as string | null | undefined;
 
@@ -82,10 +82,7 @@ export function StartedContent({ event }: StartedContentProps) {
   const dirty = !!git?.dirty;
   const cwd = meta.cwd as string | undefined;
 
-  const identityLabel = [groupPath, sessionName].filter(Boolean).join(" / ");
-
   const rows: Row[] = [];
-  if (identityLabel) rows.push({ field: "Session", value: identityLabel });
   if (labels.length > 0)
     rows.push({ field: "Labels", value: labels.join(", ") });
   if (summary) rows.push({ field: "Summary", value: summary });
@@ -190,7 +187,7 @@ export function StartedContent({ event }: StartedContentProps) {
     <Stack py={4} fullwidth>
       <Card trimmed fullwidth>
         <TableContainer>
-          <TableRoot striped bordered>
+          <TableRoot>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.field}>
