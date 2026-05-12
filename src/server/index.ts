@@ -1,3 +1,4 @@
+import { execFile } from "child_process"
 import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
@@ -72,6 +73,30 @@ const routes: [RegExp, RouteHandler][] = [
   }],
 ]
 
+async function handleOpen(req: Request): Promise<Response> {
+  let body: { path?: unknown }
+  try {
+    body = (await req.json()) as { path?: unknown }
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const path = body.path
+  if (typeof path !== "string" || !path.startsWith("/")) {
+    return Response.json({ error: "path must be an absolute string" }, { status: 400 })
+  }
+
+  return new Promise<Response>((resolve) => {
+    execFile("open", [path], (err) => {
+      if (err) {
+        resolve(Response.json({ error: err.message }, { status: 500 }))
+        return
+      }
+      resolve(Response.json({ ok: true }))
+    })
+  })
+}
+
 function match(pathname: string, url: URL): Response {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
@@ -99,9 +124,18 @@ export function startServer(port = PORT) {
         return new Response(null, {
           headers: {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
           },
+        })
+      }
+
+      // Hand off to the platform `open` binary. macOS-only for now; runs
+      // server-side so the browser doesn't need to expose file:// access.
+      if (req.method === "POST" && url.pathname === "/api/open") {
+        return handleOpen(req).then((r) => {
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
         })
       }
 
