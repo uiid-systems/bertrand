@@ -108,7 +108,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Build contract with context
-  const siblingContext = buildSiblingContext(groupId, session.id);
+  const siblingContext = buildSiblingContext(groupId, opts.groupPath, session.id);
   const contract = buildContract(sessionName, siblingContext);
 
   // Launch Claude
@@ -144,7 +144,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   });
 
   // Build contract
-  const siblingContext = buildSiblingContext(session.groupId, session.id);
+  const groupPath = group?.path ?? "";
+  const siblingContext = buildSiblingContext(session.groupId, groupPath, session.id);
   const contract = buildContract(sessionName, siblingContext);
 
   const exitCode = await launchClaude({

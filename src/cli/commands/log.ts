@@ -3,6 +3,8 @@ import { getAllSessions, getSessionByGroupSlug } from "@/db/queries/sessions";
 import { getEventsBySession } from "@/db/queries/events";
 import { getGroupByPath } from "@/db/queries/groups";
 import { getSessionStats } from "@/db/queries/stats";
+import { getConversationsBySession } from "@/db/queries/conversations";
+import type { sessions } from "@/db/schema";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
 import { computeTimingsLive } from "@/lib/timing";
@@ -200,20 +202,28 @@ function renderTimingFooter(sessionId: string): string[] {
   return lines;
 }
 
-function showSessionLog(sessionId: string, sessionName: string, isJson: boolean) {
+type SessionRow = typeof sessions.$inferSelect;
+
+function showSessionLog(session: SessionRow, sessionName: string, isJson: boolean) {
+  const sessionId = session.id;
   const rawEvents = getEventsBySession(sessionId);
   const enriched = enrichAll(rawEvents);
   const compacted = compact(enriched);
 
   if (isJson) {
+    const stats = getSessionStats(sessionId);
+    const conversations = getConversationsBySession(sessionId);
     console.log(
       JSON.stringify({
-        session: sessionName,
+        session: { ...session, name: sessionName },
+        stats,
+        conversations,
         events: compacted.map((e) => ({
           event: e.event,
           label: e.label,
           category: e.category,
           summary: e.summary,
+          meta: e.meta,
           createdAt: e.createdAt,
           claudeId: e.claudeId,
         })),
@@ -264,5 +274,5 @@ register("log", async (args) => {
     process.exit(1);
   }
 
-  showSessionLog(session.id, `${groupPath}/${slug}`, isJson);
+  showSessionLog(session, `${groupPath}/${slug}`, isJson);
 });
