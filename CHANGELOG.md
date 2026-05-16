@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.0](https://github.com/uiid-systems/bertrand/compare/v0.13.0...v0.14.0) (2026-05-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dist:** rename npm package from @uiid/bertrand to bertrand
+
+### Features
+
+* **contract:** expose sibling sessions via bertrand log --json ([405ef9f](https://github.com/uiid-systems/bertrand/commit/405ef9f4204f8cea6ecae770482048cd75250ccd))
+* **dist:** rename npm package from @uiid/bertrand to bertrand ([690b555](https://github.com/uiid-systems/bertrand/commit/690b555d90754939ebe85529b43436fefcd4b2be))
+
+
+### Refactoring
+
+* tinkering ([33a05d2](https://github.com/uiid-systems/bertrand/commit/33a05d2d1b540570afe4cdcb744267f330b2791c))
+
+
+### Miscellaneous
+
+* release 0.14.0 ([26b5fa6](https://github.com/uiid-systems/bertrand/commit/26b5fa663abddffa340da9037915488e4d659da5))
+
 ## [0.13.0](https://github.com/uiid-systems/bertrand/compare/v0.12.0...v0.13.0) (2026-05-12)
 
 
