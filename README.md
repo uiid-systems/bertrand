@@ -24,7 +24,7 @@ When a session calls `AskUserQuestion`, bertrand marks it `waiting`, sets a Wave
 ## Install
 
 ```sh
-bun i -g @uiid/bertrand    # or: npm i -g @uiid/bertrand
+bun i -g bertrand    # or: npm i -g bertrand
 ```
 
 The first run of `bertrand` auto-runs `init`; you can also invoke `bertrand init` explicitly.

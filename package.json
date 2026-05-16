@@ -1,5 +1,5 @@
 {
-  "name": "@uiid/bertrand",
+  "name": "bertrand",
   "version": "0.13.0",
   "publishConfig": {
     "access": "public"
