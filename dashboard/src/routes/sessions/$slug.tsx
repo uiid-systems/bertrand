@@ -89,7 +89,7 @@ function SessionDetail() {
               content: <EventContent event={e} />,
             }))}
             ItemProps={{ style: { width: "100%" } }}
-            ContentProps={{ fullwidth: true }}
+            ContentProps={{ fullwidth: true, maxw: 860 }}
           />
         )}
       </Stack>
