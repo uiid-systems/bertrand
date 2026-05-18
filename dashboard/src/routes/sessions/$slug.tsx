@@ -10,6 +10,9 @@ import {
   Progress,
   Sheet,
   Stack,
+  Status,
+  type StatusProps,
+  Text,
   Timeline,
 } from "@uiid/design-system";
 import { PanelRightIcon } from "@uiid/icons";
@@ -25,6 +28,7 @@ import {
   modelLabel,
   parseToken,
   remainingColor,
+  statusColor,
 } from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
@@ -81,6 +85,17 @@ function SessionDetail() {
     return null;
   }, [rawEvents]);
 
+  const pendingQuestion = useMemo(() => {
+    if (match?.session.status !== "waiting") return null;
+    for (let i = rawEvents.length - 1; i >= 0; i--) {
+      if (rawEvents[i].event === "session.waiting") {
+        const q = rawEvents[i].meta?.question;
+        return typeof q === "string" ? q : null;
+      }
+    }
+    return null;
+  }, [rawEvents, match?.session.status]);
+
   const breadcrumbs = match
     ? buildBreadcrumbs(match.groupPath, match.session.name)
     : [{ label: slug, value: "" }];
@@ -130,7 +145,13 @@ function SessionDetail() {
           />
         )}
       </Stack>
-      {latestContext && <SessionFooter event={latestContext} />}
+      {match && (
+        <SessionFooter
+          session={match.session}
+          context={latestContext}
+          pendingQuestion={pendingQuestion}
+        />
+      )}
     </Stack>
   );
 }
@@ -155,7 +176,38 @@ function ArchiveToggle({ session }: { session: SessionRow }) {
 }
 ArchiveToggle.displayName = "ArchiveToggle";
 
-function SessionFooter({ event }: { event: EventRow }) {
+type SessionFooterProps = {
+  session: SessionRow;
+  context: EventRow | null;
+  pendingQuestion: string | null;
+};
+
+function SessionFooter({
+  session,
+  context,
+  pendingQuestion,
+}: SessionFooterProps) {
+  const color = statusColor(session.status) as StatusProps["color"];
+  const isLive = session.status === "active" || session.status === "waiting";
+
+  return (
+    <Stack bt={1} p={4} gap={3} fullwidth>
+      <Group ay="center" gap={2} fullwidth>
+        <Status color={color} pulse={isLive} />
+        <Badge color={color}>{session.status}</Badge>
+        {pendingQuestion && (
+          <Text size={1} shade="muted">
+            {pendingQuestion}
+          </Text>
+        )}
+      </Group>
+      {context && <ContextStats event={context} />}
+    </Stack>
+  );
+}
+SessionFooter.displayName = "SessionFooter";
+
+function ContextStats({ event }: { event: EventRow }) {
   const meta = event.meta;
   if (!meta) return null;
 
@@ -169,7 +221,7 @@ function SessionFooter({ event }: { event: EventRow }) {
   if (total === 0) return null;
 
   return (
-    <Stack bt={1} p={4} gap={3} fullwidth>
+    <>
       <Progress
         value={remaining}
         size="small"
@@ -193,7 +245,7 @@ function SessionFooter({ event }: { event: EventRow }) {
           </Badge>
         )}
       </Group>
-    </Stack>
+    </>
   );
 }
-SessionFooter.displayName = "SessionFooter";
+ContextStats.displayName = "ContextStats";
