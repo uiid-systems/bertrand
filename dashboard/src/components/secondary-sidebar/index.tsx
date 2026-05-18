@@ -20,7 +20,7 @@ import {
 
 import { engagementQuery, sessionsQuery, statsQuery } from "../../api/queries";
 import type { EngagementStats, SessionStatsRow } from "../../api/types";
-import { formatDuration } from "../../lib/format";
+import { formatDuration, formatTokens } from "../../lib/format";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -64,12 +64,6 @@ type SessionStatsProps = {
   stats: SessionStatsRow;
   engagement?: EngagementStats;
 };
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
 
 function topToolsLabel(toolUsage: Record<string, number>): string {
   return Object.entries(toolUsage)

@@ -1,29 +1,16 @@
 import { Badge, Group, Progress, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
-import { modelLabel } from "../../lib/format";
-import type { TimelineColor } from "../../lib/timeline/categories";
+import {
+  formatTokens,
+  modelLabel,
+  parseToken,
+  remainingColor,
+} from "../../lib/format";
 
 type ContextContentProps = {
   event: EventRow;
 };
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-function remainingColor(remainingPct: number): TimelineColor {
-  if (remainingPct <= 25) return "red";
-  if (remainingPct <= 50) return "yellow";
-  return "green";
-}
-
-function parseToken(value: unknown): number {
-  const n = parseInt((value as string) ?? "0", 10);
-  return Number.isFinite(n) ? n : 0;
-}
 
 export function ContextContent({ event }: ContextContentProps) {
   const meta = event.meta as Record<string, unknown> | null;

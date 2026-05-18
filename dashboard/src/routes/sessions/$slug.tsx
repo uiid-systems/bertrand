@@ -3,9 +3,11 @@ import { type ReactNode, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  Badge,
   Breadcrumbs,
   Button,
   Group,
+  Progress,
   Sheet,
   Stack,
   Timeline,
@@ -14,8 +16,16 @@ import { PanelRightIcon } from "@uiid/icons";
 
 import { eventsQuery, sessionsQuery } from "../../api/queries";
 import { useArchiveAction } from "../../api/use-archive-action";
-import type { SessionRow } from "../../api/types";
-import { eventColor, eventTitle, formatTimestamp } from "../../lib/format";
+import type { EventRow, SessionRow } from "../../api/types";
+import {
+  eventColor,
+  eventTitle,
+  formatTimestamp,
+  formatTokens,
+  modelLabel,
+  parseToken,
+  remainingColor,
+} from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
 import { SecondarySidebar } from "../../components/secondary-sidebar";
@@ -63,6 +73,13 @@ function SessionDetail() {
 
   const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
   const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
+
+  const latestContext = useMemo(() => {
+    for (let i = rawEvents.length - 1; i >= 0; i--) {
+      if (rawEvents[i].event === "context.snapshot") return rawEvents[i];
+    }
+    return null;
+  }, [rawEvents]);
 
   const breadcrumbs = match
     ? buildBreadcrumbs(match.groupPath, match.session.name)
@@ -113,6 +130,7 @@ function SessionDetail() {
           />
         )}
       </Stack>
+      {latestContext && <SessionFooter event={latestContext} />}
     </Stack>
   );
 }
@@ -136,3 +154,46 @@ function ArchiveToggle({ session }: { session: SessionRow }) {
   );
 }
 ArchiveToggle.displayName = "ArchiveToggle";
+
+function SessionFooter({ event }: { event: EventRow }) {
+  const meta = event.meta;
+  if (!meta) return null;
+
+  const remaining = parseToken(meta.remaining_pct);
+  const total = parseToken(meta.context_window_tokens);
+  const input = parseToken(meta.input_tokens);
+  const cacheRead = parseToken(meta.cache_read_tokens);
+  const cacheCreation = parseToken(meta.cache_creation_tokens);
+  const model = modelLabel(meta.model as string | undefined);
+
+  if (total === 0) return null;
+
+  return (
+    <Stack bt={1} p={4} gap={3} fullwidth>
+      <Progress
+        value={remaining}
+        size="small"
+        color={remainingColor(remaining)}
+      />
+      <Group gap={2}>
+        {model && <Badge size="small">{model}</Badge>}
+        {input > 0 && (
+          <Badge size="small" color="orange">
+            {`${formatTokens(input)} input`}
+          </Badge>
+        )}
+        {cacheRead > 0 && (
+          <Badge size="small" color="blue">
+            {`${formatTokens(cacheRead)} cache read`}
+          </Badge>
+        )}
+        {cacheCreation > 0 && (
+          <Badge size="small" color="indigo">
+            {`${formatTokens(cacheCreation)} cache write`}
+          </Badge>
+        )}
+      </Group>
+    </Stack>
+  );
+}
+SessionFooter.displayName = "SessionFooter";
