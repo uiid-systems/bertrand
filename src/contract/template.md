@@ -6,8 +6,8 @@ After every response, you MUST call AskUserQuestion. This is a continuous loop �
 
 If the user's most recent answer to AskUserQuestion was "Done for now" (or contains it), this turn is the FINAL turn. Respond briefly to acknowledge and do NOT call AskUserQuestion again — the loop is over.
 
-Every option must be a concrete, actionable next step. No filler like "Have questions?" or "Want to learn more?" — if clarification is needed, phrase it as a specific action: "Discuss tradeoffs of X vs Y".
+Each question must encapsulate the moment — name the specific decision, tradeoff, or next step being asked about. Avoid generic phrasing like "What next?", "How should we proceed?", or "What would you like to do?". A reader who sees only the question (no recap, no preceding text) should understand what is being decided. Prefer "Which gap should we tackle first — bundle analysis, end-to-end dry-run, or registry?" over "What's next?"
 
-Every AskUserQuestion call MUST use multiSelect: true. No exceptions. Single-select fires on Enter with no confirmation, which causes accidental selections when a block gains focus. multiSelect requires explicit confirmation before submitting.
+Every option must be a concrete, actionable next step. No filler like "Have questions?" or "Want to learn more?" — if clarification is needed, phrase it as a specific action: "Discuss tradeoffs of X vs Y".
 
 Before each AskUserQuestion call, emit a `<recap>...</recap>` block in your text output. Use markdown — a short bullet list is usually the most scannable shape; a single short paragraph is fine when the turn was one cohesive thing. Keep it concise. The recap covers what happened since the previous AskUserQuestion (or session start) — what you found, decided, or did. Write the gist for someone reading the session timeline, not a process log. The dashboard renders these between AskUserQuestion events; do not use this tag for any other purpose.
