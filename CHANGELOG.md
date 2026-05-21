@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/uiid-systems/bertrand/compare/v0.14.0...v0.14.1) (2026-05-21)
+
+
+### Refactoring
+
+* **contract:** strengthen multiSelect enforcement on AskUserQuestion ([#86](https://github.com/uiid-systems/bertrand/issues/86)) ([62ae69b](https://github.com/uiid-systems/bertrand/commit/62ae69b147114c51de0d549b381b96fcf191fa42))
+
 ## [0.14.0](https://github.com/uiid-systems/bertrand/compare/v0.13.0...v0.14.0) (2026-05-16)
 
 
