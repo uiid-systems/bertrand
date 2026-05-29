@@ -3,12 +3,19 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  Button,
   Group,
   Input,
   Kbd,
   List,
   type ListItemGroupProps,
   type ListItemProps,
+  MenuItem,
+  MenuPopup,
+  MenuPortal,
+  MenuPositioner,
+  MenuRoot,
+  MenuTrigger,
   Popover,
   Stack,
   Status,
@@ -24,13 +31,17 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   ClockIcon,
+  EyeIcon,
+  EyeOffIcon,
   FilesIcon,
   GroupIcon,
   MessageSquareTextIcon,
+  MoreHorizontalIcon,
   SearchIcon,
 } from "@uiid/icons";
 
 import { allStatsQuery, recapsQuery, sessionsQuery } from "../../api/queries";
+import { useArchiveAction } from "../../api/use-archive-action";
 import type { SessionRow, SessionWithGroup } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
@@ -38,7 +49,6 @@ import { Markdown } from "../markdown";
 import { SidebarWrapper, type SidebarWrapperProps } from "./sidebar-wrapper";
 
 export type SidebarProps = {
-  sessions: SessionWithGroup[];
   WrapperProps?: SidebarWrapperProps;
 };
 
@@ -99,6 +109,7 @@ function recentBucketOf(startedAt: string, now: Date): RecentBucket {
 
 function buildListItem(s: SessionWithGroup): ListItemProps {
   const color = statusColor(s.session.status) as StatusProps["color"];
+  const isArchived = s.session.status === "archived";
   return {
     value: s.session.id,
     label: <SessionLabel session={s} />,
@@ -109,7 +120,9 @@ function buildListItem(s: SessionWithGroup): ListItemProps {
         <SessionContent session={s} />
       </Group>
     ),
-    action: <></>,
+    action: <SessionRowActions session={s.session} />,
+    "data-archived": isArchived ? "" : undefined,
+    style: isArchived ? { opacity: 0.4 } : undefined,
   } as ListItemProps;
 }
 
@@ -172,11 +185,14 @@ function groupSessions(
 
 const groupKeyOf = (g: ListItemGroupProps) => g.id ?? g.category ?? "";
 
-export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
+export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("group");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: sessions = [] } = useQuery(sessionsQuery({ includeArchived }));
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -260,20 +276,34 @@ export const Sidebar = ({ sessions, WrapperProps }: SidebarProps) => {
             <Tooltip trigger={<ClockIcon />}>Group by recent</Tooltip>
           </Toggle>
         </ToggleGroup>
-        {items.length > 0 && (
+        <Group ay="center" gap={1}>
           <ToggleButton
             size="small"
             shape="square"
             variant="subtle"
-            tooltip={allOpen ? "Collapse all" : "Expand all"}
-            pressed={!allOpen}
-            onPressedChange={() => toggleAll()}
+            tooltip={includeArchived ? "Hide archived" : "Show archived"}
+            pressed={includeArchived}
+            onPressedChange={setIncludeArchived}
             icon={{
-              unpressed: <ChevronsDownUp />,
-              pressed: <ChevronsUpDown />,
+              unpressed: <EyeOffIcon />,
+              pressed: <EyeIcon />,
             }}
           />
-        )}
+          {items.length > 0 && (
+            <ToggleButton
+              size="small"
+              shape="square"
+              variant="subtle"
+              tooltip={allOpen ? "Collapse all" : "Expand all"}
+              pressed={!allOpen}
+              onPressedChange={() => toggleAll()}
+              icon={{
+                unpressed: <ChevronsDownUp />,
+                pressed: <ChevronsUpDown />,
+              }}
+            />
+          )}
+        </Group>
       </Group>
       {items.length === 0 ? (
         <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
@@ -295,7 +325,7 @@ const SessionLabel = ({ session: s }: { session: SessionWithGroup }) => (
 SessionLabel.displayName = "SessionLabel";
 
 const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
-  const { data: sessions = [] } = useQuery(sessionsQuery);
+  const { data: sessions = [] } = useQuery(sessionsQuery());
   const hasLiveSession = sessions.some(
     (x) => x.session.status === "active" || x.session.status === "waiting",
   );
@@ -351,3 +381,36 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
   );
 };
 SessionContent.displayName = "SessionContent";
+
+const SessionRowActions = ({ session }: { session: SessionRow }) => {
+  const action = useArchiveAction(session);
+  const { Icon } = action;
+
+  return (
+    <MenuRoot>
+      <MenuTrigger
+        render={
+          <Button
+            variant="subtle"
+            size="small"
+            shape="square"
+            aria-label="Session actions"
+          >
+            <MoreHorizontalIcon />
+          </Button>
+        }
+      />
+      <MenuPortal>
+        <MenuPositioner side="bottom" align="end">
+          <MenuPopup>
+            <MenuItem disabled={action.disabled} onClick={action.onClick}>
+              <Icon size={14} />
+              {action.label}
+            </MenuItem>
+          </MenuPopup>
+        </MenuPositioner>
+      </MenuPortal>
+    </MenuRoot>
+  );
+};
+SessionRowActions.displayName = "SessionRowActions";

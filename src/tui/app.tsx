@@ -5,11 +5,12 @@ import { join } from "path";
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import type { ExitAction } from "./screens/Exit";
 import type { ResumeSelection } from "./screens/Resume";
-import { updateSessionStatus, deleteSession } from "@/db/queries/sessions";
+import { deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
   createConversation,
 } from "@/db/queries/conversations";
+import { archiveSession } from "@/lib/session-archive";
 import { launch, resume } from "@/engine/session";
 import { randomUUID } from "crypto";
 
@@ -114,7 +115,7 @@ export async function runSessionLoop(sessionId: string): Promise<void> {
       break;
 
     case "archive":
-      updateSessionStatus(sessionId, "archived");
+      archiveSession(sessionId);
       break;
 
     case "discard":
