@@ -35,7 +35,7 @@ export const SecondarySidebar = (
   });
   const slug = sessionMatch?.params?.slug;
 
-  const { data: sessions = [] } = useQuery(sessionsQuery);
+  const { data: sessions = [] } = useQuery(sessionsQuery());
   const session = sessions.find((s) => s.session.slug === slug);
   const sessionId = session?.session.id ?? "";
   const isLive =

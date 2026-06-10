@@ -1,13 +1,12 @@
 import { register } from "@/cli/router";
-import {
-  getAllSessions,
-  getSessionByGroupSlug,
-  updateSessionStatus,
-} from "@/db/queries/sessions";
+import { getSessionByGroupSlug } from "@/db/queries/sessions";
 import { getGroupByPath } from "@/db/queries/groups";
 import { parseSessionName } from "@/lib/parse-session-name";
-
-const ACTIVE_STATUSES = ["active", "waiting"] as const;
+import {
+  archiveSession,
+  unarchiveSession,
+  archiveAllPaused,
+} from "@/lib/session-archive";
 
 function resolveSession(name: string) {
   const { groupPath, slug } = parseSessionName(name);
@@ -30,23 +29,18 @@ register("archive", async (args) => {
   const filteredArgs = args.filter((a) => !a.startsWith("--"));
   const sessionName = filteredArgs[0];
 
-  // --all-paused: batch archive all paused sessions
   if (isAllPaused) {
-    const rows = getAllSessions({ excludeArchived: true });
-    const paused = rows.filter((r) => r.session.status === "paused");
-
-    if (paused.length === 0) {
+    const { archived } = archiveAllPaused();
+    if (archived.length === 0) {
       console.log("No paused sessions to archive.");
       return;
     }
-
-    let archived = 0;
-    for (const row of paused) {
-      updateSessionStatus(row.session.id, "archived");
-      console.log(`  archived ${row.groupPath}/${row.session.slug}`);
-      archived++;
+    for (const { session, groupPath } of archived) {
+      console.log(`  archived ${groupPath}/${session.slug}`);
     }
-    console.log(`\nArchived ${archived} session${archived === 1 ? "" : "s"}.`);
+    console.log(
+      `\nArchived ${archived.length} session${archived.length === 1 ? "" : "s"}.`
+    );
     return;
   }
 
@@ -60,27 +54,36 @@ register("archive", async (args) => {
   const { session, groupPath } = resolveSession(sessionName);
   const fullName = `${groupPath}/${session.slug}`;
 
-  // --undo: unarchive
   if (isUndo) {
-    if (session.status !== "archived") {
-      console.error(`${fullName} is not archived (status: ${session.status})`);
+    const result = unarchiveSession(session.id);
+    if (!result.ok) {
+      if (result.reason === "not-archived") {
+        console.error(`${fullName} is not archived (status: ${session.status})`);
+      } else {
+        console.error(`Session not found: ${fullName}`);
+      }
       process.exit(1);
     }
-    updateSessionStatus(session.id, "paused");
     console.log(`Unarchived ${fullName}`);
     return;
   }
 
-  // Archive
-  if ((ACTIVE_STATUSES as readonly string[]).includes(session.status)) {
-    console.error(`Cannot archive active session ${fullName} (status: ${session.status})`);
+  const result = archiveSession(session.id);
+  if (!result.ok) {
+    switch (result.reason) {
+      case "active":
+        console.error(
+          `Cannot archive active session ${fullName} (status: ${session.status})`
+        );
+        break;
+      case "already-archived":
+        console.error(`${fullName} is already archived`);
+        break;
+      case "not-found":
+        console.error(`Session not found: ${fullName}`);
+        break;
+    }
     process.exit(1);
   }
-  if (session.status === "archived") {
-    console.error(`${fullName} is already archived`);
-    process.exit(1);
-  }
-
-  updateSessionStatus(session.id, "archived");
   console.log(`Archived ${fullName}`);
 });

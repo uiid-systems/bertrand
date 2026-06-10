@@ -1,6 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query"
 import type {
   SessionWithGroup,
+  SessionRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -13,12 +14,51 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json()
 }
 
-export const sessionsQuery = queryOptions({
-  queryKey: ["sessions"],
-  queryFn: () => fetchJson<SessionWithGroup[]>("/api/sessions"),
-  refetchInterval: 2000,
-  placeholderData: keepPreviousData,
-})
+export type ArchiveErrorReason =
+  | "not-found"
+  | "active"
+  | "already-archived"
+  | "not-archived"
+
+export class ArchiveError extends Error {
+  reason: ArchiveErrorReason | "unknown"
+  constructor(message: string, reason: ArchiveErrorReason | "unknown") {
+    super(message)
+    this.name = "ArchiveError"
+    this.reason = reason
+  }
+}
+
+async function postSessionAction(
+  id: string,
+  action: "archive" | "unarchive",
+): Promise<SessionRow> {
+  const res = await fetch(`/api/sessions/${id}/${action}`, { method: "POST" })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string
+      reason?: ArchiveErrorReason
+    }
+    throw new ArchiveError(body.error ?? res.statusText, body.reason ?? "unknown")
+  }
+  return res.json()
+}
+
+export const archiveSession = (id: string) => postSessionAction(id, "archive")
+export const unarchiveSession = (id: string) => postSessionAction(id, "unarchive")
+
+export const sessionsQuery = (opts: { includeArchived?: boolean } = {}) =>
+  queryOptions({
+    queryKey: ["sessions", { includeArchived: !!opts.includeArchived }],
+    queryFn: () =>
+      fetchJson<SessionWithGroup[]>(
+        opts.includeArchived
+          ? "/api/sessions?excludeArchived=false"
+          : "/api/sessions",
+      ),
+    refetchInterval: 2000,
+    placeholderData: keepPreviousData,
+  })
 
 export const eventsQuery = (sessionId: string, isLive = false) =>
   queryOptions({

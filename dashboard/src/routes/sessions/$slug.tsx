@@ -13,6 +13,8 @@ import {
 import { PanelRightIcon } from "@uiid/icons";
 
 import { eventsQuery, sessionsQuery } from "../../api/queries";
+import { useArchiveAction } from "../../api/use-archive-action";
+import type { SessionRow } from "../../api/types";
 import { eventColor, eventTitle, formatTimestamp } from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
@@ -44,8 +46,16 @@ function buildBreadcrumbs(groupPath: string, sessionName: string): Crumb[] {
 
 function SessionDetail() {
   const { slug } = Route.useParams();
-  const { data: sessions = [] } = useQuery(sessionsQuery);
-  const match = sessions.find((s) => s.session.slug === slug);
+  // Look in both the default (non-archived) and archived-included lists so the
+  // detail page resolves an archived session that was opened via deep link or
+  // after toggling "show archived" off.
+  const { data: visibleSessions = [] } = useQuery(sessionsQuery());
+  const { data: allSessions = [] } = useQuery(
+    sessionsQuery({ includeArchived: true }),
+  );
+  const match =
+    visibleSessions.find((s) => s.session.slug === slug) ??
+    allSessions.find((s) => s.session.slug === slug);
   const sessionId = match?.session.id ?? "";
   const isLive =
     match?.session.status === "active" || match?.session.status === "waiting";
@@ -61,22 +71,25 @@ function SessionDetail() {
     <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
       <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
-        <Sheet
-          side="right"
-          title="Session stats"
-          trigger={
-            <Button
-              tooltip="Session stats"
-              variant="subtle"
-              size="small"
-              shape="square"
-            >
-              <PanelRightIcon />
-            </Button>
-          }
-        >
-          <SecondarySidebar />
-        </Sheet>
+        <Group ay="center" gap={2}>
+          {match && <ArchiveToggle session={match.session} />}
+          <Sheet
+            side="right"
+            title="Session stats"
+            trigger={
+              <Button
+                tooltip="Session stats"
+                variant="subtle"
+                size="small"
+                shape="square"
+              >
+                <PanelRightIcon />
+              </Button>
+            }
+          >
+            <SecondarySidebar />
+          </Sheet>
+        </Group>
       </Group>
       <Stack p={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
         {events.length > 0 && (
@@ -96,3 +109,23 @@ function SessionDetail() {
     </Stack>
   );
 }
+
+function ArchiveToggle({ session }: { session: SessionRow }) {
+  const action = useArchiveAction(session);
+  const { Icon } = action;
+  return (
+    <Button
+      tooltip={action.tooltip}
+      variant="subtle"
+      size="small"
+      shape="square"
+      disabled={action.disabled}
+      loading={action.loading}
+      onClick={action.onClick}
+      aria-label={action.label}
+    >
+      <Icon />
+    </Button>
+  );
+}
+ArchiveToggle.displayName = "ArchiveToggle";
