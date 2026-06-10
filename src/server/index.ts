@@ -4,6 +4,12 @@ import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queri
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
+import {
+  archiveSession,
+  unarchiveSession,
+  type ArchiveResult,
+  type UnarchiveResult,
+} from "@/lib/session-archive"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
@@ -73,6 +79,19 @@ const routes: [RegExp, RouteHandler][] = [
   }],
 ]
 
+const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {
+  "not-found": { status: 404, message: "Session not found" },
+  active: { status: 409, message: "Cannot archive an active session" },
+  "already-archived": { status: 409, message: "Session is already archived" },
+  "not-archived": { status: 409, message: "Session is not archived" },
+}
+
+function archiveResponse(result: ArchiveResult | UnarchiveResult): Response {
+  if (result.ok) return Response.json(result.session)
+  const meta = ARCHIVE_ERROR[result.reason] ?? { status: 400, message: "Operation failed" }
+  return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
+}
+
 async function handleOpen(req: Request): Promise<Response> {
   let body: { path?: unknown }
   try {
@@ -137,6 +156,21 @@ export function startServer(port = PORT) {
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r
         })
+      }
+
+      if (req.method === "POST") {
+        const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
+        if (archiveMatch) {
+          const response = archiveResponse(archiveSession(archiveMatch[1]!))
+          response.headers.set("Access-Control-Allow-Origin", "*")
+          return response
+        }
+        const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
+        if (unarchiveMatch) {
+          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!))
+          response.headers.set("Access-Control-Allow-Origin", "*")
+          return response
+        }
       }
 
       const response = match(url.pathname, url)

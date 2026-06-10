@@ -46,14 +46,14 @@ function RootLayout() {
 }
 
 function AppShell() {
-  const { data: sessions = [] } = useQuery(sessionsQuery);
+  const { data: sessions = [] } = useQuery(sessionsQuery());
 
   return (
     <Stack fullwidth style={{ position: "fixed", height: "100dvh" }}>
       <TopBar sessionCount={sessions.length} />
       <Resizable direction="horizontal">
         <ResizablePanel defaultSize={360} minSize={320} maxSize={540}>
-          <Sidebar sessions={sessions} />
+          <Sidebar />
         </ResizablePanel>
 
         <ResizableHandle />

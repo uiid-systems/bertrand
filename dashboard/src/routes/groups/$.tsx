@@ -21,7 +21,7 @@ const RouterLink = ({
 
 function GroupDetail() {
   const { _splat: groupPath } = Route.useParams();
-  const { data: sessions = [] } = useQuery(sessionsQuery);
+  const { data: sessions = [] } = useQuery(sessionsQuery());
 
   const filtered = sessions.filter((s) => s.groupPath === groupPath);
 
