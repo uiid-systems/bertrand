@@ -1,11 +1,21 @@
 import { useMemo, useState } from "react";
 import { Box, Text, TextInput, useInput } from "@orchetron/storm";
+import type { ReactNode } from "react";
 
 export interface PickerItem {
   value: string;
+  /** Used for filter matching and as fallback render. */
   label: string;
   color?: string | null;
   meta?: string;
+  /** Render this instead of the label string when present. */
+  display?: ReactNode;
+  /** Decorative group header — never gets the cursor and is hidden while filtering. */
+  kind?: "item" | "header";
+  /** Cursor skips this row; rendered dimmed. */
+  disabled?: boolean;
+  /** Apply dim styling without disabling selection. */
+  dim?: boolean;
 }
 
 interface BasePickerProps {
@@ -33,6 +43,31 @@ export type PickerProps = SinglePickerProps | MultiPickerProps;
 
 const NEW_KEY = "__new__";
 
+function isSelectable(row: PickerItem | { value: typeof NEW_KEY }) {
+  if (row.value === NEW_KEY) return true;
+  const item = row as PickerItem;
+  return item.kind !== "header" && !item.disabled;
+}
+
+function findNextSelectable(
+  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
+  from: number,
+  direction: 1 | -1,
+): number {
+  let i = from;
+  while (i >= 0 && i < rows.length) {
+    if (isSelectable(rows[i]!)) return i;
+    i += direction;
+  }
+  return -1;
+}
+
+function findFirstSelectable(
+  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
+): number {
+  return findNextSelectable(rows, 0, 1);
+}
+
 export function Picker(props: PickerProps) {
   const {
     items,
@@ -40,7 +75,7 @@ export function Picker(props: PickerProps) {
     placeholder,
     allowCreate = true,
     emptyHint,
-    maxVisible = 8,
+    maxVisible = 12,
   } = props;
 
   const [filter, setFilter] = useState("");
@@ -49,32 +84,39 @@ export function Picker(props: PickerProps) {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((it) => it.label.toLowerCase().includes(q));
+    // Hide headers while filtering — the flat result is easier to scan.
+    return items.filter(
+      (it) => it.kind !== "header" && it.label.toLowerCase().includes(q),
+    );
   }, [filter, items]);
 
   const exactMatch = useMemo(
     () =>
       filtered.some(
-        (it) => it.label.toLowerCase() === filter.trim().toLowerCase(),
+        (it) =>
+          it.kind !== "header" &&
+          it.label.toLowerCase() === filter.trim().toLowerCase(),
       ),
     [filter, filtered],
   );
 
-  const showCreate =
-    allowCreate && filter.trim().length > 0 && !exactMatch;
+  const showCreate = allowCreate && filter.trim().length > 0 && !exactMatch;
 
   const visibleRows: Array<PickerItem | { value: typeof NEW_KEY }> = useMemo(
     () => (showCreate ? [...filtered, { value: NEW_KEY }] : filtered),
     [filtered, showCreate],
   );
 
-  // Clamp cursor when list shrinks
-  if (cursor >= visibleRows.length) {
-    setTimeout(() => setCursor(Math.max(0, visibleRows.length - 1)), 0);
+  // Keep cursor on a selectable row whenever the list reshapes.
+  if (visibleRows.length === 0) {
+    if (cursor !== 0) setTimeout(() => setCursor(0), 0);
+  } else if (cursor >= visibleRows.length || !isSelectable(visibleRows[cursor]!)) {
+    const next = findFirstSelectable(visibleRows);
+    if (next !== -1 && next !== cursor) {
+      setTimeout(() => setCursor(next), 0);
+    }
   }
 
-  // No priority — runs alongside TextInput. TextInput ignores up/down/tab/esc,
-  // so there's no conflict.
   useInput(
     (e) => {
       if (!isFocused) return;
@@ -85,9 +127,15 @@ export function Picker(props: PickerProps) {
       }
       if (visibleRows.length === 0) return;
       if (e.key === "up") {
-        setCursor((c) => Math.max(0, c - 1));
+        setCursor((c) => {
+          const next = findNextSelectable(visibleRows, c - 1, -1);
+          return next === -1 ? c : next;
+        });
       } else if (e.key === "down") {
-        setCursor((c) => Math.min(visibleRows.length - 1, c + 1));
+        setCursor((c) => {
+          const next = findNextSelectable(visibleRows, c + 1, 1);
+          return next === -1 ? c : next;
+        });
       } else if (e.key === "tab" && props.mode === "multi") {
         props.onDone();
       }
@@ -97,8 +145,9 @@ export function Picker(props: PickerProps) {
 
   const submitCursor = () => {
     const row = visibleRows[cursor];
+    if (!row || !isSelectable(row)) return;
     const value =
-      row && row.value === NEW_KEY ? filter.trim() : (row?.value ?? "");
+      row.value === NEW_KEY ? filter.trim() : (row as PickerItem).value;
     if (!value) return;
 
     if (props.mode === "single") {
@@ -125,7 +174,10 @@ export function Picker(props: PickerProps) {
 
   const visibleStart = Math.max(
     0,
-    Math.min(cursor - Math.floor(maxVisible / 2), visibleRows.length - maxVisible),
+    Math.min(
+      cursor - Math.floor(maxVisible / 2),
+      visibleRows.length - maxVisible,
+    ),
   );
   const visibleEnd = Math.min(visibleRows.length, visibleStart + maxVisible);
   const slice = visibleRows.slice(visibleStart, visibleEnd);
@@ -178,15 +230,15 @@ export function Picker(props: PickerProps) {
           const idx = visibleStart + i;
           const isCursor = idx === cursor && isFocused;
           const isNew = row.value === NEW_KEY;
-          // Visual divider above "+ new" when there are real items above it.
-          const showDivider =
-            isNew && filtered.length > 0 && i > 0;
+          const showDivider = isNew && filtered.length > 0 && i > 0;
 
           if (isNew) {
             return (
               <Box key="__new__" flexDirection="column">
                 {showDivider && (
-                  <Text dim>{"─".repeat(Math.min(20, filter.length + 12))}</Text>
+                  <Text dim>
+                    {"─".repeat(Math.min(20, filter.length + 12))}
+                  </Text>
                 )}
                 <Box
                   flexDirection="row"
@@ -202,9 +254,21 @@ export function Picker(props: PickerProps) {
           }
 
           const item = row as PickerItem;
+
+          if (item.kind === "header") {
+            return (
+              <Box key={`h:${item.value}`} flexDirection="row">
+                <Text dim bold color={item.color ?? undefined}>
+                  {item.label}
+                </Text>
+              </Box>
+            );
+          }
+
           const isSelected = selectedSet.has(item.value);
           const marker =
             props.mode === "multi" ? (isSelected ? "✓ " : "  ") : "";
+          const dim = item.dim || item.disabled;
 
           return (
             <Box
@@ -214,19 +278,26 @@ export function Picker(props: PickerProps) {
               gap={1}
               backgroundColor={isCursor ? "green" : undefined}
             >
-              <Text
-                color={isCursor ? "black" : (item.color ?? undefined)}
-                bold={isCursor}
-              >
-                {marker}
-                {item.label}
-              </Text>
+              <Box flexDirection="row" gap={0}>
+                {item.display ? (
+                  item.display
+                ) : (
+                  <Text
+                    color={isCursor ? "black" : (item.color ?? undefined)}
+                    bold={isCursor}
+                    dim={!isCursor && dim}
+                  >
+                    {marker}
+                    {item.label}
+                  </Text>
+                )}
+              </Box>
               {item.meta && (
                 <Box
                   paddingX={1}
                   backgroundColor={isCursor ? "black" : "#3a3a3a"}
                 >
-                  <Text color={isCursor ? "green" : "white"} bold>
+                  <Text color={isCursor ? "green" : "white"} bold dim={!isCursor && dim}>
                     {item.meta}
                   </Text>
                 </Box>

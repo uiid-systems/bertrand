@@ -148,12 +148,6 @@ export async function startTui(): Promise<void> {
       break;
     }
 
-    case "resume": {
-      const sessionId = await resume(selection);
-      await runSessionLoop(sessionId);
-      break;
-    }
-
     case "pick": {
       const conversationId = await resolveConversationForResume(
         selection.sessionId,
