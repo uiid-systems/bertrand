@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/uiid-systems/bertrand/compare/v0.14.1...v0.15.0) (2026-06-10)
+
+
+### Features
+
+* **archive:** share archive policy across CLI, TUI, server, and dashboard ([#88](https://github.com/uiid-systems/bertrand/issues/88)) ([e6e965e](https://github.com/uiid-systems/bertrand/commit/e6e965e9fc90db7c1c87e1e285969098fd8bca52))
+* **dashboard:** copy resume command from sidebar and session detail ([#92](https://github.com/uiid-systems/bertrand/issues/92)) ([6032bc0](https://github.com/uiid-systems/bertrand/commit/6032bc0f903a84e2e6decb7dfb561c7b46d0b2f9))
+* **dashboard:** sticky timeline footer with status, pending question, and context stats ([#93](https://github.com/uiid-systems/bertrand/issues/93)) ([1371834](https://github.com/uiid-systems/bertrand/commit/1371834e26616e82c2c95d26fb3b077a85996ed0))
+* **tui:** list paused/waiting sessions on launch ([#91](https://github.com/uiid-systems/bertrand/issues/91)) ([560dc3e](https://github.com/uiid-systems/bertrand/commit/560dc3efbbffbe686693058176264f2b4fe7f0c4))
+
+
+### Bug Fixes
+
+* **hooks:** enforce multiSelect mechanically; trim soft-rule template ([#89](https://github.com/uiid-systems/bertrand/issues/89)) ([0d4b879](https://github.com/uiid-systems/bertrand/commit/0d4b879419ef364de41af673511d485c66501d78))
+
 ## [0.14.1](https://github.com/uiid-systems/bertrand/compare/v0.14.0...v0.14.1) (2026-05-21)
 
 
