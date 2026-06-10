@@ -10,6 +10,7 @@ import {
 } from "@uiid/design-system";
 import type { SessionWithGroup } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
+import { CopyResumeButton } from "../copy-resume-button";
 
 export type SessionItem = Omit<GroupProps, "children"> & {
   session: SessionWithGroup;
@@ -49,6 +50,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
       >
         {session.status}
       </Badge>
+      <CopyResumeButton session={session} groupPath={groupPath} />
     </Group>
   );
 };

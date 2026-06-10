@@ -31,6 +31,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   ClockIcon,
+  Copy,
   EyeIcon,
   EyeOffIcon,
   FilesIcon,
@@ -120,7 +121,9 @@ function buildListItem(s: SessionWithGroup): ListItemProps {
         <SessionContent session={s} />
       </Group>
     ),
-    action: <SessionRowActions session={s.session} />,
+    action: (
+      <SessionRowActions session={s.session} groupPath={s.groupPath} />
+    ),
     "data-archived": isArchived ? "" : undefined,
     style: isArchived ? { opacity: 0.4 } : undefined,
   } as ListItemProps;
@@ -382,9 +385,16 @@ const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
 };
 SessionContent.displayName = "SessionContent";
 
-const SessionRowActions = ({ session }: { session: SessionRow }) => {
+type SessionRowActionsProps = {
+  session: SessionRow;
+  groupPath: string;
+};
+
+const SessionRowActions = ({ session, groupPath }: SessionRowActionsProps) => {
   const action = useArchiveAction(session);
   const { Icon } = action;
+  const canCopyResume = session.status === "paused";
+  const resumeCommand = `bertrand resume ${groupPath}/${session.slug}`;
 
   return (
     <MenuRoot>
@@ -406,6 +416,15 @@ const SessionRowActions = ({ session }: { session: SessionRow }) => {
             <MenuItem disabled={action.disabled} onClick={action.onClick}>
               <Icon size={14} />
               {action.label}
+            </MenuItem>
+            <MenuItem
+              disabled={!canCopyResume}
+              onClick={() => {
+                void navigator.clipboard.writeText(resumeCommand);
+              }}
+            >
+              <Copy size={14} />
+              Copy resume command
             </MenuItem>
           </MenuPopup>
         </MenuPositioner>
