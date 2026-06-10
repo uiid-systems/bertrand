@@ -17,15 +17,25 @@
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
 
-/** PreToolUse AskUserQuestion → mark session as waiting */
+/** PreToolUse AskUserQuestion → enforce multiSelect:true, then mark session as waiting */
 export function waitingScript(bin: string): string {
   const BIN = bin;
   return `#!/usr/bin/env bash
-# Hook: PreToolUse AskUserQuestion → mark session as waiting
+# Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
+
+# Block AUQ calls that omit multiSelect:true on any question. multiSelect is a
+# UX-safety mechanism in bertrand (prevents submit-on-focus), not a cardinality
+# signal. Enforce mechanically so the rule sticks in subagent / job contexts
+# where the system-prompt contract never reaches the agent.
+if printf '%s' "$input" | jq -e '.tool_input.questions[]? | select(.multiSelect != true)' > /dev/null 2>&1; then
+  printf 'All AskUserQuestion questions must set multiSelect:true. This is a UX-safety mechanism in bertrand (prevents submit-on-focus when the question block gains focus), not a cardinality signal. Retry with multiSelect:true on every question.\\n' >&2
+  exit 2
+fi
+
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
 # Extract question — grep for simple field extraction (~1ms vs jq ~15ms)
