@@ -19,6 +19,7 @@ import { eventColor, eventTitle, formatTimestamp } from "../../lib/format";
 import { applyTransforms } from "../../lib/timeline/transforms";
 import { EventContent } from "../../components/timeline";
 import { SecondarySidebar } from "../../components/secondary-sidebar";
+import { CopyResumeButton } from "../../components/copy-resume-button";
 
 export const Route = createFileRoute("/sessions/$slug")({
   component: SessionDetail,
@@ -72,6 +73,12 @@ function SessionDetail() {
       <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         <Group ay="center" gap={2}>
+          {match && (
+            <CopyResumeButton
+              session={match.session}
+              groupPath={match.groupPath}
+            />
+          )}
           {match && <ArchiveToggle session={match.session} />}
           <Sheet
             side="right"
