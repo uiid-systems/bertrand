@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { Toaster, ToastProvider } from "@uiid/design-system"
+import { registerSW } from "virtual:pwa-register"
 import { routeTree } from "./routeTree.gen"
+
+registerSW({ immediate: true })
 
 const queryClient = new QueryClient({
   defaultOptions: {

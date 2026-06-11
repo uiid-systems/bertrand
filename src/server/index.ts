@@ -147,13 +147,14 @@ function match(pathname: string, url: URL): Response {
 }
 
 // Locate a bundled dashboard relative to this file. Present in the
-// published package (build.ts copies dashboard/dist → dist/dashboard);
-// absent in dev runs (`bun run src/index.ts serve`) where the user is
+// published package (build.ts copies dashboard/dist → dist/dashboard),
+// where this file lives at dist/bertrand.js so dashboard/ is a sibling.
+// Absent in dev runs (`bun run src/index.ts serve`), where the user is
 // expected to run vite separately.
 function findDashboardDir(): string | null {
   const candidates = [
-    join(import.meta.dir, "..", "dashboard"),
-    join(import.meta.dir, "..", "..", "dashboard"),
+    join(import.meta.dir, "dashboard"),         // built: dist/bertrand.js → dist/dashboard
+    join(import.meta.dir, "..", "dashboard"),   // unlikely, but cheap to check
   ]
   for (const dir of candidates) {
     if (existsSync(join(dir, "index.html"))) return dir
