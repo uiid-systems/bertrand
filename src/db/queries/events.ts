@@ -2,6 +2,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { events } from "@/db/schema";
 import { normalizeEventMeta } from "@/lib/markdown";
+import type { EventRow, SessionRecap } from "@/types";
 
 export function insertEvent(opts: {
   sessionId: string;
@@ -23,31 +24,31 @@ export function insertEvent(opts: {
     .get();
 }
 
-export function getEventsBySession(sessionId: string) {
+export function getEventsBySession(sessionId: string): EventRow[] {
   return getDb()
     .select()
     .from(events)
     .where(eq(events.sessionId, sessionId))
     .orderBy(events.createdAt, events.id)
-    .all();
+    .all() as EventRow[];
 }
 
-export function getEventsByConversation(conversationId: string) {
+export function getEventsByConversation(conversationId: string): EventRow[] {
   return getDb()
     .select()
     .from(events)
     .where(eq(events.conversationId, conversationId))
     .orderBy(events.createdAt)
-    .all();
+    .all() as EventRow[];
 }
 
-export function getEventsByType(sessionId: string, eventType: string) {
+export function getEventsByType(sessionId: string, eventType: string): EventRow[] {
   return getDb()
     .select()
     .from(events)
     .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
     .orderBy(events.createdAt)
-    .all();
+    .all() as EventRow[];
 }
 
 export function getLatestEvent(sessionId: string) {
@@ -60,10 +61,7 @@ export function getLatestEvent(sessionId: string) {
     .get();
 }
 
-export function getLatestRecaps(): Record<
-  string,
-  { recap: string; createdAt: string }
-> {
+export function getLatestRecaps(): Record<string, SessionRecap> {
   const rows = getDb()
     .select({
       sessionId: events.sessionId,
@@ -75,7 +73,7 @@ export function getLatestRecaps(): Record<
     .orderBy(desc(events.createdAt))
     .all();
 
-  const result: Record<string, { recap: string; createdAt: string }> = {};
+  const result: Record<string, SessionRecap> = {};
   for (const row of rows) {
     if (result[row.sessionId]) continue;
     const meta = row.meta as Record<string, unknown> | null;

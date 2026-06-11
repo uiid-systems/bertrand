@@ -6,6 +6,7 @@ import type {
   SessionStatsRow,
   EngagementStats,
   SessionRecap,
+  ArchiveErrorReason,
 } from "./types"
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -14,15 +15,9 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json()
 }
 
-export type ArchiveErrorReason =
-  | "not-found"
-  | "active"
-  | "already-archived"
-  | "not-archived"
-
 export class ArchiveError extends Error {
-  reason: ArchiveErrorReason | "unknown"
-  constructor(message: string, reason: ArchiveErrorReason | "unknown") {
+  reason: ArchiveErrorReason
+  constructor(message: string, reason: ArchiveErrorReason) {
     super(message)
     this.name = "ArchiveError"
     this.reason = reason

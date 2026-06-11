@@ -3,12 +3,13 @@ import {
   getAllSessions,
   updateSessionStatus,
 } from "@/db/queries/sessions";
-import type { sessions } from "@/db/schema";
+import type {
+  SessionRow,
+  ArchiveReason,
+  UnarchiveReason,
+} from "@/types";
 
-export type SessionRow = typeof sessions.$inferSelect;
-
-export type ArchiveReason = "not-found" | "active" | "already-archived";
-export type UnarchiveReason = "not-found" | "not-archived";
+export type { SessionRow, ArchiveReason, UnarchiveReason };
 
 export type ArchiveResult =
   | { ok: true; session: SessionRow }

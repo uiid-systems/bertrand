@@ -10,73 +10,85 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
+import type {
+  SessionRow,
+  SessionWithGroup,
+  EventRow,
+  SessionStatsRow,
+  EngagementStats,
+  SessionRecap,
+} from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
-const routes: [RegExp, RouteHandler][] = [
-  // GET /api/sessions
-  [/^\/api\/sessions$/, (_params, url) => {
-    const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
-    return getAllSessions({ excludeArchived })
-  }],
+function liveStats(sessionId: string): SessionStatsRow {
+  return {
+    sessionId,
+    ...computeSessionStats(sessionId),
+    updatedAt: new Date().toISOString(),
+  }
+}
 
-  // GET /api/sessions/:id
-  [/^\/api\/sessions\/(?<id>[^/]+)$/, ({ id }) => {
-    return getSession(id!)
-  }],
+const listSessions = (_params: object, url: URL): SessionWithGroup[] => {
+  const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
+  return getAllSessions({ excludeArchived })
+}
 
-  // GET /api/events/:sessionId
-  [/^\/api\/events\/(?<sessionId>[^/]+)$/, ({ sessionId }, url) => {
-    const eventType = url.searchParams.get("type")
-    if (eventType) return getEventsByType(sessionId!, eventType)
-    return getEventsBySession(sessionId!)
-  }],
+const getSessionById = ({ id }: { id?: string }): SessionRow | undefined =>
+  getSession(id!)
 
-  // GET /api/stats
-  // Bulk variant: returns a {sessionId -> stats} map for every session.
-  [/^\/api\/stats$/, () => {
-    const all = getAllSessions()
-    const now = new Date().toISOString()
-    const result: Record<string, unknown> = {}
-    for (const { session } of all) {
-      const isLive = session.status === "active" || session.status === "waiting"
-      if (isLive) {
-        result[session.id] = { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
-        continue
-      }
-      const stored = getSessionStats(session.id)
-      result[session.id] = stored ?? { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
-    }
-    return result
-  }],
+const listEvents = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): EventRow[] => {
+  const eventType = url.searchParams.get("type")
+  if (eventType) return getEventsByType(sessionId!, eventType)
+  return getEventsBySession(sessionId!)
+}
 
-  // GET /api/stats/:sessionId
-  // Live compute for active/waiting sessions (materialized row would be stale or absent).
-  // Paused/archived sessions read the materialized row, falling back to live if missing.
-  [/^\/api\/stats\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    const session = getSession(sessionId!)
-    if (!session) return null
+const listAllStats = (): Record<string, SessionStatsRow> => {
+  const result: Record<string, SessionStatsRow> = {}
+  for (const { session } of getAllSessions()) {
     const isLive = session.status === "active" || session.status === "waiting"
     if (isLive) {
-      return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
+      result[session.id] = liveStats(session.id)
+      continue
     }
-    const stored = getSessionStats(sessionId!)
-    if (stored) return stored
-    return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
-  }],
+    result[session.id] = getSessionStats(session.id) ?? liveStats(session.id)
+  }
+  return result
+}
 
-  // GET /api/engagement/:sessionId
-  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    return computeEngagementStats(sessionId!)
-  }],
+const getStatsBySession = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): SessionStatsRow | null => {
+  const session = getSession(sessionId!)
+  if (!session) return null
+  const isLive = session.status === "active" || session.status === "waiting"
+  if (isLive) return liveStats(sessionId!)
+  return getSessionStats(sessionId!) ?? liveStats(sessionId!)
+}
 
-  // GET /api/recaps
-  // Bulk: latest session.recap event per session, returns {sessionId -> {recap, createdAt}}.
-  [/^\/api\/recaps$/, () => {
-    return getLatestRecaps()
-  }],
+const getEngagement = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): EngagementStats => computeEngagementStats(sessionId!)
+
+const listRecaps = (): Record<string, SessionRecap> => getLatestRecaps()
+
+const routes: [RegExp, RouteHandler][] = [
+  [/^\/api\/sessions$/, listSessions],
+  [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
+  [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
+  [/^\/api\/stats$/, listAllStats],
+  [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
+  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
+  [/^\/api\/recaps$/, listRecaps],
 ]
 
 const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {

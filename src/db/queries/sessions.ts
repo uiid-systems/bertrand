@@ -2,12 +2,9 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { sessions, groups } from "@/db/schema";
 import { createId } from "@/lib/id";
+import type { SessionRow, SessionStatus, SessionWithGroup } from "@/types";
 
-export type SessionStatus =
-  | "active"
-  | "waiting"
-  | "paused"
-  | "archived";
+export type { SessionStatus };
 
 export function createSession(opts: {
   groupId: string;
@@ -23,11 +20,14 @@ export function createSession(opts: {
     .get();
 }
 
-export function getSession(id: string) {
+export function getSession(id: string): SessionRow | undefined {
   return getDb().select().from(sessions).where(eq(sessions.id, id)).get();
 }
 
-export function getSessionByGroupSlug(groupId: string, slug: string) {
+export function getSessionByGroupSlug(
+  groupId: string,
+  slug: string,
+): SessionRow | undefined {
   return getDb()
     .select()
     .from(sessions)
@@ -35,7 +35,7 @@ export function getSessionByGroupSlug(groupId: string, slug: string) {
     .get();
 }
 
-export function getSessionsByGroup(groupId: string) {
+export function getSessionsByGroup(groupId: string): SessionRow[] {
   return getDb()
     .select()
     .from(sessions)
@@ -43,7 +43,7 @@ export function getSessionsByGroup(groupId: string) {
     .all();
 }
 
-export function getActiveSessions() {
+export function getActiveSessions(): SessionWithGroup[] {
   return getDb()
     .select({ session: sessions, groupPath: groups.path })
     .from(sessions)
@@ -52,7 +52,9 @@ export function getActiveSessions() {
     .all();
 }
 
-export function getAllSessions(opts?: { excludeArchived?: boolean }) {
+export function getAllSessions(opts?: {
+  excludeArchived?: boolean;
+}): SessionWithGroup[] {
   const db = getDb();
   const query = db
     .select({ session: sessions, groupPath: groups.path })
@@ -74,7 +76,7 @@ export function getAllSessions(opts?: { excludeArchived?: boolean }) {
   return query.all();
 }
 
-export function updateSessionStatus(id: string, status: SessionStatus) {
+export function updateSessionStatus(id: string, status: SessionStatus): SessionRow {
   return getDb()
     .update(sessions)
     .set({ status, updatedAt: sql`(datetime('now'))` })
