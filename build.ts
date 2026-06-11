@@ -6,13 +6,17 @@
  *   dist/run-screen.js   — TUI subprocess entry (spawned by app.tsx)
  *   dist/migrations/     — Drizzle SQL migrations, copied (loaded at runtime
  *                          via `import.meta.dir + "/migrations"`)
+ *   dist/dashboard/      — Vite-built dashboard SPA, static-served by
+ *                          `bertrand serve` when present.
  */
-import { rmSync, mkdirSync, cpSync, chmodSync } from "fs";
+import { rmSync, mkdirSync, cpSync, chmodSync, existsSync } from "fs";
 import { join } from "path";
+import { spawnSync } from "child_process";
 
 const ROOT = import.meta.dir;
 const DIST = join(ROOT, "dist");
 const SRC = join(ROOT, "src");
+const DASHBOARD = join(ROOT, "dashboard");
 
 rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
@@ -57,5 +61,20 @@ console.log("Copying migrations…");
 cpSync(join(SRC, "db/migrations"), join(DIST, "migrations"), {
   recursive: true,
 });
+
+console.log("Building dashboard…");
+if (!existsSync(join(DASHBOARD, "node_modules"))) {
+  const install = spawnSync("bun", ["install"], {
+    cwd: DASHBOARD,
+    stdio: "inherit",
+  });
+  if (install.status !== 0) process.exit(install.status ?? 1);
+}
+const dashboardBuild = spawnSync("bunx", ["vite", "build"], {
+  cwd: DASHBOARD,
+  stdio: "inherit",
+});
+if (dashboardBuild.status !== 0) process.exit(dashboardBuild.status ?? 1);
+cpSync(join(DASHBOARD, "dist"), join(DIST, "dashboard"), { recursive: true });
 
 console.log(`\nBuilt to ${DIST}`);

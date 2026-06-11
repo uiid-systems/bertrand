@@ -1,4 +1,6 @@
 import { execFile } from "child_process"
+import { existsSync } from "fs"
+import { join } from "path"
 import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
@@ -144,10 +146,38 @@ function match(pathname: string, url: URL): Response {
   return Response.json({ error: "Not found" }, { status: 404 })
 }
 
+// Locate a bundled dashboard relative to this file. Present in the
+// published package (build.ts copies dashboard/dist → dist/dashboard);
+// absent in dev runs (`bun run src/index.ts serve`) where the user is
+// expected to run vite separately.
+function findDashboardDir(): string | null {
+  const candidates = [
+    join(import.meta.dir, "..", "dashboard"),
+    join(import.meta.dir, "..", "..", "dashboard"),
+  ]
+  for (const dir of candidates) {
+    if (existsSync(join(dir, "index.html"))) return dir
+  }
+  return null
+}
+
+const DASHBOARD_DIR = findDashboardDir()
+
+async function serveDashboard(pathname: string): Promise<Response | null> {
+  if (!DASHBOARD_DIR) return null
+  const requested = pathname === "/" ? "/index.html" : pathname
+  const filePath = join(DASHBOARD_DIR, requested)
+  if (!filePath.startsWith(DASHBOARD_DIR)) return null  // traversal guard
+  const file = Bun.file(filePath)
+  if (await file.exists()) return new Response(file)
+  // SPA fallback — unknown paths render index.html so client routing works.
+  return new Response(Bun.file(join(DASHBOARD_DIR, "index.html")))
+}
+
 export function startServer(port = PORT) {
   const server = Bun.serve({
     port,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url)
 
       // CORS for dev
@@ -164,10 +194,9 @@ export function startServer(port = PORT) {
       // Hand off to the platform `open` binary. macOS-only for now; runs
       // server-side so the browser doesn't need to expose file:// access.
       if (req.method === "POST" && url.pathname === "/api/open") {
-        return handleOpen(req).then((r) => {
-          r.headers.set("Access-Control-Allow-Origin", "*")
-          return r
-        })
+        const r = await handleOpen(req)
+        r.headers.set("Access-Control-Allow-Origin", "*")
+        return r
       }
 
       if (req.method === "POST") {
@@ -185,12 +214,24 @@ export function startServer(port = PORT) {
         }
       }
 
+      if (url.pathname.startsWith("/api/")) {
+        const response = match(url.pathname, url)
+        response.headers.set("Access-Control-Allow-Origin", "*")
+        return response
+      }
+
+      const dashboardResponse = await serveDashboard(url.pathname)
+      if (dashboardResponse) return dashboardResponse
+
       const response = match(url.pathname, url)
       response.headers.set("Access-Control-Allow-Origin", "*")
       return response
     },
   })
 
-  console.log(`bertrand API server listening on http://localhost:${server.port}`)
+  const dashboardNote = DASHBOARD_DIR ? " (with bundled dashboard)" : ""
+  console.log(
+    `bertrand API server listening on http://localhost:${server.port}${dashboardNote}`,
+  )
   return server
 }
