@@ -285,7 +285,6 @@ export function Picker(props: PickerProps) {
           onChange={setFilter}
           onSubmit={handleSubmit}
           placeholder={placeholder}
-          color="green"
           placeholderColor="gray"
           isFocused={isFocused}
         />
