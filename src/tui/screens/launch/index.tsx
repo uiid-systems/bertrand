@@ -121,6 +121,19 @@ export function Launch({ onSelect }: LaunchProps) {
     return rows;
   }, [visibleSessions]);
 
+  // Group prefixes first so "ber" → "bertrand/"; then full names so
+  // "bertrand/" → "bertrand/<slug>". Drawn from every loaded session,
+  // archived included so the suggestion still works when archived is hidden.
+  const suggestions = useMemo(() => {
+    const groups = new Set<string>();
+    const names: string[] = [];
+    for (const s of allSessions) {
+      groups.add(`${s.groupPath}/`);
+      names.push(`${s.groupPath}/${s.session.slug}`);
+    }
+    return [...groups, ...names];
+  }, [allSessions]);
+
   // Match against *all* loaded sessions so typing an existing name —
   // even one we don't render (active, waiting) — gets a clear message instead
   // of silently attempting a duplicate create.
@@ -239,6 +252,7 @@ export function Launch({ onSelect }: LaunchProps) {
             items={items}
             isFocused
             maxVisible={24}
+            suggest={suggestions}
             placeholder="Filter or type group/slug to create…"
             emptyHint={
               showArchived

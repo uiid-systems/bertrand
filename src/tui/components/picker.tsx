@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Box, Text, useInput } from "@orchetron/storm";
+import { Box, Text, useGhostText, useInput } from "@orchetron/storm";
 import type { ReactNode } from "react";
 
 import { TextField } from "./text-field";
@@ -29,6 +29,8 @@ interface BasePickerProps {
   allowCreate?: boolean;
   emptyHint?: string;
   maxVisible?: number;
+  /** Ghost-text autocomplete source. Tab accepts when a suggestion is visible. */
+  suggest?: ((value: string) => string | null) | string[];
   /** Receives keys the picker doesn't handle, along with the current cursor row. */
   onKey?: (e: KeyEvent, cursorItem: PickerItem | null) => void;
 }
@@ -138,6 +140,13 @@ export function Picker(props: PickerProps) {
   const [filter, setFilter] = useState("");
   const [cursor, setCursor] = useState(0);
 
+  const ghostResult = useGhostText({
+    value: filter,
+    cursor: filter.length,
+    suggest: props.suggest ?? [],
+  });
+  const ghost = props.suggest ? ghostResult.ghost : "";
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return items;
@@ -208,6 +217,9 @@ export function Picker(props: PickerProps) {
           const next = findNextGroupStart(visibleRows, c);
           return next === -1 ? c : next;
         });
+      } else if (e.key === "tab" && ghost) {
+        const full = ghostResult.accept();
+        if (full !== null) setFilter(full);
       } else if (e.key === "tab" && props.mode === "multi") {
         props.onDone();
       } else if (props.onKey) {
@@ -290,6 +302,7 @@ export function Picker(props: PickerProps) {
           onSubmit={handleSubmit}
           placeholder={placeholder}
           isFocused={isFocused}
+          ghost={ghost}
         />
       </Box>
 
