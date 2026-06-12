@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Box, Text, TextInput, useInput } from "@orchetron/storm";
+import {
+  Box,
+  Text,
+  TextInput,
+  useGhostText,
+  useInput,
+} from "@orchetron/storm";
 import type { ReactNode } from "react";
 
 type KeyEvent = Parameters<Parameters<typeof useInput>[0]>[0];
@@ -27,6 +33,8 @@ interface BasePickerProps {
   allowCreate?: boolean;
   emptyHint?: string;
   maxVisible?: number;
+  /** Ghost-text autocomplete source. Accepts with Tab when a suggestion is visible. */
+  suggest?: ((value: string) => string | null) | string[];
   /** Receives keys the picker doesn't handle, along with the current cursor row. */
   onKey?: (e: KeyEvent, cursorItem: PickerItem | null) => void;
 }
@@ -134,6 +142,13 @@ export function Picker(props: PickerProps) {
   const [filter, setFilter] = useState("");
   const [cursor, setCursor] = useState(0);
 
+  const ghostResult = useGhostText({
+    value: filter,
+    cursor: filter.length,
+    suggest: props.suggest ?? [],
+  });
+  const ghost = props.suggest ? ghostResult.ghost : "";
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return items;
@@ -192,6 +207,9 @@ export function Picker(props: PickerProps) {
           const next = findNextSelectable(visibleRows, c + 1, 1);
           return next === -1 ? c : next;
         });
+      } else if (e.key === "tab" && ghost) {
+        const full = ghostResult.accept();
+        if (full !== null) setFilter(full);
       } else if (filter.length === 0 && e.key === "left") {
         setCursor((c) => {
           const curr = findCurrentGroupStart(visibleRows, c);
@@ -275,6 +293,7 @@ export function Picker(props: PickerProps) {
       )}
 
       <Box
+        flexDirection="row"
         borderStyle="round"
         borderColor={isFocused ? "green" : undefined}
         borderDimColor={!isFocused}
@@ -289,6 +308,7 @@ export function Picker(props: PickerProps) {
           placeholderColor="gray"
           isFocused={isFocused}
         />
+        {ghost && <Text dim>{ghost}</Text>}
       </Box>
 
       <Box
