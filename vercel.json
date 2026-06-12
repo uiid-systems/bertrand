@@ -3,7 +3,6 @@
   "installCommand": "cd dashboard && bun install --frozen-lockfile",
   "buildCommand": "cd dashboard && bun run build",
   "outputDirectory": "dashboard/dist",
-  "framework": null,
   "headers": [
     {
       "source": "/sw.js",
@@ -23,5 +22,5 @@
       ]
     }
   ],
-  "rewrites": [{ "source": "/((?!api/|assets/|.*\\..*).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
