@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/uiid-systems/bertrand/compare/v0.15.0...v0.16.0) (2026-06-12)
+
+
+### Features
+
+* **server:** auto-start API server with first session, stop with last ([#98](https://github.com/uiid-systems/bertrand/issues/98)) ([ef48696](https://github.com/uiid-systems/bertrand/commit/ef48696d17f8e64593e38fcc2318050ebf5e5154))
+
+
+### Bug Fixes
+
+* **vercel:** simplify rewrites and drop framework override ([#96](https://github.com/uiid-systems/bertrand/issues/96)) ([8fa8b99](https://github.com/uiid-systems/bertrand/commit/8fa8b9971aa16d2b26825c72d5d1ed0c23a7646c))
+
 ## [0.15.0](https://github.com/uiid-systems/bertrand/compare/v0.14.1...v0.15.0) (2026-06-10)
 
 
