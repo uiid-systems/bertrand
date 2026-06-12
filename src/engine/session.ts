@@ -21,6 +21,7 @@ import { buildSiblingContext } from "@/contract/context";
 import { launchClaude } from "./process";
 import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
+import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -74,6 +75,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
 
   // Update session to working with PID
   updateSession(session.id, { status: "active", pid: process.pid });
+  await ensureServerStarted();
 
   // Capture spawn context (model, claude version, git, cwd) in parallel before
   // logging start events so the frozen-in-time meta on session.started /
@@ -135,6 +137,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   const group = getGroup(session.groupId);
   const sessionName = group ? `${group.path}/${session.slug}` : session.name;
   updateSession(session.id, { status: "active", pid: process.pid });
+  await ensureServerStarted();
 
   insertEvent({
     sessionId: session.id,
@@ -200,4 +203,5 @@ function finalizeSession(
   });
 
   computeAndPersist(sessionId);
+  stopServerIfIdle();
 }
