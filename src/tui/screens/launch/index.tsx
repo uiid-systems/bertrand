@@ -263,7 +263,7 @@ export function Launch({ onSelect }: LaunchProps) {
           {error && <Text color="red">{error}</Text>}
 
           <Text dim>
-            ↑↓ navigate · enter continue/create · ctrl+a{" "}
+            ↑↓ navigate · ←→ skip group · enter continue/create · ctrl+a{" "}
             {showArchived ? "(un)archive" : "archive"} · tab{" "}
             {showArchived ? "hide" : "show"} archived · ctrl+c quit
           </Text>
