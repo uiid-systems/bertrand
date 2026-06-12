@@ -9,12 +9,17 @@ import {
 
 // Storm parses bracketed-paste escape sequences but never enables the
 // terminal mode itself, so pastes arrive as a stream of regular keypresses
-// and usePaste never fires. Enable it once globally on first TextField mount.
+// and usePaste never fires. Enable it once globally on first TextField mount
+// and restore it on process exit so we leave the terminal as we found it.
+// See https://github.com/orchetron/storm/issues/19
 let bracketedPasteEnabled = false;
 function ensureBracketedPaste() {
   if (bracketedPasteEnabled) return;
   bracketedPasteEnabled = true;
   process.stdout.write("\x1b[?2004h");
+  process.once("exit", () => {
+    process.stdout.write("\x1b[?2004l");
+  });
 }
 
 export interface TextFieldProps {
