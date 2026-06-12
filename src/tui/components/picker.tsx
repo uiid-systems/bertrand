@@ -2,14 +2,16 @@ import { useMemo, useState } from "react";
 import { Box, Text, TextInput, useInput } from "@orchetron/storm";
 import type { ReactNode } from "react";
 
+type KeyEvent = Parameters<Parameters<typeof useInput>[0]>[0];
+
 export interface PickerItem {
   value: string;
   /** Used for filter matching and as fallback render. */
   label: string;
   color?: string | null;
   meta?: string;
-  /** Render this instead of the label string when present. */
-  display?: ReactNode;
+  /** Render this instead of the label string when present. Pass a function to react to cursor state. */
+  display?: ReactNode | ((isCursor: boolean) => ReactNode);
   /** Decorative group header — never gets the cursor and is hidden while filtering. */
   kind?: "item" | "header";
   /** Cursor skips this row; rendered dimmed. */
@@ -25,6 +27,8 @@ interface BasePickerProps {
   allowCreate?: boolean;
   emptyHint?: string;
   maxVisible?: number;
+  /** Receives keys the picker doesn't handle, along with the current cursor row. */
+  onKey?: (e: KeyEvent, cursorItem: PickerItem | null) => void;
 }
 
 interface SinglePickerProps extends BasePickerProps {
@@ -138,6 +142,11 @@ export function Picker(props: PickerProps) {
         });
       } else if (e.key === "tab" && props.mode === "multi") {
         props.onDone();
+      } else if (props.onKey) {
+        const row = visibleRows[cursor];
+        const cursorItem =
+          row && row.value !== NEW_KEY ? (row as PickerItem) : null;
+        props.onKey(e, cursorItem);
       }
     },
     { isActive: isFocused },
@@ -280,7 +289,9 @@ export function Picker(props: PickerProps) {
             >
               <Box flexDirection="row" gap={0}>
                 {item.display ? (
-                  item.display
+                  typeof item.display === "function"
+                    ? item.display(isCursor)
+                    : item.display
                 ) : (
                   <Text
                     color={isCursor ? "black" : (item.color ?? undefined)}
