@@ -1,4 +1,6 @@
 import { execFile } from "child_process"
+import { existsSync } from "fs"
+import { join } from "path"
 import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
@@ -10,73 +12,85 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
+import type {
+  SessionRow,
+  SessionWithGroup,
+  EventRow,
+  SessionStatsRow,
+  EngagementStats,
+  SessionRecap,
+} from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
-const routes: [RegExp, RouteHandler][] = [
-  // GET /api/sessions
-  [/^\/api\/sessions$/, (_params, url) => {
-    const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
-    return getAllSessions({ excludeArchived })
-  }],
+function liveStats(sessionId: string): SessionStatsRow {
+  return {
+    sessionId,
+    ...computeSessionStats(sessionId),
+    updatedAt: new Date().toISOString(),
+  }
+}
 
-  // GET /api/sessions/:id
-  [/^\/api\/sessions\/(?<id>[^/]+)$/, ({ id }) => {
-    return getSession(id!)
-  }],
+const listSessions = (_params: object, url: URL): SessionWithGroup[] => {
+  const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
+  return getAllSessions({ excludeArchived })
+}
 
-  // GET /api/events/:sessionId
-  [/^\/api\/events\/(?<sessionId>[^/]+)$/, ({ sessionId }, url) => {
-    const eventType = url.searchParams.get("type")
-    if (eventType) return getEventsByType(sessionId!, eventType)
-    return getEventsBySession(sessionId!)
-  }],
+const getSessionById = ({ id }: { id?: string }): SessionRow | undefined =>
+  getSession(id!)
 
-  // GET /api/stats
-  // Bulk variant: returns a {sessionId -> stats} map for every session.
-  [/^\/api\/stats$/, () => {
-    const all = getAllSessions()
-    const now = new Date().toISOString()
-    const result: Record<string, unknown> = {}
-    for (const { session } of all) {
-      const isLive = session.status === "active" || session.status === "waiting"
-      if (isLive) {
-        result[session.id] = { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
-        continue
-      }
-      const stored = getSessionStats(session.id)
-      result[session.id] = stored ?? { sessionId: session.id, ...computeSessionStats(session.id), updatedAt: now }
-    }
-    return result
-  }],
+const listEvents = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): EventRow[] => {
+  const eventType = url.searchParams.get("type")
+  if (eventType) return getEventsByType(sessionId!, eventType)
+  return getEventsBySession(sessionId!)
+}
 
-  // GET /api/stats/:sessionId
-  // Live compute for active/waiting sessions (materialized row would be stale or absent).
-  // Paused/archived sessions read the materialized row, falling back to live if missing.
-  [/^\/api\/stats\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    const session = getSession(sessionId!)
-    if (!session) return null
+const listAllStats = (): Record<string, SessionStatsRow> => {
+  const result: Record<string, SessionStatsRow> = {}
+  for (const { session } of getAllSessions()) {
     const isLive = session.status === "active" || session.status === "waiting"
     if (isLive) {
-      return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
+      result[session.id] = liveStats(session.id)
+      continue
     }
-    const stored = getSessionStats(sessionId!)
-    if (stored) return stored
-    return { sessionId: sessionId!, ...computeSessionStats(sessionId!), updatedAt: new Date().toISOString() }
-  }],
+    result[session.id] = getSessionStats(session.id) ?? liveStats(session.id)
+  }
+  return result
+}
 
-  // GET /api/engagement/:sessionId
-  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, ({ sessionId }) => {
-    return computeEngagementStats(sessionId!)
-  }],
+const getStatsBySession = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): SessionStatsRow | null => {
+  const session = getSession(sessionId!)
+  if (!session) return null
+  const isLive = session.status === "active" || session.status === "waiting"
+  if (isLive) return liveStats(sessionId!)
+  return getSessionStats(sessionId!) ?? liveStats(sessionId!)
+}
 
-  // GET /api/recaps
-  // Bulk: latest session.recap event per session, returns {sessionId -> {recap, createdAt}}.
-  [/^\/api\/recaps$/, () => {
-    return getLatestRecaps()
-  }],
+const getEngagement = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): EngagementStats => computeEngagementStats(sessionId!)
+
+const listRecaps = (): Record<string, SessionRecap> => getLatestRecaps()
+
+const routes: [RegExp, RouteHandler][] = [
+  [/^\/api\/sessions$/, listSessions],
+  [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
+  [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
+  [/^\/api\/stats$/, listAllStats],
+  [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
+  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
+  [/^\/api\/recaps$/, listRecaps],
 ]
 
 const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {
@@ -132,10 +146,39 @@ function match(pathname: string, url: URL): Response {
   return Response.json({ error: "Not found" }, { status: 404 })
 }
 
+// Locate a bundled dashboard relative to this file. Present in the
+// published package (build.ts copies dashboard/dist → dist/dashboard),
+// where this file lives at dist/bertrand.js so dashboard/ is a sibling.
+// Absent in dev runs (`bun run src/index.ts serve`), where the user is
+// expected to run vite separately.
+function findDashboardDir(): string | null {
+  const candidates = [
+    join(import.meta.dir, "dashboard"),         // built: dist/bertrand.js → dist/dashboard
+    join(import.meta.dir, "..", "dashboard"),   // unlikely, but cheap to check
+  ]
+  for (const dir of candidates) {
+    if (existsSync(join(dir, "index.html"))) return dir
+  }
+  return null
+}
+
+const DASHBOARD_DIR = findDashboardDir()
+
+async function serveDashboard(pathname: string): Promise<Response | null> {
+  if (!DASHBOARD_DIR) return null
+  const requested = pathname === "/" ? "/index.html" : pathname
+  const filePath = join(DASHBOARD_DIR, requested)
+  if (!filePath.startsWith(DASHBOARD_DIR)) return null  // traversal guard
+  const file = Bun.file(filePath)
+  if (await file.exists()) return new Response(file)
+  // SPA fallback — unknown paths render index.html so client routing works.
+  return new Response(Bun.file(join(DASHBOARD_DIR, "index.html")))
+}
+
 export function startServer(port = PORT) {
   const server = Bun.serve({
     port,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url)
 
       // CORS for dev
@@ -152,10 +195,9 @@ export function startServer(port = PORT) {
       // Hand off to the platform `open` binary. macOS-only for now; runs
       // server-side so the browser doesn't need to expose file:// access.
       if (req.method === "POST" && url.pathname === "/api/open") {
-        return handleOpen(req).then((r) => {
-          r.headers.set("Access-Control-Allow-Origin", "*")
-          return r
-        })
+        const r = await handleOpen(req)
+        r.headers.set("Access-Control-Allow-Origin", "*")
+        return r
       }
 
       if (req.method === "POST") {
@@ -173,12 +215,24 @@ export function startServer(port = PORT) {
         }
       }
 
+      if (url.pathname.startsWith("/api/")) {
+        const response = match(url.pathname, url)
+        response.headers.set("Access-Control-Allow-Origin", "*")
+        return response
+      }
+
+      const dashboardResponse = await serveDashboard(url.pathname)
+      if (dashboardResponse) return dashboardResponse
+
       const response = match(url.pathname, url)
       response.headers.set("Access-Control-Allow-Origin", "*")
       return response
     },
   })
 
-  console.log(`bertrand API server listening on http://localhost:${server.port}`)
+  const dashboardNote = DASHBOARD_DIR ? " (with bundled dashboard)" : ""
+  console.log(
+    `bertrand API server listening on http://localhost:${server.port}${dashboardNote}`,
+  )
   return server
 }

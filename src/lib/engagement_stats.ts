@@ -2,13 +2,9 @@ import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { conversations } from "@/db/schema";
 import { getEventsBySession, getEventsByType } from "@/db/queries/events";
+import type { EngagementStats } from "@/types";
 
-export interface EngagementStats {
-  toolUsage: Record<string, number>;
-  contextTokens: { avg: number; max: number; latest: number };
-  permissionDenials: number;
-  discardRate: { discarded: number; total: number };
-}
+export type { EngagementStats };
 
 type PermissionDetail = { tool?: string; count?: number };
 

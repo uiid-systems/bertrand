@@ -17,6 +17,7 @@ import {
 import { Check, Copy, ExternalLink, FolderOpen } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
+import { apiUrl } from "../../api/base";
 import { modelLabel } from "../../lib/format";
 
 type StartedContentProps = {
@@ -166,7 +167,7 @@ export function StartedContent({ event }: StartedContentProps) {
         tooltip: "Open in Finder",
         onClick: (row: Row) => {
           if (!isCwdRow(row) || !cwd) return;
-          void fetch("/api/open", {
+          void fetch(apiUrl("/api/open"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: cwd }),

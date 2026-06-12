@@ -4,7 +4,7 @@ import { getEventsBySession } from "@/db/queries/events";
 import { getGroupByPath } from "@/db/queries/groups";
 import { getSessionStats } from "@/db/queries/stats";
 import { getConversationsBySession } from "@/db/queries/conversations";
-import type { sessions } from "@/db/schema";
+import type { SessionRow } from "@/types";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
 import { computeTimingsLive } from "@/lib/timing";
@@ -201,8 +201,6 @@ function renderTimingFooter(sessionId: string): string[] {
 
   return lines;
 }
-
-type SessionRow = typeof sessions.$inferSelect;
 
 function showSessionLog(session: SessionRow, sessionName: string, isJson: boolean) {
   const sessionId = session.id;

@@ -1,8 +1,9 @@
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { sessionStats } from "@/db/schema";
+import type { SessionStatsRow } from "@/types";
 
-export function getSessionStats(sessionId: string) {
+export function getSessionStats(sessionId: string): SessionStatsRow | undefined {
   return getDb()
     .select()
     .from(sessionStats)
