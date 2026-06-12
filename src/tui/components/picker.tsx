@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
-import { Box, Text, TextInput, useInput } from "@orchetron/storm";
+import { Box, Text, useInput } from "@orchetron/storm";
 import type { ReactNode } from "react";
+
+import { TextField } from "./text-field";
 
 type KeyEvent = Parameters<Parameters<typeof useInput>[0]>[0];
 
@@ -282,13 +284,11 @@ export function Picker(props: PickerProps) {
         borderDimColor={!isFocused}
         paddingX={1}
       >
-        <TextInput
+        <TextField
           value={filter}
           onChange={setFilter}
           onSubmit={handleSubmit}
           placeholder={placeholder}
-          color="green"
-          placeholderColor="gray"
           isFocused={isFocused}
         />
       </Box>
