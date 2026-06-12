@@ -293,7 +293,6 @@ export function Picker(props: PickerProps) {
       )}
 
       <Box
-        flexDirection="row"
         borderStyle="round"
         borderColor={isFocused ? "green" : undefined}
         borderDimColor={!isFocused}
@@ -308,8 +307,14 @@ export function Picker(props: PickerProps) {
           placeholderColor="gray"
           isFocused={isFocused}
         />
-        {ghost && <Text dim>{ghost}</Text>}
       </Box>
+      {ghost && (
+        <Box paddingX={1}>
+          <Text dim>↪ {filter}</Text>
+          <Text color="cyan">{ghost}</Text>
+          <Text dim> · tab to accept</Text>
+        </Box>
+      )}
 
       <Box
         flexDirection="column"
