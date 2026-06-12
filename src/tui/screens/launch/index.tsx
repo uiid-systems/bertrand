@@ -4,6 +4,7 @@ import { Box, Text, useTui } from "@orchetron/storm";
 import { AppDetails, Logo } from "@/tui/components";
 import { Picker, type PickerItem } from "@/tui/components/picker";
 import { getAllSessions } from "@/db/queries/sessions";
+import { archiveSession, unarchiveSession } from "@/lib/session-archive";
 import { formatAgo } from "@/lib/format";
 import { parseSessionName } from "@/lib/parse-session-name";
 
@@ -14,11 +15,13 @@ type SessionRow = ReturnType<typeof getAllSessions>[number];
 const STATUS_COLOR: Record<string, string> = {
   paused: "gold",
   waiting: "red",
+  archived: "purple",
 };
 
 const STATUS_RANK: Record<string, number> = {
   paused: 0,
   waiting: 1,
+  archived: 2,
 };
 
 function statusRank(status: string): number {
@@ -33,23 +36,38 @@ function sessionRow(s: SessionRow): PickerItem {
   const status = s.session.status;
   const color = STATUS_COLOR[status] ?? "gray";
   const disabled = status === "waiting";
+  const isArchived = status === "archived";
 
   return {
     value: `${s.groupPath}/${s.session.slug}`,
     label: `${s.groupPath}/${s.session.slug} ${status}`,
     meta: formatAgo(recencyKey(s)),
     disabled,
-    display: (
-      <>
-        <Text>{"  "}</Text>
-        <Text color={color}>● </Text>
-        <Text color={color} dim={disabled}>
-          {status.padEnd(8)}
-        </Text>
-        <Text> </Text>
-        <Text dim={disabled}>{s.session.slug}</Text>
-      </>
-    ),
+    dim: isArchived,
+    display: (isCursor: boolean) => {
+      const cursorColor = "green";
+      const dotColor = isCursor ? cursorColor : color;
+      const textColor = isCursor ? cursorColor : color;
+      const slugColor = isCursor ? cursorColor : undefined;
+      const dimText = !isCursor && (disabled || isArchived);
+      return (
+        <>
+          <Text color={cursorColor} bold>
+            {isCursor ? "❯ " : "  "}
+          </Text>
+          <Text color={dotColor} bold={isCursor}>
+            ●{" "}
+          </Text>
+          <Text color={textColor} bold={isCursor} dim={dimText}>
+            {status.padEnd(8)}
+          </Text>
+          <Text color={slugColor}> </Text>
+          <Text color={slugColor} bold={isCursor} dim={dimText}>
+            {s.session.slug}
+          </Text>
+        </>
+      );
+    },
   };
 }
 
@@ -64,18 +82,23 @@ function groupHeader(groupPath: string): PickerItem {
 export function Launch({ onSelect }: LaunchProps) {
   const { exit } = useTui();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const allSessions = useMemo(
-    () => getAllSessions({ excludeArchived: true }),
-    [],
+    () => getAllSessions({ excludeArchived: !showArchived }),
+    [showArchived, refreshKey],
   );
 
   const visibleSessions = useMemo(() => {
     return allSessions
-      .filter(
-        (s) =>
-          s.session.status === "paused" || s.session.status === "waiting",
-      )
+      .filter((s) => {
+        const st = s.session.status;
+        if (st === "paused" || st === "waiting") return true;
+        if (st === "archived") return showArchived;
+        return false;
+      })
       .sort((a, b) => {
         const g = a.groupPath.localeCompare(b.groupPath);
         if (g !== 0) return g;
@@ -83,7 +106,7 @@ export function Launch({ onSelect }: LaunchProps) {
         if (r !== 0) return r;
         return recencyKey(b).localeCompare(recencyKey(a));
       });
-  }, [allSessions]);
+  }, [allSessions, showArchived]);
 
   const items: PickerItem[] = useMemo(() => {
     const rows: PickerItem[] = [];
@@ -98,7 +121,20 @@ export function Launch({ onSelect }: LaunchProps) {
     return rows;
   }, [visibleSessions]);
 
-  // Match against *all* non-archived sessions so typing an existing name —
+  // Group prefixes first so "ber" → "bertrand/"; then full names so
+  // "bertrand/" → "bertrand/<slug>". Drawn from every loaded session,
+  // archived included so the suggestion still works when archived is hidden.
+  const suggestions = useMemo(() => {
+    const groups = new Set<string>();
+    const names: string[] = [];
+    for (const s of allSessions) {
+      groups.add(`${s.groupPath}/`);
+      names.push(`${s.groupPath}/${s.session.slug}`);
+    }
+    return [...groups, ...names];
+  }, [allSessions]);
+
+  // Match against *all* loaded sessions so typing an existing name —
   // even one we don't render (active, waiting) — gets a clear message instead
   // of silently attempting a duplicate create.
   const sessionByValue = useMemo(() => {
@@ -108,6 +144,32 @@ export function Launch({ onSelect }: LaunchProps) {
     }
     return map;
   }, [allSessions]);
+
+  const handleArchiveKey = (cursorItem: PickerItem | null) => {
+    if (!cursorItem) return;
+    const existing = sessionByValue.get(cursorItem.value);
+    if (!existing) return;
+
+    setError(null);
+    if (existing.session.status === "archived") {
+      const result = unarchiveSession(existing.session.id);
+      if (result.ok) {
+        setNotice(`Unarchived ${cursorItem.value}`);
+        setRefreshKey((k) => k + 1);
+      } else {
+        setError(`Couldn't unarchive: ${result.reason}`);
+      }
+      return;
+    }
+
+    const result = archiveSession(existing.session.id);
+    if (result.ok) {
+      setNotice(`Archived ${cursorItem.value}`);
+      setRefreshKey((k) => k + 1);
+    } else {
+      setError(`Couldn't archive: ${result.reason}`);
+    }
+  };
 
   const select = (selection: LaunchSelection) => {
     onSelect(selection);
@@ -121,7 +183,9 @@ export function Launch({ onSelect }: LaunchProps) {
         select({ type: "pick", sessionId: existing.session.id });
         return;
       }
-      setError(`${value} is ${existing.session.status} — can't resume from here.`);
+      setError(
+        `${value} is ${existing.session.status} — can't resume from here.`,
+      );
       return;
     }
 
@@ -136,11 +200,13 @@ export function Launch({ onSelect }: LaunchProps) {
   const counts = useMemo(() => {
     let paused = 0;
     let waiting = 0;
+    let archived = 0;
     for (const s of visibleSessions) {
       if (s.session.status === "paused") paused++;
       else if (s.session.status === "waiting") waiting++;
+      else if (s.session.status === "archived") archived++;
     }
-    return { paused, waiting };
+    return { paused, waiting, archived };
   }, [visibleSessions]);
 
   return (
@@ -169,6 +235,14 @@ export function Launch({ onSelect }: LaunchProps) {
                     </Text>
                   </>
                 )}
+                {showArchived && counts.archived > 0 && (
+                  <>
+                    <Text dim>·</Text>
+                    <Text color="purple" dim>
+                      {counts.archived} archived
+                    </Text>
+                  </>
+                )}
               </>
             )}
           </Box>
@@ -177,15 +251,35 @@ export function Launch({ onSelect }: LaunchProps) {
             mode="single"
             items={items}
             isFocused
+            maxVisible={24}
+            suggest={suggestions}
             placeholder="Filter or type group/slug to create…"
-            emptyHint="No paused sessions. Type group/slug to create one."
+            emptyHint={
+              showArchived
+                ? "No sessions. Type group/slug to create one."
+                : "No paused sessions. Type group/slug to create one."
+            }
             onSubmit={handleSubmit}
+            onKey={(e, cursorItem) => {
+              if (e.key === "c" && e.ctrl) {
+                select({ type: "quit" });
+              } else if (e.key === "a" && e.ctrl) {
+                handleArchiveKey(cursorItem);
+              } else if (e.key === "tab") {
+                setError(null);
+                setNotice(null);
+                setShowArchived((v) => !v);
+              }
+            }}
           />
 
+          {notice && <Text color="green">{notice}</Text>}
           {error && <Text color="red">{error}</Text>}
 
           <Text dim>
-            ↑↓ navigate · enter continue/create · esc clear · ctrl+c quit
+            ↑↓ navigate · ←→ skip group · enter continue/create · ctrl+a{" "}
+            {showArchived ? "(un)archive" : "archive"} · tab{" "}
+            {showArchived ? "hide" : "show"} archived · ctrl+c quit
           </Text>
         </Box>
       </Box>

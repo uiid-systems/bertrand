@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
-import { Box, Text, TextInput, useInput } from "@orchetron/storm";
+import { Box, Text, useGhostText, useInput } from "@orchetron/storm";
 import type { ReactNode } from "react";
+
+import { TextField } from "./text-field";
+
+type KeyEvent = Parameters<Parameters<typeof useInput>[0]>[0];
 
 export interface PickerItem {
   value: string;
@@ -8,8 +12,8 @@ export interface PickerItem {
   label: string;
   color?: string | null;
   meta?: string;
-  /** Render this instead of the label string when present. */
-  display?: ReactNode;
+  /** Render this instead of the label string when present. Pass a function to react to cursor state. */
+  display?: ReactNode | ((isCursor: boolean) => ReactNode);
   /** Decorative group header — never gets the cursor and is hidden while filtering. */
   kind?: "item" | "header";
   /** Cursor skips this row; rendered dimmed. */
@@ -25,6 +29,10 @@ interface BasePickerProps {
   allowCreate?: boolean;
   emptyHint?: string;
   maxVisible?: number;
+  /** Ghost-text autocomplete source. Tab accepts when a suggestion is visible. */
+  suggest?: ((value: string) => string | null) | string[];
+  /** Receives keys the picker doesn't handle, along with the current cursor row. */
+  onKey?: (e: KeyEvent, cursorItem: PickerItem | null) => void;
 }
 
 interface SinglePickerProps extends BasePickerProps {
@@ -68,6 +76,57 @@ function findFirstSelectable(
   return findNextSelectable(rows, 0, 1);
 }
 
+function isHeader(
+  row: PickerItem | { value: typeof NEW_KEY } | undefined,
+): boolean {
+  return (
+    !!row && row.value !== NEW_KEY && (row as PickerItem).kind === "header"
+  );
+}
+
+/** First selectable row after the header immediately preceding `cursor`. */
+function findCurrentGroupStart(
+  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
+  cursor: number,
+): number {
+  for (let i = cursor; i >= 0; i--) {
+    if (isHeader(rows[i])) {
+      return findNextSelectable(rows, i + 1, 1);
+    }
+  }
+  return findFirstSelectable(rows);
+}
+
+/** First selectable row of the next group, or -1 if cursor is in the last. */
+function findNextGroupStart(
+  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
+  cursor: number,
+): number {
+  for (let i = cursor + 1; i < rows.length; i++) {
+    if (isHeader(rows[i])) {
+      return findNextSelectable(rows, i + 1, 1);
+    }
+  }
+  return -1;
+}
+
+/** First selectable row of the previous group, or -1 if cursor is in the first. */
+function findPrevGroupStart(
+  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
+  cursor: number,
+): number {
+  let i = cursor;
+  for (; i >= 0; i--) {
+    if (isHeader(rows[i])) break;
+  }
+  for (i = i - 1; i >= 0; i--) {
+    if (isHeader(rows[i])) {
+      return findNextSelectable(rows, i + 1, 1);
+    }
+  }
+  return -1;
+}
+
 export function Picker(props: PickerProps) {
   const {
     items,
@@ -80,6 +139,13 @@ export function Picker(props: PickerProps) {
 
   const [filter, setFilter] = useState("");
   const [cursor, setCursor] = useState(0);
+
+  const ghostResult = useGhostText({
+    value: filter,
+    cursor: filter.length,
+    suggest: props.suggest ?? [],
+  });
+  const ghost = props.suggest ? ghostResult.ghost : "";
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -110,7 +176,10 @@ export function Picker(props: PickerProps) {
   // Keep cursor on a selectable row whenever the list reshapes.
   if (visibleRows.length === 0) {
     if (cursor !== 0) setTimeout(() => setCursor(0), 0);
-  } else if (cursor >= visibleRows.length || !isSelectable(visibleRows[cursor]!)) {
+  } else if (
+    cursor >= visibleRows.length ||
+    !isSelectable(visibleRows[cursor]!)
+  ) {
     const next = findFirstSelectable(visibleRows);
     if (next !== -1 && next !== cursor) {
       setTimeout(() => setCursor(next), 0);
@@ -136,8 +205,28 @@ export function Picker(props: PickerProps) {
           const next = findNextSelectable(visibleRows, c + 1, 1);
           return next === -1 ? c : next;
         });
+      } else if (filter.length === 0 && e.key === "left") {
+        setCursor((c) => {
+          const curr = findCurrentGroupStart(visibleRows, c);
+          if (curr !== -1 && curr !== c) return curr;
+          const prev = findPrevGroupStart(visibleRows, c);
+          return prev === -1 ? c : prev;
+        });
+      } else if (filter.length === 0 && e.key === "right") {
+        setCursor((c) => {
+          const next = findNextGroupStart(visibleRows, c);
+          return next === -1 ? c : next;
+        });
+      } else if (e.key === "tab" && ghost) {
+        const full = ghostResult.accept();
+        if (full !== null) setFilter(full);
       } else if (e.key === "tab" && props.mode === "multi") {
         props.onDone();
+      } else if (props.onKey) {
+        const row = visibleRows[cursor];
+        const cursorItem =
+          row && row.value !== NEW_KEY ? (row as PickerItem) : null;
+        props.onKey(e, cursorItem);
       }
     },
     { isActive: isFocused },
@@ -207,14 +296,13 @@ export function Picker(props: PickerProps) {
         borderDimColor={!isFocused}
         paddingX={1}
       >
-        <TextInput
+        <TextField
           value={filter}
           onChange={setFilter}
           onSubmit={handleSubmit}
           placeholder={placeholder}
-          color="green"
-          placeholderColor="gray"
           isFocused={isFocused}
+          ghost={ghost}
         />
       </Box>
 
@@ -240,13 +328,9 @@ export function Picker(props: PickerProps) {
                     {"─".repeat(Math.min(20, filter.length + 12))}
                   </Text>
                 )}
-                <Box
-                  flexDirection="row"
-                  gap={1}
-                  backgroundColor={isCursor ? "green" : undefined}
-                >
-                  <Text color={isCursor ? "black" : "cyan"} bold>
-                    ✚ create “{filter.trim()}”
+                <Box flexDirection="row" gap={1}>
+                  <Text color={isCursor ? "green" : "cyan"} bold>
+                    {isCursor ? "❯ " : "  "}✚ create “{filter.trim()}”
                   </Text>
                 </Box>
               </Box>
@@ -276,31 +360,34 @@ export function Picker(props: PickerProps) {
               flexDirection="row"
               justifyContent="space-between"
               gap={1}
-              backgroundColor={isCursor ? "green" : undefined}
             >
               <Box flexDirection="row" gap={0}>
                 {item.display ? (
-                  item.display
+                  typeof item.display === "function" ? (
+                    item.display(isCursor)
+                  ) : (
+                    item.display
+                  )
                 ) : (
                   <Text
-                    color={isCursor ? "black" : (item.color ?? undefined)}
+                    color={isCursor ? "green" : (item.color ?? undefined)}
                     bold={isCursor}
                     dim={!isCursor && dim}
                   >
+                    {isCursor ? "❯ " : "  "}
                     {marker}
                     {item.label}
                   </Text>
                 )}
               </Box>
               {item.meta && (
-                <Box
-                  paddingX={1}
-                  backgroundColor={isCursor ? "black" : "#3a3a3a"}
+                <Text
+                  color={isCursor ? "green" : undefined}
+                  bold={isCursor}
+                  dim={!isCursor}
                 >
-                  <Text color={isCursor ? "green" : "white"} bold dim={!isCursor && dim}>
-                    {item.meta}
-                  </Text>
-                </Box>
+                  {item.meta}
+                </Text>
               )}
             </Box>
           );
