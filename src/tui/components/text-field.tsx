@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Text, useInput, useInterval } from "@orchetron/storm";
+import {
+  Box,
+  Text,
+  useInput,
+  useInterval,
+  usePaste,
+} from "@orchetron/storm";
 
 export interface TextFieldProps {
   value: string;
@@ -67,6 +73,20 @@ export function TextField({
     onChange(newValue);
     setCursor(newCursor);
   };
+
+  usePaste(
+    (text) => {
+      if (!isFocused) return;
+      // Single-line input — collapse newlines to spaces.
+      const sanitized = text.replace(/\r?\n/g, " ");
+      if (!sanitized) return;
+      apply(
+        value.slice(0, cursor) + sanitized + value.slice(cursor),
+        cursor + sanitized.length,
+      );
+    },
+    { isActive: isFocused },
+  );
 
   useInput(
     (e) => {
