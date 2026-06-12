@@ -238,6 +238,7 @@ export function Launch({ onSelect }: LaunchProps) {
             mode="single"
             items={items}
             isFocused
+            maxVisible={24}
             placeholder="Filter or type group/slug to create…"
             emptyHint={
               showArchived
