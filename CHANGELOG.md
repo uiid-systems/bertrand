@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/uiid-systems/bertrand/compare/v0.16.0...v0.17.0) (2026-06-12)
+
+
+### Features
+
+* **tui:** archive sessions from the launch screen ([#99](https://github.com/uiid-systems/bertrand/issues/99)) ([6486f0b](https://github.com/uiid-systems/bertrand/commit/6486f0b0646f9844cce16bdd70a390dc51f79f06))
+
 ## [0.16.0](https://github.com/uiid-systems/bertrand/compare/v0.15.0...v0.16.0) (2026-06-12)
 
 
