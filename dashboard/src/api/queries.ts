@@ -1,4 +1,5 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query"
+import { apiUrl } from "./base"
 import type {
   SessionWithGroup,
   SessionRow,
@@ -9,8 +10,8 @@ import type {
   ArchiveErrorReason,
 } from "./types"
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+async function fetchJson<T>(path: string): Promise<T> {
+  const res = await fetch(apiUrl(path))
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
 }
@@ -28,7 +29,9 @@ async function postSessionAction(
   id: string,
   action: "archive" | "unarchive",
 ): Promise<SessionRow> {
-  const res = await fetch(`/api/sessions/${id}/${action}`, { method: "POST" })
+  const res = await fetch(apiUrl(`/api/sessions/${id}/${action}`), {
+    method: "POST",
+  })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as {
       error?: string
