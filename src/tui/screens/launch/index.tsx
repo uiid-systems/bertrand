@@ -45,19 +45,24 @@ function sessionRow(s: SessionRow): PickerItem {
     disabled,
     dim: isArchived,
     display: (isCursor: boolean) => {
-      const dotColor = isCursor ? "black" : color;
-      const textColor = isCursor ? "black" : color;
-      const slugColor = isCursor ? "black" : undefined;
+      const cursorColor = "green";
+      const dotColor = isCursor ? cursorColor : color;
+      const textColor = isCursor ? cursorColor : color;
+      const slugColor = isCursor ? cursorColor : undefined;
       const dimText = !isCursor && (disabled || isArchived);
       return (
         <>
-          <Text>{"  "}</Text>
-          <Text color={dotColor}>● </Text>
-          <Text color={textColor} dim={dimText}>
+          <Text color={cursorColor} bold>
+            {isCursor ? "❯ " : "  "}
+          </Text>
+          <Text color={dotColor} bold={isCursor}>
+            ●{" "}
+          </Text>
+          <Text color={textColor} bold={isCursor} dim={dimText}>
             {status.padEnd(8)}
           </Text>
           <Text color={slugColor}> </Text>
-          <Text color={slugColor} dim={dimText}>
+          <Text color={slugColor} bold={isCursor} dim={dimText}>
             {s.session.slug}
           </Text>
         </>
@@ -165,7 +170,9 @@ export function Launch({ onSelect }: LaunchProps) {
         select({ type: "pick", sessionId: existing.session.id });
         return;
       }
-      setError(`${value} is ${existing.session.status} — can't resume from here.`);
+      setError(
+        `${value} is ${existing.session.status} — can't resume from here.`,
+      );
       return;
     }
 
@@ -255,7 +262,9 @@ export function Launch({ onSelect }: LaunchProps) {
           {error && <Text color="red">{error}</Text>}
 
           <Text dim>
-            ↑↓ navigate · enter continue/create · ctrl+a {showArchived ? "(un)archive" : "archive"} · tab {showArchived ? "hide" : "show"} archived · ctrl+c quit
+            ↑↓ navigate · enter continue/create · ctrl+a{" "}
+            {showArchived ? "(un)archive" : "archive"} · tab{" "}
+            {showArchived ? "hide" : "show"} archived · ctrl+c quit
           </Text>
         </Box>
       </Box>

@@ -114,7 +114,10 @@ export function Picker(props: PickerProps) {
   // Keep cursor on a selectable row whenever the list reshapes.
   if (visibleRows.length === 0) {
     if (cursor !== 0) setTimeout(() => setCursor(0), 0);
-  } else if (cursor >= visibleRows.length || !isSelectable(visibleRows[cursor]!)) {
+  } else if (
+    cursor >= visibleRows.length ||
+    !isSelectable(visibleRows[cursor]!)
+  ) {
     const next = findFirstSelectable(visibleRows);
     if (next !== -1 && next !== cursor) {
       setTimeout(() => setCursor(next), 0);
@@ -249,13 +252,9 @@ export function Picker(props: PickerProps) {
                     {"─".repeat(Math.min(20, filter.length + 12))}
                   </Text>
                 )}
-                <Box
-                  flexDirection="row"
-                  gap={1}
-                  backgroundColor={isCursor ? "green" : undefined}
-                >
-                  <Text color={isCursor ? "black" : "cyan"} bold>
-                    ✚ create “{filter.trim()}”
+                <Box flexDirection="row" gap={1}>
+                  <Text color={isCursor ? "green" : "cyan"} bold>
+                    {isCursor ? "❯ " : "  "}✚ create “{filter.trim()}”
                   </Text>
                 </Box>
               </Box>
@@ -285,33 +284,34 @@ export function Picker(props: PickerProps) {
               flexDirection="row"
               justifyContent="space-between"
               gap={1}
-              backgroundColor={isCursor ? "green" : undefined}
             >
               <Box flexDirection="row" gap={0}>
                 {item.display ? (
-                  typeof item.display === "function"
-                    ? item.display(isCursor)
-                    : item.display
+                  typeof item.display === "function" ? (
+                    item.display(isCursor)
+                  ) : (
+                    item.display
+                  )
                 ) : (
                   <Text
-                    color={isCursor ? "black" : (item.color ?? undefined)}
+                    color={isCursor ? "green" : (item.color ?? undefined)}
                     bold={isCursor}
                     dim={!isCursor && dim}
                   >
+                    {isCursor ? "❯ " : "  "}
                     {marker}
                     {item.label}
                   </Text>
                 )}
               </Box>
               {item.meta && (
-                <Box
-                  paddingX={1}
-                  backgroundColor={isCursor ? "black" : "#3a3a3a"}
+                <Text
+                  color={isCursor ? "green" : undefined}
+                  bold={isCursor}
+                  dim={!isCursor}
                 >
-                  <Text color={isCursor ? "green" : "white"} bold dim={!isCursor && dim}>
-                    {item.meta}
-                  </Text>
-                </Box>
+                  {item.meta}
+                </Text>
               )}
             </Box>
           );
