@@ -75,7 +75,9 @@ function findFirstSelectable(
 function isHeader(
   row: PickerItem | { value: typeof NEW_KEY } | undefined,
 ): boolean {
-  return !!row && row.value !== NEW_KEY && (row as PickerItem).kind === "header";
+  return (
+    !!row && row.value !== NEW_KEY && (row as PickerItem).kind === "header"
+  );
 }
 
 /** First selectable row after the header immediately preceding `cursor`. */
