@@ -264,19 +264,11 @@ export function Picker(props: PickerProps) {
           const item = row as PickerItem;
 
           if (item.kind === "header") {
-            const headerColor = item.color ?? "cyan";
             return (
-              <Box
-                key={`h:${item.value}`}
-                flexDirection="row"
-                marginTop={i > 0 ? 1 : 0}
-              >
-                <Box backgroundColor={headerColor} paddingX={1}>
-                  <Text color="black" bold>
-                    {item.label}
-                  </Text>
-                </Box>
-                <Text color={headerColor}>▶</Text>
+              <Box key={`h:${item.value}`} flexDirection="row">
+                <Text dim bold color={item.color ?? undefined}>
+                  {item.label}
+                </Text>
               </Box>
             );
           }
