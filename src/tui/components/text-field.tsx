@@ -7,6 +7,16 @@ import {
   usePaste,
 } from "@orchetron/storm";
 
+// Storm parses bracketed-paste escape sequences but never enables the
+// terminal mode itself, so pastes arrive as a stream of regular keypresses
+// and usePaste never fires. Enable it once globally on first TextField mount.
+let bracketedPasteEnabled = false;
+function ensureBracketedPaste() {
+  if (bracketedPasteEnabled) return;
+  bracketedPasteEnabled = true;
+  process.stdout.write("\x1b[?2004h");
+}
+
 export interface TextFieldProps {
   value: string;
   onChange: (value: string) => void;
@@ -47,6 +57,10 @@ export function TextField({
   blink = true,
 }: TextFieldProps) {
   const [cursor, setCursor] = useState(value.length);
+
+  useEffect(() => {
+    ensureBracketedPaste();
+  }, []);
 
   // When the parent replaces `value` (e.g. ghost-text accept rewrites the
   // filter), jump the caret to the end. Our own edits set this ref before
