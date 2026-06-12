@@ -121,19 +121,6 @@ export function Launch({ onSelect }: LaunchProps) {
     return rows;
   }, [visibleSessions]);
 
-  // Group prefixes first so "ber" → "bertrand/"; then full names so
-  // "bertrand/" → "bertrand/archive". Both groups and session names from
-  // every loaded session, archived or not.
-  const suggestions = useMemo(() => {
-    const groups = new Set<string>();
-    const names: string[] = [];
-    for (const s of allSessions) {
-      groups.add(`${s.groupPath}/`);
-      names.push(`${s.groupPath}/${s.session.slug}`);
-    }
-    return [...groups, ...names];
-  }, [allSessions]);
-
   // Match against *all* loaded sessions so typing an existing name —
   // even one we don't render (active, waiting) — gets a clear message instead
   // of silently attempting a duplicate create.
@@ -252,7 +239,6 @@ export function Launch({ onSelect }: LaunchProps) {
             items={items}
             isFocused
             maxVisible={24}
-            suggest={suggestions}
             placeholder="Filter or type group/slug to create…"
             emptyHint={
               showArchived
@@ -277,9 +263,9 @@ export function Launch({ onSelect }: LaunchProps) {
           {error && <Text color="red">{error}</Text>}
 
           <Text dim>
-            ↑↓ navigate · ←→ skip group · tab accept/{showArchived ? "hide" : "show"}{" "}
-            archived · enter continue/create · ctrl+a{" "}
-            {showArchived ? "(un)archive" : "archive"} · ctrl+c quit
+            ↑↓ navigate · ←→ skip group · enter continue/create · ctrl+a{" "}
+            {showArchived ? "(un)archive" : "archive"} · tab{" "}
+            {showArchived ? "hide" : "show"} archived · ctrl+c quit
           </Text>
         </Box>
       </Box>
