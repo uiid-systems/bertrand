@@ -73,7 +73,13 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
   });
 }
 
-/** Returns true if a Claude subprocess is currently running. */
+/**
+ * Returns true while a Claude subprocess is still attached — from spawn
+ * until child.on("exit") clears activeChild. Stays true after child.kill(),
+ * since the .killed flag flips on the signal call but the process keeps
+ * running until it actually exits. Callers that want to coordinate with
+ * launchClaude's signal forwarder must use this looser check, not .killed.
+ */
 export function isClaudeRunning(): boolean {
-  return activeChild !== null && !activeChild.killed;
+  return activeChild !== null;
 }
