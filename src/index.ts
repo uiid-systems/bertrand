@@ -14,6 +14,7 @@ const hotPath: Record<string, () => Promise<unknown>> = {
   badge: () => import("./cli/commands/badge"),
   notify: () => import("./cli/commands/notify"),
   serve: () => import("./cli/commands/serve"),
+  sync: () => import("./cli/commands/sync"),
 };
 
 if (command && command in hotPath) {
@@ -34,6 +35,7 @@ if (command && command in hotPath) {
     import("./cli/commands/serve"),
     import("./cli/commands/badge"),
     import("./cli/commands/notify"),
+    import("./cli/commands/sync"),
   ]);
 }
 

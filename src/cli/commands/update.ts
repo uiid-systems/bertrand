@@ -3,6 +3,7 @@ import { getSession, updateSessionStatus } from "@/db/queries/sessions";
 import { insertEvent } from "@/db/queries/events";
 import { getConversation, updateLastQuestion } from "@/db/queries/conversations";
 import type { SessionStatus } from "@/db/queries/sessions";
+import { triggerBackgroundPush } from "@/sync/trigger";
 
 /** Status transitions implied by event types */
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
@@ -102,5 +103,12 @@ register("update", async (args) => {
   // If this is a waiting event with a question, update conversation's lastQuestion
   if (event === "session.waiting" && conversationId && meta?.question) {
     updateLastQuestion(conversationId, meta.question as string);
+  }
+
+  // Eventual cross-machine sync — session.end is the once-per-pause signal the
+  // user identified as the natural push boundary. Fire-and-forget; no-op when
+  // sync is not configured.
+  if (event === "session.end") {
+    triggerBackgroundPush();
   }
 });
