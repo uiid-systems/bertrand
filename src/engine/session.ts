@@ -18,10 +18,76 @@ import {
 } from "@/db/queries/labels";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
-import { launchClaude } from "./process";
+import { launchClaude, isClaudeRunning } from "./process";
 import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
+
+// Tracks the session currently owned by this bertrand process. Set when
+// the row flips to "active" and cleared by finalizeSession on the happy
+// path. The exit handler below uses it to force the row out of "active"
+// if bertrand dies before finalizeSession runs (second Ctrl+C, SIGHUP
+// from terminal close, uncaught exception, etc.) — without this safety
+// net the row stays "active" until the next launch triggers
+// recoverStaleSessions, which is the user-visible "hangs until a new
+// session begins" symptom.
+let liveSession: { sessionId: string; claudeId: string } | null = null;
+let exitHandlersInstalled = false;
+
+function forceFinalizeLive(): void {
+  if (!liveSession) return;
+  const session = getSession(liveSession.sessionId);
+  if (!session) {
+    liveSession = null;
+    return;
+  }
+  if (session.status !== "active" && session.status !== "waiting") {
+    liveSession = null;
+    return;
+  }
+  try {
+    updateSession(liveSession.sessionId, {
+      status: "paused",
+      pid: null,
+      endedAt: new Date().toISOString(),
+    });
+  } catch {
+    // Best-effort — bertrand is on its way out.
+  }
+  liveSession = null;
+}
+
+/** Test-only seams. Mirrors the _setDb / _setTestDeps pattern elsewhere. */
+export function _setLiveSession(
+  next: { sessionId: string; claudeId: string } | null,
+): void {
+  liveSession = next;
+}
+export function _forceFinalizeLive(): void {
+  forceFinalizeLive();
+}
+
+function installExitHandlers(): void {
+  if (exitHandlersInstalled) return;
+  exitHandlersInstalled = true;
+
+  // Synchronous last-line-of-defense. drizzle + bun:sqlite are synchronous,
+  // so the DB write completes before the process actually exits.
+  process.on("exit", forceFinalizeLive);
+
+  // Default SIGINT/SIGTERM/SIGHUP behavior is to terminate without firing
+  // the "exit" event. Once launchClaude removes its forwarder, bertrand
+  // becomes defenseless during finalize / exit-menu / discard. Catch the
+  // signal, defer to launchClaude's handler if Claude is still running,
+  // otherwise route through process.exit() so the "exit" handler fires.
+  const onSignal = (signal: NodeJS.Signals): void => {
+    if (isClaudeRunning()) return;
+    process.exit(signal === "SIGINT" ? 130 : signal === "SIGHUP" ? 129 : 143);
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  process.on("SIGHUP", onSignal);
+}
 
 export interface LaunchOpts {
   /** Group path, e.g. "uiid/bertrand" */
@@ -75,6 +141,8 @@ export async function launch(opts: LaunchOpts): Promise<string> {
 
   // Update session to working with PID
   updateSession(session.id, { status: "active", pid: process.pid });
+  liveSession = { sessionId: session.id, claudeId };
+  installExitHandlers();
   await ensureServerStarted();
 
   // Capture spawn context (model, claude version, git, cwd) in parallel before
@@ -137,6 +205,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   const group = getGroup(session.groupId);
   const sessionName = group ? `${group.path}/${session.slug}` : session.name;
   updateSession(session.id, { status: "active", pid: process.pid });
+  liveSession = { sessionId: session.id, claudeId: opts.conversationId };
+  installExitHandlers();
   await ensureServerStarted();
 
   insertEvent({
@@ -196,6 +266,8 @@ function finalizeSession(
     pid: null,
     endedAt: new Date().toISOString(),
   });
+
+  if (liveSession?.sessionId === sessionId) liveSession = null;
 
   insertEvent({
     sessionId,

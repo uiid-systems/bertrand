@@ -15,6 +15,23 @@ const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
   "session.end": "paused",
 };
 
+/**
+ * Refuse status flips to `active`/`waiting` for sessions that have no owning
+ * bertrand process (`pid === null`). Guards against the delayed-hook race:
+ * Claude's PreToolUse hook can spawn `bertrand update --event session.active`
+ * and then get its child reparented to init when Claude is SIGINT'd, so the
+ * commit can land after bertrand's finalizeSession set the row to paused —
+ * resurrecting the session as "active" with no one alive to manage it.
+ */
+export function shouldIgnoreStatusFlip(
+  newStatus: SessionStatus | undefined,
+  sessionPid: number | null,
+): boolean {
+  if (!newStatus) return false;
+  if (newStatus !== "active" && newStatus !== "waiting") return false;
+  return sessionPid === null;
+}
+
 register("update", async (args) => {
   let sessionId = "";
   let event = "";
@@ -58,6 +75,12 @@ register("update", async (args) => {
     return;
   }
 
+  // See shouldIgnoreStatusFlip — defends against delayed-hook races where a
+  // reparented PreToolUse hook child commits `session.active` after bertrand
+  // has finalized the row. The event still gets inserted so the timeline
+  // records what the hook tried to say.
+  const ignoreStatusFlip = shouldIgnoreStatusFlip(newStatus, session.pid);
+
   let meta: Record<string, unknown> | undefined;
   if (metaJson) {
     try {
@@ -96,7 +119,7 @@ register("update", async (args) => {
   });
 
   // Update session status
-  if (newStatus) {
+  if (newStatus && !ignoreStatusFlip) {
     updateSessionStatus(sessionId, newStatus);
   }
 
