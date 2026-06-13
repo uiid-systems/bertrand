@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync, writeFileSync, renameSync, statSync } from "fs";
-import { execSync } from "child_process";
+import { readFileSync, renameSync, statSync, openSync, writeSync, fsyncSync, closeSync } from "fs";
+import { dirname } from "path";
+import { execFileSync } from "child_process";
 import { paths } from "@/lib/paths";
 import { loadSyncConfig, hasSyncConfig } from "@/sync/config";
 import { takeSnapshot, cleanupSnapshot } from "@/sync/snapshot";
@@ -39,18 +40,18 @@ export async function push(): Promise<SyncResult> {
   }
 
   const started = performance.now();
-  let snapshotPath: string;
   try {
-    snapshotPath = takeSnapshot();
-  } catch (e) {
-    return {
-      ok: false,
-      operation: "push",
-      error: `snapshot failed: ${e instanceof Error ? e.message : String(e)}`,
-    };
-  }
+    let snapshotPath: string;
+    try {
+      snapshotPath = takeSnapshot();
+    } catch (e) {
+      return {
+        ok: false,
+        operation: "push",
+        error: `snapshot failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
 
-  try {
     const plaintext = readFileSync(snapshotPath);
     const ciphertext = encrypt(plaintext, cfg.encryptionKey);
     const { error } = await supabase.storage
@@ -71,6 +72,9 @@ export async function push(): Promise<SyncResult> {
   } catch (e) {
     return { ok: false, operation: "push", error: e instanceof Error ? e.message : String(e) };
   } finally {
+    // Outer-finally cleanup: covers the case where takeSnapshot() throws
+    // partway through (a partial file would otherwise linger) and the
+    // normal happy-path teardown.
     cleanupSnapshot();
   }
 }
@@ -92,12 +96,10 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     return { ok: false, operation: "pull", error: "sync config incomplete" };
   }
 
-  if (!opts.force) {
-    const holders = findHolders(paths.db);
-    if (holders.length > 0) {
-      const procs = holders
-        .map((h) => `${h.command}(${h.pid})`)
-        .join(", ");
+  const holders = findHolders(paths.db);
+  if (holders.length > 0) {
+    const procs = holders.map((h) => `${h.command}(${h.pid})`).join(", ");
+    if (!opts.force) {
       return {
         ok: false,
         operation: "pull",
@@ -106,6 +108,7 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
           `or pass --force to overwrite anyway (risks corrupting the running session).`,
       };
     }
+    console.warn(`warning: --force pulling while ${procs} hold ${paths.db}. The running process may crash on next file access.`);
   }
 
   const started = performance.now();
@@ -131,12 +134,26 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     const plaintext = decrypt(ciphertext, cfg.encryptionKey);
 
     // Write to a temp file in the same directory so rename is atomic on the
-    // same filesystem. We intentionally don't touch `.db-wal` / `.db-shm` —
-    // bertrand opens the file fresh next launch in WAL mode and recreates
-    // them.
+    // same filesystem. fsync the tmp file AND its parent directory before
+    // rename so a crash between write and rename can't leave a torn DB —
+    // the rename only becomes durable once the directory entry hits disk.
+    // We intentionally don't touch `.db-wal` / `.db-shm` — bertrand opens
+    // the file fresh next launch in WAL mode and recreates them.
     const tmp = `${paths.db}.pull-${process.pid}`;
-    writeFileSync(tmp, plaintext);
+    const fd = openSync(tmp, "w");
+    try {
+      writeSync(fd, plaintext);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmp, paths.db);
+    const dirFd = openSync(dirname(paths.db), "r");
+    try {
+      fsyncSync(dirFd);
+    } finally {
+      closeSync(dirFd);
+    }
 
     return {
       ok: true,
@@ -199,10 +216,13 @@ type Holder = { pid: number; command: string };
  * Use `lsof` to find PIDs holding the given path open. macOS / Linux only;
  * absent on Windows but that's not a target. Excludes our own PID so a
  * shell that opened the file briefly for a stat doesn't block us.
+ *
+ * Uses `execFileSync` with array args (not `execSync` with a shell string)
+ * so the path is passed to lsof verbatim without any shell-quoting puzzle.
  */
 function findHolders(path: string): Holder[] {
   try {
-    const out = execSync(`lsof -F pcn '${path.replace(/'/g, "'\\''")}' 2>/dev/null`, {
+    const out = execFileSync("lsof", ["-F", "pcn", path], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
@@ -220,7 +240,8 @@ function findHolders(path: string): Holder[] {
     }
     return holders;
   } catch {
-    // lsof missing or path not held — assume no holders.
+    // lsof exits non-zero when no process holds the path (and when the
+    // binary is missing). Either way: assume no holders.
     return [];
   }
 }

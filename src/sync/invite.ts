@@ -40,29 +40,33 @@ export function decodeInvite(invite: string): Omit<SyncConfig, "clientName"> {
     throw new Error(`invite must start with ${SCHEME}`);
   }
   const payload = invite.slice(SCHEME.length).trim();
-  let parsed: Bundle;
+  let parsed: unknown;
   try {
     const json = Buffer.from(payload, "base64url").toString("utf8");
     parsed = JSON.parse(json);
   } catch {
     throw new Error("invite is malformed — could not decode base64/JSON payload");
   }
-  if (parsed.v !== VERSION) {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("invite payload is not a JSON object");
+  }
+  const bundle = parsed as Partial<Bundle>;
+  if (bundle.v !== VERSION) {
     throw new Error(
-      `invite version ${parsed.v} is not supported by this bertrand (expected v${VERSION}). ` +
+      `invite version ${String(bundle.v)} is not supported by this bertrand (expected v${VERSION}). ` +
         `Upgrade or downgrade so both machines run the same version.`
     );
   }
   for (const field of ["url", "key", "bucket", "obj", "ek"] as const) {
-    if (!parsed[field] || typeof parsed[field] !== "string") {
+    if (!bundle[field] || typeof bundle[field] !== "string") {
       throw new Error(`invite is missing required field: ${field}`);
     }
   }
   return {
-    supabaseUrl: parsed.url,
-    supabaseServiceKey: parsed.key,
-    bucket: parsed.bucket,
-    objectKey: parsed.obj,
-    encryptionKey: parsed.ek,
+    supabaseUrl: bundle.url!,
+    supabaseServiceKey: bundle.key!,
+    bucket: bundle.bucket!,
+    objectKey: bundle.obj!,
+    encryptionKey: bundle.ek!,
   };
 }

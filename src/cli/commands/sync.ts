@@ -65,7 +65,7 @@ async function runOnboard() {
     console.log(`  SUPABASE_SERVICE_KEY:   ${existing.supabaseServiceKey.slice(0, 12)}…`);
     console.log(`  BERTRAND_SYNC_BUCKET:   ${existing.bucket}`);
     console.log(`  BERTRAND_SYNC_OBJECT:   ${existing.objectKey}`);
-    console.log(`  BERTRAND_ENCRYPTION_KEY: ${existing.encryptionKey.slice(0, 8)}… (hidden)`);
+    console.log(`  BERTRAND_ENCRYPTION_KEY: (set, redacted)`);
     console.log(`  BERTRAND_CLIENT_NAME:   ${existing.clientName}`);
     console.log(`\nDelete ${paths.syncEnv} and re-run to start over.`);
     return;

@@ -5,6 +5,10 @@ import {
   chmodSync,
   existsSync,
 } from "fs";
+// `0600` enforcement happens on read so a hostile umask or external edit
+// doesn't leave the file world-readable for long. We re-chmod and log a
+// warning; both are silent in background-spawned trigger contexts but
+// surface in foreground CLI runs, which is the user-facing escape hatch.
 import { paths } from "@/lib/paths";
 
 export type SyncConfig = {
@@ -57,8 +61,15 @@ export function loadSyncConfig(): SyncConfig | null {
   const mode = statSync(paths.syncEnv).mode & 0o777;
   if (mode & 0o077) {
     console.warn(
-      `warning: ${paths.syncEnv} is mode 0${mode.toString(8)} — should be 0600. Run: chmod 600 ${paths.syncEnv}`
+      `warning: ${paths.syncEnv} was mode 0${mode.toString(8)} (should be 0600). Tightening to 0600.`
     );
+    try {
+      chmodSync(paths.syncEnv, 0o600);
+    } catch (e) {
+      console.warn(
+        `failed to chmod 0600: ${e instanceof Error ? e.message : String(e)}. Fix manually.`
+      );
+    }
   }
 
   const env = parseEnv(readFileSync(paths.syncEnv, "utf8"));
