@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/uiid-systems/bertrand/compare/v0.17.0...v0.18.0) (2026-06-13)
+
+
+### Features
+
+* **sync:** opt-in Supabase Storage sync with E2E encryption ([#101](https://github.com/uiid-systems/bertrand/issues/101)) ([8e2bafa](https://github.com/uiid-systems/bertrand/commit/8e2bafa9eacc095663b1cbab670d98368c581fbd))
+
 ## [0.17.0](https://github.com/uiid-systems/bertrand/compare/v0.16.0...v0.17.0) (2026-06-12)
 
 
