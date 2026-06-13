@@ -57,6 +57,16 @@ function forceFinalizeLive(): void {
   liveSession = null;
 }
 
+/** Test-only seams. Mirrors the _setDb / _setTestDeps pattern elsewhere. */
+export function _setLiveSession(
+  next: { sessionId: string; claudeId: string } | null,
+): void {
+  liveSession = next;
+}
+export function _forceFinalizeLive(): void {
+  forceFinalizeLive();
+}
+
 function installExitHandlers(): void {
   if (exitHandlersInstalled) return;
   exitHandlersInstalled = true;
