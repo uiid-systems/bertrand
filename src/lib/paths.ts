@@ -8,4 +8,5 @@ export const paths = {
   db: join(homedir(), BERTRAND_DIR, "bertrand.db"),
   hooks: join(homedir(), BERTRAND_DIR, "hooks"),
   sessions: join(homedir(), BERTRAND_DIR, "sessions"),
+  syncEnv: join(homedir(), BERTRAND_DIR, "sync.env"),
 } as const;

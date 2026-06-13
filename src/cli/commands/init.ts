@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, chmodSync } from "fs";
+import { mkdirSync, writeFileSync, chmodSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 import { register } from "@/cli/router";
@@ -7,12 +7,7 @@ import { installHookScripts } from "@/hooks/install";
 import { installHookSettings } from "@/hooks/settings";
 import { paths } from "@/lib/paths";
 import { generateCompletions } from "@/lib/completions";
-
-interface BertrandConfig {
-  terminal: "wave" | "other";
-  bin: string;
-  version: number;
-}
+import { readConfig, writeConfig, type BertrandConfig } from "@/lib/config";
 
 function detectTerminal(): "wave" | "other" {
   try {
@@ -20,20 +15,6 @@ function detectTerminal(): "wave" | "other" {
     return "wave";
   } catch {
     return "other";
-  }
-}
-
-const CONFIG_PATH = join(paths.root, "config.json");
-
-function writeConfig(config: BertrandConfig) {
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
-}
-
-function readConfig(): Partial<BertrandConfig> | null {
-  try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return null;
   }
 }
 

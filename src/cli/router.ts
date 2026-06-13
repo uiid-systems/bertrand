@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { paths } from "@/lib/paths";
+import { triggerBackgroundPull } from "@/sync/trigger";
 
 type CommandHandler = (args: string[]) => void | Promise<void>;
 
@@ -45,6 +46,9 @@ export async function route(argv: string[]) {
   // No args → launch TUI (auto-init on fresh install first)
   if (!command) {
     await autoInitIfFirstRun();
+    // Kick a pull in the background so the picker reflects work done on
+    // other machines. Silent on failure; the user can still launch offline.
+    triggerBackgroundPull();
     const handler = commands.get("launch");
     if (!handler) throw new Error("No launch command registered");
     return handler(args);
@@ -82,5 +86,6 @@ Usage:
   bertrand archive <name>   Archive/unarchive a session
   bertrand update           Hook-facing state writer (internal)
   bertrand serve            Start dashboard HTTP server
+  bertrand sync <op>        push|pull|status|onboard (see: bertrand sync --help)
 `.trim());
 }

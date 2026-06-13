@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@orchetron/storm": "^0.2.0",
+    "@supabase/supabase-js": "^2.108.1",
     "drizzle-orm": "^0.44.0",
     "nanoid": "^5.1.5",
     "react": "^19.2.5"
