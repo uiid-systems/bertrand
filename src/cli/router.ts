@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { resolveActiveProject } from "@/lib/projects/resolve";
+import { migrateLegacyLayout } from "@/lib/projects/migrate-layout";
 import { triggerBackgroundPull } from "@/sync/trigger";
 
 type CommandHandler = (args: string[]) => void | Promise<void>;
@@ -13,6 +14,35 @@ export function register(name: string, handler: CommandHandler) {
 
 export function alias(from: string, to: string) {
   aliases.set(from, to);
+}
+
+/**
+ * One-shot legacy → per-project layout migration. Runs before every command
+ * so an upgrade from a pre-project bertrand picks up the move on first
+ * launch. The function is fast and idempotent on the no-op path.
+ *
+ * If the migration refuses because the legacy DB is held by another
+ * process, we abort with a clear error rather than silently leaving the
+ * user in a broken state (the next `getDb()` would open a fresh empty DB
+ * at the new location while their data sits stranded at the old one).
+ */
+function migrateOrAbort(): void {
+  const result = migrateLegacyLayout();
+  if (result.migrated) {
+    const fileList = result.moved.join(", ");
+    console.log(
+      `Migrated to per-project layout (moved: ${fileList}). Active project: default.`,
+    );
+    return;
+  }
+  if (!result.migrated && result.reason === "db-held") {
+    const procs = result.holders.map((h) => `${h.command}(${h.pid})`).join(", ");
+    console.error(
+      `Cannot migrate to per-project layout: legacy database is held by ${procs}.\n` +
+        `Close all active bertrand sessions and try again.`,
+    );
+    process.exit(1);
+  }
 }
 
 /**
@@ -42,6 +72,10 @@ export async function route(argv: string[]) {
   // argv: ["bun", "src/index.ts", ...args]
   const args = argv.slice(2);
   const command = args[0];
+
+  // Migrate legacy single-DB layout to per-project before any command can
+  // touch `getDb()`. Idempotent and fast on the no-op path.
+  migrateOrAbort();
 
   // No args → launch TUI (auto-init on fresh install first)
   if (!command) {
