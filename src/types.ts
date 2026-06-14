@@ -9,9 +9,9 @@ export type EventRow = Omit<typeof events.$inferSelect, "meta"> & {
 
 export type SessionStatsRow = typeof sessionStats.$inferSelect;
 
-export type SessionWithGroup = {
+export type SessionWithCategory = {
   session: SessionRow;
-  groupPath: string;
+  categoryPath: string;
 };
 
 export type SessionRecap = {

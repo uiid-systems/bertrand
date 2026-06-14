@@ -23,24 +23,24 @@ migrate(drizzle(sqlite), {
 });
 
 // Now import query modules — they'll use the injected test DB
-const { createGroup, getGroupByPath, getOrCreateGroupPath } = await import("./queries/groups.ts");
+const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
 const { createSession, getSession, getActiveSessions, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession } = await import("./queries/events.ts");
 const { createConversation, getConversationsBySession } = await import("./queries/conversations.ts");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
 const { upsertSessionStats, getSessionStats } = await import("./queries/stats.ts");
 
-describe("groups", () => {
-  test("create root group", () => {
-    const group = createGroup({ slug: "uiid", name: "UIID" });
-    expect(group.id).toBeTruthy();
-    expect(group.path).toBe("uiid");
-    expect(group.depth).toBe(0);
+describe("categories", () => {
+  test("create root category", () => {
+    const category = createCategory({ slug: "uiid", name: "UIID" });
+    expect(category.id).toBeTruthy();
+    expect(category.path).toBe("uiid");
+    expect(category.depth).toBe(0);
   });
 
-  test("create nested group", () => {
-    const root = getGroupByPath("uiid");
-    const child = createGroup({
+  test("create nested category", () => {
+    const root = getCategoryByPath("uiid");
+    const child = createCategory({
       slug: "bertrand",
       name: "Bertrand",
       parentId: root!.id,
@@ -49,20 +49,20 @@ describe("groups", () => {
     expect(child.depth).toBe(1);
   });
 
-  test("getOrCreateGroupPath creates full tree", () => {
-    const id = getOrCreateGroupPath("personal/learning");
+  test("getOrCreateCategoryPath creates full tree", () => {
+    const id = getOrCreateCategoryPath("personal/learning");
     expect(id).toBeTruthy();
-    const group = getGroupByPath("personal/learning");
-    expect(group).toBeTruthy();
-    expect(group!.depth).toBe(1);
+    const category = getCategoryByPath("personal/learning");
+    expect(category).toBeTruthy();
+    expect(category!.depth).toBe(1);
   });
 });
 
 describe("sessions", () => {
   test("create and retrieve session", () => {
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "fix-auth-bug",
       name: "fix-auth-bug",
     });
@@ -75,9 +75,9 @@ describe("sessions", () => {
   });
 
   test("update session status", () => {
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "port-hooks",
       name: "port-hooks",
     });
@@ -94,9 +94,9 @@ describe("sessions", () => {
 
 describe("events", () => {
   test("insert and query events", () => {
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "event-test",
       name: "event-test",
     });
@@ -123,9 +123,9 @@ describe("events", () => {
 
 describe("conversations", () => {
   test("create and query conversations", () => {
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "conv-test",
       name: "conv-test",
     });
@@ -143,9 +143,9 @@ describe("labels", () => {
     const label = createLabel({ name: "code-review", color: "#4EA7FC" });
     expect(label.name).toBe("code-review");
 
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "label-test",
       name: "label-test",
     });
@@ -159,9 +159,9 @@ describe("labels", () => {
 
 describe("stats", () => {
   test("upsert session stats", () => {
-    const group = getGroupByPath("uiid/bertrand")!;
+    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      groupId: group.id,
+      categoryId: category.id,
       slug: "stats-test",
       name: "stats-test",
     });

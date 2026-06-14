@@ -1,7 +1,7 @@
 export type {
   SessionRow,
   SessionStatus,
-  SessionWithGroup,
+  SessionWithCategory,
   EventRow,
   SessionStatsRow,
   EngagementStats,

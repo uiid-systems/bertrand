@@ -1,7 +1,7 @@
 import { register } from "@/cli/router";
-import { getAllSessions, getSessionByGroupSlug } from "@/db/queries/sessions";
+import { getAllSessions, getSessionByCategorySlug } from "@/db/queries/sessions";
 import { getEventsBySession } from "@/db/queries/events";
-import { getGroupByPath } from "@/db/queries/groups";
+import { getCategoryByPath } from "@/db/queries/categories";
 import { getSessionStats } from "@/db/queries/stats";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import type { SessionRow } from "@/types";
@@ -46,14 +46,14 @@ function showAllSessions() {
     return;
   }
 
-  const maxName = Math.max(...rows.map((r) => `${r.groupPath}/${r.session.slug}`.length), 4);
+  const maxName = Math.max(...rows.map((r) => `${r.categoryPath}/${r.session.slug}`.length), 4);
 
   console.log(
     `${DIM}${"  "} ${"NAME".padEnd(maxName)}  ${"STATUS".padEnd(10)}  ${"EVENTS".padEnd(6)}  LAST ACTIVE${RESET}`
   );
 
   for (const row of rows) {
-    const name = `${row.groupPath}/${row.session.slug}`;
+    const name = `${row.categoryPath}/${row.session.slug}`;
     const dot = STATUS_DOTS[row.session.status] ?? "?";
     const stats = getSessionStats(row.session.id);
     const eventCount = String(stats?.eventCount ?? 0).padEnd(6);
@@ -260,17 +260,17 @@ register("log", async (args) => {
   }
 
   // Full session log
-  const { groupPath, slug } = parseSessionName(target);
-  const group = getGroupByPath(groupPath);
-  if (!group) {
-    console.error(`Group not found: ${groupPath}`);
+  const { categoryPath, slug } = parseSessionName(target);
+  const category = getCategoryByPath(categoryPath);
+  if (!category) {
+    console.error(`Category not found: ${categoryPath}`);
     process.exit(1);
   }
-  const session = getSessionByGroupSlug(group.id, slug);
+  const session = getSessionByCategorySlug(category.id, slug);
   if (!session) {
     console.error(`Session not found: ${target}`);
     process.exit(1);
   }
 
-  showSessionLog(session, `${groupPath}/${slug}`, isJson);
+  showSessionLog(session, `${categoryPath}/${slug}`, isJson);
 });

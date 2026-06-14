@@ -1,12 +1,12 @@
 export interface ParsedSessionName {
-  groupPath: string;
+  categoryPath: string;
   slug: string;
 }
 
 /**
- * Parse a slash-delimited session name into group path and session slug.
- * The last segment is the session slug; everything before it is the group path.
- * Requires at least one group level (minimum: "group/session").
+ * Parse a slash-delimited session name into category path and session slug.
+ * The last segment is the session slug; everything before it is the category path.
+ * Requires at least one category level (minimum: "category/session").
  */
 export function parseSessionName(input: string): ParsedSessionName {
   const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
@@ -19,7 +19,7 @@ export function parseSessionName(input: string): ParsedSessionName {
 
   if (segments.length < 2) {
     throw new Error(
-      `Session name must include at least one group: "group/session" (got "${trimmed}")`
+      `Session name must include at least one category: "category/session" (got "${trimmed}")`
     );
   }
 
@@ -32,7 +32,7 @@ export function parseSessionName(input: string): ParsedSessionName {
   }
 
   const slug = segments[segments.length - 1]!;
-  const groupPath = segments.slice(0, -1).join("/");
+  const categoryPath = segments.slice(0, -1).join("/");
 
-  return { groupPath, slug };
+  return { categoryPath, slug };
 }

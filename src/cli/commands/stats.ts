@@ -1,7 +1,7 @@
 import { register } from "@/cli/router";
-import { getAllSessions, getSessionsByGroup, getSessionByGroupSlug } from "@/db/queries/sessions";
+import { getAllSessions, getSessionsByCategory, getSessionByCategorySlug } from "@/db/queries/sessions";
 import { getSessionStats } from "@/db/queries/stats";
-import { getGroupByPath } from "@/db/queries/groups";
+import { getCategoryByPath } from "@/db/queries/categories";
 import { getEventsBySession } from "@/db/queries/events";
 import { computeTimingsLive } from "@/lib/timing";
 import { formatDuration } from "@/lib/format";
@@ -106,9 +106,9 @@ function renderGlobal(
   console.log(`  Interactions:  ${totals.interactions}`);
 }
 
-function renderGroup(
+function renderCategory(
   metrics: SessionMetrics[],
-  groupPath: string,
+  categoryPath: string,
   isJson: boolean
 ) {
   if (isJson) {
@@ -123,7 +123,7 @@ function renderGroup(
   const sorted = [...metrics].sort((a, b) => b.durationS - a.durationS);
   const maxName = Math.max(...sorted.map((m) => m.name.length), 4);
 
-  console.log(`${bold}${groupPath}${reset}\n`);
+  console.log(`${bold}${categoryPath}${reset}\n`);
   console.log(
     `${dim}${"NAME".padEnd(maxName)}  ${"DURATION".padEnd(8)}  ${"CLAUDE".padEnd(8)}  ${"WAIT".padEnd(8)}  ${"ACT%".padEnd(5)}  ${"CONVOS".padEnd(6)}  PRS${reset}`
   );
@@ -185,41 +185,41 @@ register("stats", async (args) => {
   if (!target) {
     const rows = getAllSessions();
     const metrics = rows.map((r) =>
-      getMetrics(r.session.id, `${r.groupPath}/${r.session.slug}`, r.session.status)
+      getMetrics(r.session.id, `${r.categoryPath}/${r.session.slug}`, r.session.status)
     );
     renderGlobal(metrics, isJson);
     return;
   }
 
-  // Per-group stats (trailing slash)
+  // Per-category stats (trailing slash)
   if (target.endsWith("/")) {
-    const groupPath = target.replace(/\/+$/, "");
-    const group = getGroupByPath(groupPath);
-    if (!group) {
-      console.error(`Group not found: ${groupPath}`);
+    const categoryPath = target.replace(/\/+$/, "");
+    const category = getCategoryByPath(categoryPath);
+    if (!category) {
+      console.error(`Category not found: ${categoryPath}`);
       process.exit(1);
     }
-    const groupSessions = getSessionsByGroup(group.id);
-    const metrics = groupSessions.map((s) =>
+    const categorySessions = getSessionsByCategory(category.id);
+    const metrics = categorySessions.map((s) =>
       getMetrics(s.id, s.slug, s.status)
     );
-    renderGroup(metrics, groupPath, isJson);
+    renderCategory(metrics, categoryPath, isJson);
     return;
   }
 
   // Per-session stats
-  const { groupPath, slug } = parseSessionName(target);
-  const group = getGroupByPath(groupPath);
-  if (!group) {
-    console.error(`Group not found: ${groupPath}`);
+  const { categoryPath, slug } = parseSessionName(target);
+  const category = getCategoryByPath(categoryPath);
+  if (!category) {
+    console.error(`Category not found: ${categoryPath}`);
     process.exit(1);
   }
-  const session = getSessionByGroupSlug(group.id, slug);
+  const session = getSessionByCategorySlug(category.id, slug);
   if (!session) {
     console.error(`Session not found: ${target}`);
     process.exit(1);
   }
 
-  const m = getMetrics(session.id, `${groupPath}/${slug}`, session.status);
+  const m = getMetrics(session.id, `${categoryPath}/${slug}`, session.status);
   renderSession(m, isJson);
 });

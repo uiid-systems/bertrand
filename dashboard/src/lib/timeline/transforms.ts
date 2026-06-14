@@ -13,7 +13,7 @@ const REDUNDANT_SESSION_EVENTS = new Set([
  * Drop session lifecycle events that duplicate claude lifecycle events.
  * claude.started covers session.started/session.resumed,
  * claude.ended covers session.end. Before dropping session.started, merge its
- * identity meta (group_path, session_name, labels, summary) onto the following
+ * identity meta (category_path, session_name, labels, summary) onto the following
  * claude.started in the same conversation so StartedContent reads one event.
  */
 export const consolidateLifecycle: TimelineTransform = (events) => {

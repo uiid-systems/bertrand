@@ -1,5 +1,5 @@
 export type LaunchSelection =
-  | { type: "create"; groupPath: string; slug: string }
+  | { type: "create"; categoryPath: string; slug: string }
   | { type: "pick"; sessionId: string }
   | { type: "quit" };
 

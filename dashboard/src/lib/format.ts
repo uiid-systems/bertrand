@@ -83,9 +83,9 @@ export function eventTitle(event: EventRow): string {
       return pct ? `${pct}% remaining` : label;
     }
     case "claude.started": {
-      const groupPath = meta.group_path as string | undefined;
+      const categoryPath = meta.category_path as string | undefined;
       const sessionName = meta.session_name as string | undefined;
-      const identity = [groupPath, sessionName].filter(Boolean).join("/");
+      const identity = [categoryPath, sessionName].filter(Boolean).join("/");
       return identity ? `created ${identity}` : label;
     }
     default:

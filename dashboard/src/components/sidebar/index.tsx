@@ -43,7 +43,7 @@ import {
 
 import { allStatsQuery, recapsQuery, sessionsQuery } from "../../api/queries";
 import { useArchiveAction } from "../../api/use-archive-action";
-import type { SessionRow, SessionWithGroup } from "../../api/types";
+import type { SessionRow, SessionWithCategory } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
 import { Markdown } from "../markdown";
@@ -108,7 +108,7 @@ function recentBucketOf(startedAt: string, now: Date): RecentBucket {
   return "earlier";
 }
 
-function buildListItem(s: SessionWithGroup): ListItemProps {
+function buildListItem(s: SessionWithCategory): ListItemProps {
   const color = statusColor(s.session.status) as StatusProps["color"];
   const isArchived = s.session.status === "archived";
   return {
@@ -122,7 +122,7 @@ function buildListItem(s: SessionWithGroup): ListItemProps {
       </Group>
     ),
     action: (
-      <SessionRowActions session={s.session} groupPath={s.groupPath} />
+      <SessionRowActions session={s.session} categoryPath={s.categoryPath} />
     ),
     "data-archived": isArchived ? "" : undefined,
     style: isArchived ? { opacity: 0.4 } : undefined,
@@ -130,11 +130,11 @@ function buildListItem(s: SessionWithGroup): ListItemProps {
 }
 
 function groupSessions(
-  sessions: SessionWithGroup[],
+  sessions: SessionWithCategory[],
   axis: GroupBy,
 ): ListItemGroupProps[] {
   if (axis === "status") {
-    const buckets = new Map<SessionRow["status"], SessionWithGroup[]>();
+    const buckets = new Map<SessionRow["status"], SessionWithCategory[]>();
     for (const s of sessions) {
       const key = s.session.status;
       const list = buckets.get(key);
@@ -152,7 +152,7 @@ function groupSessions(
 
   if (axis === "recent") {
     const now = new Date();
-    const buckets = new Map<RecentBucket, SessionWithGroup[]>();
+    const buckets = new Map<RecentBucket, SessionWithCategory[]>();
     for (const s of sessions) {
       const key = recentBucketOf(s.session.startedAt, now);
       const list = buckets.get(key);
@@ -168,9 +168,9 @@ function groupSessions(
     );
   }
 
-  const groups = new Map<string, SessionWithGroup[]>();
+  const groups = new Map<string, SessionWithCategory[]>();
   for (const s of sessions) {
-    const key = s.groupPath;
+    const key = s.categoryPath;
     const list = groups.get(key);
     if (list) list.push(s);
     else groups.set(key, [s]);
@@ -204,7 +204,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
           (s) =>
             s.session.slug.toLowerCase().includes(q) ||
             s.session.name.toLowerCase().includes(q) ||
-            s.groupPath.toLowerCase().includes(q),
+            s.categoryPath.toLowerCase().includes(q),
         )
       : sessions;
     return groupSessions(filtered, groupBy);
@@ -320,14 +320,14 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 };
 Sidebar.displayName = "Sidebar";
 
-const SessionLabel = ({ session: s }: { session: SessionWithGroup }) => (
+const SessionLabel = ({ session: s }: { session: SessionWithCategory }) => (
   <Link to="/sessions/$slug" params={{ slug: s.session.slug }}>
     {s.session.slug}
   </Link>
 );
 SessionLabel.displayName = "SessionLabel";
 
-const SessionContent = ({ session: s }: { session: SessionWithGroup }) => {
+const SessionContent = ({ session: s }: { session: SessionWithCategory }) => {
   const { data: sessions = [] } = useQuery(sessionsQuery());
   const hasLiveSession = sessions.some(
     (x) => x.session.status === "active" || x.session.status === "waiting",
@@ -387,14 +387,14 @@ SessionContent.displayName = "SessionContent";
 
 type SessionRowActionsProps = {
   session: SessionRow;
-  groupPath: string;
+  categoryPath: string;
 };
 
-const SessionRowActions = ({ session, groupPath }: SessionRowActionsProps) => {
+const SessionRowActions = ({ session, categoryPath }: SessionRowActionsProps) => {
   const action = useArchiveAction(session);
   const { Icon } = action;
   const canCopyResume = session.status === "paused";
-  const resumeCommand = `bertrand resume ${groupPath}/${session.slug}`;
+  const resumeCommand = `bertrand resume ${categoryPath}/${session.slug}`;
 
   return (
     <MenuRoot>

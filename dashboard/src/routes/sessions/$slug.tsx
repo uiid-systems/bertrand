@@ -49,8 +49,8 @@ const RouterLink = ({
 
 type Crumb = { label: string; value: string };
 
-function buildBreadcrumbs(groupPath: string, sessionName: string): Crumb[] {
-  const segments = groupPath.split("/").filter(Boolean);
+function buildBreadcrumbs(categoryPath: string, sessionName: string): Crumb[] {
+  const segments = categoryPath.split("/").filter(Boolean);
   const items: Crumb[] = segments.map((segment, i) => ({
     label: segment,
     value: `/groups/${segments.slice(0, i + 1).join("/")}`,
@@ -97,7 +97,7 @@ function SessionDetail() {
   }, [rawEvents, match?.session.status]);
 
   const breadcrumbs = match
-    ? buildBreadcrumbs(match.groupPath, match.session.name)
+    ? buildBreadcrumbs(match.categoryPath, match.session.name)
     : [{ label: slug, value: "" }];
 
   return (
@@ -108,7 +108,7 @@ function SessionDetail() {
           {match && (
             <CopyResumeButton
               session={match.session}
-              groupPath={match.groupPath}
+              categoryPath={match.categoryPath}
             />
           )}
           {match && <ArchiveToggle session={match.session} />}

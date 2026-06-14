@@ -1,13 +1,13 @@
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { sessions, groups } from "@/db/schema";
+import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
-import type { SessionRow, SessionStatus, SessionWithGroup } from "@/types";
+import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
 
 export type { SessionStatus };
 
 export function createSession(opts: {
-  groupId: string;
+  categoryId: string;
   slug: string;
   name: string;
 }) {
@@ -24,42 +24,42 @@ export function getSession(id: string): SessionRow | undefined {
   return getDb().select().from(sessions).where(eq(sessions.id, id)).get();
 }
 
-export function getSessionByGroupSlug(
-  groupId: string,
+export function getSessionByCategorySlug(
+  categoryId: string,
   slug: string,
 ): SessionRow | undefined {
   return getDb()
     .select()
     .from(sessions)
-    .where(and(eq(sessions.groupId, groupId), eq(sessions.slug, slug)))
+    .where(and(eq(sessions.categoryId, categoryId), eq(sessions.slug, slug)))
     .get();
 }
 
-export function getSessionsByGroup(groupId: string): SessionRow[] {
+export function getSessionsByCategory(categoryId: string): SessionRow[] {
   return getDb()
     .select()
     .from(sessions)
-    .where(eq(sessions.groupId, groupId))
+    .where(eq(sessions.categoryId, categoryId))
     .all();
 }
 
-export function getActiveSessions(): SessionWithGroup[] {
+export function getActiveSessions(): SessionWithCategory[] {
   return getDb()
-    .select({ session: sessions, groupPath: groups.path })
+    .select({ session: sessions, categoryPath: categories.path })
     .from(sessions)
-    .innerJoin(groups, eq(sessions.groupId, groups.id))
+    .innerJoin(categories, eq(sessions.categoryId, categories.id))
     .where(inArray(sessions.status, ["active", "waiting"]))
     .all();
 }
 
 export function getAllSessions(opts?: {
   excludeArchived?: boolean;
-}): SessionWithGroup[] {
+}): SessionWithCategory[] {
   const db = getDb();
   const query = db
-    .select({ session: sessions, groupPath: groups.path })
+    .select({ session: sessions, categoryPath: categories.path })
     .from(sessions)
-    .innerJoin(groups, eq(sessions.groupId, groups.id));
+    .innerJoin(categories, eq(sessions.categoryId, categories.id));
 
   if (opts?.excludeArchived) {
     return query
@@ -111,10 +111,10 @@ export function renameSession(id: string, slug: string, name?: string) {
     .get();
 }
 
-export function moveSession(id: string, groupId: string) {
+export function moveSession(id: string, categoryId: string) {
   return getDb()
     .update(sessions)
-    .set({ groupId, updatedAt: sql`(datetime('now'))` })
+    .set({ categoryId, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();

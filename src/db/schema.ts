@@ -2,11 +2,11 @@ import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqli
 import { sql } from "drizzle-orm";
 
 // Nestable containers — any depth, purpose-agnostic
-export const groups = sqliteTable(
-  "groups",
+export const categories = sqliteTable(
+  "categories",
   {
     id: text("id").primaryKey(),
-    parentId: text("parent_id").references((): any => groups.id, {
+    parentId: text("parent_id").references((): any => categories.id, {
       onDelete: "cascade",
     }),
     slug: text("slug").notNull(),
@@ -19,8 +19,8 @@ export const groups = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
   (t) => [
-    uniqueIndex("groups_parent_slug").on(t.parentId, t.slug),
-    index("groups_path").on(t.path),
+    uniqueIndex("categories_parent_slug").on(t.parentId, t.slug),
+    index("categories_path").on(t.path),
   ]
 );
 
@@ -34,14 +34,14 @@ export const labels = sqliteTable("labels", {
     .default(sql`(datetime('now'))`),
 });
 
-// Sessions belong to a group at any depth
+// Sessions belong to a category at any depth
 export const sessions = sqliteTable(
   "sessions",
   {
     id: text("id").primaryKey(),
-    groupId: text("group_id")
+    categoryId: text("category_id")
       .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+      .references(() => categories.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     status: text("status", {
@@ -63,7 +63,7 @@ export const sessions = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
   (t) => [
-    uniqueIndex("sessions_group_slug").on(t.groupId, t.slug),
+    uniqueIndex("sessions_category_slug").on(t.categoryId, t.slug),
     index("sessions_status").on(t.status),
     index("sessions_started").on(t.startedAt),
   ]
