@@ -6,6 +6,7 @@ import { runMigrations } from "@/db/migrate";
 import { installHookScripts } from "@/hooks/install";
 import { installHookSettings } from "@/hooks/settings";
 import { paths } from "@/lib/paths";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 import { generateCompletions } from "@/lib/completions";
 import { readConfig, writeConfig, type BertrandConfig } from "@/lib/config";
 
@@ -56,9 +57,11 @@ register("init", async () => {
   mkdirSync(paths.root, { recursive: true });
   mkdirSync(paths.hooks, { recursive: true });
 
-  // 2. Migrations
-  runMigrations();
-  console.log(`  Database: ${paths.db}`);
+  // 2. Migrations — for the active project's DB. On a fresh install with no
+  // registry yet, that resolves to `projects/default/bertrand.db`.
+  const active = resolveActiveProject();
+  runMigrations(active.db);
+  console.log(`  Database: ${active.db}`);
 
   // 3. Resolve binary path for hooks to invoke
   const bin = resolveBin();

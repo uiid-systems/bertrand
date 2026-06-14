@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { paths } from "@/lib/paths";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 import { triggerBackgroundPull } from "@/sync/trigger";
 
 type CommandHandler = (args: string[]) => void | Promise<void>;
@@ -23,7 +23,7 @@ export function alias(from: string, to: string) {
  * errors stay visible. Failures abort with init's own exit code.
  */
 async function autoInitIfFirstRun() {
-  if (existsSync(paths.db)) return;
+  if (existsSync(resolveActiveProject().db)) return;
 
   const init = commands.get("init");
   if (!init) return; // hot-path entrypoints don't load init; skip silently
