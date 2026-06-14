@@ -1,12 +1,32 @@
 import { existsSync } from "fs";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { migrateLegacyLayout } from "@/lib/projects/migrate-layout";
+import { DEFAULT_PROJECT_SLUG } from "@/lib/projects/registry";
 import { triggerBackgroundPull } from "@/sync/trigger";
 
 type CommandHandler = (args: string[]) => void | Promise<void>;
 
 const commands = new Map<string, CommandHandler>();
 const aliases = new Map<string, string>();
+
+/**
+ * Commands fired by Claude Code hooks during a live session. They run
+ * inside an existing bertrand process tree — their parent already
+ * migrated on its own launch — so we skip the migration check entirely
+ * to avoid log noise on every hook fire in the rare upgrade-mid-session
+ * case (parent on an old binary, hook running a new binary).
+ *
+ * Keep in sync with the registered command names in
+ * `src/cli/commands/update.ts`, `snapshot.ts`, etc.
+ */
+const HOOK_COMMANDS = new Set([
+  "update",
+  "snapshot",
+  "recap-thinking",
+  "assistant-message",
+  "notify",
+  "badge",
+]);
 
 export function register(name: string, handler: CommandHandler) {
   commands.set(name, handler);
@@ -31,7 +51,7 @@ function migrateOrAbort(): void {
   if (result.migrated) {
     const fileList = result.moved.join(", ");
     console.log(
-      `Migrated to per-project layout (moved: ${fileList}). Active project: default.`,
+      `Migrated to per-project layout (moved: ${fileList}). Active project: ${DEFAULT_PROJECT_SLUG}.`,
     );
     return;
   }
@@ -75,7 +95,15 @@ export async function route(argv: string[]) {
 
   // Migrate legacy single-DB layout to per-project before any command can
   // touch `getDb()`. Idempotent and fast on the no-op path.
-  migrateOrAbort();
+  //
+  // Hook-fired commands skip this — their parent process (the bertrand
+  // TUI / `bertrand launch`) already ran the migration, and avoiding the
+  // call here means an upgrade-mid-session doesn't print "db-held" errors
+  // on every hook fire (which would happen if a still-running old-binary
+  // session held the legacy DB while the new-binary hook tried to migrate).
+  if (!command || !HOOK_COMMANDS.has(command)) {
+    migrateOrAbort();
+  }
 
   // No args → launch TUI (auto-init on fresh install first)
   if (!command) {

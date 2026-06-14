@@ -66,6 +66,10 @@ export function migrateLegacyLayout(): MigrationResult {
   // under an open SQLite handle would leave the running session pointing at
   // a deleted-but-still-open file, which guarantees WAL corruption next
   // time it writes.
+  //
+  // sync.env is intentionally NOT checked here: it's a static config file
+  // read once on sync push/pull and never held open across the IO. The
+  // only long-lived file descriptor is the SQLite handle.
   if (existsSync(legacyDb)) {
     const holders = findHolders(legacyDb);
     if (holders.length > 0) {
@@ -81,6 +85,16 @@ export function migrateLegacyLayout(): MigrationResult {
   // Move the main DB and its WAL/SHM sidecars together. If we move the main
   // file but leave WAL/SHM at the legacy path, SQLite will rebuild from the
   // moved file alone — losing any uncheckpointed writes. Move all three.
+  //
+  // Partial-rename behavior: renameSync within the same filesystem is
+  // effectively atomic per-file but the loop is not atomic across files.
+  // If the main DB moves and a sidecar rename then fails (e.g. a permission
+  // change between writes), the next launch will see `projects/default/`
+  // exists → no-op via the "already-migrated" gate. The stranded sidecar
+  // becomes an orphan WAL at ~/.bertrand/; SQLite ignores orphan WAL files
+  // (it only consults `${db}-wal`), so the situation is recoverable and
+  // mostly cosmetic. The findHolders preflight above prevents the only
+  // scenario where uncheckpointed writes could be lost.
   for (const suffix of ["", "-wal", "-shm"] as const) {
     const src = legacyDb + suffix;
     if (!existsSync(src)) continue;
@@ -100,6 +114,12 @@ export function migrateLegacyLayout(): MigrationResult {
   // projects/default/ would otherwise trigger recoverFromDisk to synthesize
   // a phantom registry entry, and registerProject would then refuse the
   // "already exists" duplicate.
+  //
+  // We write `name: "Default"` (capitalized) — this is the only place in
+  // the codebase that produces that exact string. The resolver's fallback
+  // path (no registry) uses `name: slug` which is the lowercase
+  // DEFAULT_PROJECT_SLUG ("default"). The cache reset below ensures any
+  // callers that resolved before migration pick up this capitalized form.
   const now = new Date().toISOString();
   writeRegistry({
     activeProjectSlug: DEFAULT_PROJECT_SLUG,
