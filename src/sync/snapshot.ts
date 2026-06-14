@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync, unlinkSync } from "fs";
-import { paths } from "@/lib/paths";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 
 /**
  * Sidecar files SQLite creates alongside a database in WAL mode. We delete
@@ -9,29 +9,33 @@ import { paths } from "@/lib/paths";
  */
 const SIDECAR_SUFFIXES = ["", "-wal", "-shm"] as const;
 
-export const SNAPSHOT_PATH = `${paths.db}.sync-snapshot`;
+function snapshotPath(): string {
+  return `${resolveActiveProject().db}.sync-snapshot`;
+}
 
 /**
- * Produce a lock-free, internally-consistent copy of the live database at
- * SNAPSHOT_PATH. Uses SQLite's `VACUUM INTO`, which is safe to run while
+ * Produce a lock-free, internally-consistent copy of the active project's
+ * live database. Uses SQLite's `VACUUM INTO`, which is safe to run while
  * other processes (the API server, the TUI) hold the source DB open in
  * WAL mode. The destination file is created fresh — any prior snapshot
  * and its sidecars are removed first so the sync engine starts clean.
  */
 export function takeSnapshot(): string {
   cleanupSnapshot();
-  const src = new Database(paths.db, { readonly: true });
+  const target = snapshotPath();
+  const src = new Database(resolveActiveProject().db, { readonly: true });
   try {
-    src.exec(`VACUUM INTO '${SNAPSHOT_PATH.replace(/'/g, "''")}'`);
+    src.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
   } finally {
     src.close();
   }
-  return SNAPSHOT_PATH;
+  return target;
 }
 
 export function cleanupSnapshot(): void {
+  const base = snapshotPath();
   for (const suffix of SIDECAR_SUFFIXES) {
-    const p = SNAPSHOT_PATH + suffix;
+    const p = base + suffix;
     if (existsSync(p)) {
       try {
         unlinkSync(p);

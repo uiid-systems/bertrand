@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync, renameSync, statSync, openSync, writeSync, fsyncSync, closeSync } from "fs";
 import { dirname } from "path";
 import { execFileSync } from "child_process";
-import { paths } from "@/lib/paths";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 import { loadSyncConfig, hasSyncConfig } from "@/sync/config";
 import { takeSnapshot, cleanupSnapshot } from "@/sync/snapshot";
 import { encrypt, decrypt } from "@/sync/crypto";
@@ -96,7 +96,7 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     return { ok: false, operation: "pull", error: "sync config incomplete" };
   }
 
-  const holders = findHolders(paths.db);
+  const holders = findHolders(resolveActiveProject().db);
   if (holders.length > 0) {
     const procs = holders.map((h) => `${h.command}(${h.pid})`).join(", ");
     if (!opts.force) {
@@ -104,11 +104,11 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
         ok: false,
         operation: "pull",
         error:
-          `${paths.db} is held by ${procs} — close active bertrand sessions before pulling, ` +
+          `${resolveActiveProject().db} is held by ${procs} — close active bertrand sessions before pulling, ` +
           `or pass --force to overwrite anyway (risks corrupting the running session).`,
       };
     }
-    console.warn(`warning: --force pulling while ${procs} hold ${paths.db}. The running process may crash on next file access.`);
+    console.warn(`warning: --force pulling while ${procs} hold ${resolveActiveProject().db}. The running process may crash on next file access.`);
   }
 
   const started = performance.now();
@@ -139,7 +139,7 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     // the rename only becomes durable once the directory entry hits disk.
     // We intentionally don't touch `.db-wal` / `.db-shm` — bertrand opens
     // the file fresh next launch in WAL mode and recreates them.
-    const tmp = `${paths.db}.pull-${process.pid}`;
+    const tmp = `${resolveActiveProject().db}.pull-${process.pid}`;
     const fd = openSync(tmp, "w");
     try {
       writeSync(fd, plaintext);
@@ -147,8 +147,8 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     } finally {
       closeSync(fd);
     }
-    renameSync(tmp, paths.db);
-    const dirFd = openSync(dirname(paths.db), "r");
+    renameSync(tmp, resolveActiveProject().db);
+    const dirFd = openSync(dirname(resolveActiveProject().db), "r");
     try {
       fsyncSync(dirFd);
     } finally {
@@ -173,7 +173,7 @@ export async function status(): Promise<SyncStatus> {
 
   let local: SyncStatus["local"] = null;
   try {
-    const s = statSync(paths.db);
+    const s = statSync(resolveActiveProject().db);
     local = { size: s.size, modifiedAt: new Date(s.mtimeMs) };
   } catch {
     local = null;
