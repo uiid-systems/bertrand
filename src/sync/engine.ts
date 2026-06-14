@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, renameSync, statSync, openSync, writeSync, fsyncSync, closeSync } from "fs";
 import { dirname } from "path";
-import { execFileSync } from "child_process";
 import { resolveActiveProject } from "@/lib/projects/resolve";
+import { findHolders } from "@/lib/lsof";
 import { loadSyncConfig, hasSyncConfig } from "@/sync/config";
 import { takeSnapshot, cleanupSnapshot } from "@/sync/snapshot";
 import { encrypt, decrypt } from "@/sync/crypto";
@@ -217,39 +217,4 @@ export async function status(): Promise<SyncStatus> {
   return { configured: true, local, remote };
 }
 
-type Holder = { pid: number; command: string };
-
-/**
- * Use `lsof` to find PIDs holding the given path open. macOS / Linux only;
- * absent on Windows but that's not a target. Excludes our own PID so a
- * shell that opened the file briefly for a stat doesn't block us.
- *
- * Uses `execFileSync` with array args (not `execSync` with a shell string)
- * so the path is passed to lsof verbatim without any shell-quoting puzzle.
- */
-function findHolders(path: string): Holder[] {
-  try {
-    const out = execFileSync("lsof", ["-F", "pcn", path], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const holders: Holder[] = [];
-    let pid = 0;
-    let command = "";
-    for (const line of out.split("\n")) {
-      if (line.startsWith("p")) pid = Number(line.slice(1));
-      else if (line.startsWith("c")) command = line.slice(1);
-      else if (line.startsWith("n")) {
-        if (pid && pid !== process.pid && command) {
-          holders.push({ pid, command });
-        }
-      }
-    }
-    return holders;
-  } catch {
-    // lsof exits non-zero when no process holds the path (and when the
-    // binary is missing). Either way: assume no holders.
-    return [];
-  }
-}
 
