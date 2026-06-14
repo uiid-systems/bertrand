@@ -1,7 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query"
 import { apiUrl } from "./base"
 import type {
-  SessionWithGroup,
+  SessionWithCategory,
   SessionRow,
   EventRow,
   SessionStatsRow,
@@ -49,7 +49,7 @@ export const sessionsQuery = (opts: { includeArchived?: boolean } = {}) =>
   queryOptions({
     queryKey: ["sessions", { includeArchived: !!opts.includeArchived }],
     queryFn: () =>
-      fetchJson<SessionWithGroup[]>(
+      fetchJson<SessionWithCategory[]>(
         opts.includeArchived
           ? "/api/sessions?excludeArchived=false"
           : "/api/sessions",

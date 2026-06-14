@@ -24,7 +24,7 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createGroup } = await import("@/db/queries/groups");
+const { createCategory } = await import("@/db/queries/categories");
 const { createSession, updateSessionStatus, getSession } = await import(
   "@/db/queries/sessions"
 );
@@ -32,10 +32,10 @@ const { archiveSession, unarchiveSession, archiveAllPaused } = await import(
   "@/lib/session-archive"
 );
 
-const group = createGroup({ slug: "archive-test", name: "Archive Test" });
+const category = createCategory({ slug: "archive-test", name: "Archive Test" });
 
 function makeSession(slug: string, status: "active" | "waiting" | "paused" | "archived") {
-  const s = createSession({ groupId: group.id, slug, name: slug });
+  const s = createSession({ categoryId: category.id, slug, name: slug });
   if (status !== "paused") updateSessionStatus(s.id, status);
   return getSession(s.id)!;
 }
@@ -100,13 +100,13 @@ describe("unarchiveSession", () => {
 
 describe("archiveAllPaused", () => {
   test("archives only paused sessions, skips active/waiting/archived", () => {
-    // Fresh group to isolate from prior tests
-    const g = createGroup({ slug: "batch", name: "Batch" });
-    const paused1 = createSession({ groupId: g.id, slug: "p1", name: "p1" });
-    const paused2 = createSession({ groupId: g.id, slug: "p2", name: "p2" });
-    const active = createSession({ groupId: g.id, slug: "a1", name: "a1" });
+    // Fresh category to isolate from prior tests
+    const c = createCategory({ slug: "batch", name: "Batch" });
+    const paused1 = createSession({ categoryId: c.id, slug: "p1", name: "p1" });
+    const paused2 = createSession({ categoryId: c.id, slug: "p2", name: "p2" });
+    const active = createSession({ categoryId: c.id, slug: "a1", name: "a1" });
     updateSessionStatus(active.id, "active");
-    const waiting = createSession({ groupId: g.id, slug: "w1", name: "w1" });
+    const waiting = createSession({ categoryId: c.id, slug: "w1", name: "w1" });
     updateSessionStatus(waiting.id, "waiting");
 
     const { archived } = archiveAllPaused();

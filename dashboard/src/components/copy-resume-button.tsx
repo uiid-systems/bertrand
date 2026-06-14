@@ -10,12 +10,12 @@ type CopyResumeButtonProps = Omit<
   "pressed" | "onPressedChange" | "icon" | "children"
 > & {
   session: SessionRow;
-  groupPath: string;
+  categoryPath: string;
 };
 
 export const CopyResumeButton = ({
   session,
-  groupPath,
+  categoryPath,
   size = "small",
   variant = "subtle",
   shape = "square",
@@ -25,7 +25,7 @@ export const CopyResumeButton = ({
 
   if (session.status !== "paused") return null;
 
-  const command = `bertrand resume ${groupPath}/${session.slug}`;
+  const command = `bertrand resume ${categoryPath}/${session.slug}`;
 
   return (
     <ToggleButton

@@ -20,12 +20,12 @@ const RouterLink = ({
 }) => <Link to={href}>{children}</Link>;
 
 function GroupDetail() {
-  const { _splat: groupPath } = Route.useParams();
+  const { _splat: categoryPath } = Route.useParams();
   const { data: sessions = [] } = useQuery(sessionsQuery());
 
-  const filtered = sessions.filter((s) => s.groupPath === groupPath);
+  const filtered = sessions.filter((s) => s.categoryPath === categoryPath);
 
-  const segments = (groupPath ?? "").split("/").filter(Boolean);
+  const segments = (categoryPath ?? "").split("/").filter(Boolean);
   const breadcrumbs = segments.map((segment, i) => ({
     label: segment,
     value: `/groups/${segments.slice(0, i + 1).join("/")}`,

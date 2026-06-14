@@ -66,7 +66,7 @@ export function StartedContent({ event }: StartedContentProps) {
   const meta = event.meta as Record<string, unknown> | null;
   if (!meta) return null;
 
-  // group_path / session_name are surfaced as the timeline item title via
+  // category_path / session_name are surfaced as the timeline item title via
   // eventTitle() in lib/format.ts — no need for a row here.
   const labels = (meta.labels as string[] | undefined) ?? [];
   const summary = meta.summary as string | null | undefined;

@@ -3,7 +3,7 @@ import {
   createSession,
   updateSession,
   getSession,
-  getSessionByGroupSlug,
+  getSessionByCategorySlug,
 } from "@/db/queries/sessions";
 import {
   createConversation,
@@ -11,7 +11,7 @@ import {
   getConversation,
 } from "@/db/queries/conversations";
 import { insertEvent } from "@/db/queries/events";
-import { getOrCreateGroupPath, getGroup, getGroupByPath } from "@/db/queries/groups";
+import { getOrCreateCategoryPath, getCategory, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
   getOrCreateLabelByName,
@@ -90,8 +90,8 @@ function installExitHandlers(): void {
 }
 
 export interface LaunchOpts {
-  /** Group path, e.g. "uiid/bertrand" */
-  groupPath: string;
+  /** Category path, e.g. "uiid/bertrand" */
+  categoryPath: string;
   /** Session slug, e.g. "fix-auth-bug" */
   slug: string;
   /** Display name (defaults to slug) */
@@ -110,20 +110,20 @@ export interface ResumeOpts {
  * Returns session ID when the Claude process exits.
  */
 export async function launch(opts: LaunchOpts): Promise<string> {
-  // Check for duplicate session slug within the target group
-  const existingGroup = getGroupByPath(opts.groupPath);
-  if (existingGroup) {
-    const existing = getSessionByGroupSlug(existingGroup.id, opts.slug);
+  // Check for duplicate session slug within the target category
+  const existingCategory = getCategoryByPath(opts.categoryPath);
+  if (existingCategory) {
+    const existing = getSessionByCategorySlug(existingCategory.id, opts.slug);
     if (existing) {
       throw new Error(
-        `Session "${opts.slug}" already exists in group "${opts.groupPath}"`
+        `Session "${opts.slug}" already exists in category "${opts.categoryPath}"`
       );
     }
   }
 
-  const groupId = getOrCreateGroupPath(opts.groupPath);
+  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
   const session = createSession({
-    groupId,
+    categoryId,
     slug: opts.slug,
     name: opts.name ?? opts.slug,
   });
@@ -149,14 +149,14 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // logging start events so the frozen-in-time meta on session.started /
   // claude.started reflects what was true at launch.
   const spawnContext = await captureSpawnContext();
-  const sessionName = `${opts.groupPath}/${opts.slug}`;
+  const sessionName = `${opts.categoryPath}/${opts.slug}`;
 
   insertEvent({
     sessionId: session.id,
     conversationId: claudeId,
     event: "session.started",
     meta: {
-      group_path: opts.groupPath,
+      category_path: opts.categoryPath,
       session_name: opts.name ?? opts.slug,
       session_slug: opts.slug,
       labels: opts.labelNames ?? [],
@@ -178,7 +178,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Build contract with context
-  const siblingContext = buildSiblingContext(groupId, opts.groupPath, session.id);
+  const siblingContext = buildSiblingContext(categoryId, opts.categoryPath, session.id);
   const contract = buildContract(sessionName, siblingContext);
 
   // Launch Claude
@@ -202,8 +202,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   const session = getSession(opts.sessionId);
   if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
 
-  const group = getGroup(session.groupId);
-  const sessionName = group ? `${group.path}/${session.slug}` : session.name;
+  const category = getCategory(session.categoryId);
+  const sessionName = category ? `${category.path}/${session.slug}` : session.name;
   updateSession(session.id, { status: "active", pid: process.pid });
   liveSession = { sessionId: session.id, claudeId: opts.conversationId };
   installExitHandlers();
@@ -217,8 +217,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   });
 
   // Build contract
-  const groupPath = group?.path ?? "";
-  const siblingContext = buildSiblingContext(session.groupId, groupPath, session.id);
+  const categoryPath = category?.path ?? "";
+  const siblingContext = buildSiblingContext(session.categoryId, categoryPath, session.id);
   const contract = buildContract(sessionName, siblingContext);
 
   const exitCode = await launchClaude({

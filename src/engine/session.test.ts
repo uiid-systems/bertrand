@@ -23,16 +23,16 @@ migrate(drizzle(sqlite), {
   migrationsFolder: import.meta.dir + "/../db/migrations",
 });
 
-const { createGroup } = await import("@/db/queries/groups");
+const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession, updateSession } = await import(
   "@/db/queries/sessions"
 );
 const { _setLiveSession, _forceFinalizeLive } = await import("./session");
 
 function makeActiveSession(slug: string) {
-  const group = createGroup({ slug: `g-${slug}`, name: `G ${slug}` });
+  const category = createCategory({ slug: `g-${slug}`, name: `G ${slug}` });
   const session = createSession({
-    groupId: group.id,
+    categoryId: category.id,
     slug,
     name: slug,
   });

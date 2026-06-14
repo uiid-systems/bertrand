@@ -8,16 +8,16 @@ import {
   type StatusProps,
   Text,
 } from "@uiid/design-system";
-import type { SessionWithGroup } from "../../api/types";
+import type { SessionWithCategory } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 import { CopyResumeButton } from "../copy-resume-button";
 
 export type SessionItem = Omit<GroupProps, "children"> & {
-  session: SessionWithGroup;
+  session: SessionWithCategory;
 };
 
 export const SessionItem = ({ session: s, ...props }: SessionItem) => {
-  const { groupPath, session } = s;
+  const { categoryPath, session } = s;
   const color = statusColor(session.status);
 
   return (
@@ -36,7 +36,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
             }
             weight="bold"
           >
-            {groupPath} / {session.slug}
+            {categoryPath} / {session.slug}
           </Text>
         </Stack>
         <Text data-slot="session-time" size={-1} shade="muted">
@@ -50,7 +50,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
       >
         {session.status}
       </Badge>
-      <CopyResumeButton session={session} groupPath={groupPath} />
+      <CopyResumeButton session={session} categoryPath={categoryPath} />
     </Group>
   );
 };

@@ -1,6 +1,6 @@
 import { register, alias } from "@/cli/router";
-import { getAllSessions, getSessionsByGroup } from "@/db/queries/sessions";
-import { getGroupByPath } from "@/db/queries/groups";
+import { getAllSessions, getSessionsByCategory } from "@/db/queries/sessions";
+import { getCategoryByPath } from "@/db/queries/categories";
 import { getSessionStats } from "@/db/queries/stats";
 import { formatAgo, formatDuration } from "@/lib/format";
 
@@ -27,7 +27,7 @@ function buildRows(sessions: SessionRow[]): ListRow[] {
     .map((row) => {
       const stats = getSessionStats(row.session.id);
       return {
-        name: `${row.groupPath}/${row.session.slug}`,
+        name: `${row.categoryPath}/${row.session.slug}`,
         status: row.session.status,
         updatedAt: row.session.updatedAt,
         conversations: stats?.conversationCount ?? 0,
@@ -77,19 +77,19 @@ alias("ls", "list");
 register("list", async (args) => {
   const isJson = args.includes("--json");
   const showAll = args.includes("--all") || args.includes("-a");
-  const groupFlag = args.indexOf("--group");
-  const groupPath = groupFlag !== -1 ? args[groupFlag + 1] : undefined;
+  const categoryFlag = args.indexOf("--category");
+  const categoryPath = categoryFlag !== -1 ? args[categoryFlag + 1] : undefined;
 
   let sessionRows: SessionRow[];
 
-  if (groupPath) {
-    const group = getGroupByPath(groupPath);
-    if (!group) {
-      console.error(`Group not found: ${groupPath}`);
+  if (categoryPath) {
+    const category = getCategoryByPath(categoryPath);
+    if (!category) {
+      console.error(`Category not found: ${categoryPath}`);
       process.exit(1);
     }
-    const groupSessions = getSessionsByGroup(group.id);
-    sessionRows = groupSessions.map((s) => ({ session: s, groupPath: group.path }));
+    const categorySessions = getSessionsByCategory(category.id);
+    sessionRows = categorySessions.map((s) => ({ session: s, categoryPath: category.path }));
 
     if (!showAll) {
       sessionRows = sessionRows.filter((r) => r.session.status !== "archived");

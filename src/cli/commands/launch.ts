@@ -11,9 +11,9 @@ register("launch", async (args) => {
   const sessionName = args[0];
 
   if (sessionName) {
-    // Direct create+launch: `bertrand project/my-session`
-    const { groupPath, slug } = parseSessionName(sessionName);
-    const sessionId = await launch({ groupPath, slug });
+    // Direct create+launch: `bertrand category/my-session`
+    const { categoryPath, slug } = parseSessionName(sessionName);
+    const sessionId = await launch({ categoryPath, slug });
     await runSessionLoop(sessionId);
     return;
   }

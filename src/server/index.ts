@@ -14,7 +14,7 @@ import {
 } from "@/lib/session-archive"
 import type {
   SessionRow,
-  SessionWithGroup,
+  SessionWithCategory,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -33,7 +33,7 @@ function liveStats(sessionId: string): SessionStatsRow {
   }
 }
 
-const listSessions = (_params: object, url: URL): SessionWithGroup[] => {
+const listSessions = (_params: object, url: URL): SessionWithCategory[] => {
   const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
   return getAllSessions({ excludeArchived })
 }

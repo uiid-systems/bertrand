@@ -1,6 +1,6 @@
 import { register } from "@/cli/router";
-import { getSessionByGroupSlug } from "@/db/queries/sessions";
-import { getGroupByPath } from "@/db/queries/groups";
+import { getSessionByCategorySlug } from "@/db/queries/sessions";
+import { getCategoryByPath } from "@/db/queries/categories";
 import { parseSessionName } from "@/lib/parse-session-name";
 import {
   archiveSession,
@@ -9,18 +9,18 @@ import {
 } from "@/lib/session-archive";
 
 function resolveSession(name: string) {
-  const { groupPath, slug } = parseSessionName(name);
-  const group = getGroupByPath(groupPath);
-  if (!group) {
-    console.error(`Group not found: ${groupPath}`);
+  const { categoryPath, slug } = parseSessionName(name);
+  const category = getCategoryByPath(categoryPath);
+  if (!category) {
+    console.error(`Category not found: ${categoryPath}`);
     process.exit(1);
   }
-  const session = getSessionByGroupSlug(group.id, slug);
+  const session = getSessionByCategorySlug(category.id, slug);
   if (!session) {
     console.error(`Session not found: ${name}`);
     process.exit(1);
   }
-  return { session, groupPath };
+  return { session, categoryPath };
 }
 
 register("archive", async (args) => {
@@ -35,8 +35,8 @@ register("archive", async (args) => {
       console.log("No paused sessions to archive.");
       return;
     }
-    for (const { session, groupPath } of archived) {
-      console.log(`  archived ${groupPath}/${session.slug}`);
+    for (const { session, categoryPath } of archived) {
+      console.log(`  archived ${categoryPath}/${session.slug}`);
     }
     console.log(
       `\nArchived ${archived.length} session${archived.length === 1 ? "" : "s"}.`
@@ -51,8 +51,8 @@ register("archive", async (args) => {
     process.exit(1);
   }
 
-  const { session, groupPath } = resolveSession(sessionName);
-  const fullName = `${groupPath}/${session.slug}`;
+  const { session, categoryPath } = resolveSession(sessionName);
+  const fullName = `${categoryPath}/${session.slug}`;
 
   if (isUndo) {
     const result = unarchiveSession(session.id);
