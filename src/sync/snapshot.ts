@@ -9,8 +9,8 @@ import { resolveActiveProject } from "@/lib/projects/resolve";
  */
 const SIDECAR_SUFFIXES = ["", "-wal", "-shm"] as const;
 
-function snapshotPath(): string {
-  return `${resolveActiveProject().db}.sync-snapshot`;
+function snapshotPathFor(dbPath: string): string {
+  return `${dbPath}.sync-snapshot`;
 }
 
 /**
@@ -22,8 +22,9 @@ function snapshotPath(): string {
  */
 export function takeSnapshot(): string {
   cleanupSnapshot();
-  const target = snapshotPath();
-  const src = new Database(resolveActiveProject().db, { readonly: true });
+  const dbPath = resolveActiveProject().db;
+  const target = snapshotPathFor(dbPath);
+  const src = new Database(dbPath, { readonly: true });
   try {
     src.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
   } finally {
@@ -33,7 +34,7 @@ export function takeSnapshot(): string {
 }
 
 export function cleanupSnapshot(): void {
-  const base = snapshotPath();
+  const base = snapshotPathFor(resolveActiveProject().db);
   for (const suffix of SIDECAR_SUFFIXES) {
     const p = base + suffix;
     if (existsSync(p)) {

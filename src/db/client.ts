@@ -87,8 +87,18 @@ function openDb(dbPath: string): DrizzleDb {
   // is already current, and applies the full sequence for a fresh project.
   // Skipping migration on a fresh per-project DB would leave it schema-less,
   // so this is load-bearing rather than convenience.
+  //
+  // Close the sqlite handle on migration failure so a transient error
+  // (corrupt `__drizzle_migrations`, partial schema, etc.) doesn't leak
+  // file descriptors across retries. The cache + _migrated set stay
+  // unchanged so the next call will retry the open from scratch.
   if (!_migrated.has(dbPath)) {
-    migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    try {
+      migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    } catch (err) {
+      sqlite.close();
+      throw err;
+    }
     _migrated.add(dbPath);
   }
 

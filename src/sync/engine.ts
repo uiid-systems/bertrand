@@ -96,7 +96,13 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     return { ok: false, operation: "pull", error: "sync config incomplete" };
   }
 
-  const holders = findHolders(resolveActiveProject().db);
+  // Pin the active project's DB path once for the whole pull — the resolver
+  // is memoized for the process lifetime, but pinning locally makes the
+  // "this is a single target file" semantics obvious in the holder check,
+  // tmp filename, atomic rename, and dir-fsync below.
+  const dbPath = resolveActiveProject().db;
+
+  const holders = findHolders(dbPath);
   if (holders.length > 0) {
     const procs = holders.map((h) => `${h.command}(${h.pid})`).join(", ");
     if (!opts.force) {
@@ -104,11 +110,11 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
         ok: false,
         operation: "pull",
         error:
-          `${resolveActiveProject().db} is held by ${procs} — close active bertrand sessions before pulling, ` +
+          `${dbPath} is held by ${procs} — close active bertrand sessions before pulling, ` +
           `or pass --force to overwrite anyway (risks corrupting the running session).`,
       };
     }
-    console.warn(`warning: --force pulling while ${procs} hold ${resolveActiveProject().db}. The running process may crash on next file access.`);
+    console.warn(`warning: --force pulling while ${procs} hold ${dbPath}. The running process may crash on next file access.`);
   }
 
   const started = performance.now();
@@ -139,7 +145,7 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     // the rename only becomes durable once the directory entry hits disk.
     // We intentionally don't touch `.db-wal` / `.db-shm` — bertrand opens
     // the file fresh next launch in WAL mode and recreates them.
-    const tmp = `${resolveActiveProject().db}.pull-${process.pid}`;
+    const tmp = `${dbPath}.pull-${process.pid}`;
     const fd = openSync(tmp, "w");
     try {
       writeSync(fd, plaintext);
@@ -147,8 +153,8 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     } finally {
       closeSync(fd);
     }
-    renameSync(tmp, resolveActiveProject().db);
-    const dirFd = openSync(dirname(resolveActiveProject().db), "r");
+    renameSync(tmp, dbPath);
+    const dirFd = openSync(dirname(dbPath), "r");
     try {
       fsyncSync(dirFd);
     } finally {
@@ -171,9 +177,10 @@ export async function status(): Promise<SyncStatus> {
   const cfg = loadSyncConfig();
   if (!cfg) return { configured: false, local: null, remote: null };
 
+  const dbPath = resolveActiveProject().db;
   let local: SyncStatus["local"] = null;
   try {
-    const s = statSync(resolveActiveProject().db);
+    const s = statSync(dbPath);
     local = { size: s.size, modifiedAt: new Date(s.mtimeMs) };
   } catch {
     local = null;
