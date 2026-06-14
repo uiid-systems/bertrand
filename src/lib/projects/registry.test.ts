@@ -23,6 +23,17 @@ import {
 let tmpRoot: string;
 const originalDir = _getRegistryDir();
 
+/**
+ * `recoverFromDisk` now gates on a `bertrand.db` sentinel inside each
+ * project directory (so stray dirs don't surface as phantom projects).
+ * Tests that want a dir to appear in recovery must call this helper.
+ */
+function makeProjectDir(slug: string): void {
+  const dir = join(tmpRoot, "projects", slug);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "bertrand.db"), "");
+}
+
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-registry-"));
   _setRegistryDir(tmpRoot);
@@ -161,6 +172,23 @@ describe("removeProject", () => {
     expect(getActiveProjectSlug()).toBe("b");
   });
 
+  test("rotates active to the most-recently-used survivor, not insertion order", async () => {
+    registerProject({ slug: "stale", name: "Stale" });
+    registerProject({ slug: "fresh", name: "Fresh" });
+    registerProject({ slug: "active-one", name: "Active" });
+    // Bump 'fresh' so it's the most-recent non-active; 'stale' stays the
+    // oldest. `setActiveProjectSlug` does the bump as a side effect, so
+    // toggle through active so that 'fresh' wins the lastUsedAt race.
+    setActiveProjectSlug("stale");
+    await new Promise((r) => setTimeout(r, 5));
+    setActiveProjectSlug("fresh");
+    await new Promise((r) => setTimeout(r, 5));
+    setActiveProjectSlug("active-one");
+
+    removeProject("active-one");
+    expect(getActiveProjectSlug()).toBe("fresh");
+  });
+
   test("falls back to DEFAULT_PROJECT_SLUG when the last project is removed", () => {
     registerProject({ slug: "a", name: "A" });
     removeProject("a");
@@ -177,40 +205,53 @@ describe("recoverFromDisk", () => {
     expect(recoverFromDisk()).toBeNull();
   });
 
-  test("synthesizes a registry from directory entries", () => {
-    mkdirSync(join(tmpRoot, "projects", "acme"), { recursive: true });
-    mkdirSync(join(tmpRoot, "projects", "personal"), { recursive: true });
+  test("synthesizes a registry from directories that contain a bertrand.db", () => {
+    makeProjectDir("acme");
+    makeProjectDir("personal");
     const r = recoverFromDisk();
     expect(r).not.toBeNull();
     expect(r!.projects.map((p) => p.slug).sort()).toEqual(["acme", "personal"]);
   });
 
+  test("ignores dirs that lack a bertrand.db sentinel (stray mkdirs)", () => {
+    makeProjectDir("real");
+    mkdirSync(join(tmpRoot, "projects", "stray"), { recursive: true });
+    const r = recoverFromDisk();
+    expect(r!.projects.map((p) => p.slug)).toEqual(["real"]);
+  });
+
   test("prefers BERTRAND_PROJECT env var when it matches a directory", () => {
-    mkdirSync(join(tmpRoot, "projects", "acme"), { recursive: true });
-    mkdirSync(join(tmpRoot, "projects", "personal"), { recursive: true });
+    makeProjectDir("acme");
+    makeProjectDir("personal");
     process.env.BERTRAND_PROJECT = "personal";
     const r = recoverFromDisk();
     expect(r!.activeProjectSlug).toBe("personal");
   });
 
   test("falls back to DEFAULT_PROJECT_SLUG if it exists on disk", () => {
-    mkdirSync(join(tmpRoot, "projects", DEFAULT_PROJECT_SLUG), { recursive: true });
-    mkdirSync(join(tmpRoot, "projects", "zeta"), { recursive: true });
+    makeProjectDir(DEFAULT_PROJECT_SLUG);
+    makeProjectDir("zeta");
     const r = recoverFromDisk();
     expect(r!.activeProjectSlug).toBe(DEFAULT_PROJECT_SLUG);
   });
 
   test("falls back to the first alphabetical slug if no default exists", () => {
-    mkdirSync(join(tmpRoot, "projects", "beta"), { recursive: true });
-    mkdirSync(join(tmpRoot, "projects", "alpha"), { recursive: true });
+    makeProjectDir("beta");
+    makeProjectDir("alpha");
     const r = recoverFromDisk();
     expect(r!.activeProjectSlug).toBe("alpha");
   });
 
   test("loadRegistry uses recovery when projects.json is corrupt", () => {
     writeFileSync(join(tmpRoot, "projects.json"), "{ broken");
-    mkdirSync(join(tmpRoot, "projects", "acme"), { recursive: true });
+    makeProjectDir("acme");
     const r = loadRegistry();
     expect(r!.projects.map((p) => p.slug)).toEqual(["acme"]);
+  });
+
+  test("returns null when projects/ has only stray dirs without sentinels", () => {
+    mkdirSync(join(tmpRoot, "projects", "empty1"), { recursive: true });
+    mkdirSync(join(tmpRoot, "projects", "empty2"), { recursive: true });
+    expect(recoverFromDisk()).toBeNull();
   });
 });

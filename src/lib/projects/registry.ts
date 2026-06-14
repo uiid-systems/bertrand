@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
+import { randomBytes } from "crypto";
 import { join } from "path";
 import { paths } from "@/lib/paths";
 
@@ -74,7 +75,10 @@ export function readRegistry(): ProjectRegistry | null {
 export function writeRegistry(registry: ProjectRegistry): void {
   const path = registryPath();
   mkdirSync(_registryDir, { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}`;
+  // Suffix is PID + monotonic time + random bytes so two concurrent writes
+  // inside the same process can't collide on the tmp filename (PID alone
+  // would). Belt-and-suspenders for a low-frequency writer.
+  const tmp = `${path}.tmp-${process.pid}-${process.hrtime.bigint()}-${randomBytes(4).toString("hex")}`;
   writeFileSync(tmp, JSON.stringify(registry, null, 2) + "\n");
   renameSync(tmp, path);
 }
@@ -110,6 +114,11 @@ export function recoverFromDisk(): ProjectRegistry | null {
     } catch {
       continue;
     }
+    // Require a `bertrand.db` sentinel so a stray `mkdir`'d directory or a
+    // half-removed project (slug dir present, files gone) doesn't get
+    // resurrected into a phantom registry entry. The legacy migration in
+    // PR3 will plant this file before recovery is expected to see it.
+    if (!existsSync(join(subdir, "bertrand.db"))) continue;
     projects.push({
       slug,
       name: slug,
@@ -203,8 +212,14 @@ export function removeProject(slug: string): void {
   if (!registry) return;
   registry.projects = registry.projects.filter((p) => p.slug !== slug);
   if (registry.activeProjectSlug === slug) {
-    registry.activeProjectSlug =
-      registry.projects[0]?.slug ?? DEFAULT_PROJECT_SLUG;
+    // Pick the most-recently-used surviving project as the new active.
+    // Falling through to `projects[0]` (insertion order) would surprise the
+    // user when they've been switching between many projects — the one they
+    // touched last is the closest thing to "what should I see now".
+    const survivor = [...registry.projects].sort((a, b) =>
+      b.lastUsedAt.localeCompare(a.lastUsedAt),
+    )[0];
+    registry.activeProjectSlug = survivor?.slug ?? DEFAULT_PROJECT_SLUG;
   }
   writeRegistry(registry);
 }
