@@ -129,15 +129,78 @@ function extractPermissionDetail(event: EventRow): PermissionDetail {
   }
 }
 
-const TOOL_TITLES: Record<string, string> = {
-  Bash: "ran a command",
-  Edit: "edited a file",
-  Write: "wrote a file",
-  Read: "read a file",
+// Past-tense verb per tool — used to compose descriptive single-call titles
+// ("read foo.ts") and grouped-call summaries ("read 3 files"). Tools not in
+// the map fall back to the bare tool name.
+const TOOL_VERBS: Record<string, string> = {
+  Bash: "ran",
+  Edit: "edited",
+  MultiEdit: "edited",
+  Write: "wrote",
+  Read: "read",
+  Glob: "globbed",
+  Grep: "grepped",
+  WebFetch: "fetched",
+  WebSearch: "searched",
+  TodoWrite: "updated todos",
+}
+
+// Noun used when summarizing N+ calls of one tool ("ran 14 commands").
+const TOOL_NOUNS: Record<string, string> = {
+  Bash: "commands",
+  Edit: "files",
+  MultiEdit: "files",
+  Write: "files",
+  Read: "files",
+  Glob: "patterns",
+  Grep: "patterns",
+  WebFetch: "urls",
+  WebSearch: "queries",
+}
+
+const FILE_TOOLS = new Set(["Edit", "MultiEdit", "Write", "Read"])
+
+function basenameOf(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s
+  return s.slice(0, max - 1) + "…"
 }
 
 function formatSinglePermission(p: PermissionDetail): string {
-  return TOOL_TITLES[p.tool] ?? p.tool
+  const verb = TOOL_VERBS[p.tool] ?? p.tool
+
+  if (!p.detail) return verb
+
+  if (p.tool === "Bash") {
+    return `ran \`${truncate(p.detail, 60)}\``
+  }
+
+  if (FILE_TOOLS.has(p.tool)) {
+    return `${verb} ${basenameOf(p.detail)}`
+  }
+
+  return `${verb} ${truncate(p.detail, 60)}`
+}
+
+function formatGroupedToolSummary(
+  counts: Iterable<[string, number]>,
+): string {
+  const parts: string[] = []
+  for (const [tool, count] of counts) {
+    const verb = TOOL_VERBS[tool] ?? tool
+    if (count === 1) {
+      // Single call — just the verb (the detail is per-permission and
+      // doesn't roll up usefully into a mixed-tool summary).
+      parts.push(verb)
+    } else {
+      const noun = TOOL_NOUNS[tool] ?? "calls"
+      parts.push(`${verb} ${count} ${noun}`)
+    }
+  }
+  return parts.join(", ")
 }
 
 const ROLLUP_EVENTS = new Set([
@@ -230,7 +293,7 @@ export const consolidatePermissions: TimelineTransform = (events) => {
         toolCounts.set(p.tool, (toolCounts.get(p.tool) ?? 0) + p.count)
       }
       const sorted = [...toolCounts.entries()].sort((a, b) => b[1] - a[1])
-      const summary = sorted.map(([tool, count]) => `${count}× ${tool}`).join(", ")
+      const summary = formatGroupedToolSummary(sorted)
 
       // Use midpoint timestamp
       const firstTs = new Date(batch[0].createdAt).getTime()
