@@ -5,6 +5,14 @@
  * Terminal integration via `${BIN} badge` / `${BIN} notify` (adapter-based).
  * The hooks read BERTRAND_SESSION (session ID) and BERTRAND_CLAUDE_ID from env.
  *
+ * Two stderr channels by design:
+ *   - `bq <subcommand>` runs the bertrand binary with stderr discarded and
+ *     exit code clamped to 0 — internal panics (SQLite races, bun stack
+ *     traces, etc.) never leak into Claude's transcript.
+ *   - `printf … >&2; exit 2` blocks the tool call and surfaces the message
+ *     to Claude. That's the deliberate bertrand → agent signal channel
+ *     (e.g. the multiSelect:true enforcement in on-waiting.sh).
+ *
  * Performance notes:
  *   - grep/sed used instead of jq for simple field extraction (~1ms vs ~15ms)
  *   - jq -n kept for building meta JSON (safe escaping, acceptable cost)
@@ -17,11 +25,21 @@
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
 
+/**
+ * Quiet-bertrand helper. Every hook prepends this so all `bq <subcommand>` calls
+ * route stderr to /dev/null and never exit non-zero. Internal failures (DB
+ * locks, schema races, bun panics) stay invisible to Claude. Deliberate
+ * signals MUST use bash-level `printf >&2; exit 2` instead.
+ */
+function quietHelper(bin: string): string {
+  return `bq() { ${bin} "$@" 2>/dev/null || true; }`;
+}
+
 /** PreToolUse AskUserQuestion → enforce multiSelect:true, then mark session as waiting */
 export function waitingScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -45,25 +63,24 @@ question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut 
 # Clear working debounce marker so next resume→working transition fires
 rm -f "/tmp/bertrand-working-$sid"
 
-${BIN} update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
+bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
 # Context snapshot — extract transcript path and capture token usage
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
-  ${BIN} recap-thinking --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq recap-thinking --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
 # Badge + notify in background — terminal UI doesn't need to block Claude
-${BIN} badge message-question --color '#e0b956' --priority 20 --beep &
-${BIN} notify bertrand "$question" &
+bq badge message-question --color '#e0b956' --priority 20 --beep &
+bq notify bertrand "$question" &
 wait
 `;
 }
 
 /** PostToolUse AskUserQuestion → mark session as active (user answered) */
 export function answeredScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
 #
@@ -71,6 +88,7 @@ export function answeredScript(bin: string): string {
 # Claude Code so the agent halts immediately instead of taking another turn.
 # This is the mechanical enforcement of the contract's loop-exit rule — the
 # contract prose is a soft hint, this JSON is the guarantee.
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -92,9 +110,9 @@ meta="$(printf '%s' "$input" | jq --arg cid "$cid" '
 # Concatenate all answer values into a single string for the Done-for-now check.
 done_check="$(printf '%s' "$meta" | jq -r '.answers | to_entries | map(.value | tostring) | join(" ")' 2>/dev/null)"
 
-${BIN} update --session-id "$sid" --event session.answered --meta "$meta"
+bq update --session-id "$sid" --event session.answered --meta "$meta"
 
-${BIN} badge --clear &
+bq badge --clear &
 
 # Halt the agent loop if the user signaled Done for now. The Stop hook
 # (on-done.sh) will fire afterwards and mark the session as paused.
@@ -107,7 +125,7 @@ if printf '%s' "$done_check" | grep -q "Done for now"; then
     [.questions[]?.options[]? | select(.label == "Done for now") | .description] | first // empty
   ' 2>/dev/null)"
   if [ -n "$recap" ]; then
-    ${BIN} update --session-id "$sid" --event session.recap \
+    bq update --session-id "$sid" --event session.recap \
       --meta "$(jq -n --arg recap "$recap" --arg cid "$cid" '{recap:$recap, claude_id:$cid}')"
   fi
 
@@ -120,9 +138,9 @@ wait
 
 /** PreToolUse (catch-all) → flip waiting to active */
 export function activeScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PreToolUse (catch-all) → flip waiting to active
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -142,15 +160,15 @@ ${EXTRACT_TOOL}
 
 touch "$marker"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+bq update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 `;
 }
 
 /** PermissionRequest → write pending marker + emit permission.request */
 export function permissionWaitScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PermissionRequest → mark pending, emit permission.request
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -169,18 +187,17 @@ case "$tool" in
 esac
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
+bq update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
 # Badge + notify in background
-${BIN} badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
-${BIN} notify bertrand "Needs permission: $tool" &
+bq badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
+bq notify bertrand "Needs permission: $tool" &
 wait
 `;
 }
 
 /** PostToolUse (catch-all) → emit tool.applied for edits, permission.resolve for prompted tools */
 export function permissionDoneScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
@@ -191,6 +208,7 @@ export function permissionDoneScript(bin: string): string {
 #   2. Other tools: emit permission.resolve only if a PermissionRequest preceded this
 #      (marker exists). Rejected tools never reach PostToolUse, so a request without a
 #      resolve = rejected.
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -202,7 +220,7 @@ had_marker=0
 if [ -f "$marker" ]; then
   had_marker=1
   rm -f "$marker"
-  ${BIN} badge --clear &
+  bq badge --clear &
 fi
 
 cid="\${BERTRAND_CLAUDE_ID:-}"
@@ -230,7 +248,7 @@ case "$tool" in
         claude_id: $cid
       }
     ')"
-    ${BIN} update --session-id "$sid" --event tool.applied --summary "$summary" --meta "$meta"
+    bq update --session-id "$sid" --event tool.applied --summary "$summary" --meta "$meta"
     wait
     exit 0
     ;;
@@ -244,7 +262,7 @@ case "$tool" in
   Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
 esac
 
-${BIN} update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
+bq update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
 wait
 `;
 }
@@ -255,9 +273,9 @@ wait
  * handling is fine — grep would mangle prompts containing quotes or newlines.
  */
 export function userPromptScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: UserPromptSubmit → record user free-text prompt
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
@@ -267,30 +285,30 @@ cid="\${BERTRAND_CLAUDE_ID:-}"
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
 [ -z "$meta" ] && exit 0
 
-${BIN} update --session-id "$sid" --event user.prompt --meta "$meta"
+bq update --session-id "$sid" --event user.prompt --meta "$meta"
 `;
 }
 
 /** Stop hook → mark session as paused + final context snapshot */
 export function doneScript(bin: string): string {
-  const BIN = bin;
   return `#!/usr/bin/env bash
 # Hook: Stop → mark session as paused
+${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-${BIN} update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+bq update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 
 # Final context snapshot — capture token usage at session end
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  ${BIN} snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
-  ${BIN} assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
-${BIN} badge check --color '#58c142' --priority 10
+bq badge check --color '#58c142' --priority 10
 `;
 }
 

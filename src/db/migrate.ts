@@ -24,6 +24,9 @@ export function runMigrations(dbPath?: string): void {
   const target = dbPath ?? resolveActiveProject().db;
   mkdirSync(dirname(target), { recursive: true });
   const sqlite = new Database(target);
+  // busy_timeout first so the migrator waits on a concurrent writer instead
+  // of failing with SQLITE_BUSY. Mirrors the one in db/client.ts.
+  sqlite.exec("PRAGMA busy_timeout = 5000");
   sqlite.exec("PRAGMA journal_mode = WAL");
   sqlite.exec("PRAGMA foreign_keys = ON");
   const db = drizzle(sqlite);

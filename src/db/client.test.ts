@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
+import { Database } from "bun:sqlite";
+import { mkdirSync, mkdtempSync, rmSync } from "fs";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 
 import {
@@ -77,6 +78,42 @@ describe("getDbForProject(slug)", () => {
     const first = getDbForProject("acme");
     const second = getDbForProject("acme");
     expect(first).toBe(second);
+  });
+});
+
+describe("openDb migration recovery", () => {
+  test("rebuilds schema when __drizzle_migrations is populated but tables are missing", () => {
+    // Reproduces the production hook-subprocess race: __drizzle_migrations
+    // ended up populated with the correct hashes but the actual schema
+    // tables never landed. drizzle's migrate() looks at hashes, sees a
+    // match, and silently skips — so openDb must verify the schema is
+    // actually present and re-migrate if not.
+    const realPath = join(_getRegistryDir(), "tmp-real", "real.db");
+    mkdirSync(dirname(realPath), { recursive: true });
+    const real = new Database(realPath);
+    const realDb = (require("drizzle-orm/bun-sqlite") as typeof import("drizzle-orm/bun-sqlite")).drizzle(real);
+    const realMigrate = (require("drizzle-orm/bun-sqlite/migrator") as typeof import("drizzle-orm/bun-sqlite/migrator")).migrate;
+    realMigrate(realDb, { migrationsFolder: join(import.meta.dir, "migrations") });
+    const realHashes = real
+      .query("SELECT hash, created_at FROM __drizzle_migrations ORDER BY id")
+      .all() as Array<{ hash: string; created_at: number }>;
+    real.close();
+
+    const dbPath = projectPaths("rescue").db;
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const sqlite = new Database(dbPath);
+    sqlite.exec(
+      "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash TEXT NOT NULL, created_at NUMERIC)",
+    );
+    const stmt = sqlite.prepare(
+      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+    );
+    for (const r of realHashes) stmt.run(r.hash, r.created_at);
+    sqlite.close();
+
+    const db = getDbForProject("rescue");
+    const result = db.$client.prepare("SELECT count(*) as n FROM sessions").get();
+    expect(result).toEqual({ n: 0 });
   });
 });
 
