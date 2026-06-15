@@ -74,6 +74,11 @@ function openDb(dbPath: string): DrizzleDb {
 
   mkdirSync(dirname(dbPath), { recursive: true });
   const sqlite = new Database(dbPath);
+  // busy_timeout MUST go first so the rest of the PRAGMAs and the lazy
+  // migration below wait on a concurrent writer instead of failing with
+  // SQLITE_BUSY. Hook subprocesses race on this regularly (every PreToolUse
+  // spawns a fresh bertrand process); 5s is generous for our workload.
+  sqlite.exec("PRAGMA busy_timeout = 5000");
   sqlite.exec("PRAGMA journal_mode = WAL");
   sqlite.exec("PRAGMA foreign_keys = ON");
   sqlite.exec("PRAGMA synchronous = NORMAL");
@@ -88,6 +93,12 @@ function openDb(dbPath: string): DrizzleDb {
   // Skipping migration on a fresh per-project DB would leave it schema-less,
   // so this is load-bearing rather than convenience.
   //
+  // After migration, verify the `sessions` table actually exists. We've
+  // seen cases where two processes race on a fresh DB and one ends up with
+  // `__drizzle_migrations` populated but real tables missing — that's the
+  // "no such table: sessions" panic the hooks were leaking. If we observe
+  // it, drop `__drizzle_migrations` and re-run so the schema lands.
+  //
   // Close the sqlite handle on migration failure so a transient error
   // (corrupt `__drizzle_migrations`, partial schema, etc.) doesn't leak
   // file descriptors across retries. The cache + _migrated set stay
@@ -95,6 +106,10 @@ function openDb(dbPath: string): DrizzleDb {
   if (!_migrated.has(dbPath)) {
     try {
       migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+      if (!hasSessionsTable(sqlite)) {
+        sqlite.exec("DROP TABLE IF EXISTS __drizzle_migrations");
+        migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+      }
     } catch (err) {
       sqlite.close();
       throw err;
@@ -104,6 +119,13 @@ function openDb(dbPath: string): DrizzleDb {
 
   _cache.set(dbPath, db);
   return db;
+}
+
+function hasSessionsTable(sqlite: Database): boolean {
+  const row = sqlite
+    .query("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+    .get();
+  return row !== null;
 }
 
 /** Replace the singleton — for tests only. */
