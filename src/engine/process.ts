@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 
 export interface ClaudeLaunchOpts {
   sessionId: string;
@@ -28,6 +29,14 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   args.push("--append-system-prompt", opts.contract);
 
+  // Capture the active project at spawn time so the running session keeps
+  // writing to the right DB even if the user runs `bertrand project switch`
+  // in another terminal. Hooks inherit this env via the chain
+  // bertrand → claude → hook subprocess → bertrand update, so every
+  // hook-triggered write resolves to the same project the session started
+  // in — not whatever's active on disk at hook-fire time.
+  const active = resolveActiveProject();
+
   const env = {
     ...process.env,
     BERTRAND_PID: String(process.pid),
@@ -35,6 +44,8 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     BERTRAND_SESSION: opts.sessionId,
     BERTRAND_SESSION_NAME: opts.sessionName,
     BERTRAND_SESSION_SLUG: opts.sessionSlug,
+    BERTRAND_PROJECT: active.slug,
+    BERTRAND_PROJECT_DB: active.db,
   };
 
   return new Promise((resolve, reject) => {
