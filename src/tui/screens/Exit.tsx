@@ -28,7 +28,7 @@ const OPTIONS: ExitOption[] = [
   {
     action: "resume",
     label: "Resume",
-    hint: "Start a new conversation in this session",
+    hint: "Continue a conversation or start a new one",
   },
 ];
 

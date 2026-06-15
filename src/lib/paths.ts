@@ -16,6 +16,14 @@ export const paths = {
   root: join(homedir(), BERTRAND_DIR),
   hooks: join(homedir(), BERTRAND_DIR, "hooks"),
   sessions: join(homedir(), BERTRAND_DIR, "sessions"),
+  /**
+   * Per-install runtime scratch dir for short-lived markers (debounce,
+   * permission-pending). Lived under /tmp historically; moved here because
+   * /tmp on macOS survives reboots, so stale markers from a previous
+   * bertrand run silently debounced the first event of a new session.
+   * Created lazily by the hook scripts themselves via `mkdir -p`.
+   */
+  runtime: join(homedir(), BERTRAND_DIR, "run"),
   /** @deprecated Use `resolveActiveProject().db`. Removed in PR2. */
   db: join(homedir(), BERTRAND_DIR, "bertrand.db"),
   /** @deprecated Use `resolveActiveProject().syncEnv`. Removed in PR6. */
