@@ -116,7 +116,7 @@ function buildListItem(s: SessionWithCategory): ListItemProps {
     value: s.session.id,
     label: <SessionLabel session={s} />,
     content: (
-      <Group gap={2} ay="center" mt={1} mb={2}>
+      <Group gap={2} ay="center" mb={2}>
         {/** @todo add {s.session.status} as tooltip */}
         <Status color={color} />
         <SessionContent session={s} />
@@ -381,6 +381,13 @@ const SessionContent = ({ session: s }: { session: SessionWithCategory }) => {
             <Markdown>{recap.recap}</Markdown>
           </Stack>
         </Popover>
+      )}
+      {s.session.rating !== null && s.session.rating !== undefined && (
+        <Text aria-label={`Rated ${s.session.rating} of 5 stars`}>
+          {[1, 2, 3, 4, 5]
+            .map((n) => (n <= s.session.rating! ? "★" : "☆"))
+            .join("")}
+        </Text>
       )}
     </Group>
   );

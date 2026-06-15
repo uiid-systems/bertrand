@@ -50,6 +50,7 @@ export const sessions = sqliteTable(
       .notNull()
       .default("paused"),
     summary: text("summary"),
+    rating: integer("rating"),
     pid: integer("pid"),
     startedAt: text("started_at")
       .notNull()

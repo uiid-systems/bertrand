@@ -24,7 +24,7 @@ migrate(drizzle(sqlite), {
 
 // Now import query modules — they'll use the injected test DB
 const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
-const { createSession, getSession, getActiveSessions, updateSessionStatus } = await import("./queries/sessions.ts");
+const { createSession, getSession, getActiveSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession, getLatestEventOfType } = await import("./queries/events.ts");
 const { createConversation, getConversationsBySession } = await import("./queries/conversations.ts");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
@@ -89,6 +89,27 @@ describe("sessions", () => {
     const active = getActiveSessions();
     expect(active.length).toBeGreaterThan(0);
     expect(active[0]!.session.status).toBe("active");
+  });
+
+  test("session rating defaults to null and can be set, updated, and cleared", () => {
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "rating-test",
+      name: "rating-test",
+    });
+    expect(session.rating).toBeNull();
+
+    const rated = setSessionRating(session.id, 4);
+    expect(rated.rating).toBe(4);
+    expect(getSession(session.id)!.rating).toBe(4);
+
+    const rerated = setSessionRating(session.id, 2);
+    expect(rerated.rating).toBe(2);
+
+    const cleared = setSessionRating(session.id, null);
+    expect(cleared.rating).toBeNull();
+    expect(getSession(session.id)!.rating).toBeNull();
   });
 });
 

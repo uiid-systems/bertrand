@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
-import { getSession } from "@/db/queries/sessions";
+import { getSession, setSessionRating } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import { formatDuration } from "@/lib/format";
 import { StatusDot } from "@/tui/components/status-dot";
@@ -43,11 +43,21 @@ export function Exit({ sessionId, onAction }: ExitProps) {
 
   const session = getSession(sessionId);
   const conversations = session ? getConversationsBySession(session.id) : [];
+  const [rating, setRating] = useState<number | null>(session?.rating ?? null);
+
+  const persistRating = (next: number | null) => {
+    setRating(next);
+    setSessionRating(sessionId, next);
+  };
 
   useInput((e) => {
     if (e.key === "c" && e.ctrl) exit();
 
-    if (e.key === "up" || e.key === "k") {
+    if (e.key >= "1" && e.key <= "5") {
+      persistRating(Number(e.key));
+    } else if (e.key === "0" || e.key === "backspace") {
+      persistRating(null);
+    } else if (e.key === "up" || e.key === "k") {
       setCursor((c) => Math.max(0, c - 1));
     } else if (e.key === "down" || e.key === "j") {
       setCursor((c) => Math.min(OPTIONS.length - 1, c + 1));
@@ -92,6 +102,22 @@ export function Exit({ sessionId, onAction }: ExitProps) {
       </Box>
 
       <Box flexDirection="column">
+        <Text dim>How effective was this session?</Text>
+        <Box flexDirection="row" gap={1}>
+          <Text color="#FFD580">
+            {[1, 2, 3, 4, 5]
+              .map((n) => (rating !== null && n <= rating ? "★" : "☆"))
+              .join(" ")}
+          </Text>
+          <Text dim>
+            {rating !== null
+              ? `${rating} star${rating === 1 ? "" : "s"}`
+              : "unrated"}
+          </Text>
+        </Box>
+      </Box>
+
+      <Box flexDirection="column">
         {OPTIONS.map((opt, i) => (
           <Box key={opt.action} flexDirection="row" gap={1}>
             <Text>{i === cursor ? "❯" : " "}</Text>
@@ -102,7 +128,10 @@ export function Exit({ sessionId, onAction }: ExitProps) {
       </Box>
 
       <Box>
-        <Text dim>↑↓ navigate · enter select · q save & quit</Text>
+        <Text dim>
+          1-5 rate · 0/backspace clear · ↑↓ navigate · enter select · q save &
+          quit
+        </Text>
       </Box>
     </Box>
   );
