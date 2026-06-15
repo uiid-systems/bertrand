@@ -81,17 +81,18 @@ function installExitHandlers(): void {
   // so the DB write completes before the process actually exits.
   process.on("exit", forceFinalizeLive);
 
-  // Default SIGINT/SIGTERM/SIGHUP behavior is to terminate without firing
-  // the "exit" event. Once launchClaude removes its forwarder, bertrand
-  // becomes defenseless during finalize / exit-menu / discard. Catch the
-  // signal, defer to launchClaude's handler if Claude is still running,
-  // otherwise route through process.exit() so the "exit" handler fires.
+  // SIGHUP is the only signal Node's default behavior leaves to us — the
+  // terminal closes and the process is killed without firing "exit". Catch
+  // it so forceFinalizeLive runs. SIGINT/SIGTERM are deliberately NOT
+  // installed here: the foreground subprocess (launchClaude during a Claude
+  // session, runScreen during a TUI screen) owns the terminal and registers
+  // its own forwarder; a parent-level handler would race the child and
+  // either prematurely terminate the parent (orphaning the child + leaving
+  // alt-screen on) or fight the child's signal handling.
   const onSignal = (signal: NodeJS.Signals): void => {
     if (isClaudeRunning()) return;
-    process.exit(signal === "SIGINT" ? 130 : signal === "SIGHUP" ? 129 : 143);
+    process.exit(signal === "SIGHUP" ? 129 : 143);
   };
-  process.on("SIGINT", onSignal);
-  process.on("SIGTERM", onSignal);
   process.on("SIGHUP", onSignal);
 }
 
