@@ -102,6 +102,15 @@ export function updateSession(
     .get();
 }
 
+export function setSessionRating(id: string, rating: number | null) {
+  return getDb()
+    .update(sessions)
+    .set({ rating, updatedAt: sql`(datetime('now'))` })
+    .where(eq(sessions.id, id))
+    .returning()
+    .get();
+}
+
 export function renameSession(id: string, slug: string, name?: string) {
   return getDb()
     .update(sessions)

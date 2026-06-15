@@ -382,6 +382,13 @@ const SessionContent = ({ session: s }: { session: SessionWithCategory }) => {
           </Stack>
         </Popover>
       )}
+      {s.session.rating !== null && s.session.rating !== undefined && (
+        <Text aria-label={`Rated ${s.session.rating} of 5 stars`}>
+          {[1, 2, 3, 4, 5]
+            .map((n) => (n <= s.session.rating! ? "★" : "☆"))
+            .join("")}
+        </Text>
+      )}
     </Group>
   );
 };
