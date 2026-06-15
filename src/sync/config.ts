@@ -9,7 +9,7 @@ import {
 // doesn't leave the file world-readable for long. We re-chmod and log a
 // warning; both are silent in background-spawned trigger contexts but
 // surface in foreground CLI runs, which is the user-facing escape hatch.
-import { paths } from "@/lib/paths";
+import { resolveActiveProject } from "@/lib/projects/resolve";
 
 export type SyncConfig = {
   supabaseUrl: string;
@@ -51,20 +51,26 @@ function parseEnv(contents: string): Partial<Record<Key, string>> {
   return out;
 }
 
-export function hasSyncConfig(): boolean {
-  return existsSync(paths.syncEnv);
+/** Default to the active project's per-project sync.env. */
+function defaultPath(): string {
+  return resolveActiveProject().syncEnv;
 }
 
-export function loadSyncConfig(): SyncConfig | null {
-  if (!existsSync(paths.syncEnv)) return null;
+export function hasSyncConfig(syncEnvPath?: string): boolean {
+  return existsSync(syncEnvPath ?? defaultPath());
+}
 
-  const mode = statSync(paths.syncEnv).mode & 0o777;
+export function loadSyncConfig(syncEnvPath?: string): SyncConfig | null {
+  const path = syncEnvPath ?? defaultPath();
+  if (!existsSync(path)) return null;
+
+  const mode = statSync(path).mode & 0o777;
   if (mode & 0o077) {
     console.warn(
-      `warning: ${paths.syncEnv} was mode 0${mode.toString(8)} (should be 0600). Tightening to 0600.`
+      `warning: ${path} was mode 0${mode.toString(8)} (should be 0600). Tightening to 0600.`
     );
     try {
-      chmodSync(paths.syncEnv, 0o600);
+      chmodSync(path, 0o600);
     } catch (e) {
       console.warn(
         `failed to chmod 0600: ${e instanceof Error ? e.message : String(e)}. Fix manually.`
@@ -72,7 +78,7 @@ export function loadSyncConfig(): SyncConfig | null {
     }
   }
 
-  const env = parseEnv(readFileSync(paths.syncEnv, "utf8"));
+  const env = parseEnv(readFileSync(path, "utf8"));
   if (
     !env.SUPABASE_URL ||
     !env.SUPABASE_SERVICE_KEY ||
@@ -94,7 +100,8 @@ export function loadSyncConfig(): SyncConfig | null {
   };
 }
 
-export function saveSyncConfig(cfg: SyncConfig): void {
+export function saveSyncConfig(cfg: SyncConfig, syncEnvPath?: string): void {
+  const path = syncEnvPath ?? defaultPath();
   const lines = [
     "# bertrand sync configuration",
     "# Created by `bertrand sync onboard`. chmod 600.",
@@ -113,6 +120,6 @@ export function saveSyncConfig(cfg: SyncConfig): void {
     `BERTRAND_CLIENT_NAME=${cfg.clientName}`,
     "",
   ];
-  writeFileSync(paths.syncEnv, lines.join("\n"), { mode: 0o600 });
-  chmodSync(paths.syncEnv, 0o600);
+  writeFileSync(path, lines.join("\n"), { mode: 0o600 });
+  chmodSync(path, 0o600);
 }

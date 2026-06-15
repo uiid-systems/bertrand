@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { paths } from "@/lib/paths";
+import { _getRegistryDir } from "@/lib/projects/registry";
 
 export interface BertrandConfig {
   terminal: "wave" | "other";
@@ -11,18 +11,31 @@ export interface BertrandConfig {
   };
 }
 
-const CONFIG_PATH = join(paths.root, "config.json");
+/**
+ * Resolve via `_getRegistryDir()` (same knob projects/paths.ts uses) so
+ * a test that calls `_setRegistryDir(tmp)` doesn't end up writing to the
+ * developer's real ~/.bertrand/config.json. Production behavior is
+ * identical: the registry dir defaults to ~/.bertrand.
+ */
+function configPath(): string {
+  return join(_getRegistryDir(), "config.json");
+}
 
 export function readConfig(): Partial<BertrandConfig> | null {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    return JSON.parse(readFileSync(configPath(), "utf-8"));
   } catch {
     return null;
   }
 }
 
 export function writeConfig(config: Partial<BertrandConfig>): void {
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  // Ensure ~/.bertrand exists before writing. Normally `bertrand init`
+  // creates it, but writeConfig can be the FIRST thing to touch the dir
+  // when a user imports a project via `bertrand sync <bundle>` on a
+  // fresh machine that has no prior bertrand state.
+  mkdirSync(_getRegistryDir(), { recursive: true });
+  writeFileSync(configPath(), JSON.stringify(config, null, 2) + "\n");
 }
 
 /**

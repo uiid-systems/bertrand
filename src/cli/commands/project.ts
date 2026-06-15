@@ -12,6 +12,8 @@ import {
 import { projectPaths } from "@/lib/projects/paths";
 import { createProject } from "@/lib/projects/create";
 import { resolveActiveProject, _resetActiveProjectCache } from "@/lib/projects/resolve";
+import { bootstrapFromInvite } from "@/sync/bootstrap";
+import { isInvite } from "@/sync/invite";
 import { formatAgo } from "@/lib/format";
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -282,6 +284,32 @@ export function removeSubcommand(args: string[]): void {
   );
 }
 
+export async function importSubcommand(args: string[]): Promise<void> {
+  const [bundle] = positional(args);
+  if (!bundle) {
+    throw new UsageError("Usage: bertrand project import <bundle>");
+  }
+  if (!isInvite(bundle)) {
+    throw new UsageError(
+      `Argument doesn't look like an invite bundle (expected to start with bertrand-sync://). ` +
+        `Generate one on the source machine via \`bertrand sync invite\`.`,
+    );
+  }
+  console.log("Importing project from invite…");
+  const result = await bootstrapFromInvite(bundle);
+  if (!result.ok) {
+    throw new UsageError(result.error);
+  }
+  console.log(
+    `✓ Created project "${result.project.slug}" (${result.project.name}) and activated it.`,
+  );
+  if (result.pulled) {
+    console.log(`  Pulled ${result.bytes} bytes in ${result.durationMs}ms.`);
+  } else {
+    console.log(`  No remote object yet — run \`bertrand sync push\` on the source machine first.`);
+  }
+}
+
 function printProjectUsage(): void {
   console.log(`
 bertrand project — manage projects
@@ -295,6 +323,7 @@ Usage:
   bertrand project rename <slug> <new-name>       Rename a project (display name only)
   bertrand project remove <slug> [--force] [--purge]
                                                   Remove a project entry
+  bertrand project import <bundle>                Import a project from a \`bertrand sync invite\` bundle
 `.trim());
 }
 
@@ -305,6 +334,7 @@ const KNOWN_SUBS = new Set([
   "current",
   "rename",
   "remove",
+  "import",
 ]);
 
 register("project", async (args) => {
@@ -323,6 +353,8 @@ register("project", async (args) => {
         return renameSubcommand(args.slice(1));
       case "remove":
         return removeSubcommand(args.slice(1));
+      case "import":
+        return await importSubcommand(args.slice(1));
       case undefined:
       case "--help":
       case "-h":
