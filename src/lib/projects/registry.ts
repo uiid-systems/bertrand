@@ -207,6 +207,17 @@ export function registerProject(opts: {
   return entry;
 }
 
+/**
+ * Update a project's display name. Slug is immutable (it's the directory
+ * name); rename only mutates the user-facing `name` field.
+ *
+ * Concurrency: this is a read-modify-write on the JSON file. Two concurrent
+ * `bertrand project rename` calls would last-write-wins on the entry; one
+ * rename would silently lose. Acceptable for a low-frequency interactive
+ * op — registerProject, setActiveProjectSlug, and removeProject have the
+ * same shape. `writeRegistry` is atomic via tmp+rename so the file itself
+ * never tears, only the logical update can be lost.
+ */
 export function renameProject(slug: string, newName: string): void {
   const registry = loadRegistry();
   if (!registry) {

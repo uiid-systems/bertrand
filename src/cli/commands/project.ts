@@ -27,20 +27,30 @@ class UsageError extends Error {}
 interface SessionCounts {
   total: number;
   active: number;
+  /** True when the project's DB couldn't be opened (corrupt, perms, etc.) */
+  unreadable?: boolean;
 }
+
+const UNREADABLE_COUNTS: SessionCounts = { total: 0, active: 0, unreadable: true };
 
 function countSessions(slug: string): SessionCounts {
   const dbFile = projectPaths(slug).db;
   if (!existsSync(dbFile)) return { total: 0, active: 0 };
-  const db = getDbForProject(slug);
-  const all = db
-    .select({ status: sessions.status })
-    .from(sessions)
-    .all();
-  return {
-    total: all.length,
-    active: all.filter((s) => s.status === "active" || s.status === "waiting").length,
-  };
+  try {
+    const db = getDbForProject(slug);
+    const all = db
+      .select({ status: sessions.status })
+      .from(sessions)
+      .all();
+    return {
+      total: all.length,
+      active: all.filter((s) => s.status === "active" || s.status === "waiting").length,
+    };
+  } catch {
+    // Corrupt sqlite, bad migration, perms — render as "?" in the list view
+    // rather than crashing every subcommand that surveys other projects.
+    return UNREADABLE_COUNTS;
+  }
 }
 
 function validateSlug(slug: string): void {
@@ -54,14 +64,36 @@ function validateSlug(slug: string): void {
   }
 }
 
+/**
+ * Flags accept either `--name value` or `--name=value` forms. The `=` form
+ * is dropped on the floor by a naive `indexOf("--name")` lookup, so we
+ * normalize first and let downstream code stay simple.
+ */
+function flagKey(token: string): string | null {
+  if (!token.startsWith("--")) return null;
+  const eq = token.indexOf("=");
+  return eq === -1 ? token.slice(2) : token.slice(2, eq);
+}
+
+function flagInlineValue(token: string): string | null {
+  if (!token.startsWith("--")) return null;
+  const eq = token.indexOf("=");
+  return eq === -1 ? null : token.slice(eq + 1);
+}
+
 function parseFlag(args: string[], name: string): string | undefined {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1) return undefined;
-  return args[idx + 1];
+  for (let i = 0; i < args.length; i++) {
+    const key = flagKey(args[i]!);
+    if (key !== name) continue;
+    const inline = flagInlineValue(args[i]!);
+    if (inline !== null) return inline;
+    return args[i + 1];
+  }
+  return undefined;
 }
 
 function hasFlag(args: string[], name: string): boolean {
-  return args.includes(`--${name}`);
+  return args.some((a) => flagKey(a) === name);
 }
 
 function positional(args: string[]): string[] {
@@ -69,7 +101,10 @@ function positional(args: string[]): string[] {
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a.startsWith("--")) {
-      // Skip the flag and its value (if it looks like a value, not another flag)
+      // `--name=value` is self-contained; consume one token.
+      if (a.includes("=")) continue;
+      // `--name value` consumes both. A `--name` followed by another flag
+      // (or end of args) is treated as boolean — consume only the flag.
       const next = args[i + 1];
       if (next && !next.startsWith("--")) i++;
       continue;
@@ -115,7 +150,9 @@ export function listSubcommand(args: string[]): void {
   );
   for (const r of rows) {
     const marker = r.active ? `${bold}*${reset}` : " ";
-    const sessionStr = `${r.sessions.total} (${r.sessions.active} active)`.padEnd(10);
+    const sessionStr = r.sessions.unreadable
+      ? "?".padEnd(10)
+      : `${r.sessions.total} (${r.sessions.active} active)`.padEnd(10);
     const ago = formatAgo(r.lastUsedAt);
     console.log(
       `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${sessionStr}  ${ago}`,
@@ -146,7 +183,15 @@ export function createSubcommand(args: string[]): void {
     mkdirSync(paths.root, { recursive: true });
     runMigrations(paths.db);
   } catch (err) {
-    removeProject(slug!);
+    // Roll back the registry entry. Swallow rollback errors so the
+    // original failure (the one the user actually needs to see) wins —
+    // if both throw, we'd otherwise mask "migration failed" with
+    // something like "registry write failed".
+    try {
+      removeProject(slug!);
+    } catch {
+      /* preserve original error */
+    }
     throw err;
   }
 
@@ -219,6 +264,11 @@ export function removeSubcommand(args: string[]): void {
       "Usage: bertrand project remove <slug> [--force] [--purge]",
     );
   }
+  // Defense-in-depth: even though slugs in the registry came through
+  // validateSlug at create time, a manually-edited projects.json could
+  // smuggle in `..` or `/` and `--purge`'s rmSync would walk above the
+  // project root. Re-validate here to close the door.
+  validateSlug(slug);
 
   const force = hasFlag(args, "force");
   const purge = hasFlag(args, "purge");
@@ -272,6 +322,15 @@ Usage:
 `.trim());
 }
 
+const KNOWN_SUBS = new Set([
+  "list",
+  "create",
+  "switch",
+  "current",
+  "rename",
+  "remove",
+]);
+
 register("project", async (args) => {
   const sub = args[0];
   try {
@@ -299,7 +358,10 @@ register("project", async (args) => {
   } catch (err) {
     if (err instanceof UsageError) {
       console.error(err.message);
-      if (sub && sub !== "list" && sub !== "create" && sub !== "switch" && sub !== "current" && sub !== "rename" && sub !== "remove") {
+      // Re-print usage for unknown subcommands (the user is likely lost);
+      // suppress for a known subcommand's input error (they know which
+      // command they meant — just show them what went wrong).
+      if (sub && !KNOWN_SUBS.has(sub)) {
         printProjectUsage();
       }
       process.exit(1);

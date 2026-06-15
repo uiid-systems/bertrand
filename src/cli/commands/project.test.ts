@@ -84,6 +84,12 @@ describe("project create", () => {
     expect(entry?.name).toBe("Acme Corp");
   });
 
+  test("--name=value form is supported (GNU-style)", () => {
+    createSubcommand(["acme", "--name=Acme"]);
+    const entry = listProjects().find((p) => p.slug === "acme");
+    expect(entry?.name).toBe("Acme");
+  });
+
   test("defaults name to slug when --name omitted", () => {
     createSubcommand(["personal"]);
     const entry = listProjects().find((p) => p.slug === "personal");
