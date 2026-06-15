@@ -225,7 +225,9 @@ export const defaultComponents: Components = {
       <CodeBlock
         code={text.replace(/\n$/, "")}
         language={resolveLanguage(className)}
-        copyable
+        rows={5}
+        defaultExpanded={false}
+        HeaderProps={{ copyable: true }}
         style={{ width: "100%", marginBlockEnd: "0.5rem" }}
       />
     );

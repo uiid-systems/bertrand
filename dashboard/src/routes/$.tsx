@@ -17,9 +17,17 @@ import {
 } from "@uiid/design-system";
 import { PanelRightIcon } from "@uiid/icons";
 
-import { eventsQuery, sessionsQuery } from "../../api/queries";
-import { useArchiveAction } from "../../api/use-archive-action";
-import type { EventRow, SessionRow } from "../../api/types";
+import {
+  eventsQuery,
+  projectsQuery,
+  sessionsQuery,
+} from "../api/queries";
+import { useArchiveAction } from "../api/use-archive-action";
+import type {
+  EventRow,
+  SessionRow,
+  SessionWithCategory,
+} from "../api/types";
 import {
   eventColor,
   eventTitle,
@@ -29,14 +37,15 @@ import {
   parseToken,
   remainingColor,
   statusColor,
-} from "../../lib/format";
-import { applyTransforms } from "../../lib/timeline/transforms";
-import { EventContent } from "../../components/timeline";
-import { SecondarySidebar } from "../../components/secondary-sidebar";
-import { CopyResumeButton } from "../../components/copy-resume-button";
+} from "../lib/format";
+import { applyTransforms } from "../lib/timeline/transforms";
+import { EventContent } from "../components/timeline";
+import { SecondarySidebar } from "../components/secondary-sidebar";
+import { CopyResumeButton } from "../components/copy-resume-button";
+import { SessionItem } from "../components/sidebar/session-item";
 
-export const Route = createFileRoute("/sessions/$slug")({
-  component: SessionDetail,
+export const Route = createFileRoute("/$")({
+  component: SplatPage,
 });
 
 const RouterLink = ({
@@ -49,31 +58,117 @@ const RouterLink = ({
 
 type Crumb = { label: string; value: string };
 
-function buildBreadcrumbs(categoryPath: string, sessionName: string): Crumb[] {
+/**
+ * Build breadcrumbs from the project name + a category path. Each category
+ * segment links to that category's browse view (`/seg1/seg2/...`); the
+ * project name links to home.
+ */
+function buildBreadcrumbs(
+  projectName: string,
+  categoryPath: string,
+  leafLabel?: string,
+): Crumb[] {
   const segments = categoryPath.split("/").filter(Boolean);
-  const items: Crumb[] = segments.map((segment, i) => ({
-    label: segment,
-    value: `/groups/${segments.slice(0, i + 1).join("/")}`,
-  }));
-  items.push({ label: sessionName, value: "" });
+  const items: Crumb[] = [{ label: projectName, value: "/" }];
+  for (let i = 0; i < segments.length; i++) {
+    items.push({
+      label: segments[i]!,
+      value: `/${segments.slice(0, i + 1).join("/")}`,
+    });
+  }
+  if (leafLabel !== undefined) items.push({ label: leafLabel, value: "" });
   return items;
 }
 
-function SessionDetail() {
-  const { slug } = Route.useParams();
-  // Look in both the default (non-archived) and archived-included lists so the
-  // detail page resolves an archived session that was opened via deep link or
-  // after toggling "show archived" off.
+/**
+ * Resolve a path like `nav/sub/foo` against a session list. Returns the
+ * matching session if `nav/sub` is a category that contains a session slugged
+ * `foo`; otherwise null. Used by the splat route to decide whether to render
+ * the session detail view or the category browse view.
+ */
+function findSessionFromSplat(
+  splat: string,
+  sessions: SessionWithCategory[],
+): SessionWithCategory | null {
+  const lastSlash = splat.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  const categoryPath = splat.slice(0, lastSlash);
+  const slug = splat.slice(lastSlash + 1);
+  if (!slug) return null;
+  return (
+    sessions.find(
+      (s) => s.categoryPath === categoryPath && s.session.slug === slug,
+    ) ?? null
+  );
+}
+
+function SplatPage() {
+  const { _splat = "" } = Route.useParams();
   const { data: visibleSessions = [] } = useQuery(sessionsQuery());
   const { data: allSessions = [] } = useQuery(
     sessionsQuery({ includeArchived: true }),
   );
+
+  // Resolve session-detail first against the visible list, then the full
+  // list (so an archived session opened by deep link still loads even when
+  // "show archived" is off in the sidebar).
   const match =
-    visibleSessions.find((s) => s.session.slug === slug) ??
-    allSessions.find((s) => s.session.slug === slug);
-  const sessionId = match?.session.id ?? "";
+    findSessionFromSplat(_splat, visibleSessions) ??
+    findSessionFromSplat(_splat, allSessions);
+
+  if (match) return <SessionDetail match={match} />;
+  return <CategoryDetail categoryPath={_splat} sessions={visibleSessions} />;
+}
+
+function useProjectName(): string {
+  const { data: projects = [] } = useQuery(projectsQuery);
+  return projects.find((p) => p.active)?.name ?? "bertrand";
+}
+
+function CategoryDetail({
+  categoryPath,
+  sessions,
+}: {
+  categoryPath: string;
+  sessions: SessionWithCategory[];
+}) {
+  const projectName = useProjectName();
+  const filtered = sessions.filter((s) => s.categoryPath === categoryPath);
+  const breadcrumbs = buildBreadcrumbs(projectName, categoryPath);
+
+  return (
+    <Stack gap={4} ax="stretch" fullwidth>
+      <Stack
+        bb={1}
+        p={4}
+        style={{
+          position: "sticky",
+          top: 0,
+          backgroundColor: "var(--shade-background)",
+          zIndex: 1,
+        }}
+      >
+        <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
+      </Stack>
+      <Stack px={8} gap={2} style={{ overflow: "auto" }}>
+        {filtered.length > 0 ? (
+          filtered.map((s) => (
+            <SessionItem key={s.session.id} session={s} />
+          ))
+        ) : (
+          <Text shade="muted">No sessions in this category.</Text>
+        )}
+      </Stack>
+    </Stack>
+  );
+}
+CategoryDetail.displayName = "CategoryDetail";
+
+function SessionDetail({ match }: { match: SessionWithCategory }) {
+  const projectName = useProjectName();
+  const sessionId = match.session.id;
   const isLive =
-    match?.session.status === "active" || match?.session.status === "waiting";
+    match.session.status === "active" || match.session.status === "waiting";
 
   const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
   const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
@@ -86,7 +181,7 @@ function SessionDetail() {
   }, [rawEvents]);
 
   const pendingQuestion = useMemo(() => {
-    if (match?.session.status !== "waiting") return null;
+    if (match.session.status !== "waiting") return null;
     for (let i = rawEvents.length - 1; i >= 0; i--) {
       if (rawEvents[i].event === "session.waiting") {
         const q = rawEvents[i].meta?.question;
@@ -94,24 +189,24 @@ function SessionDetail() {
       }
     }
     return null;
-  }, [rawEvents, match?.session.status]);
+  }, [rawEvents, match.session.status]);
 
-  const breadcrumbs = match
-    ? buildBreadcrumbs(match.categoryPath, match.session.name)
-    : [{ label: slug, value: "" }];
+  const breadcrumbs = buildBreadcrumbs(
+    projectName,
+    match.categoryPath,
+    match.session.name,
+  );
 
   return (
     <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
       <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         <Group ay="center" gap={2}>
-          {match && (
-            <CopyResumeButton
-              session={match.session}
-              categoryPath={match.categoryPath}
-            />
-          )}
-          {match && <ArchiveToggle session={match.session} />}
+          <CopyResumeButton
+            session={match.session}
+            categoryPath={match.categoryPath}
+          />
+          <ArchiveToggle session={match.session} />
           <Sheet
             side="right"
             title="Session stats"
@@ -126,7 +221,7 @@ function SessionDetail() {
               </Button>
             }
           >
-            <SecondarySidebar />
+            <SecondarySidebar sessionId={sessionId} isLive={isLive} />
           </Sheet>
         </Group>
       </Group>
@@ -145,16 +240,15 @@ function SessionDetail() {
           />
         )}
       </Stack>
-      {match && (
-        <SessionFooter
-          session={match.session}
-          context={latestContext}
-          pendingQuestion={pendingQuestion}
-        />
-      )}
+      <SessionFooter
+        session={match.session}
+        context={latestContext}
+        pendingQuestion={pendingQuestion}
+      />
     </Stack>
   );
 }
+SessionDetail.displayName = "SessionDetail";
 
 function ArchiveToggle({ session }: { session: SessionRow }) {
   const action = useArchiveAction(session);

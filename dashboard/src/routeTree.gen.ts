@@ -9,25 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SessionsSlugRouteImport } from './routes/sessions/$slug'
-import { Route as GroupsSplatRouteImport } from './routes/groups/$'
 import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
 import { Route as DevDiffRouteImport } from './routes/dev/diff'
 
+const SplatRoute = SplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SessionsSlugRoute = SessionsSlugRouteImport.update({
-  id: '/sessions/$slug',
-  path: '/sessions/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GroupsSplatRoute = GroupsSplatRouteImport.update({
-  id: '/groups/$',
-  path: '/groups/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevMarkdownRoute = DevMarkdownRouteImport.update({
@@ -43,74 +37,52 @@ const DevDiffRoute = DevDiffRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
-  '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
-  '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
-  '/groups/$': typeof GroupsSplatRoute
-  '/sessions/$slug': typeof SessionsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/dev/diff'
-    | '/dev/markdown'
-    | '/groups/$'
-    | '/sessions/$slug'
+  fullPaths: '/' | '/$' | '/dev/diff' | '/dev/markdown'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dev/diff' | '/dev/markdown' | '/groups/$' | '/sessions/$slug'
-  id:
-    | '__root__'
-    | '/'
-    | '/dev/diff'
-    | '/dev/markdown'
-    | '/groups/$'
-    | '/sessions/$slug'
+  to: '/' | '/$' | '/dev/diff' | '/dev/markdown'
+  id: '__root__' | '/' | '/$' | '/dev/diff' | '/dev/markdown'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SplatRoute: typeof SplatRoute
   DevDiffRoute: typeof DevDiffRoute
   DevMarkdownRoute: typeof DevMarkdownRoute
-  GroupsSplatRoute: typeof GroupsSplatRoute
-  SessionsSlugRoute: typeof SessionsSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/$': {
+      id: '/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sessions/$slug': {
-      id: '/sessions/$slug'
-      path: '/sessions/$slug'
-      fullPath: '/sessions/$slug'
-      preLoaderRoute: typeof SessionsSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/groups/$': {
-      id: '/groups/$'
-      path: '/groups/$'
-      fullPath: '/groups/$'
-      preLoaderRoute: typeof GroupsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dev/markdown': {
@@ -132,10 +104,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SplatRoute: SplatRoute,
   DevDiffRoute: DevDiffRoute,
   DevMarkdownRoute: DevMarkdownRoute,
-  GroupsSplatRoute: GroupsSplatRoute,
-  SessionsSlugRoute: SessionsSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

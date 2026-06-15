@@ -1,12 +1,4 @@
-import { useState } from "react";
-import {
-  Accordion,
-  Group,
-  Stack,
-  Text,
-  ToggleButton,
-} from "@uiid/design-system";
-import { ChevronsDownUp, ChevronsUpDown } from "@uiid/icons";
+import { Stack, Text } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { DiffBlock } from "../diff/diff-block";
@@ -23,28 +15,30 @@ type PermissionDetail = {
   edits?: EditEntry[];
 };
 
+const DIFF_PREVIEW_ROWS = 5;
+
 function hasDiff(p: PermissionDetail): boolean {
   return Boolean(p.oldStr || p.newStr || (p.edits && p.edits.length > 0));
 }
 
 function DiffContent({ permission }: { permission: PermissionDetail }) {
-  if (permission.edits && permission.edits.length > 0) {
-    return (
-      <Stack gap={2} fullwidth>
-        {permission.edits.map((edit, i) => (
-          <DiffBlock
-            key={i}
-            oldStr={edit.oldStr ?? ""}
-            newStr={edit.newStr ?? ""}
-          />
-        ))}
-      </Stack>
-    );
-  }
+  // Normalize MultiEdit (`edits[]`) and single-edit (`oldStr`/`newStr`)
+  // into one list of hunks so they all land inside the same CodeBlock —
+  // multiple edits to one file shouldn't render as N stacked blocks.
+  const edits =
+    permission.edits && permission.edits.length > 0
+      ? permission.edits.map((e) => ({
+          oldStr: e.oldStr ?? "",
+          newStr: e.newStr ?? "",
+        }))
+      : [{ oldStr: permission.oldStr ?? "", newStr: permission.newStr ?? "" }];
+
   return (
     <DiffBlock
-      oldStr={permission.oldStr ?? ""}
-      newStr={permission.newStr ?? ""}
+      edits={edits}
+      filename={permission.detail}
+      rows={DIFF_PREVIEW_ROWS}
+      defaultExpanded={false}
     />
   );
 }
@@ -52,6 +46,14 @@ function DiffContent({ permission }: { permission: PermissionDetail }) {
 function permissionTrigger(p: PermissionDetail): string {
   const prefix = p.count > 1 ? `${p.count}× ` : "";
   return p.detail ? `${prefix}${p.detail}` : `${prefix}${p.tool}`;
+}
+
+function PermissionLabel({ permission }: { permission: PermissionDetail }) {
+  return (
+    <Text size={-1} family="mono" shade="muted">
+      {permissionTrigger(permission)}
+    </Text>
+  );
 }
 
 type WorkContentProps = {
@@ -65,31 +67,15 @@ export function WorkContent({ event }: WorkContentProps) {
   const permissions = meta.permissions as PermissionDetail[];
   if (permissions.length === 0) return null;
 
-  // Single permission — show detail inline; expand into diff if present
   if (permissions.length === 1) {
     const p = permissions[0];
     if (!p.detail) return null;
 
-    if (hasDiff(p)) {
-      return (
-        <Accordion
-          ContentProps={{ fullwidth: true, p: 0 }}
-          items={[
-            {
-              value: "diff",
-              trigger: permissionTrigger(p),
-              content: <DiffContent permission={p} />,
-            },
-          ]}
-        />
-      );
-    }
+    // Diff entries: CodeBlock's filename header already shows the file
+    // path, so a separate label row above it would just repeat it.
+    if (hasDiff(p)) return <DiffContent permission={p} />;
 
-    return (
-      <Text size={-1} family="mono" shade="muted">
-        {permissionTrigger(p)}
-      </Text>
-    );
+    return <PermissionLabel permission={p} />;
   }
 
   return <MultiPermissionContent permissions={permissions} />;
@@ -100,53 +86,26 @@ function MultiPermissionContent({
 }: {
   permissions: PermissionDetail[];
 }) {
-  // Multiple permissions — split diff-bearing entries (accordion, expandable to
-  // their diffs) from info-only entries (plain text rows). Mixing them in one
-  // accordion misleads: non-edit tools have no diff to surface.
+  // Split diff-bearing entries from info-only entries: each diff renders
+  // as one CodeBlock with built-in collapse (rows={DIFF_PREVIEW_ROWS});
+  // info-only tools (Bash, etc.) render as plain mono labels because they
+  // have no diff to host the detail.
   const diffPermissions = permissions.filter(hasDiff);
   const infoPermissions = permissions.filter((p) => !hasDiff(p));
-  const allValues = diffPermissions.map((_, i) => `permission-${i}`);
-  const [openValues, setOpenValues] = useState<string[]>([]);
-  const allOpen =
-    allValues.length > 0 && openValues.length === allValues.length;
 
   return (
     <Stack data-slot="work-content" gap={2} fullwidth>
       {diffPermissions.length > 0 && (
-        <Stack gap={1} fullwidth>
-          <Group ax="end" fullwidth>
-            <ToggleButton
-              size="small"
-              variant="subtle"
-              tooltip={allOpen ? "Collapse all" : "Expand all"}
-              pressed={!allOpen}
-              onPressedChange={() => setOpenValues(allOpen ? [] : allValues)}
-              icon={{
-                unpressed: <ChevronsDownUp />,
-                pressed: <ChevronsUpDown />,
-              }}
-              text={{ unpressed: "Collapse all", pressed: "Expand all" }}
-            />
-          </Group>
-          <Accordion
-            multiple
-            value={openValues}
-            onValueChange={(v) => setOpenValues(v as string[])}
-            ContentProps={{ fullwidth: true, p: 0 }}
-            items={diffPermissions.map((p, i) => ({
-              value: `permission-${i}`,
-              trigger: permissionTrigger(p),
-              content: <DiffContent permission={p} />,
-            }))}
-          />
+        <Stack gap={2} fullwidth>
+          {diffPermissions.map((p, i) => (
+            <DiffContent key={`diff-${i}`} permission={p} />
+          ))}
         </Stack>
       )}
       {infoPermissions.length > 0 && (
         <Stack gap={1} fullwidth>
           {infoPermissions.map((p, i) => (
-            <Text key={`info-${i}`} size={-1} family="mono" shade="muted">
-              {permissionTrigger(p)}
-            </Text>
+            <PermissionLabel key={`info-${i}`} permission={p} />
           ))}
         </Stack>
       )}
