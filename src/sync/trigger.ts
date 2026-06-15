@@ -32,7 +32,7 @@ export function triggerBackgroundPull(): void {
   spawnSync("pull");
 }
 
-/** Called from update.ts after a session.end event lands. */
+/** Called from engine/session.ts at the tail of finalizeSession. */
 export function triggerBackgroundPush(): void {
   spawnSync("push");
 }

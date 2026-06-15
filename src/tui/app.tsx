@@ -137,16 +137,18 @@ async function startExitTui(sessionId: string): Promise<ExitAction> {
 
 /**
  * Render the resume picker and return the user's choice.
- * Auto-selects if only one conversation exists.
+ *
+ * Always shows the picker when at least one conversation exists — the
+ * Exit screen's "Resume" option promises a choice between continuing an
+ * existing conversation and starting a new one, so silently auto-
+ * selecting the lone conversation when there's only one makes that
+ * promise lie. The only exception is zero conversations, where there's
+ * nothing to pick and auto-new is the only sensible path.
  */
 export async function startResumeTui(
   sessionId: string,
 ): Promise<ResumeSelection> {
   const conversations = getConversationsBySession(sessionId);
-
-  if (conversations.length === 1) {
-    return { type: "conversation", conversationId: conversations[0]!.id };
-  }
 
   if (conversations.length === 0) {
     return { type: "new" };
