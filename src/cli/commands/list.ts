@@ -3,6 +3,8 @@ import { getAllSessions, getSessionsByCategory } from "@/db/queries/sessions";
 import { getCategoryByPath } from "@/db/queries/categories";
 import { getSessionStats } from "@/db/queries/stats";
 import { formatAgo, formatDuration } from "@/lib/format";
+import { resolveActiveProject } from "@/lib/projects/resolve";
+import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 
 const STATUS_DOTS: Record<string, string> = {
   active: "\x1b[32m●\x1b[0m",     // green
@@ -37,6 +39,11 @@ function buildRows(sessions: SessionRow[]): ListRow[] {
 }
 
 function renderTable(rows: ListRow[]) {
+  const dim = "\x1b[2m";
+  const reset = "\x1b[0m";
+  const project = resolveActiveProject();
+  console.log(`${dim}Project: ${project.slug} (${project.name})${reset}`);
+
   if (rows.length === 0) {
     console.log("No sessions found.");
     return;
@@ -45,8 +52,6 @@ function renderTable(rows: ListRow[]) {
   const maxName = Math.max(...rows.map((r) => r.name.length), 4);
 
   // Header
-  const dim = "\x1b[2m";
-  const reset = "\x1b[0m";
   console.log(
     `${dim}${"  "} ${"NAME".padEnd(maxName)}  ${"STATUS".padEnd(10)}  ${"DURATION".padEnd(8)}  ${"CONVOS".padEnd(6)}  LAST ACTIVE${reset}`
   );
@@ -62,12 +67,18 @@ function renderTable(rows: ListRow[]) {
 }
 
 function renderJson(rows: ListRow[]) {
+  const project = resolveActiveProject();
+  // Root stays an array so existing consumers parsing `list --json` as a
+  // session list don't break. Project info rides on each row — redundant
+  // when iterating, but lets a row tell you which project it came from
+  // when read in isolation (the agent-query case).
   const data = rows.map((r) => ({
     name: r.name,
     status: r.status,
     duration: r.duration,
     conversations: r.conversations,
     updatedAt: r.updatedAt,
+    project: { slug: project.slug, name: project.name },
   }));
   console.log(JSON.stringify(data, null, 2));
 }
@@ -75,10 +86,13 @@ function renderJson(rows: ListRow[]) {
 alias("ls", "list");
 
 register("list", async (args) => {
-  const isJson = args.includes("--json");
-  const showAll = args.includes("--all") || args.includes("-a");
-  const categoryFlag = args.indexOf("--category");
-  const categoryPath = categoryFlag !== -1 ? args[categoryFlag + 1] : undefined;
+  const { project: projectSlug, rest: argsWithoutProject } = extractProjectFlag(args);
+  applyProjectFlag(projectSlug);
+
+  const isJson = argsWithoutProject.includes("--json");
+  const showAll = argsWithoutProject.includes("--all") || argsWithoutProject.includes("-a");
+  const categoryFlag = argsWithoutProject.indexOf("--category");
+  const categoryPath = categoryFlag !== -1 ? argsWithoutProject[categoryFlag + 1] : undefined;
 
   let sessionRows: SessionRow[];
 
