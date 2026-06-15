@@ -9,17 +9,17 @@ describe("parseSessionName", () => {
     });
   });
 
-  test("three segments: category/subcategory/session", () => {
-    expect(parseSessionName("uiid/bertrand/fix-auth")).toEqual({
-      categoryPath: "uiid/bertrand",
-      slug: "fix-auth",
+  test("three segments: category/rest joined into slug", () => {
+    expect(parseSessionName("ssp/REV-367/fe-determination")).toEqual({
+      categoryPath: "ssp",
+      slug: "REV-367/fe-determination",
     });
   });
 
-  test("deep nesting: any depth", () => {
+  test("deep nesting collapses into slug", () => {
     expect(parseSessionName("a/b/c/d/my-session")).toEqual({
-      categoryPath: "a/b/c/d",
-      slug: "my-session",
+      categoryPath: "a",
+      slug: "b/c/d/my-session",
     });
   });
 
@@ -56,10 +56,14 @@ describe("parseSessionName", () => {
     expect(() => parseSessionName(".hidden/session")).toThrow("Invalid segment");
   });
 
-  test("allows dots, underscores, and dashes", () => {
+  test("validates every segment in a deep slug", () => {
+    expect(() => parseSessionName("ssp/REV-367/bad segment")).toThrow("Invalid segment");
+  });
+
+  test("allows dots, underscores, and dashes in each segment", () => {
     expect(parseSessionName("my.org/my_project/fix-bug.1")).toEqual({
-      categoryPath: "my.org/my_project",
-      slug: "fix-bug.1",
+      categoryPath: "my.org",
+      slug: "my_project/fix-bug.1",
     });
   });
 });

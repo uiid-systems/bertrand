@@ -39,6 +39,7 @@ import {
   statusColor,
 } from "../lib/format";
 import { applyTransforms } from "../lib/timeline/transforms";
+import { findSessionFromSplat } from "../lib/find-session-from-splat";
 import { EventContent } from "../components/timeline";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
@@ -78,28 +79,6 @@ function buildBreadcrumbs(
   }
   if (leafLabel !== undefined) items.push({ label: leafLabel, value: "" });
   return items;
-}
-
-/**
- * Resolve a path like `nav/sub/foo` against a session list. Returns the
- * matching session if `nav/sub` is a category that contains a session slugged
- * `foo`; otherwise null. Used by the splat route to decide whether to render
- * the session detail view or the category browse view.
- */
-function findSessionFromSplat(
-  splat: string,
-  sessions: SessionWithCategory[],
-): SessionWithCategory | null {
-  const lastSlash = splat.lastIndexOf("/");
-  if (lastSlash <= 0) return null;
-  const categoryPath = splat.slice(0, lastSlash);
-  const slug = splat.slice(lastSlash + 1);
-  if (!slug) return null;
-  return (
-    sessions.find(
-      (s) => s.categoryPath === categoryPath && s.session.slug === slug,
-    ) ?? null
-  );
 }
 
 function SplatPage() {
