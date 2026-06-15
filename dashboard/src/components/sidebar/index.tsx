@@ -434,7 +434,7 @@ const SessionRowActions = ({
               render={<Group ay="center" gap={2} />}
             >
               <Copy size={14} />
-              Copy resume command
+              Copy session path
             </MenuItem>
           </MenuPopup>
         </MenuPositioner>

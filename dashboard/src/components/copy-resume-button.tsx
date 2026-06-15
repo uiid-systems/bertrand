@@ -25,18 +25,18 @@ export const CopyResumeButton = ({
 
   if (session.status !== "paused") return null;
 
-  const command = `bertrand resume ${categoryPath}/${session.slug}`;
+  const sessionPath = `${categoryPath}/${session.slug}`;
 
   return (
     <ToggleButton
-      tooltip={copied ? "Copied!" : "Copy resume command"}
+      tooltip={copied ? "Copied!" : "Copy session path"}
       size={size}
       variant={variant}
       shape={shape}
       pressed={copied}
       onPressedChange={(next) => {
         if (!next) return;
-        void navigator.clipboard.writeText(command);
+        void navigator.clipboard.writeText(sessionPath);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }}

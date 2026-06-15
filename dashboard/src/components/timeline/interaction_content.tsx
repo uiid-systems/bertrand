@@ -166,12 +166,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
     return (
       <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
         <Card gap={4} fullwidth>
-          <Tabs
-            items={tabs}
-            size="sm"
-            // fullwidth
-            ContainerProps={{ fullwidth: true, mt: 6 }}
-          />
+          <Tabs items={tabs} ContainerProps={{ fullwidth: true, mt: 6 }} />
         </Card>
       </Stack>
     );
