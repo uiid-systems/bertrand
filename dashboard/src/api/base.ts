@@ -3,13 +3,13 @@
  *
  * Order:
  *   1. localStorage `bertrand:apiBase` — runtime override set by a settings UI.
- *   2. `VITE_API_BASE` build-time env — set by Vercel for the bertrand.sh PWA.
+ *   2. `VITE_API_BASE` build-time env — set by hosted builds (e.g. bertrand.sh)
+ *      so the hosted SPA talks back to the user's local bertrand server.
  *   3. Same-origin (empty string) — bundled dashboard served by `bertrand serve`.
  *
  * Same-origin is the default because the most common deployment is `bertrand
  * serve` hosting both the API and the SPA on one port; relative fetches just
- * work there. The hosted PWA at bertrand.sh sets `VITE_API_BASE` to
- * `http://localhost:5200` so it talks to the user's local bertrand by default.
+ * work there.
  */
 export const STORAGE_KEY = "bertrand:apiBase"
 
