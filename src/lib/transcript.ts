@@ -9,6 +9,8 @@
  */
 
 import { existsSync, readFileSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 
 // -- Types --
 
@@ -61,6 +63,31 @@ function getContextWindowSize(model: string): number {
     if (model.startsWith(prefix)) return size;
   }
   return 200_000; // conservative default
+}
+
+// -- Claude transcript path resolution --
+
+/**
+ * Resolve where Claude Code stores the transcript JSONL for a given
+ * session ID. Claude derives the project directory from the CWD by
+ * replacing each `/` with `-` and emitting that as a leading-dash slug.
+ *
+ * Pass `cwd` only for tests; production callers want `process.cwd()`.
+ */
+export function claudeTranscriptPath(sessionId: string, cwd?: string): string {
+  const dir = (cwd ?? process.cwd()).replace(/\//g, "-");
+  return join(homedir(), ".claude", "projects", dir, `${sessionId}.jsonl`);
+}
+
+/**
+ * True if Claude has a transcript for this session ID under the current
+ * CWD. `claude --resume <id>` requires this; otherwise it exits with
+ * "No conversation found with session ID: <id>" — bertrand's resume path
+ * uses this check to fall back to `--session-id` when the transcript is
+ * missing (fresh conversation, never-interacted session, CWD mismatch).
+ */
+export function claudeSessionExists(sessionId: string, cwd?: string): boolean {
+  return existsSync(claudeTranscriptPath(sessionId, cwd));
 }
 
 // -- Parsing --

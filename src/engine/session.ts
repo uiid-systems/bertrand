@@ -29,6 +29,7 @@ import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
+import { claudeSessionExists } from "@/lib/transcript";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -214,6 +215,17 @@ export async function resume(opts: ResumeOpts): Promise<string> {
 
   const category = getCategory(session.categoryId);
   const sessionName = category ? `${category.path}/${session.slug}` : session.name;
+
+  // `claude --resume <id>` only works when Claude has a transcript JSONL
+  // at the current CWD. Two cases break it: (1) the resume picker's
+  // "+ New conversation" mints a UUID Claude has never seen, (2) the
+  // bertrand session existed but the user exited Claude before any
+  // message was persisted. Both manifest as "No conversation found with
+  // session ID: <uuid>" and drop straight to the exit screen. Fall back
+  // to `--session-id` — Claude treats it as a fresh session under the
+  // same UUID, so bertrand events keep their conversation_id linkage.
+  const isFreshClaudeSession = !claudeSessionExists(opts.conversationId);
+
   updateSession(session.id, { status: "active", pid: process.pid });
   liveSession = { sessionId: session.id, claudeId: opts.conversationId };
   installExitHandlers();
@@ -223,6 +235,18 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     sessionId: session.id,
     conversationId: opts.conversationId,
   });
+
+  if (isFreshClaudeSession) {
+    const spawnContext = await captureSpawnContext();
+    emitClaudeStarted({
+      sessionId: session.id,
+      conversationId: opts.conversationId,
+      model: spawnContext.model,
+      claudeVersion: spawnContext.claudeVersion,
+      git: spawnContext.git,
+      cwd: spawnContext.cwd,
+    });
+  }
 
   // Build contract
   const categoryPath = category?.path ?? "";
@@ -235,7 +259,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     sessionName,
     sessionSlug: session.slug,
     contract,
-    resume: true,
+    resume: !isFreshClaudeSession,
   });
 
   finalizeSession(session.id, opts.conversationId, exitCode);
