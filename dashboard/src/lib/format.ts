@@ -65,6 +65,69 @@ export const eventColor = colorOf;
 
 export const eventLabel = labelOf;
 
+type AppliedEdit = { oldStr?: string; newStr?: string };
+type AppliedPermission = {
+  detail?: string;
+  oldStr?: string;
+  newStr?: string;
+  edits?: AppliedEdit[];
+};
+
+function lineCount(s: string | undefined): number {
+  if (!s) return 0;
+  return s.split("\n").length;
+}
+
+function basenameOf(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+/**
+ * Render a one-liner that summarizes a `tool.applied` event. Matches
+ * `computeDiffStats` on the server: each edit's oldStr counts as removed
+ * lines, newStr counts as added lines — coarse but consistent with the
+ * sidebar's +/- badges. Returns null when there's nothing file-shaped to
+ * summarize so the caller can fall back to the bare event label.
+ */
+function summarizeApplied(meta: Record<string, unknown>): string | null {
+  const permissions = meta.permissions as AppliedPermission[] | undefined;
+  if (!permissions || permissions.length === 0) return null;
+
+  const filenames = new Set<string>();
+  let totalEdits = 0;
+  let linesAdded = 0;
+  let linesRemoved = 0;
+
+  for (const p of permissions) {
+    if (p.detail) filenames.add(p.detail);
+    if (p.edits && p.edits.length > 0) {
+      totalEdits += p.edits.length;
+      for (const e of p.edits) {
+        linesRemoved += lineCount(e.oldStr);
+        linesAdded += lineCount(e.newStr);
+      }
+    } else if (p.oldStr || p.newStr) {
+      totalEdits += 1;
+      linesRemoved += lineCount(p.oldStr);
+      linesAdded += lineCount(p.newStr);
+    }
+  }
+
+  if (filenames.size === 0) return null;
+
+  const counts =
+    linesAdded || linesRemoved ? ` (+${linesAdded} -${linesRemoved})` : "";
+
+  if (filenames.size === 1) {
+    const file = filenames.values().next().value!;
+    const name = basenameOf(file);
+    if (totalEdits > 1) return `${totalEdits} edits to ${name}${counts}`;
+    return `edited ${name}${counts}`;
+  }
+
+  return `edited ${filenames.size} files${counts}`;
+}
+
 export function eventTitle(event: EventRow): string {
   const label = eventLabel(event.event);
   const meta = event.meta as Record<string, unknown> | null;
@@ -78,6 +141,8 @@ export function eventTitle(event: EventRow): string {
     }
     case "tool.work":
       return event.summary ?? label;
+    case "tool.applied":
+      return summarizeApplied(meta) ?? label;
     case "context.snapshot": {
       const pct = meta.remaining_pct as string | undefined;
       return pct ? `${pct}% remaining` : label;
