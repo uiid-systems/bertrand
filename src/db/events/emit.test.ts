@@ -183,6 +183,34 @@ describe("emit helpers — work", () => {
     const row = eventsOfType("permission.resolve").at(-1)!;
     expect((row.meta as Record<string, unknown>).outcome).toBe("approved");
   });
+
+  test("emitToolUsed formats Bash summaries with backticks", () => {
+    emit.emitToolUsed({
+      sessionId,
+      conversationId,
+      tool: "Bash",
+      detail: "git status",
+      outcome: "auto",
+    });
+    const row = eventsOfType("tool.used").at(-1)!;
+    expect(row.summary).toBe("ran `git status`");
+    const meta = row.meta as Record<string, unknown>;
+    expect(meta.tool).toBe("Bash");
+    expect(meta.outcome).toBe("auto");
+  });
+
+  test("emitToolUsed truncates long Bash commands at 120 chars", () => {
+    emit.emitToolUsed({
+      sessionId,
+      conversationId,
+      tool: "Bash",
+      detail: "x".repeat(500),
+      outcome: "auto",
+    });
+    const row = eventsOfType("tool.used").at(-1)!;
+    // Summary is "ran `<120 chars>`" — 6 chars of wrapper + 120 of payload.
+    expect(row.summary?.length).toBe(126);
+  });
 });
 
 describe("emit helpers — assistant", () => {

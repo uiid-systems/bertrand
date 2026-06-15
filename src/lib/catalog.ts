@@ -20,6 +20,7 @@ const EVENT_TYPES = [
   "vercel.deploy",
   "user.prompt",
   "context.snapshot",
+  "tool.used",
   "tool.work",
   "session.recap",
 ] as const;
@@ -61,6 +62,7 @@ const catalog = {
   "vercel.deploy": { label: "deployed", category: "integration", color: 245, detailColor: 245, skip: false },
   "user.prompt": { label: "prompt", category: "interaction", color: 36, detailColor: 245, skip: false },
   "context.snapshot": { label: "context", category: "context", color: 245, detailColor: 245, skip: true },
+  "tool.used": { label: "tool", category: "work", color: 214, detailColor: 245, skip: true },
   "tool.work": { label: "tool work", category: "work", color: 214, detailColor: 245, skip: false },
   "session.recap": { label: "session recap", category: "lifecycle", color: 33, detailColor: 245, skip: false },
 } satisfies Record<EventType, EventInfo>;

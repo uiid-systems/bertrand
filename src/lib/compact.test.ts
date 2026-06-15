@@ -124,6 +124,34 @@ describe("collapsePermissions", () => {
   test("empty list", () => {
     expect(collapsePermissions([])).toEqual([]);
   });
+
+  test("tool.used participates in the same rollup as permissions", () => {
+    // Auto-approved tools (tool.used) and prompted tools
+    // (permission.request/resolve) should fold into one tool.work cluster.
+    const events = [
+      ev("permission.request", t(0), { meta: { tool: "Bash" } }),
+      ev("permission.resolve", t(1), { meta: { tool: "Bash" } }),
+      ev("tool.used", t(2), { meta: { tool: "Read", outcome: "auto" } }),
+      ev("tool.used", t(3), { meta: { tool: "Read", outcome: "auto" } }),
+      ev("tool.used", t(4), { meta: { tool: "Grep", outcome: "auto" } }),
+    ];
+    const result = collapsePermissions(events);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.event).toBe("tool.work");
+    expect(result[0]!.summary).toBe("2× Read, 1× Bash, 1× Grep");
+  });
+
+  test("tool.used alone rolls up into tool.work", () => {
+    const events = [
+      ev("tool.used", t(0), { meta: { tool: "Read", outcome: "auto" } }),
+      ev("tool.used", t(1), { meta: { tool: "Read", outcome: "auto" } }),
+      ev("tool.used", t(2), { meta: { tool: "Read", outcome: "auto" } }),
+    ];
+    const result = collapsePermissions(events);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.event).toBe("tool.work");
+    expect(result[0]!.summary).toBe("3× Read");
+  });
 });
 
 describe("deduplicate", () => {

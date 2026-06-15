@@ -11,6 +11,7 @@ type PermissionDetail = { tool?: string; count?: number };
 function aggregateToolUsage(sessionId: string): Record<string, number> {
   const counts: Record<string, number> = {};
 
+  // tool.applied (Edit/Write/MultiEdit) carries one tool name per permissions[] entry.
   const applied = getEventsByType(sessionId, "tool.applied");
   for (const ev of applied) {
     const meta = ev.meta as Record<string, unknown> | null;
@@ -21,8 +22,19 @@ function aggregateToolUsage(sessionId: string): Record<string, number> {
     }
   }
 
+  // permission.resolve fires once per prompted tool (post-approval).
   const resolves = getEventsByType(sessionId, "permission.resolve");
   for (const ev of resolves) {
+    const meta = ev.meta as Record<string, unknown> | null;
+    const tool = meta?.tool as string | undefined;
+    if (!tool) continue;
+    counts[tool] = (counts[tool] ?? 0) + 1;
+  }
+
+  // tool.used fires once per auto-approved tool — Read, Grep, Glob, etc.
+  // Previously these calls were invisible to analytics.
+  const used = getEventsByType(sessionId, "tool.used");
+  for (const ev of used) {
     const meta = ev.meta as Record<string, unknown> | null;
     const tool = meta?.tool as string | undefined;
     if (!tool) continue;

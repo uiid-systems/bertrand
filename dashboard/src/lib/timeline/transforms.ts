@@ -111,15 +111,21 @@ function asEdits(p: PermissionDetail): EditEntry[] {
   return []
 }
 
-// permission.request / permission.resolve events carry only {tool, detail, outcome}.
-// Diff data lives on tool.applied events (camelCase) and is read directly by
-// consolidateToolApplied, never via this helper.
+// permission.request / permission.resolve / tool.used events carry only
+// {tool, detail, outcome}. Diff data lives on tool.applied events (camelCase)
+// and is read directly by consolidateToolApplied, never via this helper.
 function extractPermissionDetail(event: EventRow): PermissionDetail {
   const meta = event.meta as Record<string, unknown> | null
+  const defaultOutcome =
+    event.event === "permission.resolve"
+      ? "approved"
+      : event.event === "tool.used"
+        ? "auto"
+        : "pending"
   return {
     tool: (meta?.tool as string) ?? "unknown",
     detail: (meta?.detail as string) ?? "",
-    outcome: (meta?.outcome as string) ?? (event.event === "permission.resolve" ? "approved" : "pending"),
+    outcome: (meta?.outcome as string) ?? defaultOutcome,
   }
 }
 
@@ -134,11 +140,21 @@ function formatSinglePermission(p: PermissionDetail): string {
   return TOOL_TITLES[p.tool] ?? p.tool
 }
 
+const ROLLUP_EVENTS = new Set([
+  "permission.request",
+  "permission.resolve",
+  "tool.used",
+])
+
 /**
- * Collapse consecutive permission.request + permission.resolve pairs into
- * summarized tool.work events. Single pairs get a descriptive title;
- * batches get a tool count summary with individual details in meta.permissions.
- * Diff data captured at resolve time is forwarded via meta.permissions[].oldStr/newStr.
+ * Collapse consecutive tool-activity events (permission.request, permission.resolve,
+ * tool.used) into summarized tool.work events. Single calls get a descriptive
+ * title; batches get a tool-count summary with individual details in
+ * meta.permissions.
+ *
+ * tool.used is the universal tool-call event covering auto-approved tools;
+ * folding it into the same rollup means a session like "8× Bash, 5× Read"
+ * shows as a single tool-work cluster whether or not each call was prompted.
  */
 export const consolidatePermissions: TimelineTransform = (events) => {
   const result: EventRow[] = []
@@ -147,33 +163,35 @@ export const consolidatePermissions: TimelineTransform = (events) => {
   while (i < events.length) {
     const ev = events[i]
 
-    if (ev.event !== "permission.request" && ev.event !== "permission.resolve") {
+    if (!ROLLUP_EVENTS.has(ev.event)) {
       result.push(ev)
       i++
       continue
     }
 
-    // Collect consecutive permission events
+    // Collect consecutive tool-activity events
     const batch: EventRow[] = []
     while (i < events.length) {
       const current = events[i]
-      if (current.event !== "permission.request" && current.event !== "permission.resolve") break
+      if (!ROLLUP_EVENTS.has(current.event)) break
       batch.push(current)
       i++
     }
 
-    // Extract permission details from requests. Resolves carry no extra payload
-    // beyond outcome=approved (diffs live on tool.applied), so we just need the
-    // requests and the presence/absence of paired resolves.
-    const requests = batch.filter((e) => e.event === "permission.request")
+    // Each tool call contributes one entry: either a permission.request
+    // (prompted path) or a tool.used (auto-approved path). permission.resolve
+    // is the "approved" signal but doesn't add a new call.
+    const callEvents = batch.filter(
+      (e) => e.event === "permission.request" || e.event === "tool.used",
+    )
 
     // Orphan resolves with no matching request — drop the batch entirely.
     // These can occur from stale /tmp markers or partial event-write failures.
-    if (requests.length === 0) continue
+    if (callEvents.length === 0) continue
 
-    const permissions: PermissionDetail[] = requests.map(extractPermissionDetail)
+    const permissions: PermissionDetail[] = callEvents.map(extractPermissionDetail)
 
-    // Check if there's a resolve for each request (batch has both)
+    // Check if any of the prompted-path requests have a matching resolve in the batch
     const hasResolves = batch.some((e) => e.event === "permission.resolve")
 
     // Deduplicate identical tool+detail pairs, adding counts and accumulating diffs

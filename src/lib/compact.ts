@@ -34,9 +34,21 @@ export function repairQAPairs(events: EnrichedEvent[]): EnrichedEvent[] {
 }
 
 /**
- * Stage 2: Collapse sequences of permission.request + permission.resolve into
- * summarized "tool.work" events. E.g. "8× Bash, 2× Edit".
+ * Stage 2: Collapse sequences of tool activity (permission.request,
+ * permission.resolve, tool.used) into summarized "tool.work" events.
+ * E.g. "8× Bash, 2× Edit, 5× Read".
+ *
+ * tool.used is the universal tool-call event covering tools that don't go
+ * through a permission prompt (auto-approved Read/Grep/Glob, etc.). Folding
+ * it into the same rollup means the timeline shows a single "tool work"
+ * cluster regardless of whether each call was prompted or auto-approved.
  */
+const ROLLUP_EVENTS = new Set([
+  "permission.request",
+  "permission.resolve",
+  "tool.used",
+]);
+
 export function collapsePermissions(events: EnrichedEvent[]): EnrichedEvent[] {
   const result: EnrichedEvent[] = [];
   let i = 0;
@@ -44,27 +56,31 @@ export function collapsePermissions(events: EnrichedEvent[]): EnrichedEvent[] {
   while (i < events.length) {
     const ev = events[i]!;
 
-    if (ev.event !== "permission.request" && ev.event !== "permission.resolve") {
+    if (!ROLLUP_EVENTS.has(ev.event)) {
       result.push(ev);
       i++;
       continue;
     }
 
-    // Collect consecutive permission events
+    // Collect consecutive tool-activity events
     const batch: EnrichedEvent[] = [];
     while (i < events.length) {
       const current = events[i]!;
-      if (current.event !== "permission.request" && current.event !== "permission.resolve") break;
+      if (!ROLLUP_EVENTS.has(current.event)) break;
       batch.push(current);
       i++;
     }
 
     if (batch.length === 0) continue;
 
-    // Count tools (only from requests to avoid double-counting request+resolve pairs)
+    // Count tools — prefer the "fired once per tool call" events:
+    //   - permission.request fires once per prompted call (paired w/ resolve)
+    //   - tool.used fires once per auto-approved or post-approval call
+    // Counting both gives "1 per call" without double-counting the
+    // request+resolve pair.
     const toolCounts = new Map<string, number>();
     for (const pev of batch) {
-      if (pev.event !== "permission.request") continue;
+      if (pev.event !== "permission.request" && pev.event !== "tool.used") continue;
       const meta = pev.meta as Record<string, unknown> | null;
       const tool = (meta?.tool as string) ?? "unknown";
       toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);

@@ -231,6 +231,64 @@ type ToolPermission = {
   count: number;
 } & ToolDiff;
 
+/**
+ * Records every tool Claude invokes — not just Edit/Write/MultiEdit (which
+ * `emitToolApplied` covers). The distinction:
+ *   - `tool.applied` fires for tools that mutate files; meta carries diffs.
+ *   - `tool.used` fires for the read-only / shell-shaped tools we previously
+ *     missed entirely (auto-approved Read, Grep, Glob, etc., and Bash when
+ *     no permission prompt was required). The timeline stays comprehensible
+ *     because dashboard compact-mode rolls these into tool.work batches.
+ *
+ * `outcome` distinguishes the permission path:
+ *   - `auto`     — tool ran without ever prompting the user
+ *   - `approved` — user was prompted (a permission.request fired) and approved
+ *
+ * Denials don't reach PostToolUse, so they never emit tool.used. Inferred by
+ * looking for a permission.request without a matching tool.used.
+ */
+export function emitToolUsed(args: EventTarget & {
+  tool: string;
+  detail: string;
+  outcome: "auto" | "approved";
+}) {
+  const summary = formatToolSummary(args.tool, args.detail);
+  return insertEvent({
+    sessionId: args.sessionId,
+    conversationId: args.conversationId,
+    event: "tool.used",
+    summary,
+    meta: {
+      tool: args.tool,
+      detail: args.detail,
+      outcome: args.outcome,
+      claude_id: args.conversationId,
+    },
+  });
+}
+
+/** Used by emitToolUsed; also exposed for the dashboard's renderer. */
+export function formatToolSummary(tool: string, detail: string): string {
+  if (!detail) return tool;
+  switch (tool) {
+    case "Bash":
+      return `ran \`${detail.slice(0, 120)}\``;
+    case "Read":
+      return `read ${detail}`;
+    case "Glob":
+    case "Grep":
+      return `${tool.toLowerCase()} ${detail}`;
+    case "TodoWrite":
+      return "updated todos";
+    case "WebFetch":
+      return `fetched ${detail}`;
+    case "WebSearch":
+      return `searched: ${detail}`;
+    default:
+      return `${tool}: ${detail}`;
+  }
+}
+
 export function emitToolApplied(args: EventTarget & {
   summary: string;
   permissions: ToolPermission[];
