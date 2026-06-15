@@ -1,4 +1,3 @@
-import { useMatch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card, Stack, Tabs, Text, type TabProps } from "@uiid/design-system";
@@ -18,7 +17,7 @@ import {
   WrenchIcon,
 } from "@uiid/icons";
 
-import { engagementQuery, sessionsQuery, statsQuery } from "../../api/queries";
+import { engagementQuery, statsQuery } from "../../api/queries";
 import type { EngagementStats, SessionStatsRow } from "../../api/types";
 import { formatDuration, formatTokens } from "../../lib/format";
 import {
@@ -26,22 +25,16 @@ import {
   type SidebarWrapperProps,
 } from "../sidebar/sidebar-wrapper";
 
-export const SecondarySidebar = (
-  props: Omit<SidebarWrapperProps, "children">,
-) => {
-  const sessionMatch = useMatch({
-    from: "/sessions/$slug",
-    shouldThrow: false,
-  });
-  const slug = sessionMatch?.params?.slug;
+export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
+  sessionId: string;
+  isLive: boolean;
+};
 
-  const { data: sessions = [] } = useQuery(sessionsQuery());
-  const session = sessions.find((s) => s.session.slug === slug);
-  const sessionId = session?.session.id ?? "";
-  const isLive =
-    session?.session.status === "active" ||
-    session?.session.status === "waiting";
-
+export const SecondarySidebar = ({
+  sessionId,
+  isLive,
+  ...props
+}: SecondarySidebarProps) => {
   const { data: stats } = useQuery({
     ...statsQuery(sessionId, isLive),
     enabled: !!sessionId,

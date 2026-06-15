@@ -323,7 +323,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 Sidebar.displayName = "Sidebar";
 
 const SessionLabel = ({ session: s }: { session: SessionWithCategory }) => (
-  <Link to="/sessions/$slug" params={{ slug: s.session.slug }}>
+  <Link to="/$" params={{ _splat: `${s.categoryPath}/${s.session.slug}` }}>
     {s.session.slug}
   </Link>
 );
@@ -392,19 +392,22 @@ type SessionRowActionsProps = {
   categoryPath: string;
 };
 
-const SessionRowActions = ({ session, categoryPath }: SessionRowActionsProps) => {
+const SessionRowActions = ({
+  session,
+  categoryPath,
+}: SessionRowActionsProps) => {
   const action = useArchiveAction(session);
   const { Icon } = action;
   const canCopyResume = session.status === "paused";
-  const resumeCommand = `bertrand resume ${categoryPath}/${session.slug}`;
+  const sessionPath = `${categoryPath}/${session.slug}`;
 
   return (
     <MenuRoot>
       <MenuTrigger
         render={
           <Button
-            variant="subtle"
-            size="small"
+            variant="ghost"
+            size="xsmall"
             shape="square"
             aria-label="Session actions"
           >
@@ -415,15 +418,20 @@ const SessionRowActions = ({ session, categoryPath }: SessionRowActionsProps) =>
       <MenuPortal>
         <MenuPositioner side="bottom" align="end">
           <MenuPopup>
-            <MenuItem disabled={action.disabled} onClick={action.onClick}>
+            <MenuItem
+              disabled={action.disabled}
+              onClick={action.onClick}
+              render={<Group ay="center" gap={2} />}
+            >
               <Icon size={14} />
               {action.label}
             </MenuItem>
             <MenuItem
               disabled={!canCopyResume}
               onClick={() => {
-                void navigator.clipboard.writeText(resumeCommand);
+                void navigator.clipboard.writeText(sessionPath);
               }}
+              render={<Group ay="center" gap={2} />}
             >
               <Copy size={14} />
               Copy resume command
