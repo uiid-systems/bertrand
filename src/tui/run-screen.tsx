@@ -10,12 +10,10 @@
 import { writeFileSync } from "fs";
 import { render } from "@orchetron/storm";
 
-import { Launch } from "./screens/launch/index";
-import type { LaunchSelection } from "./screens/launch/launch.types";
+import { Startup } from "./screens/startup/index";
+import type { StartupSelection } from "./screens/startup/startup.types";
 import { Exit, type ExitAction } from "./screens/Exit";
 import { Resume, type ResumeSelection } from "./screens/Resume";
-import { ProjectPicker } from "./screens/project-picker/index";
-import type { ProjectPickerSelection } from "./screens/project-picker/project-picker.types";
 
 const [, , screen, outputPath, ...args] = process.argv;
 
@@ -27,22 +25,16 @@ if (!screen || !outputPath) {
 let result: unknown;
 
 switch (screen) {
-  case "launch": {
-    let selection: LaunchSelection = { type: "quit" };
+  case "startup": {
+    const skipProjectPicker = args[0] === "true";
+    const initialProjectSlug = args[1] ?? "";
+    let selection: StartupSelection = { type: "quit" };
     const app = render(
-      <Launch onSelect={(s) => { selection = s; }} />,
-      { alternateScreen: true, patchConsole: true },
-    );
-    await app.waitUntilExit();
-    app.unmount();
-    result = selection;
-    break;
-  }
-
-  case "project-picker": {
-    let selection: ProjectPickerSelection = { type: "quit" };
-    const app = render(
-      <ProjectPicker onSelect={(s) => { selection = s; }} />,
+      <Startup
+        skipProjectPicker={skipProjectPicker}
+        initialProjectSlug={initialProjectSlug}
+        onSelect={(s) => { selection = s; }}
+      />,
       { alternateScreen: true, patchConsole: true },
     );
     await app.waitUntilExit();
