@@ -61,6 +61,24 @@ export function getLatestEvent(sessionId: string) {
     .get();
 }
 
+/**
+ * Get the most recent event of a given type for a session. Used by per-turn
+ * captures (assistant-message, etc.) to dedup against what was already
+ * recorded — same text → skip the insert.
+ */
+export function getLatestEventOfType(
+  sessionId: string,
+  eventType: string,
+): EventRow | undefined {
+  return getDb()
+    .select()
+    .from(events)
+    .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
+    .orderBy(desc(events.createdAt))
+    .limit(1)
+    .get() as EventRow | undefined;
+}
+
 export function getLatestRecaps(): Record<string, SessionRecap> {
   const rows = getDb()
     .select({

@@ -25,7 +25,7 @@ migrate(drizzle(sqlite), {
 // Now import query modules — they'll use the injected test DB
 const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
 const { createSession, getSession, getActiveSessions, updateSessionStatus } = await import("./queries/sessions.ts");
-const { insertEvent, getEventsBySession } = await import("./queries/events.ts");
+const { insertEvent, getEventsBySession, getLatestEventOfType } = await import("./queries/events.ts");
 const { createConversation, getConversationsBySession } = await import("./queries/conversations.ts");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
 const { upsertSessionStats, getSessionStats } = await import("./queries/stats.ts");
@@ -118,6 +118,39 @@ describe("events", () => {
     expect(events.length).toBe(2);
     expect(events[0]!.event).toBe("session.started");
     expect(events[1]!.event).toBe("session.waiting");
+  });
+
+  test("getLatestEventOfType returns the most recent event for the given type", () => {
+    // Dedup in the per-turn assistant-message capture relies on this query.
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "latest-event-test",
+      name: "latest-event-test",
+    });
+
+    insertEvent({
+      sessionId: session.id,
+      event: "assistant.message",
+      meta: { text: "first" },
+    });
+    insertEvent({
+      sessionId: session.id,
+      event: "user.prompt",
+      meta: { prompt: "interleaved" },
+    });
+    insertEvent({
+      sessionId: session.id,
+      event: "assistant.message",
+      meta: { text: "second" },
+    });
+
+    const latest = getLatestEventOfType(session.id, "assistant.message");
+    expect(latest).toBeDefined();
+    expect((latest!.meta as Record<string, unknown>).text).toBe("second");
+
+    const missing = getLatestEventOfType(session.id, "nonexistent.type");
+    expect(missing).toBeUndefined();
   });
 });
 
