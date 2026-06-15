@@ -116,7 +116,7 @@ function buildListItem(s: SessionWithCategory): ListItemProps {
     value: s.session.id,
     label: <SessionLabel session={s} />,
     content: (
-      <Group gap={2} ay="center" mt={1} mb={2}>
+      <Group gap={2} ay="center" mb={2}>
         {/** @todo add {s.session.status} as tooltip */}
         <Status color={color} />
         <SessionContent session={s} />
