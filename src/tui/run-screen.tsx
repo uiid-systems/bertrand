@@ -36,6 +36,11 @@ if (!screen || !outputPath) {
   process.exit(1);
 }
 
+// Pin the narrowed value into a definitely-string const — TypeScript's
+// narrowing from the early-exit above doesn't propagate into closures
+// (writeResult, signal handlers).
+const RESULT_PATH: string = outputPath;
+
 /**
  * Phase-marker instrumentation, gated on BERTRAND_DEBUG_TUI=<file-path>.
  * Logs to a file (not stderr) so output doesn't fight with alt-screen.
@@ -64,7 +69,7 @@ function writeResult(): void {
   if (resultWritten) return;
   resultWritten = true;
   try {
-    writeFileSync(outputPath, JSON.stringify(result));
+    writeFileSync(RESULT_PATH, JSON.stringify(result));
   } catch {
     // Parent surfaces a clear error when the file is missing.
   }

@@ -21,7 +21,6 @@ import {
 } from "@/lib/projects/registry";
 import { createProject } from "@/lib/projects/create";
 import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { randomUUID } from "crypto";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
 // sibling. After `bun run build`, both bundle into dist/ as .js files —

@@ -72,6 +72,15 @@ export function _setLiveSession(
 export function _forceFinalizeLive(): void {
   forceFinalizeLive();
 }
+/** Test-only: invoke installExitHandlers and reset its guard so successive
+ *  test runs can observe the listener-registration behavior independently. */
+export function _installExitHandlersForTest(): void {
+  exitHandlersInstalled = false;
+  installExitHandlers();
+}
+export function _resetExitHandlersForTest(): void {
+  exitHandlersInstalled = false;
+}
 
 function installExitHandlers(): void {
   if (exitHandlersInstalled) return;
