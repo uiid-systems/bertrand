@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/uiid-systems/bertrand/compare/v0.20.1...v0.21.0) (2026-06-15)
+
+
+### Features
+
+* **cli:** project-aware log/list output ([#125](https://github.com/uiid-systems/bertrand/issues/125)) ([0b3da49](https://github.com/uiid-systems/bertrand/commit/0b3da492eda388fed9f036b107b462e5bda4992d))
+
+
+### Bug Fixes
+
+* **tui:** bulletproof session exit + Warp blank-screen ([#127](https://github.com/uiid-systems/bertrand/issues/127)) ([2084e81](https://github.com/uiid-systems/bertrand/commit/2084e81e9860cc494cd18370dee16c07348ec884))
+
 ## [0.20.1](https://github.com/uiid-systems/bertrand/compare/v0.20.0...v0.20.1) (2026-06-15)
 
 
