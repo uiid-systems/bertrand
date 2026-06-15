@@ -28,6 +28,7 @@ import { launchClaude, isClaudeRunning } from "./process";
 import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
+import { triggerBackgroundPush } from "@/sync/trigger";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -279,4 +280,10 @@ function finalizeSession(
 
   computeAndPersist(sessionId);
   stopServerIfIdle();
+
+  // Sync push on session end. emitSessionEnded inserts the event directly
+  // via the typed emitter; it bypasses the update.ts dispatcher where the
+  // push trigger used to live, so we call it inline here. The trigger is
+  // detached fire-and-forget — won't block the exit flow.
+  triggerBackgroundPush();
 }
