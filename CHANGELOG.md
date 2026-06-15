@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/uiid-systems/bertrand/compare/v0.20.0...v0.20.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* **tui:** release revert of [#116](https://github.com/uiid-systems/bertrand/issues/116) to clear simultaneous-input warning ([f51a82f](https://github.com/uiid-systems/bertrand/commit/f51a82ffd1422e18e8f791bfd24ad2dccbedb8d9))
+
 ## [0.20.0](https://github.com/uiid-systems/bertrand/compare/v0.19.0...v0.20.0) (2026-06-15)
 
 
