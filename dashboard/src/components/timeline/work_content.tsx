@@ -71,14 +71,9 @@ export function WorkContent({ event }: WorkContentProps) {
     const p = permissions[0];
     if (!p.detail) return null;
 
-    if (hasDiff(p)) {
-      return (
-        <Stack data-slot="work-content" gap={1} fullwidth>
-          <PermissionLabel permission={p} />
-          <DiffContent permission={p} />
-        </Stack>
-      );
-    }
+    // Diff entries: CodeBlock's filename header already shows the file
+    // path, so a separate label row above it would just repeat it.
+    if (hasDiff(p)) return <DiffContent permission={p} />;
 
     return <PermissionLabel permission={p} />;
   }
@@ -91,9 +86,10 @@ function MultiPermissionContent({
 }: {
   permissions: PermissionDetail[];
 }) {
-  // Split diff-bearing entries from info-only entries: each diff gets its
-  // own CodeBlock with built-in collapse (rows={DIFF_PREVIEW_ROWS}); info-only
-  // tools render as plain mono labels because they have nothing to expand to.
+  // Split diff-bearing entries from info-only entries: each diff renders
+  // as one CodeBlock with built-in collapse (rows={DIFF_PREVIEW_ROWS});
+  // info-only tools (Bash, etc.) render as plain mono labels because they
+  // have no diff to host the detail.
   const diffPermissions = permissions.filter(hasDiff);
   const infoPermissions = permissions.filter((p) => !hasDiff(p));
 
@@ -102,10 +98,7 @@ function MultiPermissionContent({
       {diffPermissions.length > 0 && (
         <Stack gap={2} fullwidth>
           {diffPermissions.map((p, i) => (
-            <Stack key={`diff-${i}`} gap={1} fullwidth>
-              <PermissionLabel permission={p} />
-              <DiffContent permission={p} />
-            </Stack>
+            <DiffContent key={`diff-${i}`} permission={p} />
           ))}
         </Stack>
       )}
