@@ -1,9 +1,18 @@
 import { register } from "@/cli/router";
 import { getSession, updateSessionStatus } from "@/db/queries/sessions";
-import { insertEvent } from "@/db/queries/events";
 import { getConversation, updateLastQuestion } from "@/db/queries/conversations";
 import type { SessionStatus } from "@/db/queries/sessions";
 import { triggerBackgroundPush } from "@/sync/trigger";
+import {
+  emitPermissionRequested,
+  emitPermissionResolved,
+  emitSessionAnswered,
+  emitSessionPaused,
+  emitSessionRecap,
+  emitSessionWaiting,
+  emitToolApplied,
+  emitUserPrompted,
+} from "@/db/events/emit";
 
 /** Status transitions implied by event types */
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
@@ -30,6 +39,90 @@ export function shouldIgnoreStatusFlip(
   if (!newStatus) return false;
   if (newStatus !== "active" && newStatus !== "waiting") return false;
   return sessionPid === null;
+}
+
+/**
+ * Map a hook-emitted `--event X --meta {…}` invocation to its typed emit
+ * helper from `db/events/emit.ts`. This centralizes the schema for every
+ * hook-driven event in one place. New event types from hooks must be added
+ * here or they'll be rejected.
+ *
+ * Returns false when the event type is unknown, so the caller can decide
+ * how loud to be about it. Bash hooks deliberately stay quiet (see the
+ * `bq` wrapper in scripts.ts) so unknown events just disappear.
+ */
+function dispatchHookEvent(
+  event: string,
+  ctx: {
+    sessionId: string;
+    conversationId?: string;
+    meta: Record<string, unknown>;
+    summary?: string;
+  },
+): boolean {
+  const { sessionId, conversationId, meta, summary } = ctx;
+  switch (event) {
+    case "user.prompt":
+      emitUserPrompted({
+        sessionId,
+        conversationId,
+        prompt: String(meta.prompt ?? ""),
+      });
+      return true;
+    case "session.waiting":
+      emitSessionWaiting({
+        sessionId,
+        conversationId,
+        question: String(meta.question ?? "Waiting for input"),
+      });
+      return true;
+    case "session.answered":
+      emitSessionAnswered({
+        sessionId,
+        conversationId,
+        answers: (meta.answers as Record<string, unknown>) ?? {},
+        annotations: (meta.annotations as Record<string, unknown>) ?? {},
+        questions: (meta.questions as Parameters<typeof emitSessionAnswered>[0]["questions"]) ?? [],
+      });
+      return true;
+    case "session.recap":
+      emitSessionRecap({
+        sessionId,
+        conversationId,
+        recap: String(meta.recap ?? ""),
+      });
+      return true;
+    case "session.paused":
+      emitSessionPaused({ sessionId, conversationId });
+      return true;
+    case "permission.request":
+      emitPermissionRequested({
+        sessionId,
+        conversationId,
+        tool: String(meta.tool ?? ""),
+        detail: String(meta.detail ?? ""),
+      });
+      return true;
+    case "permission.resolve":
+      emitPermissionResolved({
+        sessionId,
+        conversationId,
+        tool: String(meta.tool ?? ""),
+        detail: String(meta.detail ?? ""),
+        outcome: meta.outcome === "denied" ? "denied" : "approved",
+      });
+      return true;
+    case "tool.applied":
+      emitToolApplied({
+        sessionId,
+        conversationId,
+        summary: summary ?? "edited a file",
+        permissions: (meta.permissions as Parameters<typeof emitToolApplied>[0]["permissions"]) ?? [],
+      });
+      return true;
+    default:
+      return false;
+  }
 }
 
 register("update", async (args) => {
@@ -68,30 +161,31 @@ register("update", async (args) => {
     process.exit(1);
   }
 
-  // Skip redundant status updates — session.working fires on every PreToolUse
-  // but is a no-op when already working. Avoids unnecessary DB writes.
+  // Skip redundant status updates — session.waiting/answered fire frequently
+  // and are no-ops when the status is already where we'd flip it to.
   const newStatus = EVENT_STATUS_MAP[event];
   if (newStatus && newStatus === session.status) {
     return;
   }
 
   // See shouldIgnoreStatusFlip — defends against delayed-hook races where a
-  // reparented PreToolUse hook child commits `session.active` after bertrand
-  // has finalized the row. The event still gets inserted so the timeline
-  // records what the hook tried to say.
+  // reparented PostToolUse hook child commits `session.answered` after
+  // bertrand has finalized the row. The event still gets inserted so the
+  // timeline records what the hook tried to say.
   const ignoreStatusFlip = shouldIgnoreStatusFlip(newStatus, session.pid);
 
-  let meta: Record<string, unknown> | undefined;
+  let meta: Record<string, unknown> = {};
   if (metaJson) {
     try {
-      meta = JSON.parse(metaJson);
+      meta = JSON.parse(metaJson) as Record<string, unknown>;
     } catch {
       console.error(`Invalid JSON meta: ${metaJson}`);
       process.exit(1);
     }
   }
 
-  // Get conversation ID from meta or env — only use if it exists in DB
+  // Resolve the conversation FK: meta.claude_id → env → undefined.
+  // Only used if the row actually exists in this project's DB.
   const rawConvoId =
     (meta?.claude_id as string) ||
     process.env.BERTRAND_CLAUDE_ID ||
@@ -99,38 +193,30 @@ register("update", async (args) => {
   const conversationId =
     rawConvoId && getConversation(rawConvoId) ? rawConvoId : undefined;
 
-  // Derive summary fallback. For session.answered, build a joined string from
-  // meta.answers values (the new structured shape replaces the legacy meta.answer).
-  const answersObj = meta?.answers as Record<string, string> | undefined;
-  const joinedAnswers = answersObj
-    ? Object.values(answersObj).join(", ") || undefined
-    : undefined;
-
-  insertEvent({
+  const dispatched = dispatchHookEvent(event, {
     sessionId,
     conversationId,
-    event,
-    summary:
-      summaryArg ||
-      (meta?.question as string) ||
-      joinedAnswers ||
-      undefined,
     meta,
+    summary: summaryArg,
   });
 
-  // Update session status
+  if (!dispatched) {
+    // Unknown event types are silently dropped — bertrand's hooks are
+    // version-controlled, so an unrecognized event is a stale-binary-meets-
+    // new-hook situation we don't want to crash on. If the user is debugging
+    // they can run the command directly and the missing dispatch will be
+    // obvious from the absent DB row.
+    return;
+  }
+
   if (newStatus && !ignoreStatusFlip) {
     updateSessionStatus(sessionId, newStatus);
   }
 
-  // If this is a waiting event with a question, update conversation's lastQuestion
   if (event === "session.waiting" && conversationId && meta?.question) {
     updateLastQuestion(conversationId, meta.question as string);
   }
 
-  // Eventual cross-machine sync — session.end is the once-per-pause signal the
-  // user identified as the natural push boundary. Fire-and-forget; no-op when
-  // sync is not configured.
   if (event === "session.end") {
     triggerBackgroundPush();
   }

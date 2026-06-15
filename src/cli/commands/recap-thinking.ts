@@ -1,7 +1,7 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
-import { insertEvent } from "@/db/queries/events";
+import { emitAssistantRecap } from "@/db/events/emit";
 import { getLatestAssistantTurn } from "@/lib/transcript";
 
 const RECAP_RE = /<recap>([\s\S]*?)<\/recap>/i;
@@ -45,11 +45,9 @@ register("recap-thinking", async (args) => {
   const convoId =
     conversationId && getConversation(conversationId) ? conversationId : undefined;
 
-  insertEvent({
+  emitAssistantRecap({
     sessionId,
     conversationId: convoId,
-    event: "assistant.recap",
-    summary: recap.length > 80 ? `${recap.slice(0, 77)}...` : recap,
-    meta: { recap, claude_id: convoId },
+    recap,
   });
 });
