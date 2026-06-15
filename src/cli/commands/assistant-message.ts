@@ -69,10 +69,12 @@ register("assistant-message", async (args) => {
     conversationId && getConversation(conversationId) ? conversationId : undefined;
 
   // assistant.message — emit if text differs from the most recent one for
-  // this session. The dedup is a content match so per-AskUQ + final-Stop
-  // calls on the same turn collapse to one event.
+  // this conversation. The dedup is a content match scoped to the current
+  // conversation so per-AskUQ + final-Stop calls on the same turn collapse
+  // to one event, but identical text from a *different* conversation in the
+  // same session still lands as its own event.
   if (textSansRecap || turn.thinkingBlocks > 0) {
-    const latestMsg = getLatestEventOfType(sessionId, "assistant.message");
+    const latestMsg = getLatestEventOfType(sessionId, "assistant.message", convoId);
     const latestText = (latestMsg?.meta as Record<string, unknown> | null)?.text;
     if (latestText !== textSansRecap) {
       emitAssistantMessage({
@@ -87,12 +89,12 @@ register("assistant-message", async (args) => {
     }
   }
 
-  // assistant.recap — same dedup pattern. Only fires for turns that included
-  // a `<recap>...</recap>` tag.
+  // assistant.recap — same dedup pattern, also scoped to the current
+  // conversation. Only fires for turns that included a `<recap>...</recap>` tag.
   const recapMatch = fullText.match(RECAP_RE);
   const recap = recapMatch?.[1]?.trim();
   if (recap) {
-    const latestRecap = getLatestEventOfType(sessionId, "assistant.recap");
+    const latestRecap = getLatestEventOfType(sessionId, "assistant.recap", convoId);
     const latestRecapText = (latestRecap?.meta as Record<string, unknown> | null)?.recap;
     if (latestRecapText !== recap) {
       emitAssistantRecap({

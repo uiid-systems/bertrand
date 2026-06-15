@@ -62,18 +62,31 @@ export function getLatestEvent(sessionId: string) {
 }
 
 /**
- * Get the most recent event of a given type for a session. Used by per-turn
- * captures (assistant-message, etc.) to dedup against what was already
- * recorded — same text → skip the insert.
+ * Get the most recent event of a given type for a session, optionally scoped
+ * to a single conversation. Used by per-turn captures (assistant-message,
+ * etc.) to dedup against what was already recorded — same text → skip the
+ * insert.
+ *
+ * Scope to conversation when meaningful: assistant text "I'm done" appearing
+ * in two separate Claude conversations within one bertrand session should
+ * land twice, not once.
  */
 export function getLatestEventOfType(
   sessionId: string,
   eventType: string,
+  conversationId?: string,
 ): EventRow | undefined {
+  const conditions = [
+    eq(events.sessionId, sessionId),
+    eq(events.event, eventType),
+  ];
+  if (conversationId) {
+    conditions.push(eq(events.conversationId, conversationId));
+  }
   return getDb()
     .select()
     .from(events)
-    .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
+    .where(and(...conditions))
     .orderBy(desc(events.createdAt))
     .limit(1)
     .get() as EventRow | undefined;

@@ -152,6 +152,48 @@ describe("events", () => {
     const missing = getLatestEventOfType(session.id, "nonexistent.type");
     expect(missing).toBeUndefined();
   });
+
+  test("getLatestEventOfType scopes to conversationId when provided", () => {
+    // Per-turn capture dedup must not collapse identical text across
+    // different conversations within one bertrand session.
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "convo-scoped-test",
+      name: "convo-scoped-test",
+    });
+    const convoA = createConversation({
+      id: "550e8400-e29b-41d4-a716-446655440010",
+      sessionId: session.id,
+    });
+    const convoB = createConversation({
+      id: "550e8400-e29b-41d4-a716-446655440011",
+      sessionId: session.id,
+    });
+
+    insertEvent({
+      sessionId: session.id,
+      conversationId: convoA.id,
+      event: "assistant.message",
+      meta: { text: "from A" },
+    });
+    insertEvent({
+      sessionId: session.id,
+      conversationId: convoB.id,
+      event: "assistant.message",
+      meta: { text: "from B" },
+    });
+
+    const latestForA = getLatestEventOfType(session.id, "assistant.message", convoA.id);
+    expect((latestForA!.meta as Record<string, unknown>).text).toBe("from A");
+
+    const latestForB = getLatestEventOfType(session.id, "assistant.message", convoB.id);
+    expect((latestForB!.meta as Record<string, unknown>).text).toBe("from B");
+
+    // No conversation scope still returns the session-wide latest.
+    const sessionWide = getLatestEventOfType(session.id, "assistant.message");
+    expect((sessionWide!.meta as Record<string, unknown>).text).toBe("from B");
+  });
 });
 
 describe("conversations", () => {
