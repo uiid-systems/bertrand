@@ -17,7 +17,11 @@ import {
   setActiveProjectSlug,
   projectExists,
 } from "@/lib/projects/registry"
-import { resolveActiveProject } from "@/lib/projects/resolve"
+import {
+  resolveActiveProject,
+  _resetActiveProjectCache,
+} from "@/lib/projects/resolve"
+import { invalidateDbCache } from "@/db/client"
 import type {
   SessionRow,
   SessionWithCategory,
@@ -130,10 +134,15 @@ function archiveResponse(result: ArchiveResult | UnarchiveResult): Response {
 }
 
 /**
- * Switch the active project. The server can't hot-swap its DB cache
- * mid-request (other queries may be in flight), so this returns 200 then
- * exits the process. `server-lifecycle.ts` respawns us on the next call
- * from the TUI, picking up the new active slug at startup.
+ * Switch the active project. Writes the new slug to the registry, then drops
+ * the in-process caches that pin the previous project: the memoized active-
+ * project resolver and the per-DB-path drizzle handle map. The next request
+ * resolves the new active project and re-opens its DB lazily — no restart,
+ * no respawn window for the client to bridge over.
+ *
+ * Safe under concurrent requests because `invalidateDbCache` only drops the
+ * cache entries; existing handles held by in-flight queries continue to work
+ * and free themselves on GC.
  */
 async function handleSwitchProject(req: Request): Promise<Response> {
   let body: { slug?: unknown }
@@ -150,12 +159,15 @@ async function handleSwitchProject(req: Request): Promise<Response> {
     return Response.json({ error: `Unknown project: ${slug}` }, { status: 404 })
   }
   setActiveProjectSlug(slug)
-  // Return synchronously, then queue an exit on the next tick so the
-  // response actually flushes before the process dies. The browser will
-  // see the success, then a few hundred ms of "connection lost" until
-  // ensureServerStarted respawns us.
-  queueMicrotask(() => process.exit(0))
-  return Response.json({ ok: true, slug, willRestart: true })
+  // resolveActiveProject() honors BERTRAND_PROJECT over the registry — the
+  // spawn-time pin that keeps hook subprocesses anchored to their parent
+  // session. The dashboard server is long-lived and the click is an
+  // explicit override, so we update this process's env to match before
+  // dropping the caches that read it.
+  process.env.BERTRAND_PROJECT = slug
+  _resetActiveProjectCache()
+  invalidateDbCache()
+  return Response.json({ ok: true, slug })
 }
 
 async function handleOpen(req: Request): Promise<Response> {
@@ -252,7 +264,7 @@ export function startServer(port = PORT) {
         return r
       }
 
-      // Switch the active project. Triggers a server restart (see handler).
+      // Switch the active project in-process (see handler).
       if (req.method === "POST" && url.pathname === "/api/active-project") {
         const r = await handleSwitchProject(req)
         r.headers.set("Access-Control-Allow-Origin", "*")

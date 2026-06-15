@@ -17,8 +17,8 @@ import { projectsQuery, switchActiveProject } from "../../api/queries";
 /**
  * Compact project switcher for the sidebar header. Shows the active
  * project name + a chevron; the menu lists every project and POSTs to
- * /api/active-project on click. The server exits on switch, so we wait
- * a short beat for the lifecycle daemon to respawn it before reloading.
+ * /api/active-project on click. The server swaps its active project in
+ * place and the next fetch returns data from the new project — no reload.
  */
 export const ProjectSwitcher = () => {
   const queryClient = useQueryClient();
@@ -35,13 +35,7 @@ export const ProjectSwitcher = () => {
       console.error("Project switch failed:", err);
       return;
     }
-    // Invalidate the queries so the post-respawn fetch is fresh. Give
-    // the server ~600ms to come back; ensureServerStarted spawns
-    // detached and the port probe is ~500ms in the worst case.
-    setTimeout(() => {
-      queryClient.invalidateQueries();
-      window.location.reload();
-    }, 600);
+    void queryClient.invalidateQueries();
   };
 
   if (projects.length === 0) {
