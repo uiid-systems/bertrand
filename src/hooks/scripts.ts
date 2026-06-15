@@ -36,7 +36,7 @@ function quietHelper(bin: string): string {
 }
 
 /** PreToolUse AskUserQuestion → enforce multiSelect:true, then mark session as waiting */
-export function waitingScript(bin: string): string {
+export function waitingScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
 ${quietHelper(bin)}
@@ -61,7 +61,7 @@ question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut 
 [ -z "$question" ] && question="Waiting for input"
 
 # Clear working debounce marker so next resume→working transition fires
-rm -f "/tmp/bertrand-working-$sid"
+rm -f "${runtimeDir}/working-$sid"
 
 bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
@@ -84,7 +84,7 @@ wait
 }
 
 /** PostToolUse AskUserQuestion → mark session as active (user answered) */
-export function answeredScript(bin: string): string {
+export function answeredScript(bin: string, _runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
 #
@@ -141,7 +141,7 @@ wait
 }
 
 /** PreToolUse (catch-all) → flip waiting to active */
-export function activeScript(bin: string): string {
+export function activeScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PreToolUse (catch-all) → flip waiting to active
 ${quietHelper(bin)}
@@ -150,7 +150,7 @@ sid="\${BERTRAND_SESSION:-}"
 
 # Debounce: skip if we already sent session.active within the last 5 seconds.
 # This avoids spawning bertrand (~31ms) on every tool call during rapid sequences.
-marker="/tmp/bertrand-working-$sid"
+marker="${runtimeDir}/working-$sid"
 if [ -f "$marker" ]; then
   age=$(( $(date +%s) - $(stat -f%m "$marker" 2>/dev/null || echo 0) ))
   [ "$age" -lt 5 ] && exit 0
@@ -169,7 +169,7 @@ bq update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "
 }
 
 /** PermissionRequest → write pending marker + emit permission.request */
-export function permissionWaitScript(bin: string): string {
+export function permissionWaitScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PermissionRequest → mark pending, emit permission.request
 ${quietHelper(bin)}
@@ -181,7 +181,7 @@ ${EXTRACT_TOOL}
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
 # Write marker so PostToolUse knows this was a real permission prompt (not auto-approved)
-touch "/tmp/bertrand-perm-pending-$sid"
+touch "${runtimeDir}/perm-pending-$sid"
 
 # Extract detail from tool_input via grep (avoid jq for simple fields)
 detail=""
@@ -201,7 +201,7 @@ wait
 }
 
 /** PostToolUse (catch-all) → capture every tool call */
-export function permissionDoneScript(bin: string): string {
+export function permissionDoneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
@@ -226,7 +226,7 @@ ${EXTRACT_TOOL}
 # Don't double-log: AskUserQuestion has its own waiting/answered events
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
-marker="/tmp/bertrand-perm-pending-$sid"
+marker="${runtimeDir}/perm-pending-$sid"
 had_marker=0
 if [ -f "$marker" ]; then
   had_marker=1
@@ -291,7 +291,7 @@ wait
  * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
  * handling is fine — grep would mangle prompts containing quotes or newlines.
  */
-export function userPromptScript(bin: string): string {
+export function userPromptScript(bin: string, _runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: UserPromptSubmit → record user free-text prompt
 ${quietHelper(bin)}
@@ -309,7 +309,7 @@ bq update --session-id "$sid" --event user.prompt --meta "$meta"
 }
 
 /** Stop hook → mark session as paused + final context snapshot */
-export function doneScript(bin: string): string {
+export function doneScript(bin: string, _runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: Stop → mark session as paused
 ${quietHelper(bin)}

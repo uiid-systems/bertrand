@@ -56,6 +56,7 @@ register("init", async () => {
   // 1. Ensure directories
   mkdirSync(paths.root, { recursive: true });
   mkdirSync(paths.hooks, { recursive: true });
+  mkdirSync(paths.runtime, { recursive: true });
 
   // 2. Migrations — for the active project's DB. On a fresh install with no
   // registry yet, that resolves to `projects/default/bertrand.db`.

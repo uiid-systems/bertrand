@@ -1,6 +1,8 @@
 import { spawn } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
+import { randomUUID } from "crypto";
 
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import type { ExitAction } from "./screens/Exit";
@@ -19,7 +21,6 @@ import {
 } from "@/lib/projects/registry";
 import { createProject } from "@/lib/projects/create";
 import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { randomUUID } from "crypto";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
 // sibling. After `bun run build`, both bundle into dist/ as .js files —
@@ -34,25 +35,80 @@ const SCREEN_ENTRY = (() => {
  *
  * Storm renders in the child process and exits completely when done.
  * The parent process never loads Storm — zero CPU overhead while Claude runs.
+ *
+ * Signal handling: while the child is alive we install no-op SIGINT/SIGTERM
+ * handlers on the parent. The TTY delivers signals to the foreground process
+ * group, so the child gets them and handles its own cleanup. The parent
+ * handler exists purely to suppress Node's default-terminate-on-signal
+ * behavior; without it, a Ctrl+C during the exit screen would kill the
+ * parent before it could read the child's result file. run-screen.tsx is
+ * responsible for ensuring a result file is always written, even on signal.
  */
 async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
-  const tmpFile = `/tmp/bertrand-tui-${process.pid}-${Date.now()}.json`;
+  const tmpFile = join(tmpdir(), `bertrand-tui-${randomUUID()}.json`);
+
+  // BERTRAND_DEBUG_TUI instrumentation — parent-side breadcrumb so we can
+  // tell from the log file whether the env var actually reached us.
+  if (process.env.BERTRAND_DEBUG_TUI) {
+    try {
+      const { appendFileSync } = await import("fs");
+      appendFileSync(
+        process.env.BERTRAND_DEBUG_TUI,
+        `--- parent runScreen("${screen}") at ${Date.now()} entry=${SCREEN_ENTRY}\n`,
+      );
+    } catch {
+      // best-effort
+    }
+  }
 
   const child = spawn("bun", ["run", SCREEN_ENTRY, screen, tmpFile, ...args], {
     stdio: "inherit",
+    env: process.env,
   });
 
-  const exitCode = await new Promise<number>((resolve) => {
-    child.on("exit", (code) => resolve(code ?? 1));
-  });
+  const noopSignal = (): void => {};
+  process.on("SIGINT", noopSignal);
+  process.on("SIGTERM", noopSignal);
 
-  if (exitCode !== 0) {
-    throw new Error(`TUI screen "${screen}" exited with code ${exitCode}`);
+  let spawnError: Error | null = null;
+
+  try {
+    const { code, signal } = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolve) => {
+      child.on("error", (err) => {
+        spawnError = err;
+        resolve({ code: 1, signal: null });
+      });
+      child.on("exit", (c, s) => resolve({ code: c, signal: s }));
+    });
+
+    if (spawnError) {
+      throw new Error(
+        `Failed to launch TUI screen "${screen}": ${(spawnError as Error).message}`,
+      );
+    }
+
+    if (!existsSync(tmpFile)) {
+      // Child died before run-screen.tsx's try/finally wrote the result.
+      // Surface a specific message instead of throwing on the JSON.parse.
+      const detail = signal
+        ? `killed by ${signal}`
+        : `exited with code ${code ?? "?"} without writing result`;
+      throw new Error(`TUI screen "${screen}" ${detail}`);
+    }
+
+    return JSON.parse(readFileSync(tmpFile, "utf-8")) as T;
+  } finally {
+    process.removeListener("SIGINT", noopSignal);
+    process.removeListener("SIGTERM", noopSignal);
+    try {
+      if (existsSync(tmpFile)) unlinkSync(tmpFile);
+    } catch {
+      // best-effort
+    }
   }
-
-  const result = JSON.parse(readFileSync(tmpFile, "utf-8")) as T;
-  unlinkSync(tmpFile);
-  return result;
 }
 
 /**
@@ -81,16 +137,18 @@ async function startExitTui(sessionId: string): Promise<ExitAction> {
 
 /**
  * Render the resume picker and return the user's choice.
- * Auto-selects if only one conversation exists.
+ *
+ * Always shows the picker when at least one conversation exists — the
+ * Exit screen's "Resume" option promises a choice between continuing an
+ * existing conversation and starting a new one, so silently auto-
+ * selecting the lone conversation when there's only one makes that
+ * promise lie. The only exception is zero conversations, where there's
+ * nothing to pick and auto-new is the only sensible path.
  */
 export async function startResumeTui(
   sessionId: string,
 ): Promise<ResumeSelection> {
   const conversations = getConversationsBySession(sessionId);
-
-  if (conversations.length === 1) {
-    return { type: "conversation", conversationId: conversations[0]!.id };
-  }
 
   if (conversations.length === 0) {
     return { type: "new" };
