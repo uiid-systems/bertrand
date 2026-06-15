@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/uiid-systems/bertrand/compare/v0.21.0...v0.22.0) (2026-06-15)
+
+
+### Features
+
+* session effectiveness rating (+ taxonomy slash-segment refactor) ([#131](https://github.com/uiid-systems/bertrand/issues/131)) ([c91a648](https://github.com/uiid-systems/bertrand/commit/c91a648faf549bfe99fcaf10902b8a36f636c44a))
+
+
+### Refactoring
+
+* **taxonomy:** treat first slash-segment as category, rest as slug ([#129](https://github.com/uiid-systems/bertrand/issues/129)) ([4d9ec6c](https://github.com/uiid-systems/bertrand/commit/4d9ec6cd42f4bce84e5b26c573f72f1ba4d39647))
+
 ## [0.21.0](https://github.com/uiid-systems/bertrand/compare/v0.20.1...v0.21.0) (2026-06-15)
 
 
