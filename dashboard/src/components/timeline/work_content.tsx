@@ -22,25 +22,21 @@ function hasDiff(p: PermissionDetail): boolean {
 }
 
 function DiffContent({ permission }: { permission: PermissionDetail }) {
-  if (permission.edits && permission.edits.length > 0) {
-    return (
-      <Stack gap={2} fullwidth>
-        {permission.edits.map((edit, i) => (
-          <DiffBlock
-            key={i}
-            oldStr={edit.oldStr ?? ""}
-            newStr={edit.newStr ?? ""}
-            rows={DIFF_PREVIEW_ROWS}
-            defaultExpanded={false}
-          />
-        ))}
-      </Stack>
-    );
-  }
+  // Normalize MultiEdit (`edits[]`) and single-edit (`oldStr`/`newStr`)
+  // into one list of hunks so they all land inside the same CodeBlock —
+  // multiple edits to one file shouldn't render as N stacked blocks.
+  const edits =
+    permission.edits && permission.edits.length > 0
+      ? permission.edits.map((e) => ({
+          oldStr: e.oldStr ?? "",
+          newStr: e.newStr ?? "",
+        }))
+      : [{ oldStr: permission.oldStr ?? "", newStr: permission.newStr ?? "" }];
+
   return (
     <DiffBlock
-      oldStr={permission.oldStr ?? ""}
-      newStr={permission.newStr ?? ""}
+      edits={edits}
+      filename={permission.detail}
       rows={DIFF_PREVIEW_ROWS}
       defaultExpanded={false}
     />

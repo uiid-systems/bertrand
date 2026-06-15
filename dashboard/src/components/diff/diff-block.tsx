@@ -5,9 +5,21 @@ import { diffLines, diffWordsWithSpace } from "diff";
 
 import "./diff-block.css";
 
+type EditEntry = { oldStr: string; newStr: string };
+
 type DiffBlockProps = {
-  oldStr: string;
-  newStr: string;
+  /**
+   * One or more (oldStr, newStr) hunks. When more than one is given they
+   * all render inside a single CodeBlock with `…` separator rows between
+   * hunks — for MultiEdit, that means N edits to one file collapse into
+   * one block, not N stacked blocks.
+   *
+   * Backward-compat: callers passing top-level `oldStr` + `newStr` get
+   * normalized into a single-entry edits list.
+   */
+  edits?: EditEntry[];
+  oldStr?: string;
+  newStr?: string;
   language?: BundledLanguage;
   filename?: string;
   /** Word-level intra-line diff. Off until we redesign the visual. */
@@ -18,7 +30,7 @@ type DiffBlockProps = {
   defaultExpanded?: boolean;
 };
 
-type LineKind = "context" | "add" | "remove";
+type LineKind = "context" | "add" | "remove" | "separator";
 
 type Decoration = {
   start: { line: number; character: number };
@@ -58,13 +70,7 @@ function dedent(oldStr: string, newStr: string): [string, string] {
   return [strip(oldStr), strip(newStr)];
 }
 
-function computeDiff(
-  oldStr: string,
-  newStr: string,
-  wordDiff: boolean,
-): DiffComputed {
-  const [dOld, dNew] = dedent(oldStr, newStr);
-  const changes = diffLines(dOld, dNew);
+function computeDiff(edits: EditEntry[], wordDiff: boolean): DiffComputed {
   const codeLines: string[] = [];
   const lineKinds: LineKind[] = [];
   const decorations: Decoration[] = [];
@@ -83,71 +89,90 @@ function computeDiff(
     return { startIdx, lns };
   }
 
-  let i = 0;
-  while (i < changes.length) {
-    const c = changes[i]!;
+  for (let e = 0; e < edits.length; e++) {
+    if (e > 0) {
+      // Visual hunk separator between edits — rendered with no gutter and
+      // no +/- marker by the line transformer below.
+      codeLines.push("…");
+      lineKinds.push("separator");
+    }
 
-    // Adjacent removed→added: pair lines by index, run word-diff on each pair.
-    if (c.removed && i + 1 < changes.length && changes[i + 1]!.added) {
-      const removed = pushBlock(c.value, "remove");
-      const added = pushBlock(changes[i + 1]!.value, "add");
+    const { oldStr, newStr } = edits[e]!;
+    const [dOld, dNew] = dedent(oldStr, newStr);
+    const changes = diffLines(dOld, dNew);
 
-      const pairs = wordDiff
-        ? Math.min(removed.lns.length, added.lns.length)
-        : 0;
-      for (let p = 0; p < pairs; p++) {
-        const wordChanges = diffWordsWithSpace(removed.lns[p]!, added.lns[p]!);
-        let removedCol = 0;
-        let addedCol = 0;
-        for (const wc of wordChanges) {
-          const len = wc.value.length;
-          if (wc.added) {
-            if (len > 0) {
-              decorations.push({
-                start: { line: added.startIdx + p, character: addedCol },
-                end: { line: added.startIdx + p, character: addedCol + len },
-                properties: { class: "diff-word add" },
-              });
+    let i = 0;
+    while (i < changes.length) {
+      const c = changes[i]!;
+
+      // Adjacent removed→added: pair lines by index, run word-diff on each pair.
+      if (c.removed && i + 1 < changes.length && changes[i + 1]!.added) {
+        const removed = pushBlock(c.value, "remove");
+        const added = pushBlock(changes[i + 1]!.value, "add");
+
+        const pairs = wordDiff
+          ? Math.min(removed.lns.length, added.lns.length)
+          : 0;
+        for (let p = 0; p < pairs; p++) {
+          const wordChanges = diffWordsWithSpace(
+            removed.lns[p]!,
+            added.lns[p]!,
+          );
+          let removedCol = 0;
+          let addedCol = 0;
+          for (const wc of wordChanges) {
+            const len = wc.value.length;
+            if (wc.added) {
+              if (len > 0) {
+                decorations.push({
+                  start: { line: added.startIdx + p, character: addedCol },
+                  end: { line: added.startIdx + p, character: addedCol + len },
+                  properties: { class: "diff-word add" },
+                });
+              }
+              addedCol += len;
+            } else if (wc.removed) {
+              if (len > 0) {
+                decorations.push({
+                  start: { line: removed.startIdx + p, character: removedCol },
+                  end: {
+                    line: removed.startIdx + p,
+                    character: removedCol + len,
+                  },
+                  properties: { class: "diff-word remove" },
+                });
+              }
+              removedCol += len;
+            } else {
+              removedCol += len;
+              addedCol += len;
             }
-            addedCol += len;
-          } else if (wc.removed) {
-            if (len > 0) {
-              decorations.push({
-                start: { line: removed.startIdx + p, character: removedCol },
-                end: {
-                  line: removed.startIdx + p,
-                  character: removedCol + len,
-                },
-                properties: { class: "diff-word remove" },
-              });
-            }
-            removedCol += len;
-          } else {
-            removedCol += len;
-            addedCol += len;
           }
         }
+        i += 2;
+      } else if (c.removed) {
+        pushBlock(c.value, "remove");
+        i += 1;
+      } else if (c.added) {
+        pushBlock(c.value, "add");
+        i += 1;
+      } else {
+        pushBlock(c.value, "context");
+        i += 1;
       }
-      i += 2;
-    } else if (c.removed) {
-      pushBlock(c.value, "remove");
-      i += 1;
-    } else if (c.added) {
-      pushBlock(c.value, "add");
-      i += 1;
-    } else {
-      pushBlock(c.value, "context");
-      i += 1;
     }
   }
 
   // Old/new line numbers, GitHub-style: removed lines get an old#, added lines
   // get a new#, context lines get both. Both increment in lockstep on context.
+  // Separators are gutterless and don't advance counters.
   const lineNums: LineNum[] = [];
   let oldCounter = 1;
   let newCounter = 1;
   for (const kind of lineKinds) {
-    if (kind === "remove") {
+    if (kind === "separator") {
+      lineNums.push({ old: null, new: null });
+    } else if (kind === "remove") {
       lineNums.push({ old: oldCounter++, new: null });
     } else if (kind === "add") {
       lineNums.push({ old: null, new: newCounter++ });
@@ -189,15 +214,58 @@ function gutterSpan(cls: string, value: string) {
   };
 }
 
+// File-extension → shiki bundled language. The bundled set is intentionally
+// small (see @uiid/code highlighter.types). Extensions outside this map fall
+// through to the caller's fallback — historically `"tsx"`, which renders
+// non-code files as syntax-broken React. This map at least catches markdown.
+const EXT_TO_LANG: Record<string, BundledLanguage> = {
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  cjs: "javascript",
+  json: "json",
+  md: "markdown",
+  markdown: "markdown",
+  css: "css",
+  html: "html",
+  htm: "html",
+  py: "python",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+};
+
+function inferLanguage(
+  filename: string | undefined,
+  fallback: BundledLanguage,
+): BundledLanguage {
+  if (!filename) return fallback;
+  const base = filename.split("/").pop() ?? filename;
+  const ext = base.includes(".") ? base.split(".").pop()!.toLowerCase() : "";
+  return EXT_TO_LANG[ext] ?? fallback;
+}
+
 export function DiffBlock({
+  edits,
   oldStr,
   newStr,
-  language = "tsx",
+  language,
   filename,
   wordDiff = false,
   rows,
   defaultExpanded,
 }: DiffBlockProps) {
+  // Normalize the two input shapes to one. `edits` wins if both are given
+  // — callers should never pass both, but if they do the structured form
+  // is the source of truth.
+  const normalized: EditEntry[] =
+    edits && edits.length > 0
+      ? edits
+      : [{ oldStr: oldStr ?? "", newStr: newStr ?? "" }];
+  const resolvedLanguage = language ?? inferLanguage(filename, "tsx");
+
   const [html, setHtml] = useState<string>("");
   const [numWidth, setNumWidth] = useState<number>(1);
 
@@ -206,13 +274,13 @@ export function DiffBlock({
 
     (async () => {
       const { code, lineKinds, lineNums, decorations, maxLineNum } =
-        computeDiff(oldStr, newStr, wordDiff);
+        computeDiff(normalized, wordDiff);
 
-      await loadLanguage(language);
+      await loadLanguage(resolvedLanguage);
       const hl = await getHighlighter();
 
       const result = hl.codeToHtml(code, {
-        lang: language,
+        lang: resolvedLanguage,
         themes: { light: "vitesse-light", dark: "vitesse-black" },
         defaultColor: false,
         decorations,
@@ -228,6 +296,12 @@ export function DiffBlock({
               const nums = lineNums[idx]!;
               if (kind === "add" || kind === "remove") {
                 addClass(node, `diff ${kind}`);
+              } else if (kind === "separator") {
+                addClass(node, "diff-separator");
+                // Separator rows: no +/- marker, no line numbers. The row
+                // content is the bare `…` so CSS can space it as a thin
+                // visual break between hunks.
+                return node;
               }
               const markerCls =
                 kind === "add"
@@ -274,7 +348,13 @@ export function DiffBlock({
     return () => {
       cancelled = true;
     };
-  }, [oldStr, newStr, language, wordDiff]);
+  }, [normalized, resolvedLanguage, wordDiff]);
+
+  // Last hunk's new text feeds CodeBlock's `code` for the copy-fallback
+  // path when shiki hasn't returned the highlighted html yet. Multi-hunk
+  // callers always render via `html`, so the value is rarely seen.
+  const fallbackCode =
+    normalized[normalized.length - 1]?.newStr ?? "";
 
   return (
     <div
@@ -287,8 +367,8 @@ export function DiffBlock({
       }
     >
       <CodeBlock
-        code={newStr}
-        language={language}
+        code={fallbackCode}
+        language={resolvedLanguage}
         filename={filename}
         showLineNumbers={false}
         rows={rows}

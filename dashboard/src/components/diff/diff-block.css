@@ -132,4 +132,14 @@
     ) !important;
     border-radius: 2px;
   }
+
+  /* Hunk separator between merged MultiEdit edits. The transformer renders
+   * the row without a gutter — we just need to dim it and center the `…`. */
+  .bertrand-diff-block .shiki .line.diff-separator {
+    color: var(--shade-muted);
+    text-align: center;
+    user-select: none;
+    padding-block: 0.15em;
+    opacity: 0.6;
+  }
 }
