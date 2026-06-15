@@ -196,24 +196,31 @@ wait
 `;
 }
 
-/** PostToolUse (catch-all) → emit tool.applied for edits, permission.resolve for prompted tools */
+/** PostToolUse (catch-all) → capture every tool call */
 export function permissionDoneScript(bin: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
-# Two flows:
-#   1. Edit/Write/MultiEdit: ALWAYS emit tool.applied with diff, regardless of permission
-#      flow. This is the only way to capture diffs for auto-approved edits — bertrand
-#      must never require disabling auto-approve to gather data.
-#   2. Other tools: emit permission.resolve only if a PermissionRequest preceded this
-#      (marker exists). Rejected tools never reach PostToolUse, so a request without a
-#      resolve = rejected.
+# Captures every tool call Claude makes. Three event flows:
+#   1. Edit/Write/MultiEdit → tool.applied with diff payload. Keeps the
+#      existing dashboard diff-renderer happy and is the only place we get
+#      old_string/new_string on auto-approved edits.
+#   2. Tools that went through a permission prompt → permission.resolve.
+#      The PermissionRequest hook set a marker; we clear it and log the
+#      approval. (Denials never reach PostToolUse, so absence-of-resolve
+#      means the user said no.)
+#   3. Everything else (auto-approved Bash/Read/Grep/Glob/etc.) → tool.used
+#      with outcome:"auto". Previously this case dropped the call entirely;
+#      now Claude's read-only / shell activity shows up in the timeline.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 ${EXTRACT_TOOL}
+
+# Don't double-log: AskUserQuestion has its own waiting/answered events
+[ "$tool" = "AskUserQuestion" ] && exit 0
 
 marker="/tmp/bertrand-perm-pending-$sid"
 had_marker=0
@@ -232,10 +239,6 @@ case "$tool" in
       Write) summary="wrote a file" ;;
       *) summary="edited a file" ;;
     esac
-    # Single jq pass: build meta.permissions[] with diff data so the dashboard renders
-    # via the existing WorkContent path (same shape as collapsed permission events).
-    # Emit camelCase keys (oldStr/newStr/edits) directly so WorkContent reads
-    # meta.permissions[] without going through transforms.ts's snake→camel adapter.
     meta="$(printf '%s' "$input" | jq --arg t "$tool" --arg d "$detail" --arg cid "$cid" '
       {
         permissions: [
@@ -254,15 +257,27 @@ case "$tool" in
     ;;
 esac
 
-# Other tools: only emit permission.resolve if there was a real prompt
-[ "$had_marker" = "0" ] && exit 0
-
+# Extract a tool-shaped detail for the timeline summary. Bash gets the
+# command, file tools get the path; everything else falls back to a generic
+# label inside the emit helper.
 detail=""
 case "$tool" in
   Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
+  Read|NotebookRead) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
+  Glob) detail="$(printf '%s' "$input" | grep -o '"pattern":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)" ;;
+  Grep) detail="$(printf '%s' "$input" | grep -o '"pattern":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)" ;;
+  WebFetch) detail="$(printf '%s' "$input" | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-300)" ;;
+  WebSearch) detail="$(printf '%s' "$input" | grep -o '"query":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)" ;;
 esac
 
-bq update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
+if [ "$had_marker" = "1" ]; then
+  # Prompted-then-approved path. Keep permission.resolve for back-compat
+  # rendering; downstream consumers can migrate to tool.used at their pace.
+  bq update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
+else
+  # Auto-approved path. Without tool.used, these calls were invisible.
+  bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"auto", claude_id:$cid}')"
+fi
 wait
 `;
 }

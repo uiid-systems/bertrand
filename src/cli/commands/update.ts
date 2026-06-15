@@ -11,6 +11,7 @@ import {
   emitSessionRecap,
   emitSessionWaiting,
   emitToolApplied,
+  emitToolUsed,
   emitUserPrompted,
 } from "@/db/events/emit";
 
@@ -118,6 +119,15 @@ function dispatchHookEvent(
         conversationId,
         summary: summary ?? "edited a file",
         permissions: (meta.permissions as Parameters<typeof emitToolApplied>[0]["permissions"]) ?? [],
+      });
+      return true;
+    case "tool.used":
+      emitToolUsed({
+        sessionId,
+        conversationId,
+        tool: String(meta.tool ?? "Unknown"),
+        detail: String(meta.detail ?? ""),
+        outcome: meta.outcome === "approved" ? "approved" : "auto",
       });
       return true;
     default:
