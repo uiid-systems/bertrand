@@ -36,6 +36,7 @@ if (command && command in hotPath) {
     import("./cli/commands/badge"),
     import("./cli/commands/notify"),
     import("./cli/commands/sync"),
+    import("./cli/commands/project"),
   ]);
 }
 

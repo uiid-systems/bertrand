@@ -207,6 +207,19 @@ export function registerProject(opts: {
   return entry;
 }
 
+export function renameProject(slug: string, newName: string): void {
+  const registry = loadRegistry();
+  if (!registry) {
+    throw new Error(`No registry to update — create a project first`);
+  }
+  const entry = registry.projects.find((p) => p.slug === slug);
+  if (!entry) {
+    throw new Error(`Unknown project slug "${slug}"`);
+  }
+  entry.name = newName;
+  writeRegistry(registry);
+}
+
 export function removeProject(slug: string): void {
   const registry = loadRegistry();
   if (!registry) return;

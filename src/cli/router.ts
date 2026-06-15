@@ -146,6 +146,7 @@ Usage:
   bertrand log <session>    View session log
   bertrand stats <session>  Session statistics
   bertrand archive <name>   Archive/unarchive a session
+  bertrand project <op>     list|create|switch|current|rename|remove (see: bertrand project --help)
   bertrand update           Hook-facing state writer (internal)
   bertrand serve            Start dashboard HTTP server
   bertrand sync <op>        push|pull|status|onboard (see: bertrand sync --help)
