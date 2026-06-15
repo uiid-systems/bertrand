@@ -23,6 +23,8 @@ const EVENT_TYPES = [
   "tool.used",
   "tool.work",
   "session.recap",
+  "assistant.message",
+  "assistant.recap",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -65,6 +67,8 @@ const catalog = {
   "tool.used": { label: "tool", category: "work", color: 214, detailColor: 245, skip: true },
   "tool.work": { label: "tool work", category: "work", color: 214, detailColor: 245, skip: false },
   "session.recap": { label: "session recap", category: "lifecycle", color: 33, detailColor: 245, skip: false },
+  "assistant.message": { label: "claude", category: "interaction", color: 39, detailColor: 245, skip: false },
+  "assistant.recap": { label: "recap", category: "interaction", color: 39, detailColor: 245, skip: false },
 } satisfies Record<EventType, EventInfo>;
 
 const DEFAULT_INFO: EventInfo = {

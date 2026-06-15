@@ -65,11 +65,15 @@ rm -f "/tmp/bertrand-working-$sid"
 
 bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
-# Context snapshot — extract transcript path and capture token usage
+# Context snapshot — extract transcript path and capture token usage.
+# assistant-message captures the latest turn's text + recap tag in one pass;
+# replaces the older recap-thinking call which only grabbed the recap. Dedup
+# inside the command makes it idempotent vs the matching Stop-time capture,
+# so the same turn never lands twice.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
   bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
-  bq recap-thinking --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
 # Badge + notify in background — terminal UI doesn't need to block Claude
@@ -316,7 +320,10 @@ input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 bq update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 
-# Final context snapshot — capture token usage at session end
+# Final transcript reads. assistant-message dedups against the most-recent
+# AskUQ-time capture, so a Done-for-now exit (no work between AskUQ and Stop)
+# lands zero new events here; intermediate Stops with fresh assistant output
+# do land new ones.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
   bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
