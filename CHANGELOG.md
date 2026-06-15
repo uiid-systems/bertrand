@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.19.0](https://github.com/uiid-systems/bertrand/compare/v0.18.0...v0.19.0) (2026-06-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **db:** project-scope the Drizzle connection ([#108](https://github.com/uiid-systems/bertrand/issues/108))
+* **projects:** `bertrand list --group` is now `--category`. The `session.started` event meta key `group_path` is now `category_path` — historical events keep the old key, the dashboard event-title fallback only reads the new one.
+* `bertrand list --group` is now `--category`. The `session.started` event meta key `group_path` is now `category_path` — historical events keep the old key, the dashboard event-title fallback only reads the new one.
+
+### Features
+
+* **cli:** add bertrand project subcommands ([#112](https://github.com/uiid-systems/bertrand/issues/112)) ([6b18ef7](https://github.com/uiid-systems/bertrand/commit/6b18ef7001b739374fd635c391591aea15d84005))
+* **engine:** inject BERTRAND_PROJECT into the Claude spawn env ([#111](https://github.com/uiid-systems/bertrand/issues/111)) ([3dbb320](https://github.com/uiid-systems/bertrand/commit/3dbb320fd1f267f8715227c7d3670878c47b1f3f))
+* **projects:** add project registry + path resolver ([#107](https://github.com/uiid-systems/bertrand/issues/107)) ([849ce76](https://github.com/uiid-systems/bertrand/commit/849ce763238fbe8cef8ac438996973096ac4b650))
+* **projects:** migrate legacy single-DB layout to projects/default ([#109](https://github.com/uiid-systems/bertrand/issues/109)) ([bd06557](https://github.com/uiid-systems/bertrand/commit/bd06557df9dec2c039cd2713ee799588eab667fc))
+* **sync:** per-project sync + invite bundle v2 ([#114](https://github.com/uiid-systems/bertrand/issues/114)) ([1de27d0](https://github.com/uiid-systems/bertrand/commit/1de27d0f18ea35601d6ef2b8ec72c862f9cd40d4))
+* **tui,dashboard:** project picker + dashboard project switcher ([#113](https://github.com/uiid-systems/bertrand/issues/113)) ([4f4c756](https://github.com/uiid-systems/bertrand/commit/4f4c7561287570a7aa28f8d620769bb2df133f7a))
+
+
+### Bug Fixes
+
+* **engine:** finalize session on abrupt bertrand exit ([#104](https://github.com/uiid-systems/bertrand/issues/104)) ([1d005e3](https://github.com/uiid-systems/bertrand/commit/1d005e315dd8166c7adb4600bfe5148ff5a45332))
+
+
+### Refactoring
+
+* **db:** project-scope the Drizzle connection ([#108](https://github.com/uiid-systems/bertrand/issues/108)) ([7ab8426](https://github.com/uiid-systems/bertrand/commit/7ab842674227d641ed964bb58be4e7696f3a9f23))
+* rename groups → categories ([#106](https://github.com/uiid-systems/bertrand/issues/106)) ([ac7cf35](https://github.com/uiid-systems/bertrand/commit/ac7cf35690ba594203fabb0c945afded2ee22c2f))
+
+
+### Miscellaneous
+
+* force release-please to 0.19.0 ([fe7eed5](https://github.com/uiid-systems/bertrand/commit/fe7eed52c2414b5eed1574365f22bc9bd0d5517f))
+
 ## [0.18.0](https://github.com/uiid-systems/bertrand/compare/v0.17.0...v0.18.0) (2026-06-13)
 
 
