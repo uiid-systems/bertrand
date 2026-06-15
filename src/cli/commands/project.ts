@@ -1,17 +1,16 @@
-import { existsSync, mkdirSync, rmSync } from "fs";
+import { existsSync, rmSync } from "fs";
 import { register } from "@/cli/router";
-import { runMigrations } from "@/db/migrate";
 import { getDbForProject, invalidateDbCache } from "@/db/client";
 import { sessions } from "@/db/schema";
 import {
   listProjects,
   getActiveProjectSlug,
-  registerProject,
   setActiveProjectSlug,
   renameProject,
   removeProject,
 } from "@/lib/projects/registry";
 import { projectPaths } from "@/lib/projects/paths";
+import { createProject } from "@/lib/projects/create";
 import { resolveActiveProject, _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { formatAgo } from "@/lib/format";
 
@@ -170,30 +169,7 @@ export function createSubcommand(args: string[]): void {
     throw new UsageError(`Project "${slug}" already exists.`);
   }
 
-  // Register in the JSON registry *before* creating the directory. If we
-  // create the dir first, `recoverFromDisk` synthesizes a phantom entry
-  // for the new slug (because `bertrand.db` was just planted by
-  // runMigrations), and `registerProject`'s `loadRegistry()` would then
-  // see "already exists" and refuse. Register first, then materialize
-  // the on-disk artifacts. On any error during dir/DB creation we roll
-  // the registry entry back so the failure mode stays "no entry, no dir".
-  registerProject({ slug: slug!, name: customName ?? slug! });
-  try {
-    const paths = projectPaths(slug!);
-    mkdirSync(paths.root, { recursive: true });
-    runMigrations(paths.db);
-  } catch (err) {
-    // Roll back the registry entry. Swallow rollback errors so the
-    // original failure (the one the user actually needs to see) wins —
-    // if both throw, we'd otherwise mask "migration failed" with
-    // something like "registry write failed".
-    try {
-      removeProject(slug!);
-    } catch {
-      /* preserve original error */
-    }
-    throw err;
-  }
+  createProject({ slug: slug!, name: customName });
 
   if (activate) {
     setActiveProjectSlug(slug!);

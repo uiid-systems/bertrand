@@ -5,6 +5,7 @@ import { join } from "path";
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import type { ExitAction } from "./screens/Exit";
 import type { ResumeSelection } from "./screens/Resume";
+import type { ProjectPickerSelection } from "./screens/project-picker/project-picker.types";
 import { deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
@@ -12,6 +13,12 @@ import {
 } from "@/db/queries/conversations";
 import { archiveSession } from "@/lib/session-archive";
 import { launch, resume } from "@/engine/session";
+import {
+  setActiveProjectSlug,
+  listProjects,
+} from "@/lib/projects/registry";
+import { createProject } from "@/lib/projects/create";
+import { _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { randomUUID } from "crypto";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
@@ -53,6 +60,16 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
  */
 export async function startLaunchTui(): Promise<LaunchSelection> {
   return runScreen<LaunchSelection>("launch");
+}
+
+/**
+ * Render the project picker and return the user's selection. Skipped
+ * when only one project is registered AND no env-var override is set —
+ * the picker would be one row to confirm with Enter, which is friction
+ * we don't need.
+ */
+export async function startProjectPickerTui(): Promise<ProjectPickerSelection> {
+  return runScreen<ProjectPickerSelection>("project-picker");
 }
 
 /**
@@ -133,32 +150,83 @@ export async function runSessionLoop(sessionId: string): Promise<void> {
 }
 
 /**
- * Main TUI entrypoint. Shows launch screen, runs session, shows exit menu.
+ * Skip the project picker when there's exactly one project AND the user
+ * hasn't pinned a different one via `BERTRAND_PROJECT`. Hitting Enter on
+ * a single-row picker is friction we'd be inflicting for no gain.
  */
-export async function startTui(): Promise<void> {
+function shouldShowProjectPicker(): boolean {
+  if (process.env.BERTRAND_PROJECT) return false;
+  const projects = listProjects();
+  return projects.length !== 1;
+}
+
+/**
+ * Activate the project the user selected (or just created) so the
+ * launch screen that follows sees its sessions, not whoever was active
+ * before. The resolver cache is per-process so we explicitly reset.
+ */
+function activateProject(slug: string): void {
+  setActiveProjectSlug(slug);
+  _resetActiveProjectCache();
+}
+
+/**
+ * One launch cycle: TUI launch screen → session → exit menu.
+ */
+async function runLaunchCycle(): Promise<void> {
   const selection = await startLaunchTui();
 
   switch (selection.type) {
     case "quit":
-      break;
+      return;
 
     case "create": {
       const sessionId = await launch(selection);
       await runSessionLoop(sessionId);
-      break;
+      return;
     }
 
     case "pick": {
       const conversationId = await resolveConversationForResume(
         selection.sessionId,
       );
-      if (!conversationId) break;
+      if (!conversationId) return;
       const sessionId = await resume({
         sessionId: selection.sessionId,
         conversationId,
       });
       await runSessionLoop(sessionId);
-      break;
+      return;
+    }
+  }
+}
+
+/**
+ * Main TUI entrypoint. Shows project picker (when more than one project
+ * exists), then launch screen, runs session, shows exit menu.
+ */
+export async function startTui(): Promise<void> {
+  if (!shouldShowProjectPicker()) {
+    await runLaunchCycle();
+    return;
+  }
+
+  const projectSelection = await startProjectPickerTui();
+  switch (projectSelection.type) {
+    case "quit":
+      return;
+
+    case "select": {
+      activateProject(projectSelection.slug);
+      await runLaunchCycle();
+      return;
+    }
+
+    case "create": {
+      createProject({ slug: projectSelection.slug });
+      activateProject(projectSelection.slug);
+      await runLaunchCycle();
+      return;
     }
   }
 }
