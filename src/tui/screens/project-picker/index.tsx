@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Text } from "@orchetron/storm";
+import { Box, Text, useTui } from "@orchetron/storm";
 import { existsSync } from "fs";
 
 import { AppDetails, Logo } from "@/tui/components";
@@ -83,6 +83,8 @@ function projectRow(entry: ProjectEntry, isActive: boolean): PickerItem {
 }
 
 export function ProjectPicker({ onSelect }: ProjectPickerProps) {
+  const { exit } = useTui();
+
   const allProjects = useMemo(() => listProjects(), []);
   const activeSlug = useMemo(() => getActiveProjectSlug(), []);
 
@@ -102,6 +104,7 @@ export function ProjectPicker({ onSelect }: ProjectPickerProps) {
 
   const select = (selection: ProjectPickerSelection) => {
     onSelect(selection);
+    exit();
   };
 
   const handleSubmit = (value: string) => {

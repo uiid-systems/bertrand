@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Box, Text } from "@orchetron/storm";
+import { Box, Text, useTui } from "@orchetron/storm";
 
 import { AppDetails, Logo } from "@/tui/components";
 import { Picker, type PickerItem } from "@/tui/components/picker";
@@ -80,6 +80,7 @@ function categoryHeader(categoryPath: string): PickerItem {
 }
 
 export function Launch({ onSelect }: LaunchProps) {
+  const { exit } = useTui();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -172,6 +173,7 @@ export function Launch({ onSelect }: LaunchProps) {
 
   const select = (selection: LaunchSelection) => {
     onSelect(selection);
+    exit();
   };
 
   const handleSubmit = (value: string) => {
