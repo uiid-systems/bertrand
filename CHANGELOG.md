@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.20.0](https://github.com/uiid-systems/bertrand/compare/v0.19.0...v0.20.0) (2026-06-15)
+
+
+### Features
+
+* **events:** capture assistant.message per turn, not just at Stop ([#121](https://github.com/uiid-systems/bertrand/issues/121)) ([874e2a1](https://github.com/uiid-systems/bertrand/commit/874e2a194a0d6b17fd4d3b40a0211947e227b8c5))
+* **events:** tool.used captures every Claude tool call ([#120](https://github.com/uiid-systems/bertrand/issues/120)) ([101326b](https://github.com/uiid-systems/bertrand/commit/101326b50ac220d60a557bb778006bea2bb68bbe))
+
+
+### Bug Fixes
+
+* **dashboard:** stop auto-started server before bun dev ([#115](https://github.com/uiid-systems/bertrand/issues/115)) ([e969efe](https://github.com/uiid-systems/bertrand/commit/e969efed97b79b780461fb73b9deb254a6dae845))
+* **hooks:** silence internal stderr + recover from migration race ([#118](https://github.com/uiid-systems/bertrand/issues/118)) ([3591396](https://github.com/uiid-systems/bertrand/commit/3591396dc79b1c967676d34713277fa457139d5b))
+* **tui:** collapse project-picker + launch into one Storm app ([#116](https://github.com/uiid-systems/bertrand/issues/116)) ([a644383](https://github.com/uiid-systems/bertrand/commit/a64438318432cfedf71b991e938148da62f307af))
+
+
+### Refactoring
+
+* **events:** single-source typed emit helpers ([#119](https://github.com/uiid-systems/bertrand/issues/119)) ([be3e94a](https://github.com/uiid-systems/bertrand/commit/be3e94af4e0dcb60c558129cc61fc397d5479098))
+
 ## [0.19.0](https://github.com/uiid-systems/bertrand/compare/v0.18.0...v0.19.0) (2026-06-15)
 
 
