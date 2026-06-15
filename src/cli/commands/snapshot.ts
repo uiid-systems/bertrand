@@ -1,7 +1,7 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
-import { insertEvent } from "@/db/queries/events";
+import { emitContextSnapshot } from "@/db/events/emit";
 import { getContextSnapshot } from "@/lib/transcript";
 
 register("snapshot", async (args) => {
@@ -42,19 +42,14 @@ register("snapshot", async (args) => {
     ? conversationId
     : undefined;
 
-  insertEvent({
+  emitContextSnapshot({
     sessionId,
     conversationId: convoId,
-    event: "context.snapshot",
-    summary: `${snapshot.remainingPct}% remaining`,
-    meta: {
-      model: snapshot.model,
-      input_tokens: String(snapshot.inputTokens),
-      cache_creation_tokens: String(snapshot.cacheCreationTokens),
-      cache_read_tokens: String(snapshot.cacheReadTokens),
-      context_window_tokens: String(snapshot.totalContextTokens),
-      remaining_pct: String(snapshot.remainingPct),
-      claude_id: convoId,
-    },
+    model: snapshot.model,
+    inputTokens: snapshot.inputTokens,
+    cacheCreationTokens: snapshot.cacheCreationTokens,
+    cacheReadTokens: snapshot.cacheReadTokens,
+    totalContextTokens: snapshot.totalContextTokens,
+    remainingPct: snapshot.remainingPct,
   });
 });

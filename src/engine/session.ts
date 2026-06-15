@@ -10,7 +10,13 @@ import {
   endConversation,
   getConversation,
 } from "@/db/queries/conversations";
-import { insertEvent } from "@/db/queries/events";
+import {
+  emitClaudeEnded,
+  emitClaudeStarted,
+  emitSessionEnded,
+  emitSessionResumed,
+  emitSessionStarted,
+} from "@/db/events/emit";
 import { getOrCreateCategoryPath, getCategory, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
@@ -151,30 +157,23 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   const spawnContext = await captureSpawnContext();
   const sessionName = `${opts.categoryPath}/${opts.slug}`;
 
-  insertEvent({
+  emitSessionStarted({
     sessionId: session.id,
     conversationId: claudeId,
-    event: "session.started",
-    meta: {
-      category_path: opts.categoryPath,
-      session_name: opts.name ?? opts.slug,
-      session_slug: opts.slug,
-      labels: opts.labelNames ?? [],
-      summary: session.summary ?? null,
-    },
+    categoryPath: opts.categoryPath,
+    sessionName: opts.name ?? opts.slug,
+    sessionSlug: opts.slug,
+    labels: opts.labelNames ?? [],
+    summary: session.summary ?? null,
   });
-  insertEvent({
+  emitClaudeStarted({
     sessionId: session.id,
     conversationId: claudeId,
-    event: "claude.started",
-    meta: {
-      claude_id: claudeId,
-      model: spawnContext.model,
-      claude_version: spawnContext.claudeVersion,
-      git: spawnContext.git,
-      cwd: spawnContext.cwd,
-      // worktree: spawnContext.worktree, // STUB — wired when worktree support lands
-    },
+    model: spawnContext.model,
+    claudeVersion: spawnContext.claudeVersion,
+    git: spawnContext.git,
+    cwd: spawnContext.cwd,
+    // worktree: spawnContext.worktree, // STUB — wired when worktree support lands
   });
 
   // Build contract with context
@@ -209,11 +208,9 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  insertEvent({
+  emitSessionResumed({
     sessionId: session.id,
     conversationId: opts.conversationId,
-    event: "session.resumed",
-    meta: { claude_id: opts.conversationId },
   });
 
   // Build contract
@@ -254,11 +251,10 @@ function finalizeSession(
     endConversation(conversationId);
   }
 
-  insertEvent({
+  emitClaudeEnded({
     sessionId,
     conversationId: safeConversationId,
-    event: "claude.ended",
-    meta: { claude_id: conversationId, exit_code: exitCode },
+    exitCode,
   });
 
   updateSession(sessionId, {
@@ -269,10 +265,7 @@ function finalizeSession(
 
   if (liveSession?.sessionId === sessionId) liveSession = null;
 
-  insertEvent({
-    sessionId,
-    event: "session.end",
-  });
+  emitSessionEnded({ sessionId });
 
   computeAndPersist(sessionId);
   stopServerIfIdle();

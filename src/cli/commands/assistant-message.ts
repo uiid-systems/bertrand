@@ -1,7 +1,7 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
-import { insertEvent } from "@/db/queries/events";
+import { emitAssistantMessage } from "@/db/events/emit";
 import { getLatestAssistantTurn } from "@/lib/transcript";
 
 const RECAP_TAG_RE = /<recap>[\s\S]*?<\/recap>/gi;
@@ -53,17 +53,13 @@ register("assistant-message", async (args) => {
   const convoId =
     conversationId && getConversation(conversationId) ? conversationId : undefined;
 
-  insertEvent({
+  emitAssistantMessage({
     sessionId,
     conversationId: convoId,
-    event: "assistant.message",
+    text,
+    model: turn.model,
+    thinkingBlocks: turn.thinkingBlocks,
+    thinkingBytes: turn.thinkingBytes,
     summary: text ? summarize(text) : "thinking only",
-    meta: {
-      model: turn.model,
-      text,
-      thinkingBlocks: turn.thinkingBlocks,
-      thinkingBytes: turn.thinkingBytes,
-      claude_id: convoId,
-    },
   });
 });

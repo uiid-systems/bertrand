@@ -1,5 +1,5 @@
 import { getActiveSessions, updateSession } from "@/db/queries/sessions";
-import { insertEvent } from "@/db/queries/events";
+import { emitSessionPausedByRecovery } from "@/db/events/emit";
 
 /**
  * Check if a process with the given PID is alive.
@@ -30,11 +30,9 @@ export function recoverStaleSessions(): number {
         pid: null,
       });
 
-      insertEvent({
+      emitSessionPausedByRecovery({
         sessionId: session.id,
-        event: "session.paused",
-        summary: "Recovered from stale state (process not found)",
-        meta: { stale_pid: session.pid },
+        stalePid: session.pid,
       });
 
       recovered++;
