@@ -10,6 +10,8 @@ import { compact } from "@/lib/compact";
 import { computeTimingsLive } from "@/lib/timing";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { formatAgo, formatDuration, formatTime, truncate } from "@/lib/format";
+import { resolveActiveProject } from "@/lib/projects/resolve";
+import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 
 // --- ANSI helpers ---
 
@@ -38,8 +40,11 @@ const STATUS_DOTS: Record<string, string> = {
 // --- Session list (no args) ---
 
 function showAllSessions() {
+  const project = resolveActiveProject();
   const rows = getAllSessions()
     .sort((a, b) => new Date(b.session.updatedAt).getTime() - new Date(a.session.updatedAt).getTime());
+
+  console.log(`${DIM}Project: ${project.slug} (${project.name})${RESET}`);
 
   if (rows.length === 0) {
     console.log("No sessions.");
@@ -202,17 +207,25 @@ function renderTimingFooter(sessionId: string): string[] {
   return lines;
 }
 
+function renderBreadcrumb(projectSlug: string, projectName: string, sessionName: string): string {
+  const segments = sessionName.split("/").filter(Boolean);
+  const trail = segments.join(` ${DIM}›${RESET} `);
+  return `${DIM}${projectSlug} (${projectName})${RESET} ${DIM}·${RESET} ${BOLD}${trail}${RESET}`;
+}
+
 function showSessionLog(session: SessionRow, sessionName: string, isJson: boolean) {
   const sessionId = session.id;
   const rawEvents = getEventsBySession(sessionId);
   const enriched = enrichAll(rawEvents);
   const compacted = compact(enriched);
+  const project = resolveActiveProject();
 
   if (isJson) {
     const stats = getSessionStats(sessionId);
     const conversations = getConversationsBySession(sessionId);
     console.log(
       JSON.stringify({
+        project: { slug: project.slug, name: project.name },
         session: { ...session, name: sessionName },
         stats,
         conversations,
@@ -233,6 +246,9 @@ function showSessionLog(session: SessionRow, sessionName: string, isJson: boolea
   const segments = segmentByConversation(compacted);
   const allLines: string[] = [];
 
+  allLines.push(renderBreadcrumb(project.slug, project.name, sessionName));
+  allLines.push("");
+
   for (let i = 0; i < segments.length; i++) {
     const segLines = renderSegment(segments[i]!, i, segments.length);
     allLines.push(...segLines);
@@ -249,8 +265,11 @@ function showSessionLog(session: SessionRow, sessionName: string, isJson: boolea
 // --- Command ---
 
 register("log", async (args) => {
-  const isJson = args.includes("--json");
-  const filteredArgs = args.filter((a) => !a.startsWith("--"));
+  const { project: projectSlug, rest: argsWithoutProject } = extractProjectFlag(args);
+  applyProjectFlag(projectSlug);
+
+  const isJson = argsWithoutProject.includes("--json");
+  const filteredArgs = argsWithoutProject.filter((a) => !a.startsWith("--"));
   const target = filteredArgs[0];
 
   // No args: show session list with summary
