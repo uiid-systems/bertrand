@@ -97,3 +97,28 @@ export const recapsQuery = queryOptions({
   queryKey: ["recaps"],
   queryFn: () => fetchJson<Record<string, SessionRecap>>("/api/recaps"),
 })
+
+export type ProjectSummary = {
+  slug: string
+  name: string
+  active: boolean
+  lastUsedAt: string
+}
+
+export const projectsQuery = queryOptions({
+  queryKey: ["projects"],
+  queryFn: () => fetchJson<ProjectSummary[]>("/api/projects"),
+  refetchInterval: 5000,
+})
+
+export async function switchActiveProject(slug: string): Promise<void> {
+  const res = await fetch(apiUrl("/api/active-project"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug }),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`)
+  }
+}

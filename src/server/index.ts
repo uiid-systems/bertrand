@@ -12,6 +12,12 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
+import {
+  listProjects,
+  setActiveProjectSlug,
+  projectExists,
+} from "@/lib/projects/registry"
+import { resolveActiveProject } from "@/lib/projects/resolve"
 import type {
   SessionRow,
   SessionWithCategory,
@@ -83,6 +89,21 @@ const getEngagement = ({
 
 const listRecaps = (): Record<string, SessionRecap> => getLatestRecaps()
 
+const listAllProjects = (): unknown => {
+  const active = resolveActiveProject()
+  return listProjects().map((p) => ({
+    slug: p.slug,
+    name: p.name,
+    active: p.slug === active.slug,
+    lastUsedAt: p.lastUsedAt,
+  }))
+}
+
+const getActiveProjectMeta = (): unknown => {
+  const active = resolveActiveProject()
+  return { slug: active.slug, name: active.name }
+}
+
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
@@ -91,6 +112,8 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
   [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
   [/^\/api\/recaps$/, listRecaps],
+  [/^\/api\/projects$/, listAllProjects],
+  [/^\/api\/active-project$/, getActiveProjectMeta],
 ]
 
 const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {
@@ -104,6 +127,35 @@ function archiveResponse(result: ArchiveResult | UnarchiveResult): Response {
   if (result.ok) return Response.json(result.session)
   const meta = ARCHIVE_ERROR[result.reason] ?? { status: 400, message: "Operation failed" }
   return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
+}
+
+/**
+ * Switch the active project. The server can't hot-swap its DB cache
+ * mid-request (other queries may be in flight), so this returns 200 then
+ * exits the process. `server-lifecycle.ts` respawns us on the next call
+ * from the TUI, picking up the new active slug at startup.
+ */
+async function handleSwitchProject(req: Request): Promise<Response> {
+  let body: { slug?: unknown }
+  try {
+    body = (await req.json()) as { slug?: unknown }
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+  const slug = body.slug
+  if (typeof slug !== "string") {
+    return Response.json({ error: "slug must be a string" }, { status: 400 })
+  }
+  if (!projectExists(slug)) {
+    return Response.json({ error: `Unknown project: ${slug}` }, { status: 404 })
+  }
+  setActiveProjectSlug(slug)
+  // Return synchronously, then queue an exit on the next tick so the
+  // response actually flushes before the process dies. The browser will
+  // see the success, then a few hundred ms of "connection lost" until
+  // ensureServerStarted respawns us.
+  queueMicrotask(() => process.exit(0))
+  return Response.json({ ok: true, slug, willRestart: true })
 }
 
 async function handleOpen(req: Request): Promise<Response> {
@@ -196,6 +248,13 @@ export function startServer(port = PORT) {
       // server-side so the browser doesn't need to expose file:// access.
       if (req.method === "POST" && url.pathname === "/api/open") {
         const r = await handleOpen(req)
+        r.headers.set("Access-Control-Allow-Origin", "*")
+        return r
+      }
+
+      // Switch the active project. Triggers a server restart (see handler).
+      if (req.method === "POST" && url.pathname === "/api/active-project") {
+        const r = await handleSwitchProject(req)
         r.headers.set("Access-Control-Allow-Origin", "*")
         return r
       }

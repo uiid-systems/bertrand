@@ -47,6 +47,7 @@ import type { SessionRow, SessionWithCategory } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
 import { Markdown } from "../markdown";
+import { ProjectSwitcher } from "./project-switcher";
 import { SidebarWrapper, type SidebarWrapperProps } from "./sidebar-wrapper";
 
 export type SidebarProps = {
@@ -247,6 +248,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
   return (
     <SidebarWrapper {...WrapperProps}>
+      <ProjectSwitcher />
       <Group ay="center" gap={2} fullwidth>
         <Input
           ref={inputRef}
