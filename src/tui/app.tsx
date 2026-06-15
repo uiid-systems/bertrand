@@ -2,9 +2,10 @@ import { spawn } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
-import type { StartupSelection } from "./screens/startup/startup.types";
+import type { LaunchSelection } from "./screens/launch/launch.types";
 import type { ExitAction } from "./screens/Exit";
 import type { ResumeSelection } from "./screens/Resume";
+import type { ProjectPickerSelection } from "./screens/project-picker/project-picker.types";
 import { deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
@@ -13,9 +14,10 @@ import {
 import { archiveSession } from "@/lib/session-archive";
 import { launch, resume } from "@/engine/session";
 import {
-  getActiveProjectSlug,
+  setActiveProjectSlug,
   listProjects,
 } from "@/lib/projects/registry";
+import { createProject } from "@/lib/projects/create";
 import { _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { randomUUID } from "crypto";
 
@@ -54,19 +56,20 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
 }
 
 /**
- * Render the unified pre-session flow (project picker → launch) and return
- * the user's final selection. Both pickers live in a single Storm app so
- * there's no alt-screen flash when transitioning between them.
+ * Render the launch screen and return the user's selection.
  */
-async function startStartupTui(
-  skipProjectPicker: boolean,
-  initialProjectSlug: string,
-): Promise<StartupSelection> {
-  return runScreen<StartupSelection>(
-    "startup",
-    String(skipProjectPicker),
-    initialProjectSlug,
-  );
+export async function startLaunchTui(): Promise<LaunchSelection> {
+  return runScreen<LaunchSelection>("launch");
+}
+
+/**
+ * Render the project picker and return the user's selection. Skipped
+ * when only one project is registered AND no env-var override is set —
+ * the picker would be one row to confirm with Enter, which is friction
+ * we don't need.
+ */
+export async function startProjectPickerTui(): Promise<ProjectPickerSelection> {
+  return runScreen<ProjectPickerSelection>("project-picker");
 }
 
 /**
@@ -158,28 +161,27 @@ function shouldShowProjectPicker(): boolean {
 }
 
 /**
- * Main TUI entrypoint. Renders the unified startup flow (project picker
- * + launch), then runs the resulting session and shows the exit menu.
+ * Activate the project the user selected (or just created) so the
+ * launch screen that follows sees its sessions, not whoever was active
+ * before. The resolver cache is per-process so we explicitly reset.
  */
-export async function startTui(): Promise<void> {
-  const skipProjectPicker = !shouldShowProjectPicker();
-  const initialProjectSlug = getActiveProjectSlug();
-
-  const selection = await startStartupTui(skipProjectPicker, initialProjectSlug);
-
-  // The subprocess may have switched the active project. Reset the parent's
-  // resolver cache so subsequent reads see the new active project.
+function activateProject(slug: string): void {
+  setActiveProjectSlug(slug);
   _resetActiveProjectCache();
+}
+
+/**
+ * One launch cycle: TUI launch screen → session → exit menu.
+ */
+async function runLaunchCycle(): Promise<void> {
+  const selection = await startLaunchTui();
 
   switch (selection.type) {
     case "quit":
       return;
 
     case "create": {
-      const sessionId = await launch({
-        categoryPath: selection.categoryPath,
-        slug: selection.slug,
-      });
+      const sessionId = await launch(selection);
       await runSessionLoop(sessionId);
       return;
     }
@@ -194,6 +196,36 @@ export async function startTui(): Promise<void> {
         conversationId,
       });
       await runSessionLoop(sessionId);
+      return;
+    }
+  }
+}
+
+/**
+ * Main TUI entrypoint. Shows project picker (when more than one project
+ * exists), then launch screen, runs session, shows exit menu.
+ */
+export async function startTui(): Promise<void> {
+  if (!shouldShowProjectPicker()) {
+    await runLaunchCycle();
+    return;
+  }
+
+  const projectSelection = await startProjectPickerTui();
+  switch (projectSelection.type) {
+    case "quit":
+      return;
+
+    case "select": {
+      activateProject(projectSelection.slug);
+      await runLaunchCycle();
+      return;
+    }
+
+    case "create": {
+      createProject({ slug: projectSelection.slug });
+      activateProject(projectSelection.slug);
+      await runLaunchCycle();
       return;
     }
   }
