@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/uiid-systems/bertrand/compare/v0.22.0...v0.22.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* **engine:** use --session-id (not --resume) when Claude has no transcript ([#132](https://github.com/uiid-systems/bertrand/issues/132)) ([29702dc](https://github.com/uiid-systems/bertrand/commit/29702dcf47dea1c0e3f25bd9e9f429598e7154c8))
+
 ## [0.22.0](https://github.com/uiid-systems/bertrand/compare/v0.21.0...v0.22.0) (2026-06-15)
 
 
