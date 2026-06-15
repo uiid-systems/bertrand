@@ -12,6 +12,10 @@ type DiffBlockProps = {
   filename?: string;
   /** Word-level intra-line diff. Off until we redesign the visual. */
   wordDiff?: boolean;
+  /** Visible rows before CodeBlock collapses behind a "Show more" toggle. */
+  rows?: number;
+  /** Initial expanded state when `rows` is set. */
+  defaultExpanded?: boolean;
 };
 
 type LineKind = "context" | "add" | "remove";
@@ -191,6 +195,8 @@ export function DiffBlock({
   language = "tsx",
   filename,
   wordDiff = false,
+  rows,
+  defaultExpanded,
 }: DiffBlockProps) {
   const [html, setHtml] = useState<string>("");
   const [numWidth, setNumWidth] = useState<number>(1);
@@ -285,7 +291,9 @@ export function DiffBlock({
         language={language}
         filename={filename}
         showLineNumbers={false}
-        copyable={false}
+        rows={rows}
+        defaultExpanded={defaultExpanded}
+        HeaderProps={{ copyable: false }}
         html={html}
         style={{ width: "100%" }}
       />
