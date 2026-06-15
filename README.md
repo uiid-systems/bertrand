@@ -79,13 +79,14 @@ Shows a picker: start a fresh Claude conversation, or resume one of the prior co
 bertrand list
 ```
 
-Interactive picker showing all sessions with status badges.
+Interactive picker showing all sessions with status badges. Add `--project <slug>` to list sessions from another project without switching the active one.
 
 ### Other commands
 
 | Command | Purpose |
 |---|---|
-| `bertrand log <session>` | Print the timeline event log for a session. |
+| `bertrand log` | List sessions in the active project. Add `--project <slug>` to scope to a different project. |
+| `bertrand log <session>` | Print the timeline event log for a session. Supports `--json` (includes `project: { slug, name }` for agent consumption) and `--project <slug>` for cross-project reads. |
 | `bertrand stats <session>` | Print materialized stats (duration, work/wait split, lines changed). |
 | `bertrand archive <name>` | Archive or unarchive a session. |
 | `bertrand serve` | Start the dashboard HTTP API on `:5200`. |
