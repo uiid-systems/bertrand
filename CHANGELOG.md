@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/uiid-systems/bertrand/compare/v0.22.1...v0.22.2) (2026-06-16)
+
+
+### Refactoring
+
+* prune dead timeline events, columns, and renderers ([#135](https://github.com/uiid-systems/bertrand/issues/135)) ([1a850db](https://github.com/uiid-systems/bertrand/commit/1a850db02c425903c7b3bf7b74a453364a3b0637))
+
 ## [0.22.1](https://github.com/uiid-systems/bertrand/compare/v0.22.0...v0.22.1) (2026-06-15)
 
 
