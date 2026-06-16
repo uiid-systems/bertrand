@@ -118,9 +118,6 @@ export function ProjectPicker({ onSelect }: ProjectPickerProps) {
 
     // New project — validate slug shape before forwarding to the create flow.
     if (!SLUG_PATTERN.test(trimmed)) {
-      // Picker doesn't expose an inline error surface today; rely on the
-      // caller to skip invalid slugs. Silently ignoring is the least-worst
-      // option for a v1 — fixable when the Picker grows a status line.
       return;
     }
     select({ type: "create", slug: trimmed });
