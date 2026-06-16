@@ -7,19 +7,16 @@ import {
   CpuIcon,
   FileDiffIcon,
   FilesIcon,
-  GaugeIcon,
-  GitPullRequestIcon,
   HandshakeIcon,
   HourglassIcon,
   MessageSquareMoreIcon,
-  ShieldOffIcon,
   Trash2Icon,
   WrenchIcon,
 } from "@uiid/icons";
 
 import { engagementQuery, statsQuery } from "../../api/queries";
 import type { EngagementStats, SessionStatsRow } from "../../api/types";
-import { formatDuration, formatTokens } from "../../lib/format";
+import { formatDuration } from "../../lib/format";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -69,17 +66,15 @@ function topToolsLabel(toolUsage: Record<string, number>): string {
 const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
   const hasDiff = stats.linesAdded > 0 || stats.linesRemoved > 0;
   const hasFiles = stats.filesTouched > 0;
-  const hasCode = hasDiff || hasFiles || stats.prCount > 0;
+  const hasCode = hasDiff || hasFiles;
 
   const toolTotal = engagement
     ? Object.values(engagement.toolUsage).reduce((a, b) => a + b, 0)
     : 0;
-  const hasContext = (engagement?.contextTokens.max ?? 0) > 0;
-  const denials = engagement?.permissionDenials ?? 0;
   const discardTotal = engagement?.discardRate.total ?? 0;
   const hasEngagement =
     !!engagement &&
-    (toolTotal > 0 || hasContext || denials > 0 || discardTotal > 0);
+    (toolTotal > 0 || discardTotal > 0);
 
   const tabs: TabProps[] = [
     {
@@ -155,14 +150,6 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
               action={<Stat value={stats.filesTouched} />}
             />
           )}
-          {stats.prCount > 0 && (
-            <Card
-              title="PRs"
-              description="Pull requests created"
-              icon={GitPullRequestIcon}
-              action={<Stat value={stats.prCount} />}
-            />
-          )}
         </SectionStack>
       ),
     });
@@ -180,24 +167,6 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
               description={topToolsLabel(engagement.toolUsage)}
               icon={WrenchIcon}
               action={<Stat value={toolTotal} />}
-            />
-          )}
-          {hasContext && (
-            <Card
-              title="Context tokens"
-              description={`avg ${formatTokens(engagement.contextTokens.avg)} · max ${formatTokens(engagement.contextTokens.max)}`}
-              icon={GaugeIcon}
-              action={
-                <Stat label={formatTokens(engagement.contextTokens.latest)} />
-              }
-            />
-          )}
-          {denials > 0 && (
-            <Card
-              title="Permission denials"
-              description="Tool requests denied"
-              icon={ShieldOffIcon}
-              action={<Stat value={denials} />}
             />
           )}
           {discardTotal > 0 && (

@@ -1,47 +1,16 @@
 import type { EventRow } from "../../api/types"
+import { labelOf } from "./categories"
 
 export type TimelineTransform = (events: EventRow[]) => EventRow[]
 
-/** Session lifecycle events redundant with claude lifecycle events. */
-const REDUNDANT_SESSION_EVENTS = new Set([
-  "session.started",
-  "session.resumed",
-  "session.end",
-])
-
 /**
- * Drop session lifecycle events that duplicate claude lifecycle events.
- * claude.started covers session.started/session.resumed,
- * claude.ended covers session.end. Before dropping session.started, merge its
- * identity meta (category_path, session_name, labels, summary) onto the following
- * claude.started in the same conversation so StartedContent reads one event.
+ * Drop events the catalog doesn't know about. Historical DBs carry rows for
+ * events that have since been removed (permission.request, session.paused,
+ * session.started, gh.pr.*, etc.) — without this filter they'd render as
+ * "unknown" placeholders in the timeline.
  */
-export const consolidateLifecycle: TimelineTransform = (events) => {
-  const mergedMeta = new Map<number, Record<string, unknown>>()
-  for (let i = 0; i < events.length - 1; i++) {
-    const curr = events[i]
-    const next = events[i + 1]
-    if (
-      curr.event === "session.started" &&
-      next.event === "claude.started" &&
-      curr.conversationId === next.conversationId
-    ) {
-      mergedMeta.set(i + 1, {
-        ...((curr.meta as Record<string, unknown> | null) ?? {}),
-        ...((next.meta as Record<string, unknown> | null) ?? {}),
-      })
-    }
-  }
-
-  const result: EventRow[] = []
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i]
-    if (REDUNDANT_SESSION_EVENTS.has(e.event)) continue
-    const merged = mergedMeta.get(i)
-    result.push(merged ? { ...e, meta: merged } : e)
-  }
-  return result
-}
+export const filterUnknown: TimelineTransform = (events) =>
+  events.filter((e) => labelOf(e.event) !== "unknown")
 
 /**
  * Merge adjacent session.waiting + session.answered pairs into a single
@@ -57,16 +26,13 @@ export const consolidateInteractions: TimelineTransform = (events) => {
     const curr = events[i]
 
     if (curr.event === "session.waiting") {
-      // Look ahead past context.snapshot and assistant.recap to find the matching answered.
-      // Both fire from on-waiting.sh in parallel with session.waiting, so they routinely
-      // sit between waiting and answered without representing user-side activity.
+      // Look ahead past assistant.recap to find the matching answered.
+      // assistant-message fires from on-waiting.sh in parallel with session.waiting,
+      // so a recap routinely sits between waiting and answered.
       let j = i + 1
       const intermediateRecaps: EventRow[] = []
-      while (
-        j < events.length &&
-        (events[j].event === "context.snapshot" || events[j].event === "assistant.recap")
-      ) {
-        if (events[j].event === "assistant.recap") intermediateRecaps.push(events[j])
+      while (j < events.length && events[j].event === "assistant.recap") {
+        intermediateRecaps.push(events[j])
         j++
       }
 
@@ -111,21 +77,15 @@ function asEdits(p: PermissionDetail): EditEntry[] {
   return []
 }
 
-// permission.request / permission.resolve / tool.used events carry only
-// {tool, detail, outcome}. Diff data lives on tool.applied events (camelCase)
-// and is read directly by consolidateToolApplied, never via this helper.
+// tool.used events carry {tool, detail, outcome}. Diff data lives on
+// tool.applied events (camelCase) and is read directly by
+// consolidateToolApplied, never via this helper.
 function extractPermissionDetail(event: EventRow): PermissionDetail {
   const meta = event.meta as Record<string, unknown> | null
-  const defaultOutcome =
-    event.event === "permission.resolve"
-      ? "approved"
-      : event.event === "tool.used"
-        ? "auto"
-        : "pending"
   return {
     tool: (meta?.tool as string) ?? "unknown",
     detail: (meta?.detail as string) ?? "",
-    outcome: (meta?.outcome as string) ?? defaultOutcome,
+    outcome: (meta?.outcome as string) ?? "auto",
   }
 }
 
@@ -203,21 +163,15 @@ function formatGroupedToolSummary(
   return parts.join(", ")
 }
 
-const ROLLUP_EVENTS = new Set([
-  "permission.request",
-  "permission.resolve",
-  "tool.used",
-])
+const ROLLUP_EVENTS = new Set(["tool.used"])
 
 /**
- * Collapse consecutive tool-activity events (permission.request, permission.resolve,
- * tool.used) into summarized tool.work events. Single calls get a descriptive
- * title; batches get a tool-count summary with individual details in
- * meta.permissions.
+ * Collapse runs of consecutive tool.used events into summarized tool.work
+ * events. Single calls get a descriptive title; batches get a tool-count
+ * summary with individual details in meta.permissions.
  *
- * tool.used is the universal tool-call event covering auto-approved tools;
- * folding it into the same rollup means a session like "8× Bash, 5× Read"
- * shows as a single tool-work cluster whether or not each call was prompted.
+ * tool.used covers every tool call — outcome:"auto" for auto-approved and
+ * outcome:"approved" for prompted-then-approved.
  */
 export const consolidatePermissions: TimelineTransform = (events) => {
   const result: EventRow[] = []
@@ -232,7 +186,6 @@ export const consolidatePermissions: TimelineTransform = (events) => {
       continue
     }
 
-    // Collect consecutive tool-activity events
     const batch: EventRow[] = []
     while (i < events.length) {
       const current = events[i]
@@ -241,21 +194,10 @@ export const consolidatePermissions: TimelineTransform = (events) => {
       i++
     }
 
-    // Each tool call contributes one entry: either a permission.request
-    // (prompted path) or a tool.used (auto-approved path). permission.resolve
-    // is the "approved" signal but doesn't add a new call.
-    const callEvents = batch.filter(
-      (e) => e.event === "permission.request" || e.event === "tool.used",
-    )
+    if (batch.length === 0) continue
 
-    // Orphan resolves with no matching request — drop the batch entirely.
-    // These can occur from stale /tmp markers or partial event-write failures.
-    if (callEvents.length === 0) continue
-
-    const permissions: PermissionDetail[] = callEvents.map(extractPermissionDetail)
-
-    // Check if any of the prompted-path requests have a matching resolve in the batch
-    const hasResolves = batch.some((e) => e.event === "permission.resolve")
+    const permissions: PermissionDetail[] = batch.map(extractPermissionDetail)
+    const hasApproved = permissions.some((p) => p.outcome === "approved")
 
     // Deduplicate identical tool+detail pairs, adding counts and accumulating diffs
     const dedupMap = new Map<string, PermissionDetail & { count: number }>()
@@ -284,7 +226,7 @@ export const consolidatePermissions: TimelineTransform = (events) => {
         ...batch[batch.length - 1],
         event: "tool.work",
         summary,
-        meta: { ...batch[batch.length - 1].meta, permissions: deduped, outcome: hasResolves ? "approved" : "pending" },
+        meta: { ...batch[batch.length - 1].meta, permissions: deduped, outcome: hasApproved ? "approved" : "auto" },
       })
     } else {
       // Multiple unique permissions — count summary with deduplicated details
@@ -303,7 +245,7 @@ export const consolidatePermissions: TimelineTransform = (events) => {
         ...batch[0],
         event: "tool.work",
         summary,
-        meta: { permissions: deduped, outcome: hasResolves ? "approved" : "pending" },
+        meta: { permissions: deduped, outcome: hasApproved ? "approved" : "auto" },
         createdAt: new Date((firstTs + lastTs) / 2).toISOString(),
       })
     }
@@ -404,47 +346,12 @@ export const decorateToolApplied: TimelineTransform = (events) =>
     return { ...e, summary: TOOL_APPLIED_TITLES[tool] ?? `${tool} applied` }
   })
 
-/**
- * Lifecycle events (claude.started/ended/discarded) only carry claude_id; the
- * model surfaces on context.snapshot. Pull the nearest snapshot's model onto
- * each lifecycle event in the same conversation so renderers can show it.
- */
-export const decorateLifecycleModel: TimelineTransform = (events) => {
-  const lifecycleTypes = new Set(["claude.started", "claude.ended", "claude.discarded"])
-  return events.map((e, i) => {
-    if (!lifecycleTypes.has(e.event)) return e
-    const meta = e.meta as Record<string, unknown> | null
-    if (meta?.model) return e
-
-    const cid = (meta?.claude_id as string | undefined) ?? e.conversationId
-    if (!cid) return e
-
-    // claude.started → look forward for first snapshot; ended/discarded → look back
-    const forward = e.event === "claude.started"
-    const range = forward
-      ? events.slice(i + 1)
-      : events.slice(0, i).reverse()
-
-    for (const candidate of range) {
-      if (candidate.event !== "context.snapshot") continue
-      const cMeta = candidate.meta as Record<string, unknown> | null
-      const cCid = (cMeta?.claude_id as string | undefined) ?? candidate.conversationId
-      if (cCid !== cid) continue
-      const model = cMeta?.model as string | undefined
-      if (!model) continue
-      return { ...e, meta: { ...meta, model } }
-    }
-    return e
-  })
-}
-
 const transforms: TimelineTransform[] = [
-  consolidateLifecycle,
+  filterUnknown,
   consolidateInteractions,
   consolidatePermissions,
   consolidateToolApplied,
   decorateToolApplied,
-  decorateLifecycleModel,
 ]
 
 export function applyTransforms(events: EventRow[]): EventRow[] {

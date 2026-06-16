@@ -65,14 +65,11 @@ rm -f "${runtimeDir}/working-$sid"
 
 bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
-# Context snapshot — extract transcript path and capture token usage.
-# assistant-message captures the latest turn's text + recap tag in one pass;
-# replaces the older recap-thinking call which only grabbed the recap. Dedup
-# inside the command makes it idempotent vs the matching Stop-time capture,
-# so the same turn never lands twice.
+# Capture the latest assistant turn's text + recap tag. Dedup inside the
+# command makes it idempotent vs the matching Stop-time capture so the same
+# turn never lands twice.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
   bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
@@ -140,38 +137,10 @@ wait
 `;
 }
 
-/** PreToolUse (catch-all) → flip waiting to active */
-export function activeScript(bin: string, runtimeDir: string): string {
-  return `#!/usr/bin/env bash
-# Hook: PreToolUse (catch-all) → flip waiting to active
-${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
-
-# Debounce: skip if we already sent session.active within the last 5 seconds.
-# This avoids spawning bertrand (~31ms) on every tool call during rapid sequences.
-marker="${runtimeDir}/working-$sid"
-if [ -f "$marker" ]; then
-  age=$(( $(date +%s) - $(stat -f%m "$marker" 2>/dev/null || echo 0) ))
-  [ "$age" -lt 5 ] && exit 0
-fi
-
-input="$(cat)"
-${EXTRACT_TOOL}
-
-# AskUserQuestion has its own PreToolUse hook
-[ "$tool" = "AskUserQuestion" ] && exit 0
-
-touch "$marker"
-cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
-`;
-}
-
-/** PermissionRequest → write pending marker + emit permission.request */
+/** PermissionRequest → write pending marker so PostToolUse can tag tool.used as approved */
 export function permissionWaitScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: PermissionRequest → mark pending, emit permission.request
+# Hook: PermissionRequest → mark pending, badge + notify
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -180,18 +149,10 @@ input="$(cat)"
 ${EXTRACT_TOOL}
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
-# Write marker so PostToolUse knows this was a real permission prompt (not auto-approved)
+# Marker tells the PostToolUse hook to emit tool.used with outcome:approved
+# instead of outcome:auto. Without it, every prompted-then-approved tool call
+# would look identical to an auto-approved one.
 touch "${runtimeDir}/perm-pending-$sid"
-
-# Extract detail from tool_input via grep (avoid jq for simple fields)
-detail=""
-case "$tool" in
-  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
-  Edit|Write|Read) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
-esac
-
-cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
 # Badge + notify in background
 bq badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
@@ -205,17 +166,15 @@ export function permissionDoneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
-# Captures every tool call Claude makes. Three event flows:
+# Captures every tool call Claude makes. Two event flows:
 #   1. Edit/Write/MultiEdit → tool.applied with diff payload. Keeps the
 #      existing dashboard diff-renderer happy and is the only place we get
 #      old_string/new_string on auto-approved edits.
-#   2. Tools that went through a permission prompt → permission.resolve.
-#      The PermissionRequest hook set a marker; we clear it and log the
-#      approval. (Denials never reach PostToolUse, so absence-of-resolve
-#      means the user said no.)
-#   3. Everything else (auto-approved Bash/Read/Grep/Glob/etc.) → tool.used
-#      with outcome:"auto". Previously this case dropped the call entirely;
-#      now Claude's read-only / shell activity shows up in the timeline.
+#   2. Everything else → tool.used. The PermissionRequest hook may have set
+#      a marker; if so the call was prompted-then-approved (outcome:approved),
+#      otherwise it was auto-approved (outcome:auto). Denials never reach
+#      PostToolUse, so absence of a tool.used after a permission.request means
+#      the user said no.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -274,14 +233,9 @@ case "$tool" in
   WebSearch) detail="$(printf '%s' "$input" | grep -o '"query":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)" ;;
 esac
 
-if [ "$had_marker" = "1" ]; then
-  # Prompted-then-approved path. Keep permission.resolve for back-compat
-  # rendering; downstream consumers can migrate to tool.used at their pace.
-  bq update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
-else
-  # Auto-approved path. Without tool.used, these calls were invisible.
-  bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"auto", claude_id:$cid}')"
-fi
+outcome="auto"
+[ "$had_marker" = "1" ] && outcome="approved"
+bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')"
 wait
 `;
 }
@@ -308,25 +262,25 @@ bq update --session-id "$sid" --event user.prompt --meta "$meta"
 `;
 }
 
-/** Stop hook → mark session as paused + final context snapshot */
+/** Stop hook → flip session to paused (status only, no event row) + final context snapshot */
 export function doneScript(bin: string, _runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: Stop → mark session as paused
+# Hook: Stop → flip session status to paused; no event row written.
+# The status flip is driven by EVENT_STATUS_MAP[session.paused]; dispatchHookEvent
+# no longer has a session.paused case, so update.ts flips status without inserting.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
+bq update --session-id "$sid" --event session.paused
 
-# Final transcript reads. assistant-message dedups against the most-recent
-# AskUQ-time capture, so a Done-for-now exit (no work between AskUQ and Stop)
-# lands zero new events here; intermediate Stops with fresh assistant output
-# do land new ones.
+# Final assistant-message read. Dedups against the most-recent AskUQ-time
+# capture, so a Done-for-now exit (no work between AskUQ and Stop) lands zero
+# new events here; intermediate Stops with fresh assistant output do.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
   bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
@@ -337,7 +291,6 @@ bq badge check --color '#58c142' --priority 10
 export const HOOK_SCRIPTS = {
   "on-waiting.sh": waitingScript,
   "on-answered.sh": answeredScript,
-  "on-active.sh": activeScript,
   "on-permission-wait.sh": permissionWaitScript,
   "on-permission-done.sh": permissionDoneScript,
   "on-user-prompt.sh": userPromptScript,

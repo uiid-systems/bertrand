@@ -30,78 +30,13 @@ type EventTarget = {
 // Lifecycle — bertrand engine owns these
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function emitSessionStarted(args: EventTarget & {
-  categoryPath: string;
-  sessionName: string;
-  sessionSlug: string;
-  labels: string[];
-  summary?: string | null;
-}) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "session.started",
-    meta: {
-      category_path: args.categoryPath,
-      session_name: args.sessionName,
-      session_slug: args.sessionSlug,
-      labels: args.labels,
-      summary: args.summary ?? null,
-    },
-  });
-}
-
-export function emitSessionResumed(args: EventTarget) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "session.resumed",
-    meta: { claude_id: args.conversationId },
-  });
-}
-
-/** Hook-emitted (on-done.sh). Engine signals end-of-session via emitSessionEnded. */
-export function emitSessionPaused(args: EventTarget) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "session.paused",
-    meta: { claude_id: args.conversationId },
-  });
-}
-
-/** Engine-emitted recovery (stale process detected). Distinct semantics from emitSessionPaused. */
-export function emitSessionPausedByRecovery(args: EventTarget & { stalePid: number }) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    event: "session.paused",
-    summary: "Recovered from stale state (process not found)",
-    meta: { stale_pid: args.stalePid },
-  });
-}
-
-export function emitSessionEnded(args: { sessionId: string }) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    event: "session.end",
-  });
-}
-
-export function emitClaudeStarted(args: EventTarget & {
-  model: string | undefined;
-  claudeVersion: string | undefined;
-  git: unknown;
-  cwd: string;
-}) {
+export function emitClaudeStarted(args: EventTarget & { cwd: string }) {
   return insertEvent({
     sessionId: args.sessionId,
     conversationId: args.conversationId,
     event: "claude.started",
     meta: {
       claude_id: args.conversationId,
-      model: args.model,
-      claude_version: args.claudeVersion,
-      git: args.git,
       cwd: args.cwd,
     },
   });
@@ -184,40 +119,6 @@ export function emitSessionRecap(args: EventTarget & { recap: string }) {
 // Work / permissions — hook-emitted
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function emitPermissionRequested(args: EventTarget & {
-  tool: string;
-  detail: string;
-}) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "permission.request",
-    meta: {
-      tool: args.tool,
-      detail: args.detail,
-      claude_id: args.conversationId,
-    },
-  });
-}
-
-export function emitPermissionResolved(args: EventTarget & {
-  tool: string;
-  detail: string;
-  outcome: "approved" | "denied";
-}) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "permission.resolve",
-    meta: {
-      tool: args.tool,
-      detail: args.detail,
-      outcome: args.outcome,
-      claude_id: args.conversationId,
-    },
-  });
-}
-
 type ToolDiff = {
   oldStr?: string;
   newStr?: string;
@@ -242,10 +143,9 @@ type ToolPermission = {
  *
  * `outcome` distinguishes the permission path:
  *   - `auto`     — tool ran without ever prompting the user
- *   - `approved` — user was prompted (a permission.request fired) and approved
+ *   - `approved` — user was prompted (a PermissionRequest hook fired) and approved
  *
- * Denials don't reach PostToolUse, so they never emit tool.used. Inferred by
- * looking for a permission.request without a matching tool.used.
+ * Denials don't reach PostToolUse, so they never emit tool.used.
  */
 export function emitToolUsed(args: EventTarget & {
   tool: string;
@@ -342,31 +242,3 @@ export function emitAssistantRecap(args: EventTarget & { recap: string }) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Context / metering
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function emitContextSnapshot(args: EventTarget & {
-  model: string;
-  inputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  totalContextTokens: number;
-  remainingPct: number;
-}) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "context.snapshot",
-    summary: `${args.remainingPct}% remaining`,
-    meta: {
-      model: args.model,
-      input_tokens: String(args.inputTokens),
-      cache_creation_tokens: String(args.cacheCreationTokens),
-      cache_read_tokens: String(args.cacheReadTokens),
-      context_window_tokens: String(args.totalContextTokens),
-      remaining_pct: String(args.remainingPct),
-      claude_id: args.conversationId,
-    },
-  });
-}

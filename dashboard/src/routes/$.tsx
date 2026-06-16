@@ -7,7 +7,6 @@ import {
   Breadcrumbs,
   Button,
   Group,
-  Progress,
   Sheet,
   Stack,
   Status,
@@ -32,10 +31,6 @@ import {
   eventColor,
   eventTitle,
   formatTimestamp,
-  formatTokens,
-  modelLabel,
-  parseToken,
-  remainingColor,
   statusColor,
 } from "../lib/format";
 import { applyTransforms } from "../lib/timeline/transforms";
@@ -152,13 +147,6 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
   const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
   const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
 
-  const latestContext = useMemo(() => {
-    for (let i = rawEvents.length - 1; i >= 0; i--) {
-      if (rawEvents[i].event === "context.snapshot") return rawEvents[i];
-    }
-    return null;
-  }, [rawEvents]);
-
   const pendingQuestion = useMemo(() => {
     if (match.session.status !== "waiting") return null;
     for (let i = rawEvents.length - 1; i >= 0; i--) {
@@ -221,7 +209,6 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
       </Stack>
       <SessionFooter
         session={match.session}
-        context={latestContext}
         pendingQuestion={pendingQuestion}
       />
     </Stack>
@@ -251,15 +238,10 @@ ArchiveToggle.displayName = "ArchiveToggle";
 
 type SessionFooterProps = {
   session: SessionRow;
-  context: EventRow | null;
   pendingQuestion: string | null;
 };
 
-function SessionFooter({
-  session,
-  context,
-  pendingQuestion,
-}: SessionFooterProps) {
+function SessionFooter({ session, pendingQuestion }: SessionFooterProps) {
   const color = statusColor(session.status) as StatusProps["color"];
   const isLive = session.status === "active" || session.status === "waiting";
 
@@ -274,51 +256,7 @@ function SessionFooter({
           </Text>
         )}
       </Group>
-      {context && <ContextStats event={context} />}
     </Stack>
   );
 }
 SessionFooter.displayName = "SessionFooter";
-
-function ContextStats({ event }: { event: EventRow }) {
-  const meta = event.meta;
-  if (!meta) return null;
-
-  const remaining = parseToken(meta.remaining_pct);
-  const total = parseToken(meta.context_window_tokens);
-  const input = parseToken(meta.input_tokens);
-  const cacheRead = parseToken(meta.cache_read_tokens);
-  const cacheCreation = parseToken(meta.cache_creation_tokens);
-  const model = modelLabel(meta.model as string | undefined);
-
-  if (total === 0) return null;
-
-  return (
-    <>
-      <Progress
-        value={remaining}
-        size="small"
-        color={remainingColor(remaining)}
-      />
-      <Group gap={2}>
-        {model && <Badge size="small">{model}</Badge>}
-        {input > 0 && (
-          <Badge size="small" color="orange">
-            {`${formatTokens(input)} input`}
-          </Badge>
-        )}
-        {cacheRead > 0 && (
-          <Badge size="small" color="blue">
-            {`${formatTokens(cacheRead)} cache read`}
-          </Badge>
-        )}
-        {cacheCreation > 0 && (
-          <Badge size="small" color="indigo">
-            {`${formatTokens(cacheCreation)} cache write`}
-          </Badge>
-        )}
-      </Group>
-    </>
-  );
-}
-ContextStats.displayName = "ContextStats";

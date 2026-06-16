@@ -17,7 +17,6 @@ export function upsertSessionStats(
     eventCount: number;
     conversationCount: number;
     interactionCount: number;
-    prCount: number;
     claudeWorkS: number;
     userWaitS: number;
     activePct: number;

@@ -266,7 +266,6 @@ describe("stats", () => {
       eventCount: 42,
       conversationCount: 3,
       interactionCount: 15,
-      prCount: 2,
       claudeWorkS: 300,
       userWaitS: 120,
       activePct: 71,
@@ -279,14 +278,12 @@ describe("stats", () => {
     const stats = getSessionStats(session.id);
     expect(stats).toBeTruthy();
     expect(stats!.eventCount).toBe(42);
-    expect(stats!.prCount).toBe(2);
 
     // Upsert again — should update, not duplicate
     upsertSessionStats(session.id, {
       eventCount: 50,
       conversationCount: 4,
       interactionCount: 20,
-      prCount: 3,
       claudeWorkS: 400,
       userWaitS: 150,
       activePct: 73,

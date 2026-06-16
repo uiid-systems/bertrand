@@ -1,9 +1,5 @@
 import { getActiveSessions, updateSession } from "@/db/queries/sessions";
-import { emitSessionPausedByRecovery } from "@/db/events/emit";
 
-/**
- * Check if a process with the given PID is alive.
- */
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -29,12 +25,6 @@ export function recoverStaleSessions(): number {
         status: "paused",
         pid: null,
       });
-
-      emitSessionPausedByRecovery({
-        sessionId: session.id,
-        stalePid: session.pid,
-      });
-
       recovered++;
     }
   }

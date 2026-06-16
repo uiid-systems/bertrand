@@ -40,31 +40,6 @@ export interface AssistantTurn {
   thinkingBytes: number;
 }
 
-export interface ContextSnapshot {
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  /** Total tokens contributing to context window usage */
-  totalContextTokens: number;
-  remainingPct: number;
-}
-
-// Context window sizes by model family
-const CONTEXT_WINDOW_SIZES: Record<string, number> = {
-  "claude-opus-4": 1_000_000,
-  "claude-sonnet-4": 200_000,
-  "claude-haiku-4": 200_000,
-};
-
-function getContextWindowSize(model: string): number {
-  for (const [prefix, size] of Object.entries(CONTEXT_WINDOW_SIZES)) {
-    if (model.startsWith(prefix)) return size;
-  }
-  return 200_000; // conservative default
-}
-
 // -- Claude transcript path resolution --
 
 /**
@@ -230,55 +205,3 @@ export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
   };
 }
 
-/**
- * Compute a context window snapshot from the latest assistant turn.
- * Reads from the end of the file for speed.
- */
-export function getContextSnapshot(filePath: string): ContextSnapshot | null {
-  if (!existsSync(filePath)) return null;
-
-  const text = readFileSync(filePath, "utf-8");
-  const lines = text.split("\n");
-
-  // Walk backwards to find the last assistant message with usage
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (!line) continue;
-
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    if (entry.type !== "assistant") continue;
-
-    const message = entry.message as Record<string, unknown> | undefined;
-    const usage = message?.usage as Partial<AssistantUsage> | undefined;
-    if (!usage) continue;
-
-    const model = (message?.model as string) ?? "";
-    const inputTokens = usage.input_tokens ?? 0;
-    const outputTokens = usage.output_tokens ?? 0;
-    const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
-    const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
-
-    // Context usage = input + cache read (cache creation is new entries, already counted in input)
-    const totalContextTokens = inputTokens + cacheCreationTokens + cacheReadTokens;
-    const windowSize = getContextWindowSize(model);
-    const remainingPct = Math.max(0, Math.min(100, Math.round(100 - (totalContextTokens * 100) / windowSize)));
-
-    return {
-      model,
-      inputTokens,
-      outputTokens,
-      cacheCreationTokens,
-      cacheReadTokens,
-      totalContextTokens,
-      remainingPct,
-    };
-  }
-
-  return null;
-}
