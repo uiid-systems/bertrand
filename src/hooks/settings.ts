@@ -26,10 +26,6 @@ const BERTRAND_HOOKS: HooksByEvent = {
       matcher: "AskUserQuestion",
       hooks: [{ type: "command", command: `${paths.hooks}/on-waiting.sh` }],
     },
-    {
-      matcher: "",
-      hooks: [{ type: "command", command: `${paths.hooks}/on-active.sh` }],
-    },
   ],
   PostToolUse: [
     {

@@ -13,7 +13,6 @@ interface SessionMetrics {
   eventCount: number;
   conversationCount: number;
   interactionCount: number;
-  prCount: number;
   claudeWorkS: number;
   userWaitS: number;
   activePct: number;
@@ -34,12 +33,10 @@ function getMetrics(sessionId: string, name: string, status: string): SessionMet
   const allEvents = getEventsBySession(sessionId);
   const conversations = new Set<string>();
   let interactionCount = 0;
-  let prCount = 0;
 
   for (const ev of allEvents) {
     if (ev.conversationId) conversations.add(ev.conversationId);
     if (ev.event === "session.waiting" || ev.event === "session.answered") interactionCount++;
-    if (ev.event === "gh.pr.created") prCount++;
   }
 
   return {
@@ -48,7 +45,6 @@ function getMetrics(sessionId: string, name: string, status: string): SessionMet
     eventCount: allEvents.length,
     conversationCount: conversations.size,
     interactionCount,
-    prCount,
     claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
     userWaitS: Math.round(timing.totalUserWaitMs / 1000),
     activePct: timing.activePct,
@@ -78,10 +74,9 @@ function renderGlobal(
       claudeWorkS: acc.claudeWorkS + m.claudeWorkS,
       userWaitS: acc.userWaitS + m.userWaitS,
       conversations: acc.conversations + m.conversationCount,
-      prs: acc.prs + m.prCount,
       interactions: acc.interactions + m.interactionCount,
     }),
-    { sessions: 0, active: 0, durationS: 0, claudeWorkS: 0, userWaitS: 0, conversations: 0, prs: 0, interactions: 0 }
+    { sessions: 0, active: 0, durationS: 0, claudeWorkS: 0, userWaitS: 0, conversations: 0, interactions: 0 }
   );
 
   const totalTracked = totals.claudeWorkS + totals.userWaitS;
@@ -102,7 +97,6 @@ function renderGlobal(
   console.log(`  Claude work:   ${dur(totals.claudeWorkS)} ${dim}(${pct(globalActivePct)})${reset}`);
   console.log(`  User wait:     ${dur(totals.userWaitS)} ${dim}(${pct(100 - globalActivePct)})${reset}`);
   console.log(`  Conversations: ${totals.conversations}`);
-  console.log(`  PRs:           ${totals.prs}`);
   console.log(`  Interactions:  ${totals.interactions}`);
 }
 
@@ -125,12 +119,12 @@ function renderCategory(
 
   console.log(`${bold}${categoryPath}${reset}\n`);
   console.log(
-    `${dim}${"NAME".padEnd(maxName)}  ${"DURATION".padEnd(8)}  ${"CLAUDE".padEnd(8)}  ${"WAIT".padEnd(8)}  ${"ACT%".padEnd(5)}  ${"CONVOS".padEnd(6)}  PRS${reset}`
+    `${dim}${"NAME".padEnd(maxName)}  ${"DURATION".padEnd(8)}  ${"CLAUDE".padEnd(8)}  ${"WAIT".padEnd(8)}  ${"ACT%".padEnd(5)}  CONVOS${reset}`
   );
 
   for (const m of sorted) {
     console.log(
-      `${m.name.padEnd(maxName)}  ${dur(m.durationS).padEnd(8)}  ${dur(m.claudeWorkS).padEnd(8)}  ${dur(m.userWaitS).padEnd(8)}  ${pct(m.activePct).padEnd(5)}  ${String(m.conversationCount).padEnd(6)}  ${m.prCount}`
+      `${m.name.padEnd(maxName)}  ${dur(m.durationS).padEnd(8)}  ${dur(m.claudeWorkS).padEnd(8)}  ${dur(m.userWaitS).padEnd(8)}  ${pct(m.activePct).padEnd(5)}  ${m.conversationCount}`
     );
   }
 
@@ -141,16 +135,15 @@ function renderCategory(
       claudeWorkS: acc.claudeWorkS + m.claudeWorkS,
       userWaitS: acc.userWaitS + m.userWaitS,
       conversations: acc.conversations + m.conversationCount,
-      prs: acc.prs + m.prCount,
     }),
-    { durationS: 0, claudeWorkS: 0, userWaitS: 0, conversations: 0, prs: 0 }
+    { durationS: 0, claudeWorkS: 0, userWaitS: 0, conversations: 0 }
   );
   const totalTracked = totals.claudeWorkS + totals.userWaitS;
   const totalPct = totalTracked > 0 ? Math.round((totals.claudeWorkS / totalTracked) * 100) : 0;
 
   console.log(`${dim}${"─".repeat(maxName + 50)}${reset}`);
   console.log(
-    `${"TOTAL".padEnd(maxName)}  ${dur(totals.durationS).padEnd(8)}  ${dur(totals.claudeWorkS).padEnd(8)}  ${dur(totals.userWaitS).padEnd(8)}  ${pct(totalPct).padEnd(5)}  ${String(totals.conversations).padEnd(6)}  ${totals.prs}`
+    `${"TOTAL".padEnd(maxName)}  ${dur(totals.durationS).padEnd(8)}  ${dur(totals.claudeWorkS).padEnd(8)}  ${dur(totals.userWaitS).padEnd(8)}  ${pct(totalPct).padEnd(5)}  ${totals.conversations}`
   );
 }
 
@@ -171,7 +164,6 @@ function renderSession(m: SessionMetrics, isJson: boolean) {
   console.log(`  Events:        ${m.eventCount}`);
   console.log(`  Conversations: ${m.conversationCount}`);
   console.log(`  Interactions:  ${m.interactionCount}`);
-  console.log(`  PRs:           ${m.prCount}`);
 }
 
 // --- Command ---

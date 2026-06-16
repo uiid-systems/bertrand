@@ -1,5 +1,5 @@
 import type { EventRow, SessionRow } from "../api/types";
-import { colorOf, labelOf, type TimelineColor } from "./timeline/categories";
+import { colorOf, labelOf } from "./timeline/categories";
 
 type SessionStatus = SessionRow["status"];
 
@@ -26,28 +26,6 @@ export function formatDuration(seconds: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
-}
-
-export function modelLabel(model: string | undefined): string | undefined {
-  if (!model) return undefined;
-  return model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
-}
-
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-export function parseToken(value: unknown): number {
-  const n = parseInt((value as string) ?? "0", 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
-export function remainingColor(remainingPct: number): TimelineColor {
-  if (remainingPct <= 25) return "red";
-  if (remainingPct <= 50) return "yellow";
-  return "green";
 }
 
 export function formatRelativeTime(iso: string): string {
@@ -143,16 +121,6 @@ export function eventTitle(event: EventRow): string {
       return event.summary ?? label;
     case "tool.applied":
       return summarizeApplied(meta) ?? label;
-    case "context.snapshot": {
-      const pct = meta.remaining_pct as string | undefined;
-      return pct ? `${pct}% remaining` : label;
-    }
-    case "claude.started": {
-      const categoryPath = meta.category_path as string | undefined;
-      const sessionName = meta.session_name as string | undefined;
-      const identity = [categoryPath, sessionName].filter(Boolean).join("/");
-      return identity ? `created ${identity}` : label;
-    }
     default:
       return label;
   }

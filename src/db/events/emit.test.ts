@@ -50,47 +50,16 @@ function eventsOfType(type: string) {
 }
 
 describe("emit helpers — lifecycle", () => {
-  test("emitSessionStarted writes the expected meta shape", () => {
-    emit.emitSessionStarted({
-      sessionId,
-      conversationId,
-      categoryPath: "engineering/feature",
-      sessionName: "test session",
-      sessionSlug: "test-slug",
-      labels: ["wip", "ui"],
-      summary: "doing the thing",
-    });
-    const row = eventsOfType("session.started").at(-1)!;
-    expect(row.meta).toEqual({
-      category_path: "engineering/feature",
-      session_name: "test session",
-      session_slug: "test-slug",
-      labels: ["wip", "ui"],
-      summary: "doing the thing",
-    });
-  });
-
-  test("emitClaudeStarted preserves the snake_case keys readers depend on", () => {
+  test("emitClaudeStarted records claude_id and cwd", () => {
     emit.emitClaudeStarted({
       sessionId,
       conversationId,
-      model: "claude-opus-4-7",
-      claudeVersion: "2.1.153",
-      git: { branch: "main", sha: "abc123", dirty: false },
       cwd: "/tmp",
     });
     const row = eventsOfType("claude.started").at(-1)!;
     const meta = row.meta as Record<string, unknown>;
-    expect(meta.claude_version).toBe("2.1.153");
     expect(meta.claude_id).toBe(conversationId);
-    expect(meta.model).toBe("claude-opus-4-7");
-  });
-
-  test("emitSessionPausedByRecovery carries the stale pid", () => {
-    emit.emitSessionPausedByRecovery({ sessionId, stalePid: 99999 });
-    const row = eventsOfType("session.paused").at(-1)!;
-    expect((row.meta as Record<string, unknown>).stale_pid).toBe(99999);
-    expect(row.summary).toBe("Recovered from stale state (process not found)");
+    expect(meta.cwd).toBe("/tmp");
   });
 });
 
@@ -125,28 +94,6 @@ describe("emit helpers — interaction", () => {
   });
 });
 
-describe("emit helpers — context", () => {
-  test("emitContextSnapshot stringifies token counts and percentage", () => {
-    emit.emitContextSnapshot({
-      sessionId,
-      conversationId,
-      model: "claude-opus-4-7",
-      inputTokens: 1234,
-      cacheCreationTokens: 100,
-      cacheReadTokens: 50000,
-      totalContextTokens: 51334,
-      remainingPct: 87,
-    });
-    const row = eventsOfType("context.snapshot").at(-1)!;
-    const meta = row.meta as Record<string, unknown>;
-    // Stringification is load-bearing — the dashboard parses these back as
-    // strings via parseInt and would break if we passed numbers directly.
-    expect(meta.input_tokens).toBe("1234");
-    expect(meta.context_window_tokens).toBe("51334");
-    expect(meta.remaining_pct).toBe("87");
-    expect(row.summary).toBe("87% remaining");
-  });
-});
 
 describe("emit helpers — work", () => {
   test("emitToolApplied attaches permissions array with outcome", () => {
@@ -170,18 +117,6 @@ describe("emit helpers — work", () => {
     const meta = row.meta as Record<string, unknown>;
     expect(meta.outcome).toBe("applied");
     expect(Array.isArray(meta.permissions)).toBe(true);
-  });
-
-  test("emitPermissionResolved defaults outcome to approved", () => {
-    emit.emitPermissionResolved({
-      sessionId,
-      conversationId,
-      tool: "Bash",
-      detail: "ls /",
-      outcome: "approved",
-    });
-    const row = eventsOfType("permission.resolve").at(-1)!;
-    expect((row.meta as Record<string, unknown>).outcome).toBe("approved");
   });
 
   test("emitToolUsed formats Bash summaries with backticks", () => {

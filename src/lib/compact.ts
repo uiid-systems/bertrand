@@ -34,18 +34,14 @@ export function repairQAPairs(events: EnrichedEvent[]): EnrichedEvent[] {
 }
 
 /**
- * Stage 2: Collapse sequences of tool activity (permission.request,
- * permission.resolve, tool.used) into summarized "tool.work" events.
- * E.g. "8× Bash, 2× Edit, 5× Read".
+ * Stage 2: Collapse runs of tool.used events into summarized "tool.work"
+ * events. E.g. "8× Bash, 2× Edit, 5× Read".
  *
- * tool.used is the universal tool-call event covering tools that don't go
- * through a permission prompt (auto-approved Read/Grep/Glob, etc.). Folding
- * it into the same rollup means the timeline shows a single "tool work"
- * cluster regardless of whether each call was prompted or auto-approved.
+ * tool.used covers every tool call — outcome:"auto" for auto-approved and
+ * outcome:"approved" for prompted-then-approved. The rollup ignores the
+ * distinction; the timeline just shows aggregated activity.
  */
 const ROLLUP_EVENTS = new Set([
-  "permission.request",
-  "permission.resolve",
   "tool.used",
 ]);
 
@@ -73,14 +69,8 @@ export function collapsePermissions(events: EnrichedEvent[]): EnrichedEvent[] {
 
     if (batch.length === 0) continue;
 
-    // Count tools — prefer the "fired once per tool call" events:
-    //   - permission.request fires once per prompted call (paired w/ resolve)
-    //   - tool.used fires once per auto-approved or post-approval call
-    // Counting both gives "1 per call" without double-counting the
-    // request+resolve pair.
     const toolCounts = new Map<string, number>();
     for (const pev of batch) {
-      if (pev.event !== "permission.request" && pev.event !== "tool.used") continue;
       const meta = pev.meta as Record<string, unknown> | null;
       const tool = (meta?.tool as string) ?? "unknown";
       toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);
