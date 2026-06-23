@@ -1,5 +1,5 @@
 import { register } from "@/cli/router";
-import { getSession, updateSessionStatus } from "@/db/queries/sessions";
+import { getSession, updateSession, updateSessionStatus } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
 import type { SessionStatus } from "@/db/queries/sessions";
 import {
@@ -9,6 +9,8 @@ import {
   emitToolApplied,
   emitToolUsed,
   emitUserPrompted,
+  emitWorktreeEntered,
+  emitWorktreeExited,
 } from "@/db/events/emit";
 
 /** Status transitions implied by event types */
@@ -45,7 +47,7 @@ export function shouldIgnoreStatusFlip(
  * how loud to be about it. Bash hooks deliberately stay quiet (see the
  * `bq` wrapper in scripts.ts) so unknown events just disappear.
  */
-function dispatchHookEvent(
+export function dispatchHookEvent(
   event: string,
   ctx: {
     sessionId: string;
@@ -103,6 +105,24 @@ function dispatchHookEvent(
         outcome: meta.outcome === "approved" ? "approved" : "auto",
       });
       return true;
+    case "worktree.entered": {
+      const path = String(meta.path ?? "");
+      const branch = meta.branch ? String(meta.branch) : undefined;
+      emitWorktreeEntered({ sessionId, conversationId, path, branch });
+      // Mirror the *current* worktree onto the session row so siblings and the
+      // dashboard can see where it's working without scanning the event log.
+      updateSession(sessionId, {
+        worktreePath: path || null,
+        worktreeBranch: branch ?? null,
+      });
+      return true;
+    }
+    case "worktree.exited": {
+      const path = meta.path ? String(meta.path) : undefined;
+      emitWorktreeExited({ sessionId, conversationId, path });
+      updateSession(sessionId, { worktreePath: null, worktreeBranch: null });
+      return true;
+    }
     default:
       return false;
   }

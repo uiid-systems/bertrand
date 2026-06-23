@@ -164,3 +164,33 @@ describe("on-user-prompt.sh — contract re-injection", () => {
     );
   });
 });
+
+describe("on-enter-worktree.sh — worktree tracking", () => {
+  test("writes a worktree marker holding the entered cwd", () => {
+    // workDir isn't a git repo, so branch resolution fails silently — the
+    // marker is still written from the payload's cwd, which is what we assert.
+    const input = JSON.stringify({ cwd: workDir });
+    run("on-enter-worktree.sh", input, {
+      BERTRAND_SESSION: SID,
+      BERTRAND_CLAUDE_ID: CID,
+    });
+    expect(existsSync(marker(`worktree-${SID}`))).toBe(true);
+    expect(readFileSync(marker(`worktree-${SID}`), "utf8")).toBe(workDir);
+  });
+
+  test("outside a bertrand session (no BERTRAND_SESSION) → no marker", () => {
+    run("on-enter-worktree.sh", JSON.stringify({ cwd: workDir }));
+    expect(existsSync(marker(`worktree-${SID}`))).toBe(false);
+  });
+});
+
+describe("on-exit-worktree.sh — worktree teardown", () => {
+  test("removes the worktree marker on exit", () => {
+    writeFileSync(marker(`worktree-${SID}`), workDir);
+    run("on-exit-worktree.sh", "{}", {
+      BERTRAND_SESSION: SID,
+      BERTRAND_CLAUDE_ID: CID,
+    });
+    expect(existsSync(marker(`worktree-${SID}`))).toBe(false);
+  });
+});

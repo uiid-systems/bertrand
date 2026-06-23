@@ -58,6 +58,13 @@ export const sessionsQuery = (opts: { includeArchived?: boolean } = {}) =>
     placeholderData: keepPreviousData,
   })
 
+export const worktreesQuery = queryOptions({
+  queryKey: ["worktrees"],
+  queryFn: () => fetchJson<SessionWithCategory[]>("/api/worktrees"),
+  refetchInterval: 2000,
+  placeholderData: keepPreviousData,
+})
+
 export const eventsQuery = (sessionId: string, isLive = false) =>
   queryOptions({
     queryKey: ["events", sessionId],

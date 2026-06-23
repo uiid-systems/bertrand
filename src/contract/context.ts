@@ -20,7 +20,8 @@ export function buildSiblingContext(
   const lines = siblings.map((s) => {
     const ago = s.updatedAt ? formatAgo(s.updatedAt) : "unknown";
     const summary = s.summary ? ` — "${s.summary}"` : "";
-    return `- ${categoryPath}/${s.slug}: ${s.status}${summary} (${ago})`;
+    const worktree = s.worktreeBranch ? ` [worktree: ${s.worktreeBranch}]` : "";
+    return `- ${categoryPath}/${s.slug}: ${s.status}${worktree}${summary} (${ago})`;
   });
 
   const guidance = [

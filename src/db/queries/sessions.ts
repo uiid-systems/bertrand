@@ -92,6 +92,8 @@ export function updateSession(
     summary: string;
     pid: number | null;
     endedAt: string;
+    worktreePath: string | null;
+    worktreeBranch: string | null;
   }>
 ) {
   return getDb()

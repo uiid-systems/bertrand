@@ -33,6 +33,14 @@ const BERTRAND_HOOKS: HooksByEvent = {
       hooks: [{ type: "command", command: `${paths.hooks}/on-answered.sh` }],
     },
     {
+      matcher: "EnterWorktree",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-enter-worktree.sh` }],
+    },
+    {
+      matcher: "ExitWorktree",
+      hooks: [{ type: "command", command: `${paths.hooks}/on-exit-worktree.sh` }],
+    },
+    {
       matcher: "",
       hooks: [{ type: "command", command: `${paths.hooks}/on-permission-done.sh` }],
     },
