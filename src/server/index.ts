@@ -108,9 +108,19 @@ const getActiveProjectMeta = (): unknown => {
   return { slug: active.slug, name: active.name }
 }
 
+// Sessions currently working in a worktree. Derived from the worktree_path
+// column the EnterWorktree hook maintains — no git shell-out, so this stays a
+// synchronous handler like the rest. Phase 1 can enrich each row with live git
+// state (liveness, diff stats) once dev-server management lands.
+const listWorktreeSessions = (): SessionWithCategory[] =>
+  getAllSessions({ excludeArchived: true }).filter(
+    ({ session }) => session.worktreePath != null,
+  )
+
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
+  [/^\/api\/worktrees$/, listWorktreeSessions],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],

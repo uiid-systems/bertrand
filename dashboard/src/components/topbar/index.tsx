@@ -1,7 +1,12 @@
 import { Activity } from "react";
 import { Link } from "@tanstack/react-router";
 import { Badge, Button, Group, Text } from "@uiid/design-system";
-import { ChartGanttIcon, FileDiffIcon, CaseSensitiveIcon } from "@uiid/icons";
+import {
+  ChartGanttIcon,
+  FileDiffIcon,
+  CaseSensitiveIcon,
+  GitBranchIcon,
+} from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -26,6 +31,12 @@ export const TopBar = ({ sessionCount }: TopBarProps) => {
             to="/"
             tooltip="Session timeline"
             icon={<ChartGanttIcon />}
+          />
+
+          <DevButton
+            to="/worktrees"
+            tooltip="Worktrees"
+            icon={<GitBranchIcon />}
           />
 
           <DevButton
