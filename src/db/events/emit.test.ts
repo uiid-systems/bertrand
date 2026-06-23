@@ -174,3 +174,42 @@ describe("emit helpers — assistant", () => {
     expect(meta.thinkingBytes).toBe(1024);
   });
 });
+
+describe("emit helpers — worktree", () => {
+  test("emitWorktreeEntered records path + branch with a branch summary", () => {
+    emit.emitWorktreeEntered({
+      sessionId,
+      conversationId,
+      path: "/repo/.claude/worktrees/feat-x",
+      branch: "worktree-feat-x",
+    });
+    const row = eventsOfType("worktree.entered").at(-1)!;
+    expect(row.summary).toBe("entered worktree worktree-feat-x");
+    const meta = row.meta as Record<string, unknown>;
+    expect(meta.path).toBe("/repo/.claude/worktrees/feat-x");
+    expect(meta.branch).toBe("worktree-feat-x");
+  });
+
+  test("emitWorktreeEntered falls back to a generic summary without a branch", () => {
+    emit.emitWorktreeEntered({
+      sessionId,
+      conversationId,
+      path: "/repo/.claude/worktrees/feat-y",
+    });
+    const row = eventsOfType("worktree.entered").at(-1)!;
+    expect(row.summary).toBe("entered worktree");
+  });
+
+  test("emitWorktreeExited records the exit and carries the path", () => {
+    emit.emitWorktreeExited({
+      sessionId,
+      conversationId,
+      path: "/repo/.claude/worktrees/feat-x",
+    });
+    const row = eventsOfType("worktree.exited").at(-1)!;
+    expect(row.summary).toBe("exited worktree");
+    expect((row.meta as Record<string, unknown>).path).toBe(
+      "/repo/.claude/worktrees/feat-x",
+    );
+  });
+});

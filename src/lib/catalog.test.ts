@@ -9,6 +9,8 @@ const ALL_EVENT_TYPES: EventType[] = [
   "session.answered",
   "user.prompt",
   "session.recap",
+  "worktree.entered",
+  "worktree.exited",
 ];
 
 function row(event: string, meta?: unknown) {
@@ -88,6 +90,17 @@ describe("enrich", () => {
   test("extracts recap text from session.recap", () => {
     const enriched = enrich(row("session.recap", { recap: "Shipped the timeline content" }));
     expect(enriched.summary).toBe("Shipped the timeline content");
+  });
+
+  test("extracts branch from worktree.entered", () => {
+    const enriched = enrich(
+      row("worktree.entered", {
+        branch: "worktree-feat",
+        path: "/repo/.claude/worktrees/feat",
+      }),
+    );
+    expect(enriched.label).toBe("worktree entered");
+    expect(enriched.summary).toBe("worktree-feat");
   });
 
   test("no meta returns empty summary", () => {

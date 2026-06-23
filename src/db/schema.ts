@@ -56,6 +56,12 @@ export const sessions = sqliteTable(
       .notNull()
       .default(sql`(datetime('now'))`),
     endedAt: text("ended_at"),
+    // Current worktree the session is operating in. Lazy: null until the
+    // session enters one (set by the EnterWorktree hook, cleared on exit).
+    // This is current-state only — the history of entries/exits lives in the
+    // events log, not here.
+    worktreePath: text("worktree_path"),
+    worktreeBranch: text("worktree_branch"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),

@@ -191,8 +191,9 @@ sid="\${BERTRAND_SESSION:-}"
 input="$(cat)"
 ${EXTRACT_TOOL}
 
-# Don't double-log: AskUserQuestion has its own waiting/answered events
-[ "$tool" = "AskUserQuestion" ] && exit 0
+# Don't double-log: AskUserQuestion has its own waiting/answered events, and
+# EnterWorktree/ExitWorktree have their own worktree.entered/exited hooks.
+case "$tool" in AskUserQuestion|EnterWorktree|ExitWorktree) exit 0 ;; esac
 
 marker="${runtimeDir}/perm-pending-$sid"
 had_marker=0
@@ -352,6 +353,57 @@ wait
 `;
 }
 
+/**
+ * PostToolUse EnterWorktree → record the worktree path + branch on the session.
+ *
+ * The PostToolUse payload's `cwd` is the freshly-entered worktree directory (the
+ * tool switches the session's cwd before this hook fires), so we read it and
+ * resolve the branch from git rather than parsing the human-readable result
+ * text. A `worktree-$sid` marker mirrors the path so on-exit-worktree.sh can
+ * name what was left, and so siblings have offline awareness of it. Worktree
+ * tools fire rarely, so jq parsing is fine — no grep hot-path needed.
+ */
+export function enterWorktreeScript(bin: string, runtimeDir: string): string {
+  return `#!/usr/bin/env bash
+# Hook: PostToolUse EnterWorktree → record worktree path + branch on the session.
+${quietHelper(bin)}
+sid="\${BERTRAND_SESSION:-}"
+[ -z "$sid" ] && exit 0
+
+input="$(cat)"
+cid="\${BERTRAND_CLAUDE_ID:-}"
+
+path="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
+[ -z "$path" ] && exit 0
+branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+printf '%s' "$path" > "${runtimeDir}/worktree-$sid"
+
+bq update --session-id "$sid" --event worktree.entered --meta "$(jq -n --arg p "$path" --arg b "$branch" --arg cid "$cid" '{path:$p, branch:$b, claude_id:$cid}')"
+`;
+}
+
+/**
+ * PostToolUse ExitWorktree → clear the session's worktree state. The worktree
+ * may have been removed (action:remove), so we recover the path from the marker
+ * written on entry rather than touching the (possibly gone) directory.
+ */
+export function exitWorktreeScript(bin: string, runtimeDir: string): string {
+  return `#!/usr/bin/env bash
+# Hook: PostToolUse ExitWorktree → clear the session's worktree state.
+${quietHelper(bin)}
+sid="\${BERTRAND_SESSION:-}"
+[ -z "$sid" ] && exit 0
+
+cid="\${BERTRAND_CLAUDE_ID:-}"
+marker="${runtimeDir}/worktree-$sid"
+path="$(cat "$marker" 2>/dev/null)"
+rm -f "$marker"
+
+bq update --session-id "$sid" --event worktree.exited --meta "$(jq -n --arg p "$path" --arg cid "$cid" '{path:$p, claude_id:$cid}')"
+`;
+}
+
 export const HOOK_SCRIPTS = {
   "on-waiting.sh": waitingScript,
   "on-answered.sh": answeredScript,
@@ -359,4 +411,6 @@ export const HOOK_SCRIPTS = {
   "on-permission-done.sh": permissionDoneScript,
   "on-user-prompt.sh": userPromptScript,
   "on-done.sh": doneScript,
+  "on-enter-worktree.sh": enterWorktreeScript,
+  "on-exit-worktree.sh": exitWorktreeScript,
 } as const;
