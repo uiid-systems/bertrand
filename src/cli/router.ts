@@ -16,14 +16,12 @@ const aliases = new Map<string, string>();
  * to avoid log noise on every hook fire in the rare upgrade-mid-session
  * case (parent on an old binary, hook running a new binary).
  *
- * Keep in sync with the registered command names in
- * `src/cli/commands/update.ts`, `snapshot.ts`, etc.
+ * Keep in sync with the registered command names in `src/cli/commands/`.
  */
 const HOOK_COMMANDS = new Set([
   "update",
-  "snapshot",
-  "recap-thinking",
   "assistant-message",
+  "contract",
   "notify",
   "badge",
 ]);

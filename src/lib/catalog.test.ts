@@ -2,25 +2,12 @@ import { describe, test, expect } from "bun:test";
 import { lookup, enrich, enrichAll, type EventType } from "./catalog";
 
 const ALL_EVENT_TYPES: EventType[] = [
-  "session.started",
-  "session.resumed",
-  "session.end",
   "claude.started",
   "claude.ended",
   "claude.discarded",
   "session.waiting",
   "session.answered",
-  "permission.request",
-  "permission.resolve",
-  "worktree.entered",
-  "worktree.exited",
-  "gh.pr.created",
-  "gh.pr.merged",
-  "linear.issue.read",
-  "notion.page.read",
-  "vercel.deploy",
   "user.prompt",
-  "context.snapshot",
   "session.recap",
 ];
 
@@ -54,23 +41,16 @@ describe("lookup", () => {
     expect(info.skip).toBe(false);
   });
 
-  test("context.snapshot is skip=true", () => {
-    expect(lookup("context.snapshot").skip).toBe(true);
-  });
-
   test("categories are correct", () => {
-    expect(lookup("session.started").category).toBe("lifecycle");
+    expect(lookup("claude.started").category).toBe("lifecycle");
     expect(lookup("session.waiting").category).toBe("interaction");
-    expect(lookup("permission.request").category).toBe("work");
-    expect(lookup("gh.pr.created").category).toBe("integration");
-    expect(lookup("context.snapshot").category).toBe("context");
   });
 });
 
 describe("enrich", () => {
   test("attaches label and category from catalog", () => {
-    const enriched = enrich(row("session.started"));
-    expect(enriched.label).toBe("started");
+    const enriched = enrich(row("claude.started"));
+    expect(enriched.label).toBe("claude started");
     expect(enriched.category).toBe("lifecycle");
   });
 
@@ -105,43 +85,18 @@ describe("enrich", () => {
     expect(enriched.summary).toBe("yes, no");
   });
 
-  test("extracts summary from permission events", () => {
-    const enriched = enrich(row("permission.request", { tool: "Bash", detail: "git status" }));
-    expect(enriched.summary).toBe("Bash: git status");
-  });
-
-  test("permission without detail shows tool only", () => {
-    const enriched = enrich(row("permission.request", { tool: "Edit" }));
-    expect(enriched.summary).toBe("Edit");
-  });
-
-  test("extracts PR title from gh.pr.created", () => {
-    const enriched = enrich(row("gh.pr.created", { pr_title: "Fix auth bug" }));
-    expect(enriched.summary).toBe("Fix auth bug");
-  });
-
-  test("extracts branch from worktree.entered", () => {
-    const enriched = enrich(row("worktree.entered", { branch: "feature/x" }));
-    expect(enriched.summary).toBe("feature/x");
-  });
-
-  test("extracts context remaining pct", () => {
-    const enriched = enrich(row("context.snapshot", { remaining_pct: "45" }));
-    expect(enriched.summary).toBe("45% remaining");
-  });
-
   test("extracts recap text from session.recap", () => {
     const enriched = enrich(row("session.recap", { recap: "Shipped the timeline content" }));
     expect(enriched.summary).toBe("Shipped the timeline content");
   });
 
   test("no meta returns empty summary", () => {
-    const enriched = enrich(row("session.started"));
+    const enriched = enrich(row("claude.started"));
     expect(enriched.summary).toBe("");
   });
 
   test("uses row.summary when present", () => {
-    const r = { ...row("session.started"), summary: "custom summary" };
+    const r = { ...row("claude.started"), summary: "custom summary" };
     const enriched = enrich(r);
     expect(enriched.summary).toBe("custom summary");
   });
@@ -155,12 +110,11 @@ describe("enrich", () => {
 
 describe("enrichAll", () => {
   test("enriches multiple events", () => {
-    const rows = [row("session.started"), row("claude.started"), row("session.waiting", { question: "q?" })];
+    const rows = [row("claude.started"), row("session.waiting", { question: "q?" })];
     const enriched = enrichAll(rows);
-    expect(enriched).toHaveLength(3);
-    expect(enriched[0]!.label).toBe("started");
-    expect(enriched[1]!.label).toBe("claude started");
-    expect(enriched[2]!.summary).toBe("q?");
+    expect(enriched).toHaveLength(2);
+    expect(enriched[0]!.label).toBe("claude started");
+    expect(enriched[1]!.summary).toBe("q?");
   });
 
   test("empty array returns empty", () => {

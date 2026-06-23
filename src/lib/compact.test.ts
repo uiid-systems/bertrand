@@ -44,47 +44,47 @@ describe("repairQAPairs", () => {
   test("relocates resume to be adjacent to block", () => {
     const events = [
       ev("session.waiting", t(0), { claudeId: "c1" }),
-      ev("permission.request", t(1)),
-      ev("permission.resolve", t(2)),
+      ev("tool.used", t(1)),
+      ev("tool.used", t(2)),
       ev("session.answered", t(3), { claudeId: "c1" }),
     ];
     const result = repairQAPairs(events);
     expect(result.map((e) => e.event)).toEqual([
       "session.waiting",
       "session.answered",
-      "permission.request",
-      "permission.resolve",
+      "tool.used",
+      "tool.used",
     ]);
   });
 
   test("no matching block — resume stays in place", () => {
     const events = [
-      ev("permission.request", t(0)),
+      ev("tool.used", t(0)),
       ev("session.answered", t(1), { claudeId: "c1" }),
     ];
     const result = repairQAPairs(events);
-    expect(result.map((e) => e.event)).toEqual(["permission.request", "session.answered"]);
+    expect(result.map((e) => e.event)).toEqual(["tool.used", "session.answered"]);
   });
 
   test("mismatched claudeId — no relocation", () => {
     const events = [
       ev("session.waiting", t(0), { claudeId: "c1" }),
-      ev("permission.request", t(1)),
+      ev("tool.used", t(1)),
       ev("session.answered", t(2), { claudeId: "c2" }),
     ];
     const result = repairQAPairs(events);
     expect(result.map((e) => e.event)).toEqual([
       "session.waiting",
-      "permission.request",
+      "tool.used",
       "session.answered",
     ]);
   });
 });
 
 describe("collapsePermissions", () => {
-  test("single permission with detail", () => {
+  test("single tool.used with detail", () => {
     const events = [
-      ev("permission.request", t(0), { meta: { tool: "Bash", detail: "git status" } }),
+      ev("tool.used", t(0), { meta: { tool: "Bash", detail: "git status", outcome: "auto" } }),
     ];
     const result = collapsePermissions(events);
     expect(result).toHaveLength(1);
@@ -92,14 +92,11 @@ describe("collapsePermissions", () => {
     expect(result[0]!.summary).toBe("ran `git status`");
   });
 
-  test("multiple permissions collapsed with counts", () => {
+  test("multiple tool.used events collapsed with counts", () => {
     const events = [
-      ev("permission.request", t(0), { meta: { tool: "Bash" } }),
-      ev("permission.resolve", t(1), { meta: { tool: "Bash" } }),
-      ev("permission.request", t(2), { meta: { tool: "Edit" } }),
-      ev("permission.resolve", t(3), { meta: { tool: "Edit" } }),
-      ev("permission.request", t(4), { meta: { tool: "Bash" } }),
-      ev("permission.resolve", t(5), { meta: { tool: "Bash" } }),
+      ev("tool.used", t(0), { meta: { tool: "Bash", outcome: "approved" } }),
+      ev("tool.used", t(1), { meta: { tool: "Edit", outcome: "approved" } }),
+      ev("tool.used", t(2), { meta: { tool: "Bash", outcome: "approved" } }),
     ];
     const result = collapsePermissions(events);
     expect(result).toHaveLength(1);
@@ -107,12 +104,11 @@ describe("collapsePermissions", () => {
     expect(result[0]!.summary).toBe("2× Bash, 1× Edit");
   });
 
-  test("non-permission events pass through", () => {
+  test("non-tool events pass through", () => {
     const events = [
       ev("claude.started", t(0)),
-      ev("permission.request", t(1), { meta: { tool: "Bash" } }),
-      ev("permission.resolve", t(2), { meta: { tool: "Bash" } }),
-      ev("session.waiting", t(3)),
+      ev("tool.used", t(1), { meta: { tool: "Bash", outcome: "approved" } }),
+      ev("session.waiting", t(2)),
     ];
     const result = collapsePermissions(events);
     expect(result).toHaveLength(3);
@@ -125,23 +121,7 @@ describe("collapsePermissions", () => {
     expect(collapsePermissions([])).toEqual([]);
   });
 
-  test("tool.used participates in the same rollup as permissions", () => {
-    // Auto-approved tools (tool.used) and prompted tools
-    // (permission.request/resolve) should fold into one tool.work cluster.
-    const events = [
-      ev("permission.request", t(0), { meta: { tool: "Bash" } }),
-      ev("permission.resolve", t(1), { meta: { tool: "Bash" } }),
-      ev("tool.used", t(2), { meta: { tool: "Read", outcome: "auto" } }),
-      ev("tool.used", t(3), { meta: { tool: "Read", outcome: "auto" } }),
-      ev("tool.used", t(4), { meta: { tool: "Grep", outcome: "auto" } }),
-    ];
-    const result = collapsePermissions(events);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.event).toBe("tool.work");
-    expect(result[0]!.summary).toBe("2× Read, 1× Bash, 1× Grep");
-  });
-
-  test("tool.used alone rolls up into tool.work", () => {
+  test("tool.used rolls up into tool.work", () => {
     const events = [
       ev("tool.used", t(0), { meta: { tool: "Read", outcome: "auto" } }),
       ev("tool.used", t(1), { meta: { tool: "Read", outcome: "auto" } }),
@@ -190,14 +170,14 @@ describe("deduplicate", () => {
 });
 
 describe("filterSkipped", () => {
-  test("removes context.snapshot events", () => {
+  test("passes through when no events are marked skip", () => {
     const events = [
       ev("claude.started", t(0)),
-      ev("context.snapshot", t(1)),
+      ev("session.waiting", t(1)),
       ev("claude.ended", t(2)),
     ];
     const result = filterSkipped(events);
-    expect(result.map((e) => e.event)).toEqual(["claude.started", "claude.ended"]);
+    expect(result.map((e) => e.event)).toEqual(["claude.started", "session.waiting", "claude.ended"]);
   });
 });
 
@@ -205,27 +185,22 @@ describe("compact (pipeline)", () => {
   test("realistic event sequence", () => {
     const events = [
       ev("claude.started", t(0), { claudeId: "c1" }),
-      ev("permission.request", t(1), { meta: { tool: "Bash", detail: "npm test" } }),
-      ev("permission.resolve", t(2), { meta: { tool: "Bash" } }),
-      ev("context.snapshot", t(3)),
-      ev("session.waiting", t(4), { claudeId: "c1", summary: "Which file?" }),
-      ev("permission.request", t(5), { meta: { tool: "Read" } }),
-      ev("session.answered", t(6), { claudeId: "c1", summary: "src/index.ts" }),
-      ev("claude.ended", t(7), { claudeId: "c1" }),
+      ev("tool.used", t(1), { meta: { tool: "Bash", detail: "npm test", outcome: "approved" } }),
+      ev("session.waiting", t(2), { claudeId: "c1", summary: "Which file?" }),
+      ev("tool.used", t(3), { meta: { tool: "Read", outcome: "auto" } }),
+      ev("session.answered", t(4), { claudeId: "c1", summary: "src/index.ts" }),
+      ev("claude.ended", t(5), { claudeId: "c1" }),
     ];
     const result = compact(events);
 
-    // context.snapshot filtered
-    // permissions collapsed
-    // Q&A paired (resume moves after block)
+    // tool.used rolls into tool.work, Q&A paired
     const eventTypes = result.map((e) => e.event);
     expect(eventTypes).toContain("claude.started");
     expect(eventTypes).toContain("tool.work");
     expect(eventTypes).toContain("session.waiting");
     expect(eventTypes).toContain("session.answered");
     expect(eventTypes).toContain("claude.ended");
-    expect(eventTypes).not.toContain("context.snapshot");
-    expect(eventTypes).not.toContain("permission.request");
+    expect(eventTypes).not.toContain("tool.used");
 
     // Block and resume should be adjacent
     const blockIdx = result.findIndex((e) => e.event === "session.waiting");

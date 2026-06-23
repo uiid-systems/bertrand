@@ -65,14 +65,11 @@ rm -f "${runtimeDir}/working-$sid"
 
 bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
-# Context snapshot — extract transcript path and capture token usage.
-# assistant-message captures the latest turn's text + recap tag in one pass;
-# replaces the older recap-thinking call which only grabbed the recap. Dedup
-# inside the command makes it idempotent vs the matching Stop-time capture,
-# so the same turn never lands twice.
+# Capture the latest assistant turn's text + recap tag. Dedup inside the
+# command makes it idempotent vs the matching Stop-time capture so the same
+# turn never lands twice.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
   bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
@@ -84,7 +81,7 @@ wait
 }
 
 /** PostToolUse AskUserQuestion → mark session as active (user answered) */
-export function answeredScript(bin: string, _runtimeDir: string): string {
+export function answeredScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
 #
@@ -118,9 +115,18 @@ bq update --session-id "$sid" --event session.answered --meta "$meta"
 
 bq badge --clear &
 
+# The loop is healthy — the agent ended its turn on AskUserQuestion and the
+# user answered. Reset the Stop-hook nudge counter so its cap applies per
+# run of consecutive contract violations, not cumulatively across the session.
+rm -f "${runtimeDir}/auq-nudge-$sid"
+
 # Halt the agent loop if the user signaled Done for now. The Stop hook
 # (on-done.sh) will fire afterwards and mark the session as paused.
 if printf '%s' "$done_check" | grep -q "Done for now"; then
+  # Tell on-done.sh this Stop is a legitimate exit, not a dropped AUQ call —
+  # so it pauses normally instead of forcing the loop to continue.
+  touch "${runtimeDir}/done-$sid"
+
   # Promote the picked Done-for-now option's description into a session.recap
   # event so the timeline has a dedicated end-of-session summary row. Bertrand
   # forces session exit before Claude can write a closing message, so this
@@ -140,38 +146,10 @@ wait
 `;
 }
 
-/** PreToolUse (catch-all) → flip waiting to active */
-export function activeScript(bin: string, runtimeDir: string): string {
-  return `#!/usr/bin/env bash
-# Hook: PreToolUse (catch-all) → flip waiting to active
-${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
-
-# Debounce: skip if we already sent session.active within the last 5 seconds.
-# This avoids spawning bertrand (~31ms) on every tool call during rapid sequences.
-marker="${runtimeDir}/working-$sid"
-if [ -f "$marker" ]; then
-  age=$(( $(date +%s) - $(stat -f%m "$marker" 2>/dev/null || echo 0) ))
-  [ "$age" -lt 5 ] && exit 0
-fi
-
-input="$(cat)"
-${EXTRACT_TOOL}
-
-# AskUserQuestion has its own PreToolUse hook
-[ "$tool" = "AskUserQuestion" ] && exit 0
-
-touch "$marker"
-cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event session.active --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
-`;
-}
-
-/** PermissionRequest → write pending marker + emit permission.request */
+/** PermissionRequest → write pending marker so PostToolUse can tag tool.used as approved */
 export function permissionWaitScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: PermissionRequest → mark pending, emit permission.request
+# Hook: PermissionRequest → mark pending, badge + notify
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -180,18 +158,10 @@ input="$(cat)"
 ${EXTRACT_TOOL}
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
-# Write marker so PostToolUse knows this was a real permission prompt (not auto-approved)
+# Marker tells the PostToolUse hook to emit tool.used with outcome:approved
+# instead of outcome:auto. Without it, every prompted-then-approved tool call
+# would look identical to an auto-approved one.
 touch "${runtimeDir}/perm-pending-$sid"
-
-# Extract detail from tool_input via grep (avoid jq for simple fields)
-detail=""
-case "$tool" in
-  Bash) detail="$(printf '%s' "$input" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
-  Edit|Write|Read) detail="$(printf '%s' "$input" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-1000)" ;;
-esac
-
-cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event permission.request --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, claude_id:$cid}')"
 
 # Badge + notify in background
 bq badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
@@ -205,17 +175,15 @@ export function permissionDoneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse (catch-all)
 #
-# Captures every tool call Claude makes. Three event flows:
+# Captures every tool call Claude makes. Two event flows:
 #   1. Edit/Write/MultiEdit → tool.applied with diff payload. Keeps the
 #      existing dashboard diff-renderer happy and is the only place we get
 #      old_string/new_string on auto-approved edits.
-#   2. Tools that went through a permission prompt → permission.resolve.
-#      The PermissionRequest hook set a marker; we clear it and log the
-#      approval. (Denials never reach PostToolUse, so absence-of-resolve
-#      means the user said no.)
-#   3. Everything else (auto-approved Bash/Read/Grep/Glob/etc.) → tool.used
-#      with outcome:"auto". Previously this case dropped the call entirely;
-#      now Claude's read-only / shell activity shows up in the timeline.
+#   2. Everything else → tool.used. The PermissionRequest hook may have set
+#      a marker; if so the call was prompted-then-approved (outcome:approved),
+#      otherwise it was auto-approved (outcome:auto). Denials never reach
+#      PostToolUse, so absence of a tool.used after a permission.request means
+#      the user said no.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -274,14 +242,9 @@ case "$tool" in
   WebSearch) detail="$(printf '%s' "$input" | grep -o '"query":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)" ;;
 esac
 
-if [ "$had_marker" = "1" ]; then
-  # Prompted-then-approved path. Keep permission.resolve for back-compat
-  # rendering; downstream consumers can migrate to tool.used at their pace.
-  bq update --session-id "$sid" --event permission.resolve --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"approved", claude_id:$cid}')"
-else
-  # Auto-approved path. Without tool.used, these calls were invisible.
-  bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg cid "$cid" '{tool:$t, detail:$d, outcome:"auto", claude_id:$cid}')"
-fi
+outcome="auto"
+[ "$had_marker" = "1" ] && outcome="approved"
+bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')"
 wait
 `;
 }
@@ -291,9 +254,17 @@ wait
  * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
  * handling is fine — grep would mangle prompts containing quotes or newlines.
  */
-export function userPromptScript(bin: string, _runtimeDir: string): string {
+export function userPromptScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: UserPromptSubmit → record user free-text prompt
+# Hook: UserPromptSubmit → record user prompt + re-inject the session contract.
+#
+# The contract normally arrives via --append-system-prompt on bertrand's own
+# claude spawn, which reaches only that one process. Sessions that inherit the
+# BERTRAND_* env vars without going through launchClaude (background jobs,
+# nested \`claude\`, the Warp plugin's own launcher) never receive it. Re-
+# injecting here — through the durable env/hook channel — closes that gap.
+# Full contract on the first prompt of each conversation, a one-line reminder
+# thereafter, to keep the per-turn token cost low.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -301,43 +272,89 @@ sid="\${BERTRAND_SESSION:-}"
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
+# Record the prompt event. Stdout muted so only the context JSON below reaches
+# the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
-[ -z "$meta" ] && exit 0
+[ -n "$meta" ] && bq update --session-id "$sid" --event user.prompt --meta "$meta" >/dev/null
 
-bq update --session-id "$sid" --event user.prompt --meta "$meta"
+# Re-deliver the contract as additional context.
+marker="${runtimeDir}/contract-sent-\${cid:-$sid}"
+if [ -f "$marker" ]; then
+  contract="$(bq contract --session-id "$sid" --short)"
+else
+  contract="$(bq contract --session-id "$sid")"
+  : > "$marker"
+fi
+
+[ -n "$contract" ] && jq -n --arg c "$contract" \
+  '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
 `;
 }
 
-/** Stop hook → mark session as paused + final context snapshot */
-export function doneScript(bin: string, _runtimeDir: string): string {
+/**
+ * Stop hook → enforce the AskUserQuestion loop, then flip session to paused.
+ *
+ * Stop fires exactly when the agent ends a turn with no pending tool call —
+ * i.e. it answered with text instead of ending on AskUserQuestion. A turn that
+ * *does* end on AskUserQuestion leaves a pending tool use, so the agent isn't
+ * "stopping" and this hook never fires. Therefore a Stop that is not a
+ * Done-for-now exit means the agent dropped the every-turn-ends-with-AUQ
+ * contract — so we block it and force the loop to continue. This is the
+ * mechanical guarantee that mirrors the multiSelect enforcement in
+ * on-waiting.sh, and it works in any context the system-prompt contract can't
+ * reach (background jobs, nested claude, the Warp launcher).
+ */
+export function doneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: Stop → mark session as paused
+# Hook: Stop → enforce AUQ loop, else flip session status to paused.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event session.paused --meta "$(jq -n --arg cid "$cid" '{claude_id:$cid}')"
 
-# Final transcript reads. assistant-message dedups against the most-recent
-# AskUQ-time capture, so a Done-for-now exit (no work between AskUQ and Stop)
-# lands zero new events here; intermediate Stops with fresh assistant output
-# do land new ones.
+done_marker="${runtimeDir}/done-$sid"
+nudge_marker="${runtimeDir}/auq-nudge-$sid"
+
+# Capture the assistant turn either way. Stdout is muted so it can never corrupt
+# a decision-JSON payload. Dedups against the most-recent AskUQ-time capture, so
+# a Done-for-now exit lands zero new events; a dropped-AUQ Stop records the
+# stray turn; intermediate Stops with fresh output land normally.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq snapshot --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
-  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" >/dev/null &
 fi
 
+if [ ! -f "$done_marker" ]; then
+  # Not a Done-for-now exit → the turn ended without AskUserQuestion. Force the
+  # loop to continue, up to a small cap so a context where AUQ is genuinely
+  # unavailable can't wedge the session in an endless block/stop cycle. The
+  # counter is reset on every answered AUQ (on-answered.sh), so the cap bounds
+  # consecutive violations, not the whole session.
+  count="$(cat "$nudge_marker" 2>/dev/null)"
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  if [ "$count" -lt 3 ]; then
+    printf '%s' "$((count + 1))" > "$nudge_marker"
+    reason='This is a bertrand session: every turn must end with an AskUserQuestion call (multiSelect:true on every question) that includes a "Done for now" option, preceded by a <recap> block. You ended a turn without calling AskUserQuestion. Call it now to continue the loop, or — if the work is finished — present it so the user can pick "Done for now" to end the session.'
+    wait
+    jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+    exit 0
+  fi
+  # Cap reached — stop nudging and let the session pause normally.
+fi
+
+# Terminal path: legitimate Done-for-now exit, or nudge cap exhausted.
+rm -f "$done_marker" "$nudge_marker"
+bq update --session-id "$sid" --event session.paused
 bq badge check --color '#58c142' --priority 10
+wait
 `;
 }
 
 export const HOOK_SCRIPTS = {
   "on-waiting.sh": waitingScript,
   "on-answered.sh": answeredScript,
-  "on-active.sh": activeScript,
   "on-permission-wait.sh": permissionWaitScript,
   "on-permission-done.sh": permissionDoneScript,
   "on-user-prompt.sh": userPromptScript,

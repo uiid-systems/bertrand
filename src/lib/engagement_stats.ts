@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { conversations } from "@/db/schema";
-import { getEventsBySession, getEventsByType } from "@/db/queries/events";
+import { getEventsByType } from "@/db/queries/events";
 import type { EngagementStats } from "@/types";
 
 export type { EngagementStats };
@@ -22,17 +22,7 @@ function aggregateToolUsage(sessionId: string): Record<string, number> {
     }
   }
 
-  // permission.resolve fires once per prompted tool (post-approval).
-  const resolves = getEventsByType(sessionId, "permission.resolve");
-  for (const ev of resolves) {
-    const meta = ev.meta as Record<string, unknown> | null;
-    const tool = meta?.tool as string | undefined;
-    if (!tool) continue;
-    counts[tool] = (counts[tool] ?? 0) + 1;
-  }
-
-  // tool.used fires once per auto-approved tool — Read, Grep, Glob, etc.
-  // Previously these calls were invisible to analytics.
+  // tool.used covers every other tool call (auto-approved + prompted-then-approved).
   const used = getEventsByType(sessionId, "tool.used");
   for (const ev of used) {
     const meta = ev.meta as Record<string, unknown> | null;
@@ -42,40 +32,6 @@ function aggregateToolUsage(sessionId: string): Record<string, number> {
   }
 
   return counts;
-}
-
-function contextTokenStats(sessionId: string) {
-  const snapshots = getEventsByType(sessionId, "context.snapshot");
-  const samples: number[] = [];
-
-  for (const ev of snapshots) {
-    const meta = ev.meta as Record<string, unknown> | null;
-    const total = parseInt((meta?.context_window_tokens as string) ?? "0", 10);
-    if (Number.isFinite(total) && total > 0) samples.push(total);
-  }
-
-  if (samples.length === 0) return { avg: 0, max: 0, latest: 0 };
-
-  let sum = 0;
-  let max = 0;
-  for (const n of samples) {
-    sum += n;
-    if (n > max) max = n;
-  }
-  const avg = Math.round(sum / samples.length);
-  const latest = samples[samples.length - 1] ?? 0;
-  return { avg, max, latest };
-}
-
-function permissionDenialCount(sessionId: string): number {
-  const all = getEventsBySession(sessionId);
-  let requests = 0;
-  let resolves = 0;
-  for (const ev of all) {
-    if (ev.event === "permission.request") requests++;
-    else if (ev.event === "permission.resolve") resolves++;
-  }
-  return Math.max(0, requests - resolves);
 }
 
 function discardRate(sessionId: string) {
@@ -96,8 +52,6 @@ function discardRate(sessionId: string) {
 export function computeEngagementStats(sessionId: string): EngagementStats {
   return {
     toolUsage: aggregateToolUsage(sessionId),
-    contextTokens: contextTokenStats(sessionId),
-    permissionDenials: permissionDenialCount(sessionId),
     discardRate: discardRate(sessionId),
   };
 }

@@ -61,12 +61,3 @@ export function updateConversationEventCount(id: string, count: number) {
     .returning()
     .get();
 }
-
-export function updateLastQuestion(id: string, question: string) {
-  return getDb()
-    .update(conversations)
-    .set({ lastQuestion: question })
-    .where(eq(conversations.id, id))
-    .returning()
-    .get();
-}

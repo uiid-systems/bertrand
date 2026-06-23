@@ -1,13 +1,9 @@
 import { register } from "@/cli/router";
 import { getSession, updateSessionStatus } from "@/db/queries/sessions";
-import { getConversation, updateLastQuestion } from "@/db/queries/conversations";
+import { getConversation } from "@/db/queries/conversations";
 import type { SessionStatus } from "@/db/queries/sessions";
-import { triggerBackgroundPush } from "@/sync/trigger";
 import {
-  emitPermissionRequested,
-  emitPermissionResolved,
   emitSessionAnswered,
-  emitSessionPaused,
   emitSessionRecap,
   emitSessionWaiting,
   emitToolApplied,
@@ -19,19 +15,16 @@ import {
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
   "session.waiting": "waiting",
   "session.answered": "active",
-  "session.active": "active",
   "session.paused": "paused",
-  "session.started": "active",
-  "session.end": "paused",
 };
 
 /**
  * Refuse status flips to `active`/`waiting` for sessions that have no owning
  * bertrand process (`pid === null`). Guards against the delayed-hook race:
- * Claude's PreToolUse hook can spawn `bertrand update --event session.active`
+ * Claude's PreToolUse hook can spawn `bertrand update --event session.waiting`
  * and then get its child reparented to init when Claude is SIGINT'd, so the
  * commit can land after bertrand's finalizeSession set the row to paused —
- * resurrecting the session as "active" with no one alive to manage it.
+ * resurrecting the session as "waiting" with no one alive to manage it.
  */
 export function shouldIgnoreStatusFlip(
   newStatus: SessionStatus | undefined,
@@ -91,26 +84,6 @@ function dispatchHookEvent(
         sessionId,
         conversationId,
         recap: String(meta.recap ?? ""),
-      });
-      return true;
-    case "session.paused":
-      emitSessionPaused({ sessionId, conversationId });
-      return true;
-    case "permission.request":
-      emitPermissionRequested({
-        sessionId,
-        conversationId,
-        tool: String(meta.tool ?? ""),
-        detail: String(meta.detail ?? ""),
-      });
-      return true;
-    case "permission.resolve":
-      emitPermissionResolved({
-        sessionId,
-        conversationId,
-        tool: String(meta.tool ?? ""),
-        detail: String(meta.detail ?? ""),
-        outcome: meta.outcome === "denied" ? "denied" : "approved",
       });
       return true;
     case "tool.applied":
@@ -203,31 +176,17 @@ register("update", async (args) => {
   const conversationId =
     rawConvoId && getConversation(rawConvoId) ? rawConvoId : undefined;
 
-  const dispatched = dispatchHookEvent(event, {
+  // Dispatch is best-effort: some events (session.paused) flip status without
+  // writing an event row. Unknown events from a stale binary/hook combo are
+  // silently dropped here; the status flip below still happens if applicable.
+  dispatchHookEvent(event, {
     sessionId,
     conversationId,
     meta,
     summary: summaryArg,
   });
 
-  if (!dispatched) {
-    // Unknown event types are silently dropped — bertrand's hooks are
-    // version-controlled, so an unrecognized event is a stale-binary-meets-
-    // new-hook situation we don't want to crash on. If the user is debugging
-    // they can run the command directly and the missing dispatch will be
-    // obvious from the absent DB row.
-    return;
-  }
-
   if (newStatus && !ignoreStatusFlip) {
     updateSessionStatus(sessionId, newStatus);
-  }
-
-  if (event === "session.waiting" && conversationId && meta?.question) {
-    updateLastQuestion(conversationId, meta.question as string);
-  }
-
-  if (event === "session.end") {
-    triggerBackgroundPush();
   }
 });

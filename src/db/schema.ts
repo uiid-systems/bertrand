@@ -102,7 +102,6 @@ export const conversations = sqliteTable(
     discarded: integer("discarded", { mode: "boolean" })
       .notNull()
       .default(false),
-    lastQuestion: text("last_question"),
     eventCount: integer("event_count").notNull().default(0),
   },
   (t) => [index("conv_session").on(t.sessionId)]
@@ -134,28 +133,6 @@ export const events = sqliteTable(
   ]
 );
 
-// Worktree tracking
-export const worktreeAssociations = sqliteTable(
-  "worktree_associations",
-  {
-    id: text("id").primaryKey(),
-    sessionId: text("session_id")
-      .notNull()
-      .references(() => sessions.id, { onDelete: "cascade" }),
-    branch: text("branch").notNull(),
-    worktreePath: text("worktree_path"),
-    active: integer("active", { mode: "boolean" }).notNull().default(true),
-    enteredAt: text("entered_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-    exitedAt: text("exited_at"),
-  },
-  (t) => [
-    index("wt_session").on(t.sessionId),
-    index("wt_active").on(t.active),
-  ]
-);
-
 // Materialized stats — updated at session end, avoids full event scan
 export const sessionStats = sqliteTable("session_stats", {
   sessionId: text("session_id")
@@ -164,7 +141,6 @@ export const sessionStats = sqliteTable("session_stats", {
   eventCount: integer("event_count").notNull().default(0),
   conversationCount: integer("conversation_count").notNull().default(0),
   interactionCount: integer("interaction_count").notNull().default(0),
-  prCount: integer("pr_count").notNull().default(0),
   claudeWorkS: integer("claude_work_s").notNull().default(0),
   userWaitS: integer("user_wait_s").notNull().default(0),
   activePct: integer("active_pct").notNull().default(0),

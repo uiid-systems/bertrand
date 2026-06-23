@@ -8,9 +8,8 @@ const command = process.argv[2];
 
 const hotPath: Record<string, () => Promise<unknown>> = {
   update: () => import("./cli/commands/update"),
-  snapshot: () => import("./cli/commands/snapshot"),
   "assistant-message": () => import("./cli/commands/assistant-message"),
-  "recap-thinking": () => import("./cli/commands/recap-thinking"),
+  contract: () => import("./cli/commands/contract"),
   badge: () => import("./cli/commands/badge"),
   notify: () => import("./cli/commands/notify"),
   serve: () => import("./cli/commands/serve"),
@@ -29,9 +28,8 @@ if (command && command in hotPath) {
     import("./cli/commands/backfill-stats"),
     import("./cli/commands/archive"),
     import("./cli/commands/update"),
-    import("./cli/commands/snapshot"),
     import("./cli/commands/assistant-message"),
-    import("./cli/commands/recap-thinking"),
+    import("./cli/commands/contract"),
     import("./cli/commands/serve"),
     import("./cli/commands/badge"),
     import("./cli/commands/notify"),

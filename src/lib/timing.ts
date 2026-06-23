@@ -1,4 +1,4 @@
-import { getEventsBySession, getEventsByType } from "@/db/queries/events";
+import { getEventsBySession } from "@/db/queries/events";
 import { upsertSessionStats } from "@/db/queries/stats";
 import { computeDiffStats } from "@/lib/diff_stats";
 
@@ -162,7 +162,6 @@ export interface SessionStatsData {
   eventCount: number;
   conversationCount: number;
   interactionCount: number;
-  prCount: number;
   claudeWorkS: number;
   userWaitS: number;
   activePct: number;
@@ -177,7 +176,6 @@ export function computeSessionStats(sessionId: string): SessionStatsData {
   const events = getEventsBySession(sessionId);
   const summary = computeTimings(events);
 
-  const prEvents = getEventsByType(sessionId, "gh.pr.created");
   const conversationIds = new Set(
     events.filter((e) => e.conversationId).map((e) => e.conversationId)
   );
@@ -191,7 +189,6 @@ export function computeSessionStats(sessionId: string): SessionStatsData {
     eventCount: events.length,
     conversationCount: conversationIds.size,
     interactionCount,
-    prCount: prEvents.length,
     claudeWorkS: Math.round(summary.totalClaudeWorkMs / 1000),
     userWaitS: Math.round(summary.totalUserWaitMs / 1000),
     activePct: summary.activePct,

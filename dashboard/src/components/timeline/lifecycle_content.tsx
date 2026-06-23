@@ -1,7 +1,6 @@
 import { Badge, Card, Group, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
-import { modelLabel } from "../../lib/format";
 import { Markdown } from "../markdown";
 
 type LifecycleContentProps = {
@@ -14,10 +13,6 @@ function shortId(id: string | undefined): string | undefined {
 }
 
 export function LifecycleContent({ event }: LifecycleContentProps) {
-  // claude.started is handled by StartedContent — this component renders
-  // claude.ended / claude.discarded / session.recap only.
-  if (event.event === "claude.started") return null;
-
   const meta = event.meta as Record<string, unknown> | null;
 
   if (event.event === "session.recap") {
@@ -36,21 +31,15 @@ export function LifecycleContent({ event }: LifecycleContentProps) {
     (meta?.claude_id as string | undefined) ??
     event.conversationId ??
     undefined;
-  const model = modelLabel(meta?.model as string | undefined);
   const id = shortId(claudeId ?? undefined);
   const exitCode =
     event.event === "claude.ended" ? (meta?.exit_code as number | undefined) : undefined;
   const showExit = typeof exitCode === "number" && exitCode !== 0;
 
-  if (!model && !id && !showExit) return null;
+  if (!id && !showExit) return null;
 
   return (
     <Group gap={2} ay="center">
-      {model && (
-        <Badge color="orange" size="small">
-          {model}
-        </Badge>
-      )}
       {id && (
         <Badge color="neutral" size="small">
           {id}

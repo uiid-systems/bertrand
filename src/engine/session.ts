@@ -13,9 +13,6 @@ import {
 import {
   emitClaudeEnded,
   emitClaudeStarted,
-  emitSessionEnded,
-  emitSessionResumed,
-  emitSessionStarted,
 } from "@/db/events/emit";
 import { getOrCreateCategoryPath, getCategory, getCategoryByPath } from "@/db/queries/categories";
 import {
@@ -25,11 +22,14 @@ import {
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { launchClaude, isClaudeRunning } from "./process";
-import { captureSpawnContext } from "./spawn-context";
 import { computeAndPersist } from "@/lib/timing";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
 import { claudeSessionExists } from "@/lib/transcript";
+import {
+  pruneSessionMarkers,
+  pruneStaleContractMarkers,
+} from "@/hooks/runtime";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -128,6 +128,10 @@ export interface ResumeOpts {
  * Returns session ID when the Claude process exits.
  */
 export async function launch(opts: LaunchOpts): Promise<string> {
+  // Sweep orphaned contract-sent markers left by sessions bertrand never
+  // finalized (background jobs, the Warp launcher) before they accumulate.
+  pruneStaleContractMarkers();
+
   // Check for duplicate session slug within the target category
   const existingCategory = getCategoryByPath(opts.categoryPath);
   if (existingCategory) {
@@ -163,29 +167,12 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  // Capture spawn context (model, claude version, git, cwd) in parallel before
-  // logging start events so the frozen-in-time meta on session.started /
-  // claude.started reflects what was true at launch.
-  const spawnContext = await captureSpawnContext();
   const sessionName = `${opts.categoryPath}/${opts.slug}`;
 
-  emitSessionStarted({
-    sessionId: session.id,
-    conversationId: claudeId,
-    categoryPath: opts.categoryPath,
-    sessionName: opts.name ?? opts.slug,
-    sessionSlug: opts.slug,
-    labels: opts.labelNames ?? [],
-    summary: session.summary ?? null,
-  });
   emitClaudeStarted({
     sessionId: session.id,
     conversationId: claudeId,
-    model: spawnContext.model,
-    claudeVersion: spawnContext.claudeVersion,
-    git: spawnContext.git,
-    cwd: spawnContext.cwd,
-    // worktree: spawnContext.worktree, // STUB — wired when worktree support lands
+    cwd: process.cwd(),
   });
 
   // Build contract with context
@@ -210,6 +197,8 @@ export async function launch(opts: LaunchOpts): Promise<string> {
  * Returns session ID when the Claude process exits.
  */
 export async function resume(opts: ResumeOpts): Promise<string> {
+  pruneStaleContractMarkers();
+
   const session = getSession(opts.sessionId);
   if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
 
@@ -231,20 +220,11 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  emitSessionResumed({
-    sessionId: session.id,
-    conversationId: opts.conversationId,
-  });
-
   if (isFreshClaudeSession) {
-    const spawnContext = await captureSpawnContext();
     emitClaudeStarted({
       sessionId: session.id,
       conversationId: opts.conversationId,
-      model: spawnContext.model,
-      claudeVersion: spawnContext.claudeVersion,
-      git: spawnContext.git,
-      cwd: spawnContext.cwd,
+      cwd: process.cwd(),
     });
   }
 
@@ -300,14 +280,11 @@ function finalizeSession(
 
   if (liveSession?.sessionId === sessionId) liveSession = null;
 
-  emitSessionEnded({ sessionId });
+  pruneSessionMarkers(sessionId, safeConversationId);
 
   computeAndPersist(sessionId);
   stopServerIfIdle();
 
-  // Sync push on session end. emitSessionEnded inserts the event directly
-  // via the typed emitter; it bypasses the update.ts dispatcher where the
-  // push trigger used to live, so we call it inline here. The trigger is
-  // detached fire-and-forget — won't block the exit flow.
+  // Sync push on session end. Detached fire-and-forget — won't block exit.
   triggerBackgroundPush();
 }
