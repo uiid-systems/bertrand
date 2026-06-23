@@ -81,7 +81,7 @@ wait
 }
 
 /** PostToolUse AskUserQuestion → mark session as active (user answered) */
-export function answeredScript(bin: string, _runtimeDir: string): string {
+export function answeredScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PostToolUse AskUserQuestion → mark session as active
 #
@@ -115,9 +115,18 @@ bq update --session-id "$sid" --event session.answered --meta "$meta"
 
 bq badge --clear &
 
+# The loop is healthy — the agent ended its turn on AskUserQuestion and the
+# user answered. Reset the Stop-hook nudge counter so its cap applies per
+# run of consecutive contract violations, not cumulatively across the session.
+rm -f "${runtimeDir}/auq-nudge-$sid"
+
 # Halt the agent loop if the user signaled Done for now. The Stop hook
 # (on-done.sh) will fire afterwards and mark the session as paused.
 if printf '%s' "$done_check" | grep -q "Done for now"; then
+  # Tell on-done.sh this Stop is a legitimate exit, not a dropped AUQ call —
+  # so it pauses normally instead of forcing the loop to continue.
+  touch "${runtimeDir}/done-$sid"
+
   # Promote the picked Done-for-now option's description into a session.recap
   # event so the timeline has a dedicated end-of-session summary row. Bertrand
   # forces session exit before Claude can write a closing message, so this
@@ -245,9 +254,17 @@ wait
  * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
  * handling is fine — grep would mangle prompts containing quotes or newlines.
  */
-export function userPromptScript(bin: string, _runtimeDir: string): string {
+export function userPromptScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: UserPromptSubmit → record user free-text prompt
+# Hook: UserPromptSubmit → record user prompt + re-inject the session contract.
+#
+# The contract normally arrives via --append-system-prompt on bertrand's own
+# claude spawn, which reaches only that one process. Sessions that inherit the
+# BERTRAND_* env vars without going through launchClaude (background jobs,
+# nested \`claude\`, the Warp plugin's own launcher) never receive it. Re-
+# injecting here — through the durable env/hook channel — closes that gap.
+# Full contract on the first prompt of each conversation, a one-line reminder
+# thereafter, to keep the per-turn token cost low.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -255,36 +272,83 @@ sid="\${BERTRAND_SESSION:-}"
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 
+# Record the prompt event. Stdout muted so only the context JSON below reaches
+# the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
-[ -z "$meta" ] && exit 0
+[ -n "$meta" ] && bq update --session-id "$sid" --event user.prompt --meta "$meta" >/dev/null
 
-bq update --session-id "$sid" --event user.prompt --meta "$meta"
+# Re-deliver the contract as additional context.
+marker="${runtimeDir}/contract-sent-\${cid:-$sid}"
+if [ -f "$marker" ]; then
+  contract="$(bq contract --session-id "$sid" --short)"
+else
+  contract="$(bq contract --session-id "$sid")"
+  : > "$marker"
+fi
+
+[ -n "$contract" ] && jq -n --arg c "$contract" \
+  '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
 `;
 }
 
-/** Stop hook → flip session to paused (status only, no event row) + final context snapshot */
-export function doneScript(bin: string, _runtimeDir: string): string {
+/**
+ * Stop hook → enforce the AskUserQuestion loop, then flip session to paused.
+ *
+ * Stop fires exactly when the agent ends a turn with no pending tool call —
+ * i.e. it answered with text instead of ending on AskUserQuestion. A turn that
+ * *does* end on AskUserQuestion leaves a pending tool use, so the agent isn't
+ * "stopping" and this hook never fires. Therefore a Stop that is not a
+ * Done-for-now exit means the agent dropped the every-turn-ends-with-AUQ
+ * contract — so we block it and force the loop to continue. This is the
+ * mechanical guarantee that mirrors the multiSelect enforcement in
+ * on-waiting.sh, and it works in any context the system-prompt contract can't
+ * reach (background jobs, nested claude, the Warp launcher).
+ */
+export function doneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: Stop → flip session status to paused; no event row written.
-# The status flip is driven by EVENT_STATUS_MAP[session.paused]; dispatchHookEvent
-# no longer has a session.paused case, so update.ts flips status without inserting.
+# Hook: Stop → enforce AUQ loop, else flip session status to paused.
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
 
 input="$(cat)"
 cid="\${BERTRAND_CLAUDE_ID:-}"
-bq update --session-id "$sid" --event session.paused
 
-# Final assistant-message read. Dedups against the most-recent AskUQ-time
-# capture, so a Done-for-now exit (no work between AskUQ and Stop) lands zero
-# new events here; intermediate Stops with fresh assistant output do.
+done_marker="${runtimeDir}/done-$sid"
+nudge_marker="${runtimeDir}/auq-nudge-$sid"
+
+# Capture the assistant turn either way. Stdout is muted so it can never corrupt
+# a decision-JSON payload. Dedups against the most-recent AskUQ-time capture, so
+# a Done-for-now exit lands zero new events; a dropped-AUQ Stop records the
+# stray turn; intermediate Stops with fresh output land normally.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
+  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" >/dev/null &
 fi
 
+if [ ! -f "$done_marker" ]; then
+  # Not a Done-for-now exit → the turn ended without AskUserQuestion. Force the
+  # loop to continue, up to a small cap so a context where AUQ is genuinely
+  # unavailable can't wedge the session in an endless block/stop cycle. The
+  # counter is reset on every answered AUQ (on-answered.sh), so the cap bounds
+  # consecutive violations, not the whole session.
+  count="$(cat "$nudge_marker" 2>/dev/null)"
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  if [ "$count" -lt 3 ]; then
+    printf '%s' "$((count + 1))" > "$nudge_marker"
+    reason='This is a bertrand session: every turn must end with an AskUserQuestion call (multiSelect:true on every question) that includes a "Done for now" option, preceded by a <recap> block. You ended a turn without calling AskUserQuestion. Call it now to continue the loop, or — if the work is finished — present it so the user can pick "Done for now" to end the session.'
+    wait
+    jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+    exit 0
+  fi
+  # Cap reached — stop nudging and let the session pause normally.
+fi
+
+# Terminal path: legitimate Done-for-now exit, or nudge cap exhausted.
+rm -f "$done_marker" "$nudge_marker"
+bq update --session-id "$sid" --event session.paused
 bq badge check --color '#58c142' --priority 10
+wait
 `;
 }
 

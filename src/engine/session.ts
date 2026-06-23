@@ -26,6 +26,10 @@ import { computeAndPersist } from "@/lib/timing";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
 import { claudeSessionExists } from "@/lib/transcript";
+import {
+  pruneSessionMarkers,
+  pruneStaleContractMarkers,
+} from "@/hooks/runtime";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -124,6 +128,10 @@ export interface ResumeOpts {
  * Returns session ID when the Claude process exits.
  */
 export async function launch(opts: LaunchOpts): Promise<string> {
+  // Sweep orphaned contract-sent markers left by sessions bertrand never
+  // finalized (background jobs, the Warp launcher) before they accumulate.
+  pruneStaleContractMarkers();
+
   // Check for duplicate session slug within the target category
   const existingCategory = getCategoryByPath(opts.categoryPath);
   if (existingCategory) {
@@ -189,6 +197,8 @@ export async function launch(opts: LaunchOpts): Promise<string> {
  * Returns session ID when the Claude process exits.
  */
 export async function resume(opts: ResumeOpts): Promise<string> {
+  pruneStaleContractMarkers();
+
   const session = getSession(opts.sessionId);
   if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
 
@@ -269,6 +279,8 @@ function finalizeSession(
   });
 
   if (liveSession?.sessionId === sessionId) liveSession = null;
+
+  pruneSessionMarkers(sessionId, safeConversationId);
 
   computeAndPersist(sessionId);
   stopServerIfIdle();
