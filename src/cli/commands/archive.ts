@@ -1,7 +1,5 @@
 import { register } from "@/cli/router";
-import { getSessionByCategorySlug } from "@/db/queries/sessions";
-import { getCategoryByPath } from "@/db/queries/categories";
-import { parseSessionName } from "@/lib/parse-session-name";
+import { resolveSessionByName } from "@/db/queries/sessions";
 import {
   archiveSession,
   unarchiveSession,
@@ -9,18 +7,12 @@ import {
 } from "@/lib/session-archive";
 
 function resolveSession(name: string) {
-  const { categoryPath, slug } = parseSessionName(name);
-  const category = getCategoryByPath(categoryPath);
-  if (!category) {
-    console.error(`Category not found: ${categoryPath}`);
-    process.exit(1);
-  }
-  const session = getSessionByCategorySlug(category.id, slug);
-  if (!session) {
+  const resolved = resolveSessionByName(name);
+  if (!resolved) {
     console.error(`Session not found: ${name}`);
     process.exit(1);
   }
-  return { session, categoryPath };
+  return { session: resolved.session, categoryPath: resolved.categoryPath };
 }
 
 register("archive", async (args) => {

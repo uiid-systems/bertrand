@@ -20,7 +20,10 @@ import {
   listProjects,
 } from "@/lib/projects/registry";
 import { createProject } from "@/lib/projects/create";
-import { _resetActiveProjectCache } from "@/lib/projects/resolve";
+import {
+  _resetActiveProjectCache,
+  resolveActiveProject,
+} from "@/lib/projects/resolve";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
 // sibling. After `bun run build`, both bundle into dist/ as .js files —
@@ -61,9 +64,16 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
     }
   }
 
+  // Pin the active project for the screen subprocess. resolveActiveProject()
+  // is memoized in this parent to whatever was active when the session was
+  // launched, so it survives `project switch` (or a concurrent session in
+  // another project) mutating the global `activeProjectSlug` in projects.json.
+  // Without this, the spawned screen re-resolves the project from that mutable
+  // global and the Exit/Resume screens' getSession() lookups hit the wrong
+  // per-project DB — surfacing "Session not found" instead of the exit menu.
   const child = spawn("bun", ["run", SCREEN_ENTRY, screen, tmpFile, ...args], {
     stdio: "inherit",
-    env: process.env,
+    env: { ...process.env, BERTRAND_PROJECT: resolveActiveProject().slug },
   });
 
   const noopSignal = (): void => {};

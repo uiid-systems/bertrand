@@ -2,9 +2,72 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
+import { getCategoryByPath } from "@/db/queries/categories";
+import { parseSessionName } from "@/lib/parse-session-name";
 import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
 
 export type { SessionStatus };
+
+export interface ResolvedSession {
+  session: SessionRow;
+  /**
+   * Category path as actually matched — the flat root for current-model rows,
+   * or the full nested path for legacy rows. Callers use it (joined with the
+   * matched slug) to render the canonical full name.
+   */
+  categoryPath: string;
+  /** Session slug as actually matched. */
+  slug: string;
+}
+
+/**
+ * Resolve a slash-delimited session name to its row, tolerating both taxonomy
+ * eras. The current model (post-#129) treats the first segment as the category
+ * and joins the rest into the slug; the pre-#129 model treated the last segment
+ * as the slug and everything before it as a (possibly nested) category path.
+ *
+ * #129 deliberately migrated no existing rows ("only newly-created sessions
+ * follow the new rule"), so legacy sessions still live under depth>0 category
+ * paths and the flat parse can never name them. We try the flat interpretation
+ * first (new rows win) and fall back to the legacy split so `bertrand log`,
+ * `stats`, and `archive` can still reach those older sessions.
+ */
+export function resolveSessionByName(
+  name: string,
+): ResolvedSession | undefined {
+  // Current flat interpretation: first segment = category, rest = slug.
+  // parseSessionName validates the segments and throws on a single-segment
+  // name, preserving the callers' existing input-validation behavior.
+  const flat = parseSessionName(name);
+  const flatCategory = getCategoryByPath(flat.categoryPath);
+  if (flatCategory) {
+    const session = getSessionByCategorySlug(flatCategory.id, flat.slug);
+    if (session) {
+      return { session, categoryPath: flat.categoryPath, slug: flat.slug };
+    }
+  }
+
+  // Legacy interpretation: last segment = slug, everything before = category.
+  // Skipped for two-segment names, where it's identical to the flat parse.
+  const segments = name
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
+  if (segments.length >= 3) {
+    const legacyCategoryPath = segments.slice(0, -1).join("/");
+    const legacySlug = segments[segments.length - 1]!;
+    const legacyCategory = getCategoryByPath(legacyCategoryPath);
+    if (legacyCategory) {
+      const session = getSessionByCategorySlug(legacyCategory.id, legacySlug);
+      if (session) {
+        return { session, categoryPath: legacyCategoryPath, slug: legacySlug };
+      }
+    }
+  }
+
+  return undefined;
+}
 
 export function createSession(opts: {
   categoryId: string;

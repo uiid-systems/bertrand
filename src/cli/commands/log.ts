@@ -1,14 +1,12 @@
 import { register } from "@/cli/router";
-import { getAllSessions, getSessionByCategorySlug } from "@/db/queries/sessions";
+import { getAllSessions, resolveSessionByName } from "@/db/queries/sessions";
 import { getEventsBySession } from "@/db/queries/events";
-import { getCategoryByPath } from "@/db/queries/categories";
 import { getSessionStats } from "@/db/queries/stats";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import type { SessionRow } from "@/types";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
 import { computeTimingsLive } from "@/lib/timing";
-import { parseSessionName } from "@/lib/parse-session-name";
 import { formatAgo, formatDuration, formatTime, truncate } from "@/lib/format";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
@@ -279,17 +277,15 @@ register("log", async (args) => {
   }
 
   // Full session log
-  const { categoryPath, slug } = parseSessionName(target);
-  const category = getCategoryByPath(categoryPath);
-  if (!category) {
-    console.error(`Category not found: ${categoryPath}`);
-    process.exit(1);
-  }
-  const session = getSessionByCategorySlug(category.id, slug);
-  if (!session) {
+  const resolved = resolveSessionByName(target);
+  if (!resolved) {
     console.error(`Session not found: ${target}`);
     process.exit(1);
   }
 
-  showSessionLog(session, `${categoryPath}/${slug}`, isJson);
+  showSessionLog(
+    resolved.session,
+    `${resolved.categoryPath}/${resolved.slug}`,
+    isJson,
+  );
 });

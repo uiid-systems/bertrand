@@ -1,11 +1,14 @@
 import { register } from "@/cli/router";
-import { getAllSessions, getSessionsByCategory, getSessionByCategorySlug } from "@/db/queries/sessions";
+import {
+  getAllSessions,
+  getSessionsByCategory,
+  resolveSessionByName,
+} from "@/db/queries/sessions";
 import { getSessionStats } from "@/db/queries/stats";
 import { getCategoryByPath } from "@/db/queries/categories";
 import { getEventsBySession } from "@/db/queries/events";
 import { computeTimingsLive } from "@/lib/timing";
 import { formatDuration } from "@/lib/format";
-import { parseSessionName } from "@/lib/parse-session-name";
 
 interface SessionMetrics {
   name: string;
@@ -200,18 +203,16 @@ register("stats", async (args) => {
   }
 
   // Per-session stats
-  const { categoryPath, slug } = parseSessionName(target);
-  const category = getCategoryByPath(categoryPath);
-  if (!category) {
-    console.error(`Category not found: ${categoryPath}`);
-    process.exit(1);
-  }
-  const session = getSessionByCategorySlug(category.id, slug);
-  if (!session) {
+  const resolved = resolveSessionByName(target);
+  if (!resolved) {
     console.error(`Session not found: ${target}`);
     process.exit(1);
   }
 
-  const m = getMetrics(session.id, `${categoryPath}/${slug}`, session.status);
+  const m = getMetrics(
+    resolved.session.id,
+    `${resolved.categoryPath}/${resolved.slug}`,
+    resolved.session.status,
+  );
   renderSession(m, isJson);
 });
