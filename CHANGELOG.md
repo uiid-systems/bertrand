@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.23.0](https://github.com/uiid-systems/bertrand/compare/v0.22.2...v0.23.0) (2026-06-24)
+
+
+### Features
+
+* **hooks:** enforce AskUserQuestion loop and re-deliver contract through hooks ([#139](https://github.com/uiid-systems/bertrand/issues/139)) ([8cab37d](https://github.com/uiid-systems/bertrand/commit/8cab37da3b447f839b613e226532a00126c4dcfe))
+* worktree visibility — session tracking + dashboard panel ([#142](https://github.com/uiid-systems/bertrand/issues/142)) ([43c04e6](https://github.com/uiid-systems/bertrand/commit/43c04e6108c61f4a95349708a0f472962c8c4a1c))
+
+
+### Bug Fixes
+
+* **cli:** resolve legacy sessions in log + pin project for exit screen ([#143](https://github.com/uiid-systems/bertrand/issues/143)) ([0935515](https://github.com/uiid-systems/bertrand/commit/09355153bf5fef47ff9135067a55a82bd594a7c8))
+
 ## [0.22.2](https://github.com/uiid-systems/bertrand/compare/v0.22.1...v0.22.2) (2026-06-16)
 
 
