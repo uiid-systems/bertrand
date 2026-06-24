@@ -242,3 +242,31 @@ export function emitAssistantRecap(args: EventTarget & { recap: string }) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Worktree — hook-emitted (EnterWorktree / ExitWorktree PostToolUse)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function emitWorktreeEntered(
+  args: EventTarget & { path: string; branch?: string },
+) {
+  return insertEvent({
+    sessionId: args.sessionId,
+    conversationId: args.conversationId,
+    event: "worktree.entered",
+    summary: args.branch ? `entered worktree ${args.branch}` : "entered worktree",
+    meta: { path: args.path, branch: args.branch, claude_id: args.conversationId },
+  });
+}
+
+export function emitWorktreeExited(
+  args: EventTarget & { path?: string; branch?: string },
+) {
+  return insertEvent({
+    sessionId: args.sessionId,
+    conversationId: args.conversationId,
+    event: "worktree.exited",
+    summary: args.branch ? `exited worktree ${args.branch}` : "exited worktree",
+    meta: { path: args.path, branch: args.branch, claude_id: args.conversationId },
+  });
+}
+

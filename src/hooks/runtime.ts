@@ -6,7 +6,7 @@ import { paths } from "@/lib/paths";
  * Runtime-marker housekeeping.
  *
  * Hook scripts drop short-lived marker files in `paths.runtime`: per-session
- * state (`done-$sid`, `auq-nudge-$sid`, `working-$sid`) and per-conversation
+ * state (`done-$sid`, `auq-nudge-$sid`, `working-$sid`, `worktree-$sid`) and per-conversation
  * state (`contract-sent-$cid`). The per-session markers are cleared along their
  * normal control flow, but `contract-sent-$cid` is intentionally write-once and
  * never removed by a hook — and sessions that bertrand didn't spawn (background
@@ -50,6 +50,7 @@ export function pruneSessionMarkers(
   rmMarker(`done-${sessionId}`);
   rmMarker(`auq-nudge-${sessionId}`);
   rmMarker(`working-${sessionId}`);
+  rmMarker(`worktree-${sessionId}`);
   if (conversationId) rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
 }
 

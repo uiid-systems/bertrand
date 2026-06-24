@@ -12,6 +12,8 @@ const EVENT_TYPES = [
   "session.recap",
   "assistant.message",
   "assistant.recap",
+  "worktree.entered",
+  "worktree.exited",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -43,6 +45,8 @@ const catalog = {
   "session.recap": { label: "session recap", category: "lifecycle", color: 33, detailColor: 245, skip: false },
   "assistant.message": { label: "claude", category: "interaction", color: 39, detailColor: 245, skip: false },
   "assistant.recap": { label: "recap", category: "interaction", color: 39, detailColor: 245, skip: false },
+  "worktree.entered": { label: "worktree entered", category: "lifecycle", color: 78, detailColor: 245, skip: false },
+  "worktree.exited": { label: "worktree exited", category: "lifecycle", color: 245, detailColor: 245, skip: false },
 } satisfies Record<EventType, EventInfo>;
 
 const DEFAULT_INFO: EventInfo = {
@@ -113,6 +117,9 @@ function extractSummary(row: EventRow): string {
       return (meta.prompt as string) ?? "";
     case "session.recap":
       return (meta.recap as string) ?? "";
+    case "worktree.entered":
+    case "worktree.exited":
+      return (meta.branch as string) ?? (meta.path as string) ?? "";
     default:
       return "";
   }
