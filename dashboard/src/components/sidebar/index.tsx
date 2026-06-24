@@ -4,12 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   Button,
+  Collapsible,
   Group,
   Input,
   Kbd,
   List,
-  type ListItemGroupProps,
-  type ListItemProps,
+  ListItem,
   MenuItem,
   MenuPopup,
   MenuPortal,
@@ -28,6 +28,7 @@ import {
 } from "@uiid/design-system";
 import {
   TagsIcon,
+  ChevronRightIcon,
   ChevronsDownUp,
   ChevronsUpDown,
   ClockIcon,
@@ -109,31 +110,16 @@ function recentBucketOf(startedAt: string, now: Date): RecentBucket {
   return "earlier";
 }
 
-function buildListItem(s: SessionWithCategory): ListItemProps {
-  const color = statusColor(s.session.status) as StatusProps["color"];
-  const isArchived = s.session.status === "archived";
-  return {
-    value: s.session.id,
-    label: <SessionLabel session={s} />,
-    content: (
-      <Group gap={2} ay="center" mb={2}>
-        {/** @todo add {s.session.status} as tooltip */}
-        <Status color={color} />
-        <SessionContent session={s} />
-      </Group>
-    ),
-    action: (
-      <SessionRowActions session={s.session} categoryPath={s.categoryPath} />
-    ),
-    "data-archived": isArchived ? "" : undefined,
-    style: isArchived ? { opacity: 0.4 } : undefined,
-  } as ListItemProps;
-}
+type SessionGroup = {
+  key: string;
+  category: string;
+  sessions: SessionWithCategory[];
+};
 
 function groupSessions(
   sessions: SessionWithCategory[],
   axis: GroupBy,
-): ListItemGroupProps[] {
+): SessionGroup[] {
   if (axis === "status") {
     const buckets = new Map<SessionRow["status"], SessionWithCategory[]>();
     for (const s of sessions) {
@@ -143,10 +129,10 @@ function groupSessions(
       else buckets.set(key, [s]);
     }
     return STATUS_ORDER.filter((status) => buckets.has(status)).map(
-      (status): ListItemGroupProps => ({
+      (status): SessionGroup => ({
+        key: status,
         category: STATUS_LABEL[status],
-        collapsible: true,
-        items: buckets.get(status)!.map(buildListItem),
+        sessions: buckets.get(status)!,
       }),
     );
   }
@@ -161,10 +147,10 @@ function groupSessions(
       else buckets.set(key, [s]);
     }
     return RECENT_ORDER.filter((bucket) => buckets.has(bucket)).map(
-      (bucket): ListItemGroupProps => ({
+      (bucket): SessionGroup => ({
+        key: bucket,
         category: RECENT_LABEL[bucket],
-        collapsible: true,
-        items: buckets.get(bucket)!.map(buildListItem),
+        sessions: buckets.get(bucket)!,
       }),
     );
   }
@@ -179,15 +165,13 @@ function groupSessions(
 
   return Array.from(
     groups,
-    ([category, items]): ListItemGroupProps => ({
+    ([category, sessions]): SessionGroup => ({
+      key: category,
       category,
-      collapsible: true,
-      items: items.map(buildListItem),
+      sessions,
     }),
   );
 }
-
-const groupKeyOf = (g: ListItemGroupProps) => g.id ?? g.category ?? "";
 
 export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
@@ -198,7 +182,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
   const { data: sessions = [] } = useQuery(sessionsQuery({ includeArchived }));
 
-  const items = useMemo(() => {
+  const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? sessions.filter(
@@ -211,7 +195,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     return groupSessions(filtered, groupBy);
   }, [sessions, query, groupBy]);
 
-  const groupKeys = items.map(groupKeyOf);
+  const groupKeys = groups.map((g) => g.key);
   const allOpen =
     groupKeys.length > 0 && groupKeys.every((key) => openMap[key] !== false);
 
@@ -223,16 +207,6 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
       return next;
     });
   };
-
-  const decoratedItems = items.map((g) => {
-    const key = groupKeyOf(g);
-    return {
-      ...g,
-      open: openMap[key] ?? true,
-      onOpenChange: (open: boolean) =>
-        setOpenMap((m) => ({ ...m, [key]: open })),
-    };
-  });
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -294,7 +268,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
               pressed: <EyeIcon />,
             }}
           />
-          {items.length > 0 && (
+          {groups.length > 0 && (
             <ToggleButton
               size="small"
               shape="square"
@@ -310,17 +284,103 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
           )}
         </Group>
       </Group>
-      {items.length === 0 ? (
+      {groups.length === 0 ? (
         <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
           No sessions match "{query}".
         </Text>
       ) : (
-        <List items={decoratedItems} line size="small" />
+        <Stack ax="stretch" gap={1} fullwidth>
+          {groups.map((group) => (
+            <SessionGroupSection
+              key={group.key}
+              group={group}
+              open={openMap[group.key] ?? true}
+              onOpenChange={(open) =>
+                setOpenMap((m) => ({ ...m, [group.key]: open }))
+              }
+            />
+          ))}
+        </Stack>
       )}
     </SidebarWrapper>
   );
 };
 Sidebar.displayName = "Sidebar";
+
+type SessionGroupSectionProps = {
+  group: SessionGroup;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+const SessionGroupSection = ({
+  group,
+  open,
+  onOpenChange,
+}: SessionGroupSectionProps) => (
+  <Collapsible
+    RootProps={{ open, onOpenChange }}
+    trigger={
+      <Group
+        render={<button type="button" />}
+        ay="center"
+        gap={2}
+        py={1}
+        fullwidth
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <ChevronRightIcon
+          size={12}
+          style={{
+            transition: "transform 150ms",
+            transform: open ? "rotate(90deg)" : undefined,
+          }}
+        />
+        <Text weight="bold" size={0}>
+          {group.category}
+        </Text>
+        <Text size={-1} shade="muted">
+          {group.sessions.length}
+        </Text>
+      </Group>
+    }
+  >
+    <List marker="none" ax="stretch" fullwidth>
+      {group.sessions.map((s) => (
+        <SessionListItem key={s.session.id} session={s} />
+      ))}
+    </List>
+  </Collapsible>
+);
+SessionGroupSection.displayName = "SessionGroupSection";
+
+const SessionListItem = ({ session: s }: { session: SessionWithCategory }) => {
+  const color = statusColor(s.session.status) as StatusProps["color"];
+  const isArchived = s.session.status === "archived";
+  return (
+    <ListItem
+      ay="center"
+      data-archived={isArchived ? "" : undefined}
+      style={isArchived ? { opacity: 0.4 } : undefined}
+    >
+      <Stack gap={1}>
+        <SessionLabel session={s} />
+        <Group ay="center" gap={2}>
+          {/** @todo add {s.session.status} as tooltip */}
+          <Status color={color} />
+          <SessionContent session={s} />
+        </Group>
+      </Stack>
+      <SessionRowActions session={s.session} categoryPath={s.categoryPath} />
+    </ListItem>
+  );
+};
+SessionListItem.displayName = "SessionListItem";
 
 const SessionLabel = ({ session: s }: { session: SessionWithCategory }) => (
   <Link to="/$" params={{ _splat: `${s.categoryPath}/${s.session.slug}` }}>

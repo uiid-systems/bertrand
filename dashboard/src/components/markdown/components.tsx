@@ -23,12 +23,9 @@ import {
 } from "@uiid/design-system";
 import type {
   BundledLanguage,
-  ListItemGroupProps,
-  ListItemProps,
+  ListItemOrGroup,
 } from "@uiid/design-system";
 import type { Components } from "react-markdown";
-
-type ListItemOrGroup = ListItemProps | ListItemGroupProps;
 
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
 
@@ -88,7 +85,7 @@ function extractText(node: ReactNode): string {
 function buildListItems(children: ReactNode): ListItemOrGroup[] {
   return Children.toArray(children)
     .filter((c): c is LiElement => isValidElement(c))
-    .map((li, i): ListItemOrGroup => {
+    .map((li): ListItemOrGroup => {
       const liChildren = Children.toArray(li.props.children);
       const first = liChildren[0];
 
@@ -100,7 +97,6 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
         const checked = !!first.props.checked;
         const rest = liChildren.slice(1);
         return {
-          value: `item-${i}`,
           label: (
             <Group ay="center" gap={2}>
               <Checkbox checked={checked} disabled />
@@ -110,10 +106,10 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
         };
       }
 
-      // Nested ul/ol: convert into a ListItemGroup whose items are the
-      // nested List's own items. ListItemGroupProps.category is typed
-      // `string`, so we extract the parent's text — rich formatting on a
-      // parent that has children is rare in markdown.
+      // Nested ul/ol: convert into a ListGroup whose items are the nested
+      // List's own items. ListGroupProps.category is typed `string`, so we
+      // extract the parent's text — rich formatting on a parent that has
+      // children is rare in markdown.
       const nestedIndex = liChildren.findIndex(isNestedList);
       if (nestedIndex >= 0) {
         const nested = liChildren[nestedIndex] as ReactElement<{
@@ -124,14 +120,12 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
           ...liChildren.slice(nestedIndex + 1),
         ];
         return {
-          id: `group-${i}`,
           category: extractText(beforeAndAfter).trim(),
           items: nested.props.items ?? [],
         };
       }
 
       return {
-        value: `item-${i}`,
         label: <Text size={1}>{liChildren}</Text>,
       };
     });
@@ -187,8 +181,7 @@ export const defaultComponents: Components = {
   ),
   ul: ({ children }) => (
     <List
-      type={isTaskList(children) ? "none" : "unordered"}
-      size="large"
+      marker={isTaskList(children) ? "none" : "disc"}
       items={buildListItems(children)}
       style={{ display: "block" }}
       my={2}
@@ -196,8 +189,7 @@ export const defaultComponents: Components = {
   ),
   ol: ({ children }) => (
     <List
-      type="ordered"
-      size="large"
+      marker="decimal"
       items={buildListItems(children)}
       style={{ display: "block" }}
       my={2}
