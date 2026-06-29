@@ -2,7 +2,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { events } from "@/db/schema";
 import { normalizeEventMeta } from "@/lib/markdown";
-import type { EventRow, SessionRecap } from "@/types";
+import type { EventRow } from "@/types";
 
 export function insertEvent(opts: {
   sessionId: string;
@@ -90,27 +90,4 @@ export function getLatestEventOfType(
     .orderBy(desc(events.createdAt))
     .limit(1)
     .get() as EventRow | undefined;
-}
-
-export function getLatestRecaps(): Record<string, SessionRecap> {
-  const rows = getDb()
-    .select({
-      sessionId: events.sessionId,
-      meta: events.meta,
-      createdAt: events.createdAt,
-    })
-    .from(events)
-    .where(eq(events.event, "session.recap"))
-    .orderBy(desc(events.createdAt))
-    .all();
-
-  const result: Record<string, SessionRecap> = {};
-  for (const row of rows) {
-    if (result[row.sessionId]) continue;
-    const meta = row.meta as Record<string, unknown> | null;
-    const recap = typeof meta?.recap === "string" ? meta.recap : null;
-    if (!recap) continue;
-    result[row.sessionId] = { recap, createdAt: row.createdAt };
-  }
-  return result;
 }

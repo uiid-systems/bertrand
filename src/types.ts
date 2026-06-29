@@ -14,11 +14,6 @@ export type SessionWithCategory = {
   categoryPath: string;
 };
 
-export type SessionRecap = {
-  recap: string;
-  createdAt: string;
-};
-
 export type EngagementStats = {
   toolUsage: Record<string, number>;
   discardRate: { discarded: number; total: number };

@@ -9,9 +9,7 @@ const EVENT_TYPES = [
   "user.prompt",
   "tool.used",
   "tool.work",
-  "session.recap",
   "assistant.message",
-  "assistant.recap",
   "worktree.entered",
   "worktree.exited",
 ] as const;
@@ -42,9 +40,7 @@ const catalog = {
   "user.prompt": { label: "prompt", category: "interaction", color: 36, detailColor: 245, skip: false },
   "tool.used": { label: "tool", category: "work", color: 214, detailColor: 245, skip: false },
   "tool.work": { label: "tool work", category: "work", color: 214, detailColor: 245, skip: false },
-  "session.recap": { label: "session recap", category: "lifecycle", color: 33, detailColor: 245, skip: false },
   "assistant.message": { label: "claude", category: "interaction", color: 39, detailColor: 245, skip: false },
-  "assistant.recap": { label: "recap", category: "interaction", color: 39, detailColor: 245, skip: false },
   "worktree.entered": { label: "worktree entered", category: "lifecycle", color: 78, detailColor: 245, skip: false },
   "worktree.exited": { label: "worktree exited", category: "lifecycle", color: 245, detailColor: 245, skip: false },
 } satisfies Record<EventType, EventInfo>;
@@ -115,8 +111,6 @@ function extractSummary(row: EventRow): string {
     }
     case "user.prompt":
       return (meta.prompt as string) ?? "";
-    case "session.recap":
-      return (meta.recap as string) ?? "";
     case "worktree.entered":
     case "worktree.exited":
       return (meta.branch as string) ?? (meta.path as string) ?? "";

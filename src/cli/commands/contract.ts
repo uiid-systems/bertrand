@@ -52,7 +52,7 @@ register("contract", async (args) => {
 
   if (short) {
     process.stdout.write(
-      `Reminder — you are in bertrand session ${sessionName}: end this turn with an AskUserQuestion call (multiSelect:true on every question, plus a "Done for now" option) preceded by a <recap> block.`,
+      `Reminder — you are in bertrand session ${sessionName}: end this turn with an AskUserQuestion call (multiSelect:true on every question, plus a "Done for now" option).`,
     );
     return;
   }

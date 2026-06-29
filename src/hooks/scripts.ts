@@ -65,7 +65,7 @@ rm -f "${runtimeDir}/working-$sid"
 
 bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
 
-# Capture the latest assistant turn's text + recap tag. Dedup inside the
+# Capture the latest assistant turn's text. Dedup inside the
 # command makes it idempotent vs the matching Stop-time capture so the same
 # turn never lands twice.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
@@ -126,18 +126,6 @@ if printf '%s' "$done_check" | grep -q "Done for now"; then
   # Tell on-done.sh this Stop is a legitimate exit, not a dropped AUQ call —
   # so it pauses normally instead of forcing the loop to continue.
   touch "${runtimeDir}/done-$sid"
-
-  # Promote the picked Done-for-now option's description into a session.recap
-  # event so the timeline has a dedicated end-of-session summary row. Bertrand
-  # forces session exit before Claude can write a closing message, so this
-  # reuses the agent-authored recap that already lives on the option.
-  recap="$(printf '%s' "$meta" | jq -r '
-    [.questions[]?.options[]? | select(.label == "Done for now") | .description] | first // empty
-  ' 2>/dev/null)"
-  if [ -n "$recap" ]; then
-    bq update --session-id "$sid" --event session.recap \
-      --meta "$(jq -n --arg recap "$recap" --arg cid "$cid" '{recap:$recap, claude_id:$cid}')"
-  fi
 
   printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
 fi
@@ -337,7 +325,7 @@ if [ ! -f "$done_marker" ]; then
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   if [ "$count" -lt 3 ]; then
     printf '%s' "$((count + 1))" > "$nudge_marker"
-    reason='This is a bertrand session: every turn must end with an AskUserQuestion call (multiSelect:true on every question) that includes a "Done for now" option, preceded by a <recap> block. You ended a turn without calling AskUserQuestion. Call it now to continue the loop, or — if the work is finished — present it so the user can pick "Done for now" to end the session.'
+    reason='This is a bertrand session: every turn must end with an AskUserQuestion call (multiSelect:true on every question) that includes a "Done for now" option. You ended a turn without calling AskUserQuestion. Call it now to continue the loop, or — if the work is finished — present it so the user can pick "Done for now" to end the session.'
     wait
     jq -n --arg r "$reason" '{decision:"block", reason:$r}'
     exit 0

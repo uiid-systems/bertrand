@@ -85,13 +85,6 @@ describe("emit helpers — interaction", () => {
     expect(row.summary).toBe("yes, later");
   });
 
-  test("emitSessionRecap truncates summary at 200 chars", () => {
-    const long = "x".repeat(500);
-    emit.emitSessionRecap({ sessionId, conversationId, recap: long });
-    const row = eventsOfType("session.recap").at(-1)!;
-    expect(row.summary?.length).toBe(200);
-    expect((row.meta as Record<string, unknown>).recap).toBe(long);
-  });
 });
 
 
@@ -149,14 +142,6 @@ describe("emit helpers — work", () => {
 });
 
 describe("emit helpers — assistant", () => {
-  test("emitAssistantRecap truncates summary at 80 chars", () => {
-    const long = "x".repeat(200);
-    emit.emitAssistantRecap({ sessionId, conversationId, recap: long });
-    const row = eventsOfType("assistant.recap").at(-1)!;
-    expect(row.summary?.length).toBe(80);
-    expect(row.summary?.endsWith("...")).toBe(true);
-  });
-
   test("emitAssistantMessage carries text + thinking metrics", () => {
     emit.emitAssistantMessage({
       sessionId,

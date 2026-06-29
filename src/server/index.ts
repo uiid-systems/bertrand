@@ -2,7 +2,7 @@ import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
 import { getAllSessions, getSession } from "@/db/queries/sessions"
-import { getEventsBySession, getEventsByType, getLatestRecaps } from "@/db/queries/events"
+import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
@@ -28,7 +28,6 @@ import type {
   EventRow,
   SessionStatsRow,
   EngagementStats,
-  SessionRecap,
 } from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
@@ -91,8 +90,6 @@ const getEngagement = ({
   sessionId?: string
 }): EngagementStats => computeEngagementStats(sessionId!)
 
-const listRecaps = (): Record<string, SessionRecap> => getLatestRecaps()
-
 const listAllProjects = (): unknown => {
   const active = resolveActiveProject()
   return listProjects().map((p) => ({
@@ -125,7 +122,6 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
   [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
-  [/^\/api\/recaps$/, listRecaps],
   [/^\/api\/projects$/, listAllProjects],
   [/^\/api\/active-project$/, getActiveProjectMeta],
 ]

@@ -21,11 +21,6 @@ describe("normalizeMarkdown", () => {
 });
 
 describe("normalizeEventMeta", () => {
-  test("normalizes recap on session.recap", () => {
-    const out = normalizeEventMeta("session.recap", { recap: "a\r\nb" });
-    expect(out?.recap).toBe("a\nb");
-  });
-
   test("normalizes text on assistant.message", () => {
     const out = normalizeEventMeta("assistant.message", {
       text: "line1\r\nline2",
@@ -50,11 +45,11 @@ describe("normalizeEventMeta", () => {
   });
 
   test("handles missing meta", () => {
-    expect(normalizeEventMeta("session.recap", undefined)).toBeUndefined();
+    expect(normalizeEventMeta("assistant.message", undefined)).toBeUndefined();
   });
 
   test("ignores non-string fields", () => {
-    const out = normalizeEventMeta("session.recap", { recap: 42 });
-    expect(out?.recap).toBe(42);
+    const out = normalizeEventMeta("assistant.message", { text: 42 });
+    expect(out?.text).toBe(42);
   });
 });
