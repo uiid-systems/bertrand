@@ -113,22 +113,22 @@ export function InteractionContent({ event }: InteractionContentProps) {
           )}
           {options.length > 0 && (
             <List
-              type="ordered"
-              items={options.map((o) => ({
-                value: o.label,
-                label: (
-                  <Text
-                    weight="bold"
-                    color={
-                      selectedLabels.includes(o.label) ? "green" : undefined
-                    }
-                  >
-                    {o.label}
-                  </Text>
-                ),
-                description: o.description,
-                disabled: !selectedLabels.includes(o.label),
-              }))}
+              marker="decimal"
+              items={options.map((o) => {
+                const selected = selectedLabels.includes(o.label);
+                return {
+                  label: (
+                    <Text
+                      weight="bold"
+                      color={selected ? "green" : undefined}
+                      shade={selected ? undefined : "muted"}
+                    >
+                      {o.label}
+                    </Text>
+                  ),
+                  description: o.description,
+                };
+              })}
             />
           )}
           {additionalNote && (
