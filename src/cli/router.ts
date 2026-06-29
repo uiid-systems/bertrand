@@ -25,6 +25,7 @@ const HOOK_COMMANDS = new Set([
   "contract",
   "notify",
   "badge",
+  "ensure-server",
 ]);
 
 export function register(name: string, handler: CommandHandler) {

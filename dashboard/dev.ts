@@ -54,12 +54,39 @@ const vite = spawn(["bunx", "vite"], {
   stderr: "inherit",
 })
 
-process.on("SIGINT", () => {
+// Hand the dashboard back to bertrand on the way out. Without this, stopping
+// the dev server (Ctrl+C, or either child dying) leaves a live bertrand
+// session with no server on :5200, since auto-start deferred to us on launch
+// and never wrote a PID file. `ensure-server` re-owns the port — but only if a
+// session still needs it, so quitting `bun dev` with nothing running stays a
+// clean no-op.
+let shuttingDown = false
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+
   api.kill()
   vite.kill()
+
+  // Wait for the API child to release :5200 before handing off, so the
+  // recovery probe sees a free port and actually spawns a replacement.
+  await api.exited.catch(() => {})
+
+  try {
+    const heal = spawn(["bun", "run", "../src/index.ts", "ensure-server"], {
+      cwd: import.meta.dir,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    await heal.exited
+  } catch {
+    // best-effort handoff — never block exit on it
+  }
+
   process.exit(0)
-})
+}
+
+process.on("SIGINT", () => void shutdown())
 
 await Promise.race([api.exited, vite.exited])
-api.kill()
-vite.kill()
+await shutdown()

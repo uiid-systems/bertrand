@@ -4,6 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   ensureServerStarted,
+  ensureServerForActiveSessions,
   stopServerIfIdle,
   _setTestDeps,
   _resetTestDeps,
@@ -124,6 +125,42 @@ describe("ensureServerStarted", () => {
 
     await ensureServerStarted();
     expect(existsSync(pidFile)).toBe(false);
+  });
+});
+
+describe("ensureServerForActiveSessions", () => {
+  beforeEach(() => _resetTestDeps());
+
+  test("no-op when no session is active — never resolves bin or spawns", async () => {
+    const pidFile = pidPath("recover-idle");
+    _setTestDeps({
+      pidFile,
+      port: TEST_PORT,
+      resolveBin: () => {
+        throw new Error("resolveBin should not be called when idle");
+      },
+      getActiveCount: () => 0,
+    });
+
+    await ensureServerForActiveSessions();
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  test("spawns a server when a session is active and nothing is listening", async () => {
+    const pidFile = pidPath("recover-active");
+    _setTestDeps({
+      pidFile,
+      port: TEST_PORT, // nothing listening here in CI
+      resolveBin: makeFakeBin,
+      getActiveCount: () => 1,
+    });
+
+    await ensureServerForActiveSessions();
+
+    const newPid = Number(readFileSync(pidFile, "utf-8").trim());
+    cleanupPids.push(newPid);
+    expect(newPid).toBeGreaterThan(0);
+    expect(isAlive(newPid)).toBe(true);
   });
 });
 
