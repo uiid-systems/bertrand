@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd dashboard && bun install --frozen-lockfile",
+  "installCommand": "bun install --frozen-lockfile && cd dashboard && bun install --frozen-lockfile",
   "buildCommand": "cd dashboard && bun run build",
   "outputDirectory": "dashboard/dist",
   "headers": [
