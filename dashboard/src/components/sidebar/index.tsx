@@ -15,7 +15,6 @@ import {
   MenuPositioner,
   MenuRoot,
   MenuTrigger,
-  Popover,
   Stack,
   Status,
   type StatusProps,
@@ -33,17 +32,15 @@ import {
   EyeOffIcon,
   FilesIcon,
   GroupIcon,
-  MessageSquareTextIcon,
   MoreHorizontalIcon,
   SearchIcon,
 } from "@uiid/icons";
 
-import { allStatsQuery, recapsQuery, sessionsQuery } from "../../api/queries";
+import { allStatsQuery, sessionsQuery } from "../../api/queries";
 import { useArchiveAction } from "../../api/use-archive-action";
 import type { SessionRow, SessionWithCategory } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
 
-import { Markdown } from "../markdown";
 import { ProjectSwitcher } from "./project-switcher";
 import { SidebarWrapper, type SidebarWrapperProps } from "./sidebar-wrapper";
 
@@ -331,9 +328,7 @@ const SessionContent = ({ session: s }: { session: SessionWithCategory }) => {
     (x) => x.session.status === "active" || x.session.status === "waiting",
   );
   const { data: allStats } = useQuery(allStatsQuery(hasLiveSession));
-  const { data: recaps } = useQuery(recapsQuery);
   const stats = allStats?.[s.session.id];
-  const recap = recaps?.[s.session.id];
   const linesAdded = stats?.linesAdded ?? 0;
   const linesRemoved = stats?.linesRemoved ?? 0;
   const filesTouched = stats?.filesTouched ?? 0;
@@ -361,22 +356,6 @@ const SessionContent = ({ session: s }: { session: SessionWithCategory }) => {
             {filesTouched}
           </Text>
         </Group>
-      )}
-      {recap && (
-        <Popover
-          TriggerProps={{ openOnHover: true }}
-          trigger={
-            <MessageSquareTextIcon size={12} aria-label="Session recap" />
-          }
-          title="Session recap"
-          description={formatRelativeTime(recap.createdAt)}
-          PositionerProps={{ sideOffset: 8, side: "right" }}
-          PopupProps={{ style: { maxWidth: 420 } }}
-        >
-          <Stack my={2}>
-            <Markdown>{recap.recap}</Markdown>
-          </Stack>
-        </Popover>
       )}
       {s.session.rating !== null && s.session.rating !== undefined && (
         <Text aria-label={`Rated ${s.session.rating} of 5 stars`}>

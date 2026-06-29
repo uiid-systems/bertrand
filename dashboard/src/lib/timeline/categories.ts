@@ -1,6 +1,5 @@
 import type { Icon } from "@uiid/icons"
 import {
-  BrainIcon,
   CircleCheckIcon,
   CircleDotIcon,
   CircleHelpIcon,
@@ -9,7 +8,6 @@ import {
   MessagesSquareIcon,
   PencilIcon,
   PlayIcon,
-  ScrollTextIcon,
   SparklesIcon,
   TerminalIcon,
   WrenchIcon,
@@ -45,12 +43,10 @@ const EVENT_CATALOG: Record<string, EventInfo> = {
   "session.waiting": { category: "interaction", color: "green", label: "waiting", icon: CircleHelpIcon },
   "session.answered": { category: "interaction", color: "green", label: "Q&A", icon: MessagesSquareIcon },
   "user.prompt": { category: "interaction", color: "green", label: "prompt", icon: MessageSquareIcon },
-  "session.recap": { category: "lifecycle", color: "blue", label: "session recap", icon: ScrollTextIcon },
   "tool.work": { category: "work", color: "yellow", label: "tool work", icon: WrenchIcon },
   "tool.applied": { category: "work", color: "yellow", label: "applied", icon: PencilIcon },
   "tool.used": { category: "work", color: "yellow", label: "tool", icon: TerminalIcon },
   "assistant.message": { category: "assistant", color: "indigo", label: "assistant", icon: SparklesIcon },
-  "assistant.recap": { category: "assistant", color: "indigo", label: "thinking recap", icon: BrainIcon },
 }
 
 const DEFAULT_INFO: EventInfo = {

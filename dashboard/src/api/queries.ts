@@ -6,7 +6,6 @@ import type {
   EventRow,
   SessionStatsRow,
   EngagementStats,
-  SessionRecap,
   ArchiveErrorReason,
 } from "./types"
 
@@ -99,11 +98,6 @@ export const engagementQuery = (sessionId: string, isLive = false) =>
     refetchInterval: isLive ? 2000 : false,
     placeholderData: keepPreviousData,
   })
-
-export const recapsQuery = queryOptions({
-  queryKey: ["recaps"],
-  queryFn: () => fetchJson<Record<string, SessionRecap>>("/api/recaps"),
-})
 
 export type ProjectSummary = {
   slug: string

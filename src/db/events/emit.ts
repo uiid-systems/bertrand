@@ -104,17 +104,6 @@ export function emitSessionAnswered(args: EventTarget & {
   });
 }
 
-/** Promoted from the "Done for now" option description on the last AskUQ. */
-export function emitSessionRecap(args: EventTarget & { recap: string }) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "session.recap",
-    summary: args.recap.slice(0, 200),
-    meta: { recap: args.recap, claude_id: args.conversationId },
-  });
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Work / permissions — hook-emitted
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,16 +218,6 @@ export function emitAssistantMessage(args: EventTarget & {
       thinkingBytes: args.thinkingBytes,
       claude_id: args.conversationId,
     },
-  });
-}
-
-export function emitAssistantRecap(args: EventTarget & { recap: string }) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "assistant.recap",
-    summary: args.recap.length > 80 ? `${args.recap.slice(0, 77)}...` : args.recap,
-    meta: { recap: args.recap, claude_id: args.conversationId },
   });
 }
 

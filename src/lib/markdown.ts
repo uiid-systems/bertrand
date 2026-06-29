@@ -24,9 +24,6 @@ export function normalizeEventMeta(
   if (!meta) return meta;
 
   switch (eventName) {
-    case "session.recap":
-      return mapStringField(meta, "recap", normalizeMarkdown);
-
     case "assistant.message":
       return mapStringField(meta, "text", normalizeMarkdown);
 

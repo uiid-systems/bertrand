@@ -5,7 +5,6 @@ export type {
   EventRow,
   SessionStatsRow,
   EngagementStats,
-  SessionRecap,
   ArchiveReason,
   UnarchiveReason,
   ArchiveErrorReason,

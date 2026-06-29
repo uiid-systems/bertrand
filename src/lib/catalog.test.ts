@@ -8,7 +8,6 @@ const ALL_EVENT_TYPES: EventType[] = [
   "session.waiting",
   "session.answered",
   "user.prompt",
-  "session.recap",
   "worktree.entered",
   "worktree.exited",
 ];
@@ -85,11 +84,6 @@ describe("enrich", () => {
       row("session.answered", { answers: { Q1: "yes", Q2: "no" } }),
     );
     expect(enriched.summary).toBe("yes, no");
-  });
-
-  test("extracts recap text from session.recap", () => {
-    const enriched = enrich(row("session.recap", { recap: "Shipped the timeline content" }));
-    expect(enriched.summary).toBe("Shipped the timeline content");
   });
 
   test("extracts branch from worktree.entered", () => {

@@ -138,7 +138,7 @@ Key tables ([`src/db/schema.ts`](src/db/schema.ts)):
 - **`groups`** — nestable session containers.
 - **`sessions`** — named workspaces, status-tracked.
 - **`conversations`** — Claude conversations within a session (claude_id UUIDs).
-- **`events`** — every hook firing and lifecycle moment (`session.waiting`, `session.answered`, `tool.applied`, `context.snapshot`, `session.recap`, etc.). Free-form `meta` JSON column.
+- **`events`** — every hook firing and lifecycle moment (`session.waiting`, `session.answered`, `tool.applied`, `context.snapshot`, etc.). Free-form `meta` JSON column.
 - **`session_stats`** — materialized stats, refreshed at session end.
 - **`worktree_associations`** — tracked worktree branches per session.
 

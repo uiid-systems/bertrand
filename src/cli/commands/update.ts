@@ -4,7 +4,6 @@ import { getConversation } from "@/db/queries/conversations";
 import type { SessionStatus } from "@/db/queries/sessions";
 import {
   emitSessionAnswered,
-  emitSessionRecap,
   emitSessionWaiting,
   emitToolApplied,
   emitToolUsed,
@@ -79,13 +78,6 @@ export function dispatchHookEvent(
         answers: (meta.answers as Record<string, unknown>) ?? {},
         annotations: (meta.annotations as Record<string, unknown>) ?? {},
         questions: (meta.questions as Parameters<typeof emitSessionAnswered>[0]["questions"]) ?? [],
-      });
-      return true;
-    case "session.recap":
-      emitSessionRecap({
-        sessionId,
-        conversationId,
-        recap: String(meta.recap ?? ""),
       });
       return true;
     case "tool.applied":
