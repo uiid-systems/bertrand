@@ -105,6 +105,24 @@ export async function ensureServerStarted(): Promise<void> {
 }
 
 /**
+ * Recovery path: ensure a server is running *iff* a session still needs one.
+ *
+ * When the user runs the dashboard `bun dev` script, its API server holds the
+ * port and `ensureServerStarted` defers to it (no spawn, no PID file). If that
+ * dev server later goes away mid-session — Ctrl+C, crash — nothing is left to
+ * serve the dashboard even though a bertrand session is still live. Calling
+ * this hands ownership back to bertrand: it spawns a detached `bertrand serve`
+ * (with a PID file, so `stopServerIfIdle` reclaims it at session end).
+ *
+ * No-op when no session is active, so it never resurrects a server nothing
+ * needs — "always running when needed, never running when it isn't".
+ */
+export async function ensureServerForActiveSessions(): Promise<void> {
+  if (deps.getActiveCount() === 0) return;
+  await ensureServerStarted();
+}
+
+/**
  * Stop the auto-started server if there are no active sessions left.
  * Caller must have already transitioned its own session out of active state
  * before invoking this so the count reflects post-shutdown reality.

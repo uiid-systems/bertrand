@@ -13,6 +13,7 @@ const hotPath: Record<string, () => Promise<unknown>> = {
   badge: () => import("./cli/commands/badge"),
   notify: () => import("./cli/commands/notify"),
   serve: () => import("./cli/commands/serve"),
+  "ensure-server": () => import("./cli/commands/ensure-server"),
   sync: () => import("./cli/commands/sync"),
 };
 
