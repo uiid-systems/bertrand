@@ -3,6 +3,7 @@ import { resolveActiveProject } from "@/lib/projects/resolve";
 import { migrateLegacyLayout } from "@/lib/projects/migrate-layout";
 import { DEFAULT_PROJECT_SLUG } from "@/lib/projects/registry";
 import { triggerBackgroundPull } from "@/sync/trigger";
+import { helpText } from "@/cli/help";
 
 type CommandHandler = (args: string[]) => void | Promise<void>;
 
@@ -91,6 +92,15 @@ export async function route(argv: string[]) {
   const args = argv.slice(2);
   const command = args[0];
 
+  // Top-level help. Matched in command position only so subcommand helps
+  // (`bertrand project --help`) still reach their own handlers. Side-effect
+  // free: returns before the migration check so `--help` never touches the DB.
+  // `--agent` prints the session-context variant injected at session start.
+  if (command === "--help" || command === "-h" || command === "help") {
+    console.log(helpText({ agent: args.includes("--agent") }));
+    return;
+  }
+
   // Migrate legacy single-DB layout to per-project before any command can
   // touch `getDb()`. Idempotent and fast on the no-op path.
   //
@@ -134,19 +144,5 @@ function resolveCommand(name: string): string | undefined {
 }
 
 function printUsage() {
-  console.log(`
-bertrand — multi-session workflow manager for Claude Code
-
-Usage:
-  bertrand                  Launch TUI (or resume named session)
-  bertrand init             Setup wizard
-  bertrand list             Session picker
-  bertrand log <session>    View session log
-  bertrand stats <session>  Session statistics
-  bertrand archive <name>   Archive/unarchive a session
-  bertrand project <op>     list|create|switch|current|rename|remove (see: bertrand project --help)
-  bertrand update           Hook-facing state writer (internal)
-  bertrand serve            Start dashboard HTTP server
-  bertrand sync <op>        push|pull|status|onboard (see: bertrand sync --help)
-`.trim());
+  console.log(helpText());
 }
