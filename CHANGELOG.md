@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.24.0](https://github.com/uiid-systems/bertrand/compare/v0.23.0...v0.24.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** add descriptive `--help` and inject it at session start ([#148](https://github.com/uiid-systems/bertrand/issues/148)) ([ebdbdb1](https://github.com/uiid-systems/bertrand/commit/ebdbdb1ac23a9189bb4712d4f1b6e9098fa8e42b)), closes [#138](https://github.com/uiid-systems/bertrand/issues/138)
+* **dashboard:** migrate to @uiid/design-system 0.0.27 ([#144](https://github.com/uiid-systems/bertrand/issues/144)) ([b9442bf](https://github.com/uiid-systems/bertrand/commit/b9442bf8ce382127cc207ed80ce27ea0a9be2c87))
+
+
+### Bug Fixes
+
+* **server:** re-own dashboard server when bun dev exits mid-session ([#147](https://github.com/uiid-systems/bertrand/issues/147)) ([16c136c](https://github.com/uiid-systems/bertrand/commit/16c136c6bb1aafe98e90930b6a962f6b982eb4e7))
+
+
+### Refactoring
+
+* **recap:** remove the recap summary feature ([#149](https://github.com/uiid-systems/bertrand/issues/149)) ([1f66963](https://github.com/uiid-systems/bertrand/commit/1f669632fb11c4c1a95930e5d522d3edd875e010))
+
 ## [0.23.0](https://github.com/uiid-systems/bertrand/compare/v0.22.2...v0.23.0) (2026-06-24)
 
 
