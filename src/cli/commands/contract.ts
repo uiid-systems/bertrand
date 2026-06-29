@@ -3,6 +3,7 @@ import { getSession } from "@/db/queries/sessions";
 import { getCategory } from "@/db/queries/categories";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
+import { helpText } from "@/cli/help";
 
 /**
  * Print the session contract to stdout. Hook-facing.
@@ -61,5 +62,7 @@ register("contract", async (args) => {
     categoryPath,
     session.id,
   );
-  process.stdout.write(buildContract(sessionName, siblingContext));
+  process.stdout.write(
+    buildContract(sessionName, helpText({ agent: true }), siblingContext),
+  );
 });

@@ -29,6 +29,7 @@ import type {
 } from "../api/types";
 import {
   eventColor,
+  eventIcon,
   eventTitle,
   formatTimestamp,
   statusColor,
@@ -200,10 +201,13 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
               title: eventTitle(e),
               time: formatTimestamp(e.createdAt),
               color: eventColor(e.event),
+              media: <EventMedia event={e} />,
               content: <EventContent event={e} />,
             }))}
-            ItemProps={{ style: { width: "100%" } }}
-            ContentProps={{ fullwidth: true, maxw: 860 }}
+            ItemProps={{
+              style: { width: "100%" },
+              ContentProps: { fullwidth: true, maxw: 860 },
+            }}
           />
         )}
       </Stack>
@@ -215,6 +219,17 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
   );
 }
 SessionDetail.displayName = "SessionDetail";
+
+/** Per-event icon for the timeline's media column, tinted to the rail color. */
+function EventMedia({ event }: { event: EventRow }) {
+  const Icon = eventIcon(event.event);
+  return (
+    <Text color={eventColor(event.event)} render={<span />}>
+      <Icon size={16} />
+    </Text>
+  );
+}
+EventMedia.displayName = "EventMedia";
 
 function ArchiveToggle({ session }: { session: SessionRow }) {
   const action = useArchiveAction(session);

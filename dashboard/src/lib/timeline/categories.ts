@@ -1,3 +1,20 @@
+import type { Icon } from "@uiid/icons"
+import {
+  BrainIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
+  CircleHelpIcon,
+  CircleXIcon,
+  MessageSquareIcon,
+  MessagesSquareIcon,
+  PencilIcon,
+  PlayIcon,
+  ScrollTextIcon,
+  SparklesIcon,
+  TerminalIcon,
+  WrenchIcon,
+} from "@uiid/icons"
+
 export type EventCategory =
   | "interaction"
   | "work"
@@ -18,27 +35,29 @@ type EventInfo = {
   category: EventCategory
   color: TimelineColor
   label: string
+  icon: Icon
 }
 
 const EVENT_CATALOG: Record<string, EventInfo> = {
-  "claude.started": { category: "lifecycle", color: "blue", label: "session started" },
-  "claude.ended": { category: "lifecycle", color: "blue", label: "ended" },
-  "claude.discarded": { category: "lifecycle", color: "neutral", label: "discarded" },
-  "session.waiting": { category: "interaction", color: "green", label: "waiting" },
-  "session.answered": { category: "interaction", color: "green", label: "Q&A" },
-  "user.prompt": { category: "interaction", color: "green", label: "prompt" },
-  "session.recap": { category: "lifecycle", color: "blue", label: "session recap" },
-  "tool.work": { category: "work", color: "yellow", label: "tool work" },
-  "tool.applied": { category: "work", color: "yellow", label: "applied" },
-  "tool.used": { category: "work", color: "yellow", label: "tool" },
-  "assistant.message": { category: "assistant", color: "indigo", label: "assistant" },
-  "assistant.recap": { category: "assistant", color: "indigo", label: "thinking recap" },
+  "claude.started": { category: "lifecycle", color: "blue", label: "session started", icon: PlayIcon },
+  "claude.ended": { category: "lifecycle", color: "blue", label: "ended", icon: CircleCheckIcon },
+  "claude.discarded": { category: "lifecycle", color: "neutral", label: "discarded", icon: CircleXIcon },
+  "session.waiting": { category: "interaction", color: "green", label: "waiting", icon: CircleHelpIcon },
+  "session.answered": { category: "interaction", color: "green", label: "Q&A", icon: MessagesSquareIcon },
+  "user.prompt": { category: "interaction", color: "green", label: "prompt", icon: MessageSquareIcon },
+  "session.recap": { category: "lifecycle", color: "blue", label: "session recap", icon: ScrollTextIcon },
+  "tool.work": { category: "work", color: "yellow", label: "tool work", icon: WrenchIcon },
+  "tool.applied": { category: "work", color: "yellow", label: "applied", icon: PencilIcon },
+  "tool.used": { category: "work", color: "yellow", label: "tool", icon: TerminalIcon },
+  "assistant.message": { category: "assistant", color: "indigo", label: "assistant", icon: SparklesIcon },
+  "assistant.recap": { category: "assistant", color: "indigo", label: "thinking recap", icon: BrainIcon },
 }
 
 const DEFAULT_INFO: EventInfo = {
   category: "lifecycle",
   color: "neutral",
   label: "unknown",
+  icon: CircleDotIcon,
 }
 
 function lookup(event: string): EventInfo {
@@ -55,4 +74,8 @@ export function colorOf(event: string): TimelineColor {
 
 export function labelOf(event: string): string {
   return lookup(event).label
+}
+
+export function iconOf(event: string): Icon {
+  return lookup(event).icon
 }

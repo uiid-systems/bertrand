@@ -1,5 +1,5 @@
 import type { EventRow, SessionRow } from "../api/types";
-import { colorOf, labelOf } from "./timeline/categories";
+import { colorOf, iconOf, labelOf } from "./timeline/categories";
 
 type SessionStatus = SessionRow["status"];
 
@@ -42,6 +42,8 @@ export function formatRelativeTime(iso: string): string {
 export const eventColor = colorOf;
 
 export const eventLabel = labelOf;
+
+export const eventIcon = iconOf;
 
 type AppliedEdit = { oldStr?: string; newStr?: string };
 type AppliedPermission = {
