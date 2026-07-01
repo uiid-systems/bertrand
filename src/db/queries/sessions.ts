@@ -118,6 +118,20 @@ export function getActiveSessions(): SessionWithCategory[] {
     .all();
 }
 
+/**
+ * How many sessions are currently live (running or awaiting the user) in a
+ * project's DB. Powers the dashboard's "projects with live sessions" default
+ * view, so it's a cheap COUNT rather than materializing the rows.
+ */
+export function countLiveSessions(db: Db = getDb()): number {
+  const row = db
+    .select({ n: sql<number>`count(*)` })
+    .from(sessions)
+    .where(inArray(sessions.status, ["active", "waiting"]))
+    .get();
+  return row?.n ?? 0;
+}
+
 function selectSessions(
   db: Db,
   opts?: { excludeArchived?: boolean },

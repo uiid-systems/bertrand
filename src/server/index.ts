@@ -5,6 +5,7 @@ import {
   getAllSessions,
   getAllSessionsForProject,
   getSession,
+  countLiveSessions,
 } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
@@ -142,6 +143,9 @@ const listAllProjects = (): unknown => {
     name: p.name,
     active: p.slug === active.slug,
     lastUsedAt: p.lastUsedAt,
+    // Live-session count drives the dashboard's default view (projects with
+    // current activity). Handles are cached, so this is a cheap per-poll COUNT.
+    liveCount: countLiveSessions(getDbForProject(p.slug)),
   }))
 }
 

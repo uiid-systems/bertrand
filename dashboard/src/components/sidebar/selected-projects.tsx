@@ -51,7 +51,32 @@ type SelectedProjectsValue = {
    */
   queryProjects: string[] | undefined;
   setSelected: (next: string[]) => void;
+  /**
+   * Forget the persisted choice and snap back to the live-projects default
+   * (recomputed now and on future loads until the user picks again).
+   */
+  resetToLive: () => void;
+  /** True when the current view already matches the live-projects default. */
+  isAtLiveDefault: boolean;
 };
+
+/**
+ * The default view: every project with a live (active/waiting) session, since
+ * multiple projects are commonly active at once. Falls back to the registry's
+ * active project when nothing is live, so the dashboard is never empty.
+ */
+function liveDefaultOf(projects: ProjectSummary[]): string[] {
+  const live = projects.filter((p) => p.liveCount > 0).map((p) => p.slug);
+  if (live.length > 0) return live;
+  const active = projects.find((p) => p.active);
+  return active ? [active.slug] : [];
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedB = [...b].sort();
+  return [...a].sort().every((slug, i) => slug === sortedB[i]);
+}
 
 const SelectedProjectsContext = createContext<SelectedProjectsValue | null>(
   null,
@@ -70,22 +95,32 @@ export function SelectedProjectsProvider({
   children: ReactNode;
 }) {
   const { data: projects = [] } = useQuery(projectsQuery);
-  const active = projects.find((p) => p.active);
   const [selected, setSelectedState] = useState<string[] | null>(() =>
     readStorage(),
   );
 
-  // Seed the default (active project) once projects load, if nothing was
+  // Seed the live-projects default once projects load, if nothing was
   // persisted. View-only default — never written back to the registry.
   useEffect(() => {
-    if (selected === null && active) {
-      setSelectedState([active.slug]);
+    if (selected === null && projects.length > 0) {
+      setSelectedState(liveDefaultOf(projects));
     }
-  }, [selected, active]);
+  }, [selected, projects]);
 
   const setSelected = useCallback((next: string[]) => {
     setSelectedState(next);
     writeStorage(next);
+  }, []);
+
+  const resetToLive = useCallback(() => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage unavailable — the state reset below still applies this session.
+    }
+    // Back to the "not yet chosen" state; the seeding effect recomputes the
+    // live default (and future loads default to live again).
+    setSelectedState(null);
   }, []);
 
   const value = useMemo<SelectedProjectsValue>(() => {
@@ -93,8 +128,17 @@ export function SelectedProjectsProvider({
       selected === null
         ? undefined
         : selected.filter((slug) => projects.some((p) => p.slug === slug));
-    return { projects, selected, queryProjects: pruned, setSelected };
-  }, [projects, selected, setSelected]);
+    const isAtLiveDefault =
+      selected === null || sameSet(pruned ?? [], liveDefaultOf(projects));
+    return {
+      projects,
+      selected,
+      queryProjects: pruned,
+      setSelected,
+      resetToLive,
+      isAtLiveDefault,
+    };
+  }, [projects, selected, setSelected, resetToLive]);
 
   return (
     <SelectedProjectsContext.Provider value={value}>

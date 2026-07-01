@@ -146,6 +146,8 @@ export type ProjectSummary = {
   name: string
   active: boolean
   lastUsedAt: string
+  /** Count of currently live (active/waiting) sessions in this project. */
+  liveCount: number
 }
 
 export const projectsQuery = queryOptions({
