@@ -16,17 +16,9 @@ import {
 } from "@uiid/design-system";
 import { PanelRightIcon } from "@uiid/icons";
 
-import {
-  eventsQuery,
-  projectsQuery,
-  sessionsQuery,
-} from "../api/queries";
+import { eventsQuery, projectsQuery, sessionsQuery } from "../api/queries";
 import { useArchiveAction } from "../api/use-archive-action";
-import type {
-  EventRow,
-  SessionRow,
-  SessionWithCategory,
-} from "../api/types";
+import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
   eventColor,
   eventIcon,
@@ -39,7 +31,7 @@ import { findSessionFromSplat } from "../lib/find-session-from-splat";
 import { EventContent } from "../components/timeline";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
-import { SessionItem } from "../components/sidebar/session-item";
+import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
 export const Route = createFileRoute("/$")({
   component: SplatPage,
@@ -127,9 +119,7 @@ function CategoryDetail({
       </Stack>
       <Stack px={8} gap={2} style={{ overflow: "auto" }}>
         {filtered.length > 0 ? (
-          filtered.map((s) => (
-            <SessionItem key={s.session.id} session={s} />
-          ))
+          filtered.map((s) => <SessionItem key={s.session.id} session={s} />)
         ) : (
           <Text shade="muted">No sessions in this category.</Text>
         )}

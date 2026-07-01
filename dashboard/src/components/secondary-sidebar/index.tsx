@@ -20,7 +20,7 @@ import { formatDuration } from "../../lib/format";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
-} from "../sidebar/sidebar-wrapper";
+} from "../sidebar/subcomponents/sidebar-wrapper";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
@@ -72,9 +72,7 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
     ? Object.values(engagement.toolUsage).reduce((a, b) => a + b, 0)
     : 0;
   const discardTotal = engagement?.discardRate.total ?? 0;
-  const hasEngagement =
-    !!engagement &&
-    (toolTotal > 0 || discardTotal > 0);
+  const hasEngagement = !!engagement && (toolTotal > 0 || discardTotal > 0);
 
   const tabs: TabProps[] = [
     {
