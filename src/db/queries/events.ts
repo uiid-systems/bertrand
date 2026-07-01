@@ -1,5 +1,5 @@
 import { eq, and, desc } from "drizzle-orm";
-import { getDb } from "@/db/client";
+import { getDb, type Db } from "@/db/client";
 import { events } from "@/db/schema";
 import { normalizeEventMeta } from "@/lib/markdown";
 import type { EventRow } from "@/types";
@@ -24,8 +24,11 @@ export function insertEvent(opts: {
     .get();
 }
 
-export function getEventsBySession(sessionId: string): EventRow[] {
-  return getDb()
+export function getEventsBySession(
+  sessionId: string,
+  db: Db = getDb(),
+): EventRow[] {
+  return db
     .select()
     .from(events)
     .where(eq(events.sessionId, sessionId))
@@ -42,8 +45,12 @@ export function getEventsByConversation(conversationId: string): EventRow[] {
     .all() as EventRow[];
 }
 
-export function getEventsByType(sessionId: string, eventType: string): EventRow[] {
-  return getDb()
+export function getEventsByType(
+  sessionId: string,
+  eventType: string,
+  db: Db = getDb(),
+): EventRow[] {
+  return db
     .select()
     .from(events)
     .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))

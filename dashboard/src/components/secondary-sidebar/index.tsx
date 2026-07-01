@@ -20,25 +20,28 @@ import { formatDuration } from "../../lib/format";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
-} from "../sidebar/sidebar-wrapper";
+} from "../sidebar/subcomponents/sidebar-wrapper";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
   isLive: boolean;
+  /** Project the session belongs to, so stats resolve against the right DB. */
+  projectSlug?: string;
 };
 
 export const SecondarySidebar = ({
   sessionId,
   isLive,
+  projectSlug,
   ...props
 }: SecondarySidebarProps) => {
   const { data: stats } = useQuery({
-    ...statsQuery(sessionId, isLive),
+    ...statsQuery(sessionId, isLive, projectSlug),
     enabled: !!sessionId,
   });
 
   const { data: engagement } = useQuery({
-    ...engagementQuery(sessionId, isLive),
+    ...engagementQuery(sessionId, isLive, projectSlug),
     enabled: !!sessionId,
   });
 
@@ -72,9 +75,7 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
     ? Object.values(engagement.toolUsage).reduce((a, b) => a + b, 0)
     : 0;
   const discardTotal = engagement?.discardRate.total ?? 0;
-  const hasEngagement =
-    !!engagement &&
-    (toolTotal > 0 || discardTotal > 0);
+  const hasEngagement = !!engagement && (toolTotal > 0 || discardTotal > 0);
 
   const tabs: TabProps[] = [
     {

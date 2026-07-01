@@ -16,17 +16,10 @@ import {
 } from "@uiid/design-system";
 import { PanelRightIcon } from "@uiid/icons";
 
-import {
-  eventsQuery,
-  projectsQuery,
-  sessionsQuery,
-} from "../api/queries";
+import { eventsQuery, projectsQuery, sessionsQuery } from "../api/queries";
+import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import { useArchiveAction } from "../api/use-archive-action";
-import type {
-  EventRow,
-  SessionRow,
-  SessionWithCategory,
-} from "../api/types";
+import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
   eventColor,
   eventIcon,
@@ -39,7 +32,7 @@ import { findSessionFromSplat } from "../lib/find-session-from-splat";
 import { EventContent } from "../components/timeline";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
-import { SessionItem } from "../components/sidebar/session-item";
+import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
 export const Route = createFileRoute("/$")({
   component: SplatPage,
@@ -79,14 +72,23 @@ function buildBreadcrumbs(
 
 function SplatPage() {
   const { _splat = "" } = Route.useParams();
-  const { data: visibleSessions = [] } = useQuery(sessionsQuery());
+  const { projects, queryProjects } = useSelectedProjects();
+  const { data: visibleSessions = [] } = useQuery(
+    sessionsQuery({ projects: queryProjects }),
+  );
+  // Fallback list spans every project (and archived rows) so a deep-linked
+  // session still resolves even when it belongs to a project the view filter
+  // currently hides.
   const { data: allSessions = [] } = useQuery(
-    sessionsQuery({ includeArchived: true }),
+    sessionsQuery({
+      includeArchived: true,
+      projects: projects.map((p) => p.slug),
+    }),
   );
 
   // Resolve session-detail first against the visible list, then the full
-  // list (so an archived session opened by deep link still loads even when
-  // "show archived" is off in the sidebar).
+  // list (so an archived or filtered-out session opened by deep link still
+  // loads even when "show archived" is off in the sidebar).
   const match =
     findSessionFromSplat(_splat, visibleSessions) ??
     findSessionFromSplat(_splat, allSessions);
@@ -127,9 +129,7 @@ function CategoryDetail({
       </Stack>
       <Stack px={8} gap={2} style={{ overflow: "auto" }}>
         {filtered.length > 0 ? (
-          filtered.map((s) => (
-            <SessionItem key={s.session.id} session={s} />
-          ))
+          filtered.map((s) => <SessionItem key={s.session.id} session={s} />)
         ) : (
           <Text shade="muted">No sessions in this category.</Text>
         )}
@@ -140,12 +140,16 @@ function CategoryDetail({
 CategoryDetail.displayName = "CategoryDetail";
 
 function SessionDetail({ match }: { match: SessionWithCategory }) {
-  const projectName = useProjectName();
+  const activeProjectName = useProjectName();
+  const projectSlug = match.project?.slug;
+  const projectName = match.project?.name ?? activeProjectName;
   const sessionId = match.session.id;
   const isLive =
     match.session.status === "active" || match.session.status === "waiting";
 
-  const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
+  const { data: rawEvents = [] } = useQuery(
+    eventsQuery(sessionId, isLive, projectSlug),
+  );
   const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
 
   const pendingQuestion = useMemo(() => {
@@ -189,7 +193,11 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
               </Button>
             }
           >
-            <SecondarySidebar sessionId={sessionId} isLive={isLive} />
+            <SecondarySidebar
+              sessionId={sessionId}
+              isLive={isLive}
+              projectSlug={projectSlug}
+            />
           </Sheet>
         </Group>
       </Group>

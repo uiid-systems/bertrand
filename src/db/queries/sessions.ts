@@ -1,5 +1,5 @@
 import { eq, and, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/db/client";
+import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
 import { getCategoryByPath } from "@/db/queries/categories";
@@ -83,8 +83,11 @@ export function createSession(opts: {
     .get();
 }
 
-export function getSession(id: string): SessionRow | undefined {
-  return getDb().select().from(sessions).where(eq(sessions.id, id)).get();
+export function getSession(
+  id: string,
+  db: Db = getDb(),
+): SessionRow | undefined {
+  return db.select().from(sessions).where(eq(sessions.id, id)).get();
 }
 
 export function getSessionByCategorySlug(
@@ -115,10 +118,24 @@ export function getActiveSessions(): SessionWithCategory[] {
     .all();
 }
 
-export function getAllSessions(opts?: {
-  excludeArchived?: boolean;
-}): SessionWithCategory[] {
-  const db = getDb();
+/**
+ * How many sessions are currently live (running or awaiting the user) in a
+ * project's DB. Powers the dashboard's "projects with live sessions" default
+ * view, so it's a cheap COUNT rather than materializing the rows.
+ */
+export function countLiveSessions(db: Db = getDb()): number {
+  const row = db
+    .select({ n: sql<number>`count(*)` })
+    .from(sessions)
+    .where(inArray(sessions.status, ["active", "waiting"]))
+    .get();
+  return row?.n ?? 0;
+}
+
+function selectSessions(
+  db: Db,
+  opts?: { excludeArchived?: boolean },
+): SessionWithCategory[] {
   const query = db
     .select({ session: sessions, categoryPath: categories.path })
     .from(sessions)
@@ -137,6 +154,28 @@ export function getAllSessions(opts?: {
   }
 
   return query.all();
+}
+
+export function getAllSessions(opts?: {
+  excludeArchived?: boolean;
+}): SessionWithCategory[] {
+  return selectSessions(getDb(), opts);
+}
+
+/**
+ * Sessions for a specific project's DB, tagged with that project's identity so
+ * a merged multi-project list (the dashboard sidebar) can label and route each
+ * row. Uses `getDbForProject` rather than the active-project resolver, so this
+ * is safe to call for projects other than the one the CLI is pinned to.
+ */
+export function getAllSessionsForProject(
+  project: { slug: string; name: string },
+  opts?: { excludeArchived?: boolean },
+): SessionWithCategory[] {
+  return selectSessions(getDbForProject(project.slug), opts).map((s) => ({
+    ...s,
+    project,
+  }));
 }
 
 export function updateSessionStatus(id: string, status: SessionStatus): SessionRow {

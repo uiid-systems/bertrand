@@ -1,4 +1,5 @@
 import { getEventsByType } from "@/db/queries/events";
+import { getDb, type Db } from "@/db/client";
 
 export interface DiffStats {
   linesAdded: number;
@@ -20,8 +21,11 @@ function lineCount(s?: string): number {
   return s.split("\n").length;
 }
 
-export function computeDiffStats(sessionId: string): DiffStats {
-  const applied = getEventsByType(sessionId, "tool.applied");
+export function computeDiffStats(
+  sessionId: string,
+  db: Db = getDb(),
+): DiffStats {
+  const applied = getEventsByType(sessionId, "tool.applied", db);
   const files = new Set<string>();
   let linesAdded = 0;
   let linesRemoved = 0;
