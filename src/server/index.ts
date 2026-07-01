@@ -1,7 +1,11 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
-import { getAllSessions, getSession } from "@/db/queries/sessions"
+import {
+  getAllSessions,
+  getAllSessionsForProject,
+  getSession,
+} from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats } from "@/lib/timing"
@@ -21,7 +25,7 @@ import {
   resolveActiveProject,
   _resetActiveProjectCache,
 } from "@/lib/projects/resolve"
-import { invalidateDbCache } from "@/db/client"
+import { getDbForProject, invalidateDbCache, type Db } from "@/db/client"
 import type {
   SessionRow,
   SessionWithCategory,
@@ -34,17 +38,50 @@ const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
-function liveStats(sessionId: string): SessionStatsRow {
+function liveStats(sessionId: string, db?: Db): SessionStatsRow {
   return {
     sessionId,
-    ...computeSessionStats(sessionId),
+    ...computeSessionStats(sessionId, db),
     updatedAt: new Date().toISOString(),
   }
 }
 
+/**
+ * Which projects a list/stats request covers. `?projects=a,b,c` names them
+ * explicitly (unknown slugs dropped, empty string → no projects); omitting the
+ * param falls back to the active project alone, preserving the single-project
+ * behavior for any consumer that doesn't opt into the multi-project view.
+ */
+function resolveProjectScope(url: URL): { slug: string; name: string }[] {
+  const nameBySlug = new Map(listProjects().map((p) => [p.slug, p.name]))
+  const param = url.searchParams.get("projects")
+  if (param === null) {
+    const active = resolveActiveProject()
+    return [{ slug: active.slug, name: active.name }]
+  }
+  return param
+    .split(",")
+    .map((s) => s.trim())
+    .filter((slug) => nameBySlug.has(slug))
+    .map((slug) => ({ slug, name: nameBySlug.get(slug)! }))
+}
+
+/**
+ * DB handle for a single-session request (`events`, `stats/:id`, `engagement`).
+ * `?project=slug` targets that project's DB; absent or unknown falls through to
+ * `undefined` so the callee's `getDb()` default (the active project) applies.
+ */
+function resolveDb(url: URL): Db | undefined {
+  const slug = url.searchParams.get("project")
+  if (slug && projectExists(slug)) return getDbForProject(slug)
+  return undefined
+}
+
 const listSessions = (_params: object, url: URL): SessionWithCategory[] => {
   const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
-  return getAllSessions({ excludeArchived })
+  return resolveProjectScope(url).flatMap((project) =>
+    getAllSessionsForProject(project, { excludeArchived }),
+  )
 }
 
 const getSessionById = ({ id }: { id?: string }): SessionRow | undefined =>
@@ -54,41 +91,49 @@ const listEvents = (
   { sessionId }: { sessionId?: string },
   url: URL,
 ): EventRow[] => {
+  const db = resolveDb(url)
   const eventType = url.searchParams.get("type")
-  if (eventType) return getEventsByType(sessionId!, eventType)
-  return getEventsBySession(sessionId!)
+  if (eventType) return getEventsByType(sessionId!, eventType, db)
+  return getEventsBySession(sessionId!, db)
 }
 
-const listAllStats = (): Record<string, SessionStatsRow> => {
+const listAllStats = (
+  _params: object,
+  url: URL,
+): Record<string, SessionStatsRow> => {
   const result: Record<string, SessionStatsRow> = {}
-  for (const { session } of getAllSessions()) {
-    const isLive = session.status === "active" || session.status === "waiting"
-    if (isLive) {
-      result[session.id] = liveStats(session.id)
-      continue
+  for (const project of resolveProjectScope(url)) {
+    const db = getDbForProject(project.slug)
+    for (const { session } of getAllSessionsForProject(project)) {
+      const isLive =
+        session.status === "active" || session.status === "waiting"
+      if (isLive) {
+        result[session.id] = liveStats(session.id, db)
+        continue
+      }
+      result[session.id] =
+        getSessionStats(session.id, db) ?? liveStats(session.id, db)
     }
-    result[session.id] = getSessionStats(session.id) ?? liveStats(session.id)
   }
   return result
 }
 
-const getStatsBySession = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): SessionStatsRow | null => {
-  const session = getSession(sessionId!)
+const getStatsBySession = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): SessionStatsRow | null => {
+  const db = resolveDb(url)
+  const session = getSession(sessionId!, db)
   if (!session) return null
   const isLive = session.status === "active" || session.status === "waiting"
-  if (isLive) return liveStats(sessionId!)
-  return getSessionStats(sessionId!) ?? liveStats(sessionId!)
+  if (isLive) return liveStats(sessionId!, db)
+  return getSessionStats(sessionId!, db) ?? liveStats(sessionId!, db)
 }
 
-const getEngagement = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): EngagementStats => computeEngagementStats(sessionId!)
+const getEngagement = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): EngagementStats => computeEngagementStats(sessionId!, resolveDb(url))
 
 const listAllProjects = (): unknown => {
   const active = resolveActiveProject()

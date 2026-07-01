@@ -1,6 +1,7 @@
 import { getEventsBySession } from "@/db/queries/events";
 import { upsertSessionStats } from "@/db/queries/stats";
 import { computeDiffStats } from "@/lib/diff_stats";
+import { getDb, type Db } from "@/db/client";
 
 // --- Types ---
 
@@ -172,8 +173,11 @@ export interface SessionStatsData {
 }
 
 /** Walk events for a session and produce the full stats payload. */
-export function computeSessionStats(sessionId: string): SessionStatsData {
-  const events = getEventsBySession(sessionId);
+export function computeSessionStats(
+  sessionId: string,
+  db: Db = getDb(),
+): SessionStatsData {
+  const events = getEventsBySession(sessionId, db);
   const summary = computeTimings(events);
 
   const conversationIds = new Set(
@@ -183,7 +187,7 @@ export function computeSessionStats(sessionId: string): SessionStatsData {
     (e) => e.event === "session.waiting" || e.event === "session.answered"
   ).length;
 
-  const diff = computeDiffStats(sessionId);
+  const diff = computeDiffStats(sessionId, db);
 
   return {
     eventCount: events.length,
