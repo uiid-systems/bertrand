@@ -25,20 +25,23 @@ import {
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
   isLive: boolean;
+  /** Project the session belongs to, so stats resolve against the right DB. */
+  projectSlug?: string;
 };
 
 export const SecondarySidebar = ({
   sessionId,
   isLive,
+  projectSlug,
   ...props
 }: SecondarySidebarProps) => {
   const { data: stats } = useQuery({
-    ...statsQuery(sessionId, isLive),
+    ...statsQuery(sessionId, isLive, projectSlug),
     enabled: !!sessionId,
   });
 
   const { data: engagement } = useQuery({
-    ...engagementQuery(sessionId, isLive),
+    ...engagementQuery(sessionId, isLive, projectSlug),
     enabled: !!sessionId,
   });
 

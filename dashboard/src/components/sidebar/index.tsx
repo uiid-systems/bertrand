@@ -23,7 +23,8 @@ import {
 
 import { sessionsQuery } from "../../api/queries";
 
-import { ProjectSwitcher } from "./project-switcher";
+import { useSelectedProjects } from "./selected-projects";
+import { ProjectSelector } from "./subcomponents/project-selector";
 import type { GroupBy } from "./sidebar.types";
 import { groupSessions } from "./sidebar.utils";
 
@@ -43,7 +44,10 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [includeArchived, setIncludeArchived] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: sessions = [] } = useQuery(sessionsQuery({ includeArchived }));
+  const { queryProjects } = useSelectedProjects();
+  const { data: sessions = [] } = useQuery(
+    sessionsQuery({ includeArchived, projects: queryProjects }),
+  );
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -72,7 +76,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
   return (
     <SidebarWrapper {...WrapperProps}>
-      <ProjectSwitcher />
+      <ProjectSelector />
       <Group ay="center" gap={2} fullwidth>
         <Input
           ref={inputRef}

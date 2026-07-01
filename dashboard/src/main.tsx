@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { Toaster, ToastProvider } from "@uiid/design-system"
 import { routeTree } from "./routeTree.gen"
+import { SelectedProjectsProvider } from "./components/sidebar/selected-projects"
 
 // One-shot cleanup: earlier builds shipped a vite-plugin-pwa service worker
 // that intercepts fetches and can serve stale/empty assets long after the
@@ -35,10 +36,12 @@ declare module "@tanstack/react-router" {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-        <Toaster position="bottom" />
-      </ToastProvider>
+      <SelectedProjectsProvider>
+        <ToastProvider>
+          <RouterProvider router={router} />
+          <Toaster position="bottom" />
+        </ToastProvider>
+      </SelectedProjectsProvider>
     </QueryClientProvider>
   </StrictMode>
 )

@@ -14,6 +14,7 @@ import {
 
 import { sessionsQuery } from "../api/queries";
 import { Sidebar } from "../components/sidebar";
+import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import { TopBar } from "../components/topbar";
 
 import "../globals.css";
@@ -46,7 +47,10 @@ function RootLayout() {
 }
 
 function AppShell() {
-  const { data: sessions = [] } = useQuery(sessionsQuery());
+  const { queryProjects } = useSelectedProjects();
+  const { data: sessions = [] } = useQuery(
+    sessionsQuery({ projects: queryProjects }),
+  );
 
   return (
     <Stack fullwidth style={{ position: "fixed", height: "100dvh" }}>

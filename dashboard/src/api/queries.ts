@@ -44,15 +44,35 @@ async function postSessionAction(
 export const archiveSession = (id: string) => postSessionAction(id, "archive")
 export const unarchiveSession = (id: string) => postSessionAction(id, "unarchive")
 
-export const sessionsQuery = (opts: { includeArchived?: boolean } = {}) =>
+/**
+ * Serialize a projects filter into a query string. `undefined` omits the param
+ * entirely (server falls back to the active project); an array — including an
+ * empty one — always sets `projects=`, so an empty selection returns nothing
+ * rather than silently reverting to the active project.
+ */
+function projectsParam(projects: string[] | undefined): string {
+  if (projects === undefined) return ""
+  const qs = new URLSearchParams({ projects: projects.join(",") }).toString()
+  return `?${qs}`
+}
+
+export const sessionsQuery = (
+  opts: { includeArchived?: boolean; projects?: string[] } = {},
+) =>
   queryOptions({
-    queryKey: ["sessions", { includeArchived: !!opts.includeArchived }],
-    queryFn: () =>
-      fetchJson<SessionWithCategory[]>(
-        opts.includeArchived
-          ? "/api/sessions?excludeArchived=false"
-          : "/api/sessions",
-      ),
+    queryKey: [
+      "sessions",
+      { includeArchived: !!opts.includeArchived, projects: opts.projects ?? null },
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (opts.includeArchived) params.set("excludeArchived", "false")
+      if (opts.projects !== undefined) params.set("projects", opts.projects.join(","))
+      const qs = params.toString()
+      return fetchJson<SessionWithCategory[]>(
+        `/api/sessions${qs ? `?${qs}` : ""}`,
+      )
+    },
     refetchInterval: 2000,
     placeholderData: keepPreviousData,
   })
@@ -64,36 +84,58 @@ export const worktreesQuery = queryOptions({
   placeholderData: keepPreviousData,
 })
 
-export const eventsQuery = (sessionId: string, isLive = false) =>
+/** Single-project query string (`?project=slug`) for per-session endpoints. */
+function projectParam(project: string | undefined): string {
+  if (!project) return ""
+  return `?${new URLSearchParams({ project }).toString()}`
+}
+
+export const eventsQuery = (sessionId: string, isLive = false, project?: string) =>
   queryOptions({
-    queryKey: ["events", sessionId],
-    queryFn: () => fetchJson<EventRow[]>(`/api/events/${sessionId}`),
+    queryKey: ["events", sessionId, project ?? null],
+    queryFn: () =>
+      fetchJson<EventRow[]>(`/api/events/${sessionId}${projectParam(project)}`),
     enabled: !!sessionId,
     refetchInterval: isLive ? 1000 : false,
     placeholderData: keepPreviousData,
   })
 
-export const statsQuery = (sessionId: string, isLive = false) =>
+export const statsQuery = (sessionId: string, isLive = false, project?: string) =>
   queryOptions({
-    queryKey: ["stats", sessionId],
-    queryFn: () => fetchJson<SessionStatsRow | null>(`/api/stats/${sessionId}`),
+    queryKey: ["stats", sessionId, project ?? null],
+    queryFn: () =>
+      fetchJson<SessionStatsRow | null>(
+        `/api/stats/${sessionId}${projectParam(project)}`,
+      ),
     enabled: !!sessionId,
     refetchInterval: isLive ? 2000 : false,
     placeholderData: keepPreviousData,
   })
 
-export const allStatsQuery = (hasLiveSession = false) =>
+export const allStatsQuery = (
+  opts: { hasLiveSession?: boolean; projects?: string[] } = {},
+) =>
   queryOptions({
-    queryKey: ["stats"],
-    queryFn: () => fetchJson<Record<string, SessionStatsRow>>("/api/stats"),
-    refetchInterval: hasLiveSession ? 2000 : false,
+    queryKey: ["stats", { projects: opts.projects ?? null }],
+    queryFn: () =>
+      fetchJson<Record<string, SessionStatsRow>>(
+        `/api/stats${projectsParam(opts.projects)}`,
+      ),
+    refetchInterval: opts.hasLiveSession ? 2000 : false,
     placeholderData: keepPreviousData,
   })
 
-export const engagementQuery = (sessionId: string, isLive = false) =>
+export const engagementQuery = (
+  sessionId: string,
+  isLive = false,
+  project?: string,
+) =>
   queryOptions({
-    queryKey: ["engagement", sessionId],
-    queryFn: () => fetchJson<EngagementStats>(`/api/engagement/${sessionId}`),
+    queryKey: ["engagement", sessionId, project ?? null],
+    queryFn: () =>
+      fetchJson<EngagementStats>(
+        `/api/engagement/${sessionId}${projectParam(project)}`,
+      ),
     enabled: !!sessionId,
     refetchInterval: isLive ? 2000 : false,
     placeholderData: keepPreviousData,
