@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/uiid-systems/bertrand/compare/v0.24.0...v0.25.0) (2026-07-01)
+
+
+### Features
+
+* **dashboard:** multi-project view filter for the sidebar ([#150](https://github.com/uiid-systems/bertrand/issues/150)) ([e502d0b](https://github.com/uiid-systems/bertrand/commit/e502d0be30bc3bffdfc8b649e0e0dbaecc95379e))
+
 ## [0.24.0](https://github.com/uiid-systems/bertrand/compare/v0.23.0...v0.24.0) (2026-06-29)
 
 
