@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/uiid-systems/bertrand/compare/v0.25.0...v0.25.1) (2026-07-06)
+
+
+### Refactoring
+
+* ui tinkering ([#153](https://github.com/uiid-systems/bertrand/issues/153)) ([f66a311](https://github.com/uiid-systems/bertrand/commit/f66a311f90042fce90f95bf0f824a7aaa993e116))
+
 ## [0.25.0](https://github.com/uiid-systems/bertrand/compare/v0.24.0...v0.25.0) (2026-07-01)
 
 
