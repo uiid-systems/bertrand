@@ -248,12 +248,29 @@ We deliberately do the frontend-critical inner rings and leave the rest to conve
 
 ## Phased rollout
 
-- **Phase 0 — visibility.** Wire `lib/git.ts` + the `EnterWorktree` hook so a session
-  tracks its worktree (marker + event + DB). Show active worktrees in the dashboard
-  again. No dev servers yet.
+- **Phase 0 — visibility.** ✅ Shipped ([#142](https://github.com/uiid-systems/bertrand/pull/142)).
+  Wire `lib/git.ts` + the `EnterWorktree` hook so a session tracks its worktree (marker +
+  event + DB). Show active worktrees in the dashboard again. No dev servers yet.
 - **Phase 1 — preview, no sudo.** Per-worktree dev server (auto-detected `dev` command),
   deterministic port, HTTP reverse proxy on a high port, URL surfaced in dashboard +
   `bertrand open`. URL still has a port — acceptable interim. Proves the flow end-to-end.
+  Split into reviewable slices:
+  - **1A — dev-command resolution + env contract.** ✅ Shipped
+    ([#152](https://github.com/uiid-systems/bertrand/pull/152)). `src/lib/workspace/`:
+    lockfile→package-manager detection, repo-committed override
+    (`package.json#bertrand` / `.bertrand/config.json`), `resolveWorkspace(dir)`, and the
+    `BERTRAND_PORT`/`_WORKSPACE`/`_ROOT`/`_PREVIEW_URL` env contract. Pure logic, no spawning.
+  - **1B — port allocation + dev-server process manager.** Deterministic per-session port
+    (collision/prune handling); spawn the resolved `run` command in the worktree cwd with
+    the injected env, PID file + log file, start-on-entry / stop-on-exit.
+  - **1C — HTTP reverse proxy.** Host-header routing → registered session port, WS upgrades.
+  - **1D — surfacing.** `bertrand open <session>` + dashboard panel (URL, start/stop, logs).
+
+  **URL decision (settled):** Phase 1 previews are plain `http://localhost:<port>`. The
+  branded `*.local.bertrand.sh` wildcard DNS record **is not set up yet** (confirmed via
+  `dig`; apex `bertrand.sh` → `216.198.79.1`, wildcard empty), so subdomains + TLS move
+  wholesale to Phase 2. `localhostPreviewUrl()` in `src/lib/workspace/env.ts` is the single
+  seam that changes when they land.
 - **Phase 2 — the endgame.** Privileged helper: clean `:443` URLs, local-CA valid HTTPS,
   `/etc/hosts` management, `*.local.bertrand.sh` branding. No port, no warning, no cd.
 - **Phase 3 — breadth.** Monorepo/multi-app, archive scripts, richer isolation
