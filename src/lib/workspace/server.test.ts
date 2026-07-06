@@ -125,10 +125,12 @@ describe("stopWorkspaceServer", () => {
     stopWorkspaceServer("sess-1");
     await waitFor(() => !isAlive(pid));
     expect(isAlive(pid)).toBe(false);
-    // status now shows stopped, but still reports a (freshly re-allocated) port
-    const after = getWorkspaceServer("sess-1")!;
+    // stop releases the port, so status is fully cleared
+    const after = getWorkspaceServer("sess-1");
     expect(after.running).toBe(false);
     expect(after.pid).toBeNull();
+    expect(after.port).toBeNull();
+    expect(after.url).toBeNull();
   });
 
   test("is a no-op for a session that was never started", () => {
@@ -143,13 +145,22 @@ describe("getWorkspaceServer", () => {
     _resetPortDeps();
   });
 
-  test("reports not-running with a stable port before any start", () => {
-    const { worktree } = freshDirs(() => sleeper());
-    void worktree;
-    const status = getWorkspaceServer("sess-1")!;
+  test("reports not-running with no port before any start (no allocation on read)", () => {
+    freshDirs(() => sleeper());
+    const status = getWorkspaceServer("sess-1");
     expect(status.running).toBe(false);
     expect(status.pid).toBeNull();
-    expect(status.port).toBeGreaterThanOrEqual(4700);
-    expect(status.url).toBe(`http://localhost:${status.port}`);
+    expect(status.port).toBeNull();
+    expect(status.url).toBeNull();
+  });
+
+  test("reports the running server's port + url", () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const started = startWorkspaceServer(input(worktree))!;
+    cleanupPids.push(started.pid!);
+    const status = getWorkspaceServer("sess-1");
+    expect(status.running).toBe(true);
+    expect(status.port).toBe(started.port);
+    expect(status.url).toBe(`http://localhost:${started.port}`);
   });
 });

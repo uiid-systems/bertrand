@@ -1,6 +1,13 @@
 import { execFile } from "child_process"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { join } from "path"
+import { getMainWorktree } from "@/lib/git"
+import {
+  startWorkspaceServer,
+  stopWorkspaceServer,
+  getWorkspaceServer,
+  type WorkspaceServerStatus,
+} from "@/lib/workspace"
 import {
   getAllSessions,
   getAllSessionsForProject,
@@ -167,10 +174,39 @@ const listWorktreeSessions = (): SessionWithCategory[] =>
     ({ session }) => session.worktreePath != null,
   )
 
+// Dev-server status per worktree-bearing session, keyed by session id. A pure
+// read (getWorkspaceServer never allocates), so polling this from the
+// dashboard doesn't spin up or reserve anything — start is an explicit action.
+const listWorktreeStatus = (): Record<string, WorkspaceServerStatus> => {
+  const out: Record<string, WorkspaceServerStatus> = {}
+  for (const { session } of getAllSessions({ excludeArchived: true })) {
+    if (session.worktreePath == null) continue
+    out[session.id] = getWorkspaceServer(session.id)
+  }
+  return out
+}
+
+// Tail of a workspace's dev-server log. `?lines=N` bounds it (default 200).
+const getWorktreeLogs = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): { logs: string } => {
+  const { logFile } = getWorkspaceServer(sessionId!)
+  const n = Math.max(1, Number(url.searchParams.get("lines") ?? 200))
+  try {
+    const lines = readFileSync(logFile, "utf-8").split("\n")
+    return { logs: lines.slice(-n).join("\n") }
+  } catch {
+    return { logs: "" }
+  }
+}
+
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
   [/^\/api\/worktrees$/, listWorktreeSessions],
+  [/^\/api\/worktrees\/status$/, listWorktreeStatus],
+  [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
@@ -253,6 +289,35 @@ async function handleOpen(req: Request): Promise<Response> {
   })
 }
 
+// Start a session's workspace dev server (dashboard "start" button — the same
+// lazy trigger as `bertrand open`). Resolves the main checkout for
+// BERTRAND_ROOT, then hands off to the 1B manager. Idempotent: a live server
+// returns its existing status.
+async function handleWorktreeStart(sessionId: string): Promise<Response> {
+  const session = getSession(sessionId)
+  if (!session) return Response.json({ error: "Session not found" }, { status: 404 })
+  if (!session.worktreePath) {
+    return Response.json({ error: "Session has no worktree" }, { status: 409 })
+  }
+  if (!existsSync(session.worktreePath)) {
+    return Response.json({ error: "Worktree path no longer exists" }, { status: 409 })
+  }
+  const root = await getMainWorktree(session.worktreePath)
+  const status = startWorkspaceServer({
+    sessionId,
+    worktreePath: session.worktreePath,
+    root,
+    slug: session.slug,
+  })
+  if (!status) {
+    return Response.json(
+      { error: "No dev command found in worktree" },
+      { status: 422 },
+    )
+  }
+  return Response.json(status)
+}
+
 function match(pathname: string, url: URL): Response {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
@@ -331,6 +396,19 @@ export function startServer(port = PORT) {
       }
 
       if (req.method === "POST") {
+        const startMatch = /^\/api\/worktrees\/([^/]+)\/start$/.exec(url.pathname)
+        if (startMatch) {
+          const r = await handleWorktreeStart(startMatch[1]!)
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
+        const stopMatch = /^\/api\/worktrees\/([^/]+)\/stop$/.exec(url.pathname)
+        if (stopMatch) {
+          stopWorkspaceServer(stopMatch[1]!)
+          const r = Response.json({ ok: true })
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
           const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))

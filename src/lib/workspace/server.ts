@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
-import { allocatePort, releasePort } from "./port";
+import { allocatePort, getPort, releasePort } from "./port";
 import { localhostPreviewUrl, workspaceEnv } from "./env";
 import { resolveWorkspace } from "./resolve";
 import type { WorkspaceRunConfig } from "./types";
@@ -22,8 +22,10 @@ import type { WorkspaceRunConfig } from "./types";
 export interface WorkspaceServerStatus {
   running: boolean;
   pid: number | null;
-  port: number;
-  url: string;
+  /** Allocated port, or null when the session has never been started. */
+  port: number | null;
+  /** Preview URL, or null when no port is allocated. */
+  url: string | null;
   logFile: string;
 }
 
@@ -93,20 +95,22 @@ function removePid(sessionId: string): void {
 }
 
 /**
- * Current status of a session's workspace server. `running` reflects a live
- * PID; the port/url are reported whenever the session holds an allocation,
- * even when stopped, so the caller can show a stable URL and lazily start.
+ * Current status of a session's workspace server — a pure read, no side
+ * effects. `running` reflects a live PID; `port`/`url` are reported only when
+ * a port is already allocated (i.e. the session has been started at least
+ * once and not stopped), so merely *viewing* the dashboard never allocates a
+ * port for a session you haven't opened. Allocation happens on start.
  */
-export function getWorkspaceServer(sessionId: string): WorkspaceServerStatus | null {
+export function getWorkspaceServer(sessionId: string): WorkspaceServerStatus {
   const pid = readPid(sessionId);
   const running = pid != null && isAlive(pid);
   if (pid != null && !running) removePid(sessionId); // clear stale
-  const port = allocatePort(sessionId);
+  const port = getPort(sessionId);
   return {
     running,
     pid: running ? pid : null,
     port,
-    url: localhostPreviewUrl(port),
+    url: port != null ? localhostPreviewUrl(port) : null,
     logFile: logFile(sessionId),
   };
 }

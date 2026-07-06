@@ -7,6 +7,7 @@ import type {
   SessionStatsRow,
   EngagementStats,
   ArchiveErrorReason,
+  WorkspaceServerStatus,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -87,6 +88,33 @@ export const worktreesQuery = queryOptions({
   refetchInterval: 2000,
   placeholderData: keepPreviousData,
 })
+
+/** Dev-server status per worktree-bearing session, keyed by session id. */
+export const worktreeStatusQuery = queryOptions({
+  queryKey: ["worktree-status"],
+  queryFn: () =>
+    fetchJson<Record<string, WorkspaceServerStatus>>("/api/worktrees/status"),
+  refetchInterval: 2000,
+  placeholderData: keepPreviousData,
+})
+
+async function postWorktreeAction(id: string, action: "start" | "stop"): Promise<void> {
+  const res = await fetch(apiUrl(`/api/worktrees/${id}/${action}`), { method: "POST" })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`)
+  }
+}
+
+export const startWorktree = (id: string) => postWorktreeAction(id, "start")
+export const stopWorktree = (id: string) => postWorktreeAction(id, "stop")
+
+export async function fetchWorktreeLogs(id: string, lines = 200): Promise<string> {
+  const res = await fetch(apiUrl(`/api/worktrees/${id}/logs?lines=${lines}`))
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const body = (await res.json()) as { logs: string }
+  return body.logs
+}
 
 /** Single-project query string (`?project=slug`) for per-session endpoints. */
 function projectParam(project: string | undefined): string {

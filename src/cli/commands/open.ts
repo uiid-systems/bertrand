@@ -67,7 +67,7 @@ register("open", async (args) => {
     fail(`Worktree path no longer exists: ${worktreePath}`);
   }
 
-  const alreadyRunning = getWorkspaceServer(session.id)?.running === true;
+  const alreadyRunning = getWorkspaceServer(session.id).running;
   const root = await getMainWorktree(worktreePath!);
   const status = startWorkspaceServer({
     sessionId: session.id,
@@ -82,18 +82,24 @@ register("open", async (args) => {
         `package.json, or a "run" command in .bertrand/config.json.`,
     );
   }
+  const { port, url, logFile } = status!;
+  // startWorkspaceServer always allocates a port on success; this guard is a
+  // belt-and-braces narrow for the type, not an expected runtime path.
+  if (port == null || url == null) {
+    fail("Internal error: workspace server started without a port.");
+  }
 
-  console.log(`Preview: ${status!.url}`);
-  console.log(`Logs:    ${status!.logFile}`);
+  console.log(`Preview: ${url}`);
+  console.log(`Logs:    ${logFile}`);
 
   // Freshly started servers need a moment to bind; poll before opening so the
   // browser doesn't land on a connection-refused. An already-running server
   // opens immediately.
   if (!alreadyRunning) {
     process.stdout.write("Starting dev server…");
-    const ready = await waitForPort(status!.port, 20_000);
+    const ready = await waitForPort(port!, 20_000);
     console.log(ready ? " ready." : " still starting (tail the logs above).");
   }
 
-  openInBrowser(status!.url);
+  openInBrowser(url!);
 });
