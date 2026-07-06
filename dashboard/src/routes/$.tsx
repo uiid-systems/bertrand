@@ -62,7 +62,7 @@ function buildBreadcrumbs(
   const items: Crumb[] = [{ label: projectName, value: "/" }];
   for (let i = 0; i < segments.length; i++) {
     items.push({
-      label: segments[i]!,
+      label: segments[i],
       value: `/${segments.slice(0, i + 1).join("/")}`,
     });
   }
@@ -106,8 +106,8 @@ function CategoryDetail({
   categoryPath,
   sessions,
 }: {
-  categoryPath: string;
-  sessions: SessionWithCategory[];
+  readonly categoryPath: string;
+  readonly sessions: SessionWithCategory[];
 }) {
   const projectName = useProjectName();
   const filtered = sessions.filter((s) => s.categoryPath === categoryPath);
@@ -139,7 +139,7 @@ function CategoryDetail({
 }
 CategoryDetail.displayName = "CategoryDetail";
 
-function SessionDetail({ match }: { match: SessionWithCategory }) {
+function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const activeProjectName = useProjectName();
   const projectSlug = match.project?.slug;
   const projectName = match.project?.name ?? activeProjectName;
@@ -183,12 +183,7 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
             side="right"
             title="Session stats"
             trigger={
-              <Button
-                tooltip="Session stats"
-                variant="subtle"
-                size="small"
-                shape="square"
-              >
+              <Button tooltip="Session stats" variant="subtle" size="small">
                 <PanelRightIcon />
               </Button>
             }
@@ -229,7 +224,7 @@ function SessionDetail({ match }: { match: SessionWithCategory }) {
 SessionDetail.displayName = "SessionDetail";
 
 /** Per-event icon for the timeline's media column, tinted to the rail color. */
-function EventMedia({ event }: { event: EventRow }) {
+function EventMedia({ event }: { readonly event: EventRow }) {
   const Icon = eventIcon(event.event);
   return (
     <Text color={eventColor(event.event)} render={<span />}>
@@ -239,7 +234,7 @@ function EventMedia({ event }: { event: EventRow }) {
 }
 EventMedia.displayName = "EventMedia";
 
-function ArchiveToggle({ session }: { session: SessionRow }) {
+function ArchiveToggle({ session }: { readonly session: SessionRow }) {
   const action = useArchiveAction(session);
   const { Icon } = action;
   return (
@@ -247,7 +242,6 @@ function ArchiveToggle({ session }: { session: SessionRow }) {
       tooltip={action.tooltip}
       variant="subtle"
       size="small"
-      shape="square"
       disabled={action.disabled}
       loading={action.loading}
       onClick={action.onClick}
@@ -260,8 +254,8 @@ function ArchiveToggle({ session }: { session: SessionRow }) {
 ArchiveToggle.displayName = "ArchiveToggle";
 
 type SessionFooterProps = {
-  session: SessionRow;
-  pendingQuestion: string | null;
+  readonly session: SessionRow;
+  readonly pendingQuestion: string | null;
 };
 
 function SessionFooter({ session, pendingQuestion }: SessionFooterProps) {

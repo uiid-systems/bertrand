@@ -1,14 +1,12 @@
-import {
-  ListItem,
-  Stack,
-  Group,
-  Status,
-  type StatusProps,
-} from "@uiid/design-system";
+import { Link } from "@tanstack/react-router";
+
+import { Card, Group, ListItem, Text } from "@uiid/design-system";
+
 import type { SessionWithCategory } from "@/types";
-import { statusColor } from "../../../lib/format";
+
+import { formatRelativeTime, statusColor } from "../../../lib/format";
+
 import { SessionLabel } from "./session-label";
-import { SessionRowActions } from "./session-row-actions";
 import { SessionContent } from "./session-content";
 
 type SessionListItemProps = {
@@ -16,24 +14,34 @@ type SessionListItemProps = {
 };
 
 export const SessionListItem = ({ session: s }: SessionListItemProps) => {
-  const color = statusColor(s.session.status) as StatusProps["color"];
   const isArchived = s.session.status === "archived";
+  const backgroundColor = statusColor(s.session.status);
+
   return (
     <ListItem
+      data-slot="sidebar-session-list-item"
       data-archived={isArchived ? "" : undefined}
       style={isArchived ? { opacity: 0.4 } : undefined}
     >
-      <Stack fullwidth>
-        <Group ay="center" gap={2} fullwidth>
-          <Status color={color} />
-          <SessionLabel session={s} />
-          <SessionRowActions
-            session={s.session}
-            categoryPath={s.categoryPath}
+      <Card
+        render={
+          <Link
+            to="/$"
+            params={{ _splat: `${s.categoryPath}/${s.session.slug}` }}
           />
+        }
+        p={2}
+        fullwidth
+        style={{ backgroundColor }}
+      >
+        <Group gap={2} ay="center" fullwidth>
+          <SessionLabel session={s} />
+          <Text size={-1} shade="muted" ml="auto">
+            {formatRelativeTime(s.session.startedAt)}
+          </Text>
         </Group>
         <SessionContent session={s} />
-      </Stack>
+      </Card>
     </ListItem>
   );
 };
