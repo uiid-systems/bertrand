@@ -260,17 +260,27 @@ We deliberately do the frontend-critical inner rings and leave the rest to conve
     lockfile→package-manager detection, repo-committed override
     (`package.json#bertrand` / `.bertrand/config.json`), `resolveWorkspace(dir)`, and the
     `BERTRAND_PORT`/`_WORKSPACE`/`_ROOT`/`_PREVIEW_URL` env contract. Pure logic, no spawning.
-  - **1B — port allocation + dev-server process manager.** Deterministic per-session port
-    (collision/prune handling); spawn the resolved `run` command in the worktree cwd with
-    the injected env, PID file + log file, start-on-entry / stop-on-exit.
-  - **1C — HTTP reverse proxy.** Host-header routing → registered session port, WS upgrades.
-  - **1D — surfacing.** `bertrand open <session>` + dashboard panel (URL, start/stop, logs).
+  - **1B — port allocation + dev-server process manager.** ✅ Shipped (in
+    [#152](https://github.com/uiid-systems/bertrand/pull/152)). Deterministic per-session
+    port (`4700..4899`, collision/prune handling); spawn the resolved `setup && run` in the
+    worktree cwd with the injected env, PID file + tailable log file, group-kill on stop.
+  - **1D — surfacing.** `bertrand open <session>` (lazy-starts the server + opens the URL)
+    and the dashboard worktrees panel (URL, start/stop, tailed logs).
 
   **URL decision (settled):** Phase 1 previews are plain `http://localhost:<port>`. The
   branded `*.local.bertrand.sh` wildcard DNS record **is not set up yet** (confirmed via
   `dig`; apex `bertrand.sh` → `216.198.79.1`, wildcard empty), so subdomains + TLS move
   wholesale to Phase 2. `localhostPreviewUrl()` in `src/lib/workspace/env.ts` is the single
   seam that changes when they land.
+
+  **1C (reverse proxy) moved to Phase 2.** With `localhost:<port>` there is nothing to
+  route — each dev server already listens on its own loopback port, so you open it
+  directly. Host-header routing only earns its keep once branded subdomains exist, so the
+  proxy ships with them in Phase 2. Phase 1 is therefore **1A + 1B + 1D**.
+
+  **Start trigger (settled): lazy on `bertrand open`,** not eager-on-entry. The 1B
+  mechanism does no auto-starting; `bertrand open` (and the dashboard's start button) are
+  the only things that spawn a server, so nothing runs for a session you never view.
 - **Phase 2 — the endgame.** Privileged helper: clean `:443` URLs, local-CA valid HTTPS,
   `/etc/hosts` management, `*.local.bertrand.sh` branding. No port, no warning, no cd.
 - **Phase 3 — breadth.** Monorepo/multi-app, archive scripts, richer isolation

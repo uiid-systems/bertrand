@@ -27,6 +27,7 @@ if (command && command in hotPath) {
     import("./cli/commands/stats"),
     import("./cli/commands/backfill-stats"),
     import("./cli/commands/archive"),
+    import("./cli/commands/open"),
     import("./cli/commands/update"),
     import("./cli/commands/ingest-transcript"),
     import("./cli/commands/contract"),
