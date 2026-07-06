@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { Text } from "@uiid/design-system";
 import type { SessionWithCategory } from "@/types";
 
@@ -8,18 +7,14 @@ type SessionLabelProps = {
 
 export const SessionLabel = ({ session: s }: SessionLabelProps) => (
   <Text
+    title={s.session.slug}
+    size={-1}
+    /** @todo: move `truncate` to text component */
     style={{
       textOverflow: "ellipsis",
       overflow: "hidden",
       whiteSpace: "nowrap",
     }}
-    render={
-      <Link
-        to="/$"
-        params={{ _splat: `${s.categoryPath}/${s.session.slug}` }}
-      />
-    }
-    size={-1}
   >
     {s.session.slug}
   </Text>

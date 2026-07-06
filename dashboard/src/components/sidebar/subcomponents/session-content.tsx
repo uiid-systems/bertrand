@@ -4,7 +4,6 @@ import { FilesIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
 import { allStatsQuery, sessionsQuery } from "../../../api/queries";
-import { formatRelativeTime } from "../../../lib/format";
 import { useSelectedProjects } from "../selected-projects";
 
 type SessionContentProps = {
@@ -31,15 +30,20 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
   const showProject = (queryProjects?.length ?? 0) > 1 && s.project;
 
   return (
-    <Group ay="center" gap={2}>
+    <Group ay="center" gap={2} fullwidth>
       {showProject && (
         <Text size={-1} shade="muted" weight="bold">
           {s.project!.name}
         </Text>
       )}
-      <Text size={-1} shade="muted">
-        {formatRelativeTime(s.session.startedAt)}
-      </Text>
+      {filesTouched > 0 && (
+        <Group ay="start" gap={1}>
+          <FilesIcon size={12} />
+          <Text size={-1} family="mono" shade="muted">
+            {filesTouched}
+          </Text>
+        </Group>
+      )}
       {hasDiff && (
         <Group ay="center" gap={1}>
           <Text size={-1} family="mono" color="green">
@@ -50,16 +54,12 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
           </Text>
         </Group>
       )}
-      {filesTouched > 0 && (
-        <Group ay="start" gap={1}>
-          <FilesIcon size={12} />
-          <Text size={-1} family="mono" shade="muted">
-            {filesTouched}
-          </Text>
-        </Group>
-      )}
       {s.session.rating !== null && s.session.rating !== undefined && (
-        <Text aria-label={`Rated ${s.session.rating} of 5 stars`}>
+        <Text
+          color="yellow"
+          aria-label={`Rated ${s.session.rating} of 5 stars`}
+          ml="auto"
+        >
           {[1, 2, 3, 4, 5]
             .map((n) => (n <= s.session.rating! ? "★" : "☆"))
             .join("")}

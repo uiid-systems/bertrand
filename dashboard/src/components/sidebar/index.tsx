@@ -89,41 +89,39 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-      </Group>
-      <Group ay="center" ax="space-between" gap={2}>
-        <ToggleGroup
-          size="sm"
-          value={[groupBy]}
-          onValueChange={(value) => {
-            const next = value[0] as GroupBy | undefined;
-            if (next) setGroupBy(next);
+        <ToggleButton
+          size="small"
+          variant="subtle"
+          tooltip={includeArchived ? "Hide archived" : "Show archived"}
+          pressed={includeArchived}
+          onPressedChange={setIncludeArchived}
+          icon={{
+            unpressed: <EyeOffIcon />,
+            pressed: <EyeIcon />,
           }}
-        >
-          <Toggle value="group" aria-label="Group by group">
-            <Tooltip trigger={<GroupIcon />}>Group by group</Tooltip>
-          </Toggle>
-          <Toggle value="status" aria-label="Group by status">
-            <Tooltip trigger={<TagsIcon />}>Group by status</Tooltip>
-          </Toggle>
-          <Toggle value="recent" aria-label="Group by recent">
-            <Tooltip trigger={<ClockIcon />}>Group by recent</Tooltip>
-          </Toggle>
-        </ToggleGroup>
-        <Group ay="center" gap={1}>
-          <ToggleButton
-            size="small"
-            shape="square"
-            variant="subtle"
-            tooltip={includeArchived ? "Hide archived" : "Show archived"}
-            pressed={includeArchived}
-            onPressedChange={setIncludeArchived}
-            icon={{
-              unpressed: <EyeOffIcon />,
-              pressed: <EyeIcon />,
-            }}
-          />
-        </Group>
+        />
       </Group>
+
+      <ToggleGroup
+        render={<Group evenly fullwidth />}
+        size="sm"
+        value={[groupBy]}
+        onValueChange={(value) => {
+          const next = value[0] as GroupBy | undefined;
+          if (next) setGroupBy(next);
+        }}
+      >
+        <Toggle value="group" aria-label="Group by group">
+          <Tooltip trigger={<GroupIcon />}>Group by group</Tooltip>
+        </Toggle>
+        <Toggle value="status" aria-label="Group by status">
+          <Tooltip trigger={<TagsIcon />}>Group by status</Tooltip>
+        </Toggle>
+        <Toggle value="recent" aria-label="Group by recent">
+          <Tooltip trigger={<ClockIcon />}>Group by recent</Tooltip>
+        </Toggle>
+      </ToggleGroup>
+
       {groups.length === 0 ? (
         <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
           No sessions match "{query}".

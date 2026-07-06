@@ -1,5 +1,5 @@
 import { Button, Group, SelectMultiple } from "@uiid/design-system";
-import { ActivityIcon } from "@uiid/icons";
+import { ActivityIcon, FolderIcon } from "@uiid/icons";
 
 import { useSelectedProjects } from "../selected-projects";
 
@@ -23,26 +23,23 @@ export const ProjectSelector = () => {
 
   return (
     <Group ay="center" gap={1} fullwidth>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <SelectMultiple
-          size="small"
-          fullwidth
-          items={items}
-          value={value}
-          onValueChange={(next) => setSelected(next)}
-          disabled={!multiple}
-          placeholder="Select projects"
-        />
-      </div>
+      <SelectMultiple
+        placeholder="Select projects"
+        items={items}
+        value={value}
+        onValueChange={(next) => setSelected(next)}
+        before={<FolderIcon />}
+        size="small"
+        disabled={!multiple}
+        fullwidth
+      />
       {multiple && (
         <Button
           tooltip="Show live projects"
-          aria-label="Show live projects"
+          onClick={resetToLive}
+          disabled={isAtLiveDefault}
           variant="subtle"
           size="small"
-          shape="square"
-          disabled={isAtLiveDefault}
-          onClick={resetToLive}
         >
           <ActivityIcon />
         </Button>

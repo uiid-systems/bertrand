@@ -74,7 +74,6 @@ const DevButton = ({
       tooltip={tooltip}
       variant="subtle"
       size="small"
-      shape="square"
     >
       {icon}
     </Button>
