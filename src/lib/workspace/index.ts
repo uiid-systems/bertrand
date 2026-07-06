@@ -22,3 +22,11 @@ export {
   workspaceEnv,
   type WorkspaceEnvInput,
 } from "./env";
+export { allocatePort, getPort, releasePort, prunePorts } from "./port";
+export {
+  startWorkspaceServer,
+  stopWorkspaceServer,
+  getWorkspaceServer,
+  type WorkspaceServerStatus,
+  type StartWorkspaceInput,
+} from "./server";
