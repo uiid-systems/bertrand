@@ -1,8 +1,30 @@
 # Workspaces & Live Preview
 
-**Status:** Design / proposed
-**Date:** 2026-06-23
+**Status:** Phase 1 built & verified (in review, [#152](https://github.com/uiid-systems/bertrand/pull/152)); Phase 2 deferred
+**Date:** 2026-06-23 (updated 2026-07-05)
 **Owner:** Adam
+
+## Progress log
+
+- **2026-06-23** — Design written. Phase 0 (worktree visibility) shipped in
+  [#142](https://github.com/uiid-systems/bertrand/pull/142).
+- **2026-07-05** — **Phase 1 built end-to-end** in
+  [#152](https://github.com/uiid-systems/bertrand/pull/152): `src/lib/workspace/`
+  (dev-command resolution + env contract, deterministic ports, detached
+  dev-server manager), the `bertrand open <session>` command, and live preview
+  controls on the dashboard worktrees panel (URL, start/stop, tailed logs).
+  Verified against a real git worktree + a real spawned dev server: detection,
+  `PORT`/`BERTRAND_*` env injection, allocation, idempotent start, and clean
+  stop all confirmed. Two decisions settled: previews are plain
+  `http://localhost:<port>` for now, and the reverse proxy (former 1C) moved to
+  Phase 2 because loopback ports need no routing. Start is **lazy** (via
+  `bertrand open` / the dashboard) — nothing auto-starts on worktree entry.
+- **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
+  helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
+  **not yet designed**. One thing worth remembering when we pick it up: a single
+  public `*.local.bertrand.sh` DNS record covers hosts at any depth (RFC 4592),
+  but TLS wildcards match only one label — so nested `<slug>.<project>` hosts
+  need a per-project cert (cheap to mint locally) or a flattened single-label host.
 
 ## Goal
 
