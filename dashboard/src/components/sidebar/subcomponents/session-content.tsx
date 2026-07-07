@@ -26,16 +26,9 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
   const linesRemoved = stats?.linesRemoved ?? 0;
   const filesTouched = stats?.filesTouched ?? 0;
   const hasDiff = linesAdded > 0 || linesRemoved > 0;
-  // Disambiguate rows once the list spans more than one project.
-  const showProject = (queryProjects?.length ?? 0) > 1 && s.project;
 
   return (
     <Group ay="center" gap={2} fullwidth>
-      {showProject && (
-        <Text size={-1} shade="muted" weight="bold">
-          {s.project!.name}
-        </Text>
-      )}
       {filesTouched > 0 && (
         <Group ay="start" gap={1}>
           <FilesIcon size={12} />

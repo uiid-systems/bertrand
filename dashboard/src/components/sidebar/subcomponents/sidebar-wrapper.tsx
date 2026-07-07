@@ -10,6 +10,7 @@ export const SidebarWrapper = ({ children, ...props }: SidebarWrapperProps) => (
     fullwidth
     gap={3}
     p={4}
+    pb={64}
     {...props}
   >
     {children}

@@ -209,7 +209,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             }))}
             ItemProps={{
               style: { width: "100%" },
-              ContentProps: { fullwidth: true, maxw: 860 },
+              ContentProps: { fullwidth: true, maxw: 860, pb: 4 },
             }}
           />
         )}

@@ -1,87 +1,67 @@
-import type { SessionRow, SessionWithCategory } from "../../api/types";
-import type { RecentBucket, GroupBy, SessionGroup } from "./sidebar.types";
-import {
-  STATUS_ORDER,
-  STATUS_LABEL,
-  MS_PER_DAY,
-  RECENT_ORDER,
-  RECENT_LABEL,
-} from "./sidebar.constants";
+import type { SessionWithCategory } from "../../api/types";
+import type { SessionGroup, SidebarLayout } from "./sidebar.types";
+import { LIVE_STATUS_ORDER } from "./sidebar.constants";
 
-export function recentBucketOf(startedAt: string, now: Date): RecentBucket {
-  const start = new Date(startedAt);
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-  const startOfSession = new Date(
-    start.getFullYear(),
-    start.getMonth(),
-    start.getDate(),
-  );
-  const dayDiff = Math.floor(
-    (startOfToday.getTime() - startOfSession.getTime()) / MS_PER_DAY,
-  );
-  if (dayDiff <= 0) return "today";
-  if (dayDiff === 1) return "yesterday";
-  if (dayDiff < 7) return "thisWeek";
-  return "earlier";
+/**
+ * Last meaningful activity. `updatedAt` is bumped on every status transition
+ * (and rename/rate/move), so it reads as "time since this session last did
+ * something" — the right clock for both zones, unlike `startedAt` (creation).
+ */
+const activityTime = (s: SessionWithCategory): number =>
+  new Date(s.session.updatedAt).getTime();
+
+/** Active or waiting — the states that belong in the pinned "Needs you" zone. */
+export function isLive(s: SessionWithCategory): boolean {
+  return s.session.status === "active" || s.session.status === "waiting";
 }
 
-export function groupSessions(
+/**
+ * Arrange sessions into the two-zone model:
+ *  - `live` — active/waiting, across all in-scope projects, ordered
+ *    waiting-first (blocked on the user) then by most-recent activity.
+ *  - `projects` — everything else (paused, plus archived when shown), grouped
+ *    by project. Each group is sorted by most-recent activity, and the groups
+ *    themselves are ordered by their most recently active session, so the
+ *    project you touched last floats up.
+ *
+ * Grouping keys on the project, not the category path: two projects that share
+ * a category name (e.g. both have a `sidebar` category) must stay separate.
+ */
+export function buildSidebarLayout(
   sessions: SessionWithCategory[],
-  axis: GroupBy,
-): SessionGroup[] {
-  if (axis === "status") {
-    const buckets = new Map<SessionRow["status"], SessionWithCategory[]>();
-    for (const s of sessions) {
-      const key = s.session.status;
-      const list = buckets.get(key);
-      if (list) list.push(s);
-      else buckets.set(key, [s]);
-    }
-    return STATUS_ORDER.filter((status) => buckets.has(status)).map(
-      (status): SessionGroup => ({
-        key: status,
-        category: STATUS_LABEL[status],
-        sessions: buckets.get(status)!,
-      }),
-    );
-  }
-
-  if (axis === "recent") {
-    const now = new Date();
-    const buckets = new Map<RecentBucket, SessionWithCategory[]>();
-    for (const s of sessions) {
-      const key = recentBucketOf(s.session.startedAt, now);
-      const list = buckets.get(key);
-      if (list) list.push(s);
-      else buckets.set(key, [s]);
-    }
-    return RECENT_ORDER.filter((bucket) => buckets.has(bucket)).map(
-      (bucket): SessionGroup => ({
-        key: bucket,
-        category: RECENT_LABEL[bucket],
-        sessions: buckets.get(bucket)!,
-      }),
-    );
-  }
-
-  const groups = new Map<string, SessionWithCategory[]>();
+): SidebarLayout {
+  const live: SessionWithCategory[] = [];
+  const rest: SessionWithCategory[] = [];
   for (const s of sessions) {
-    const key = s.categoryPath;
-    const list = groups.get(key);
-    if (list) list.push(s);
-    else groups.set(key, [s]);
+    (isLive(s) ? live : rest).push(s);
   }
 
-  return Array.from(
-    groups,
-    ([category, sessions]): SessionGroup => ({
-      key: category,
-      category,
-      sessions,
-    }),
+  live.sort((a, b) => {
+    const pa = LIVE_STATUS_ORDER.indexOf(a.session.status);
+    const pb = LIVE_STATUS_ORDER.indexOf(b.session.status);
+    if (pa !== pb) return pa - pb;
+    return activityTime(b) - activityTime(a);
+  });
+
+  const byProject = new Map<string, SessionWithCategory[]>();
+  for (const s of rest) {
+    const key = s.project?.slug ?? s.categoryPath;
+    const list = byProject.get(key);
+    if (list) list.push(s);
+    else byProject.set(key, [s]);
+  }
+
+  const projects = Array.from(byProject, ([key, list]): SessionGroup => {
+    list.sort((a, b) => activityTime(b) - activityTime(a));
+    return {
+      key,
+      category: list[0]?.project?.name ?? list[0]?.categoryPath ?? key,
+      sessions: list,
+    };
+  });
+  projects.sort(
+    (a, b) => activityTime(b.sessions[0]) - activityTime(a.sessions[0]),
   );
+
+  return { live, projects };
 }
