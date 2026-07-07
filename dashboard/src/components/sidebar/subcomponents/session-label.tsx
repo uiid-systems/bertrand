@@ -8,7 +8,7 @@ type SessionLabelProps = {
 export const SessionLabel = ({ session: s }: SessionLabelProps) => (
   <Text
     title={s.session.slug}
-    size={-1}
+    weight="semibold"
     /** @todo: move `truncate` to text component */
     style={{
       textOverflow: "ellipsis",

@@ -23,13 +23,10 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const { _splat } = useParams({ strict: false });
   const isCurrent = (_splat ?? "").replace(/^\/+|\/+$/g, "") === splat;
 
+  const isYellow =
+    color === "yellow" ? "var(--color-yellow)" : "var(--globals-outline-color)";
   // Outline follows status — green (active) / yellow (waiting), white otherwise.
-  const outlineColor =
-    color === "green"
-      ? "var(--color-green)"
-      : color === "yellow"
-        ? "var(--color-yellow)"
-        : "var(--globals-outline-color)";
+  const outlineColor = color === "green" ? "var(--color-green)" : isYellow;
 
   return (
     <ListItem
@@ -43,6 +40,7 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
         p={2}
         fullwidth
         aria-current={isCurrent ? "page" : undefined}
+        InnerContainerProps={{ gap: 1 }}
         style={
           isCurrent
             ? {

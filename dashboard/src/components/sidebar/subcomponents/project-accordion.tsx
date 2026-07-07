@@ -78,8 +78,6 @@ export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
       onValueChange={handleChange}
       items={items}
       ContentProps={{ p: 0, fullwidth: true }}
-      // Animation disabled for now — the height transition is janky with many
-      // stacked items. `transition: none` snaps sections open/closed.
       PanelProps={{ style: { overflow: "visible", transition: "none" } }}
     />
   );
