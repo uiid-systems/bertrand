@@ -1,14 +1,8 @@
-import {
-  Card,
-  List,
-  Stack,
-  Tabs,
-  Text,
-  type TabProps,
-} from "@uiid/design-system";
+import { List, Stack, Tabs, Text, type TabProps } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
+import { EventCard } from "./event_card";
 
 type QuestionOption = {
   label: string;
@@ -146,11 +140,9 @@ export function InteractionContent({ event }: InteractionContentProps) {
     if (entries.length === 1) {
       const [question, answer] = entries[0];
       return (
-        <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
-          <Card gap={4} fullwidth>
-            {renderQuestionBody(question, answer)}
-          </Card>
-        </Stack>
+        <EventCard>
+          {renderQuestionBody(question, answer)}
+        </EventCard>
       );
     }
 
@@ -164,11 +156,9 @@ export function InteractionContent({ event }: InteractionContentProps) {
     });
 
     return (
-      <Stack data-slot="interaction-content" gap={2} py={4} fullwidth>
-        <Card gap={4} fullwidth>
-          <Tabs items={tabs} ContainerProps={{ fullwidth: true, mt: 6 }} />
-        </Card>
-      </Stack>
+      <EventCard>
+        <Tabs items={tabs} ContainerProps={{ fullwidth: true, mt: 6 }} />
+      </EventCard>
     );
   }
 
@@ -177,21 +167,12 @@ export function InteractionContent({ event }: InteractionContentProps) {
     if (!prompt) return null;
 
     return (
-      <CardContainer>
+      <EventCard>
         <Markdown>{prompt}</Markdown>
-      </CardContainer>
+      </EventCard>
     );
   }
 
   return null;
 }
 InteractionContent.displayName = "InteractionContent";
-
-const CardContainer = ({ children }: React.PropsWithChildren) => (
-  <Stack data-slot="interaction-content" py={4} fullwidth>
-    <Card gap={4} fullwidth>
-      {children}
-    </Card>
-  </Stack>
-);
-CardContainer.displayName = "CardContainer";

@@ -1,7 +1,10 @@
-import { Stack, Text } from "@uiid/design-system";
+import { useState } from "react";
+import { Collapsible, Group, Stack, Text } from "@uiid/design-system";
+import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
 import { DiffBlock } from "../diff/diff-block";
+import { EventCard } from "./event_card";
 
 type EditEntry = { oldStr: string; newStr: string };
 
@@ -73,12 +76,25 @@ export function WorkContent({ event }: WorkContentProps) {
 
     // Diff entries: CodeBlock's filename header already shows the file
     // path, so a separate label row above it would just repeat it.
-    if (hasDiff(p)) return <DiffContent permission={p} />;
+    if (hasDiff(p))
+      return (
+        <EventCard>
+          <DiffContent permission={p} />
+        </EventCard>
+      );
 
-    return <PermissionLabel permission={p} />;
+    return (
+      <EventCard>
+        <PermissionLabel permission={p} />
+      </EventCard>
+    );
   }
 
-  return <MultiPermissionContent permissions={permissions} />;
+  return (
+    <EventCard>
+      <MultiPermissionContent permissions={permissions} />
+    </EventCard>
+  );
 }
 
 function MultiPermissionContent({
@@ -103,13 +119,46 @@ function MultiPermissionContent({
         </Stack>
       )}
       {infoPermissions.length > 0 && (
-        <Stack gap={1} fullwidth>
-          {infoPermissions.map((p, i) => (
-            <PermissionLabel key={`info-${i}`} permission={p} />
-          ))}
-        </Stack>
+        <InfoPermissions permissions={infoPermissions} />
       )}
     </Stack>
+  );
+}
+
+/**
+ * The non-diff tool calls (Bash, Read, Grep, …) are the noisy part of a busy
+ * work stretch — consecutive ones are already merged upstream, so they arrive
+ * as a long list. Collapse them behind a one-line summary (closed by default)
+ * while diffs stay visible inline, so command noise doesn't crowd out the
+ * prompts/answers/messages that carry the session's narrative.
+ */
+function InfoPermissions({ permissions }: { permissions: PermissionDetail[] }) {
+  const [open, setOpen] = useState(false);
+  const count = permissions.length;
+  const summary = `${count} tool ${count === 1 ? "call" : "calls"}`;
+
+  return (
+    <Collapsible
+      RootProps={{ open, onOpenChange: setOpen }}
+      trigger={
+        <Group gap={1} ay="center" style={{ cursor: "pointer" }}>
+          {open ? (
+            <ChevronDownIcon size={14} />
+          ) : (
+            <ChevronRightIcon size={14} />
+          )}
+          <Text size={-1} family="mono" shade="muted">
+            {summary}
+          </Text>
+        </Group>
+      }
+    >
+      <Stack gap={1} pt={2} fullwidth>
+        {permissions.map((p, i) => (
+          <PermissionLabel key={`info-${i}`} permission={p} />
+        ))}
+      </Stack>
+    </Collapsible>
   );
 }
 WorkContent.displayName = "WorkContent";

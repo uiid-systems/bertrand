@@ -15,7 +15,7 @@ type SessionListItemProps = {
 
 export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const isArchived = s.session.status === "archived";
-  const backgroundColor = statusColor(s.session.status);
+  const color = statusColor(s.session.status);
 
   return (
     <ListItem
@@ -30,9 +30,9 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
             params={{ _splat: `${s.categoryPath}/${s.session.slug}` }}
           />
         }
+        color={color === "neutral" ? undefined : color}
         p={2}
         fullwidth
-        style={{ backgroundColor }}
       >
         <Group gap={2} ay="center" fullwidth>
           <SessionLabel session={s} />

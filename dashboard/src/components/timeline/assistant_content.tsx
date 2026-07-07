@@ -2,6 +2,7 @@ import { Badge, Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
+import { EventCard } from "./event_card";
 
 type AssistantContentProps = {
   event: EventRow;
@@ -23,12 +24,14 @@ export function AssistantContent({ event }: AssistantContentProps) {
   if (!text && thinkingBlocks === 0) return null;
 
   return (
-    <Stack data-slot="assistant-content" gap={2}>
-      {thinkingBlocks > 0 && (
-        <Badge color="indigo">{`Thought ${thoughtDots(thinkingBytes)}`}</Badge>
-      )}
-      {text && <Markdown>{text}</Markdown>}
-    </Stack>
+    <EventCard>
+      <Stack data-slot="assistant-content" gap={2}>
+        {thinkingBlocks > 0 && (
+          <Badge color="indigo">{`Thought ${thoughtDots(thinkingBytes)}`}</Badge>
+        )}
+        {text && <Markdown>{text}</Markdown>}
+      </Stack>
+    </EventCard>
   );
 }
 AssistantContent.displayName = "AssistantContent";
