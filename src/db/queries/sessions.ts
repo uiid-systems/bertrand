@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
@@ -150,10 +150,11 @@ function selectSessions(
           "paused",
         ])
       )
+      .orderBy(desc(sessions.updatedAt))
       .all();
   }
 
-  return query.all();
+  return query.orderBy(desc(sessions.updatedAt)).all();
 }
 
 export function getAllSessions(opts?: {

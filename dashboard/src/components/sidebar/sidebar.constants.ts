@@ -1,32 +1,8 @@
-import type { SessionRow } from "../../api/types";
-import type { RecentBucket } from "./sidebar.types";
+import type { SessionStatus } from "../../api/types";
 
-export const MS_PER_DAY = 24 * 60 * 60 * 1000; // 1 day in milliseconds
-
-export const STATUS_ORDER: SessionRow["status"][] = [
-  "active",
-  "waiting",
-  "paused",
-  "archived",
-];
-
-export const STATUS_LABEL: Record<SessionRow["status"], string> = {
-  active: "Active",
-  waiting: "Waiting",
-  paused: "Paused",
-  archived: "Archived",
-};
-
-export const RECENT_ORDER: RecentBucket[] = [
-  "today",
-  "yesterday",
-  "thisWeek",
-  "earlier",
-];
-
-export const RECENT_LABEL: Record<RecentBucket, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  thisWeek: "This week",
-  earlier: "Earlier",
-};
+/**
+ * Statuses that qualify for the pinned "Needs you" zone, in priority order.
+ * Waiting comes first: a waiting session is blocked on the user (they're the
+ * bottleneck), whereas an active one is Claude working — nothing to act on yet.
+ */
+export const LIVE_STATUS_ORDER: SessionStatus[] = ["waiting", "active"];

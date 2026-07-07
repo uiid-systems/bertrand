@@ -37,7 +37,7 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
         <Group gap={2} ay="center" fullwidth>
           <SessionLabel session={s} />
           <Text size={-1} shade="muted" ml="auto">
-            {formatRelativeTime(s.session.startedAt)}
+            {formatRelativeTime(s.session.updatedAt)}
           </Text>
         </Group>
         <SessionContent session={s} />

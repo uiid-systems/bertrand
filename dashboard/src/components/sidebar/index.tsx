@@ -7,28 +7,18 @@ import {
   Kbd,
   Stack,
   Text,
-  Toggle,
   ToggleButton,
-  ToggleGroup,
-  Tooltip,
 } from "@uiid/design-system";
-import {
-  TagsIcon,
-  ClockIcon,
-  EyeIcon,
-  EyeOffIcon,
-  GroupIcon,
-  SearchIcon,
-} from "@uiid/icons";
+import { EyeIcon, EyeOffIcon, SearchIcon } from "@uiid/icons";
 
 import { sessionsQuery } from "../../api/queries";
 
 import { useSelectedProjects } from "./selected-projects";
 import { ProjectSelector } from "./subcomponents/project-selector";
-import type { GroupBy } from "./sidebar.types";
-import { groupSessions } from "./sidebar.utils";
+import { buildSidebarLayout } from "./sidebar.utils";
 
-import { SessionGroupSection } from "./subcomponents/session-group-section";
+import { LiveZone } from "./subcomponents/live-zone";
+import { ProjectAccordion } from "./subcomponents/project-accordion";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -40,7 +30,6 @@ export type SidebarProps = {
 
 export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("group");
   const [includeArchived, setIncludeArchived] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -49,8 +38,10 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     sessionsQuery({ includeArchived, projects: queryProjects }),
   );
 
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  const trimmedQuery = query.trim();
+
+  const { live, projects } = useMemo(() => {
+    const q = trimmedQuery.toLowerCase();
     const filtered = q
       ? sessions.filter(
           (s) =>
@@ -59,8 +50,8 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
             s.categoryPath.toLowerCase().includes(q),
         )
       : sessions;
-    return groupSessions(filtered, groupBy);
-  }, [sessions, query, groupBy]);
+    return buildSidebarLayout(filtered);
+  }, [sessions, trimmedQuery]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -73,6 +64,8 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  const isEmpty = live.length === 0 && projects.length === 0;
 
   return (
     <SidebarWrapper {...WrapperProps}>
@@ -102,35 +95,14 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
         />
       </Group>
 
-      <ToggleGroup
-        render={<Group evenly fullwidth />}
-        size="sm"
-        value={[groupBy]}
-        onValueChange={(value) => {
-          const next = value[0] as GroupBy | undefined;
-          if (next) setGroupBy(next);
-        }}
-      >
-        <Toggle value="group" aria-label="Group by group">
-          <Tooltip trigger={<GroupIcon />}>Group by group</Tooltip>
-        </Toggle>
-        <Toggle value="status" aria-label="Group by status">
-          <Tooltip trigger={<TagsIcon />}>Group by status</Tooltip>
-        </Toggle>
-        <Toggle value="recent" aria-label="Group by recent">
-          <Tooltip trigger={<ClockIcon />}>Group by recent</Tooltip>
-        </Toggle>
-      </ToggleGroup>
-
-      {groups.length === 0 ? (
+      {isEmpty ? (
         <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
-          No sessions match "{query}".
+          {trimmedQuery ? `No sessions match "${query}".` : "No sessions yet."}
         </Text>
       ) : (
         <Stack ax="stretch" gap={3} fullwidth>
-          {groups.map((group) => (
-            <SessionGroupSection key={group.key} group={group} />
-          ))}
+          <LiveZone sessions={live} showEmpty={!trimmedQuery} />
+          {projects.length > 0 && <ProjectAccordion projects={projects} />}
         </Stack>
       )}
     </SidebarWrapper>
