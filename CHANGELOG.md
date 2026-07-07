@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/uiid-systems/bertrand/compare/v0.25.1...v0.26.0) (2026-07-07)
+
+
+### Features
+
+* **dashboard:** render all timeline items in a uniform card ([#155](https://github.com/uiid-systems/bertrand/issues/155)) ([e6d15cb](https://github.com/uiid-systems/bertrand/commit/e6d15cbb9fc7a3987d627ebcaba7a1e6ca29790b))
+
+
+### Refactoring
+
+* **dashboard:** reorganize sidebar into live + project zones ([#157](https://github.com/uiid-systems/bertrand/issues/157)) ([65422e6](https://github.com/uiid-systems/bertrand/commit/65422e6707e8151f1893fe6794356ae564bdd785))
+
 ## [0.25.1](https://github.com/uiid-systems/bertrand/compare/v0.25.0...v0.25.1) (2026-07-06)
 
 
