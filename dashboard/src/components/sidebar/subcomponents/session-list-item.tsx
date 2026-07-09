@@ -23,10 +23,15 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const { _splat } = useParams({ strict: false });
   const isCurrent = (_splat ?? "").replace(/^\/+|\/+$/g, "") === splat;
 
-  const isYellow =
-    color === "yellow" ? "var(--color-yellow)" : "var(--globals-outline-color)";
-  // Outline follows status — green (active) / yellow (waiting), white otherwise.
-  const outlineColor = color === "green" ? "var(--color-green)" : isYellow;
+  // Outline follows status — green (active) / yellow (waiting) / orange
+  // (blocked on permission), white otherwise.
+  const OUTLINE_BY_COLOR: Record<string, string> = {
+    green: "var(--color-green)",
+    yellow: "var(--color-yellow)",
+    orange: "var(--color-orange)",
+  };
+  const outlineColor =
+    OUTLINE_BY_COLOR[color] ?? "var(--globals-outline-color)";
 
   return (
     <ListItem

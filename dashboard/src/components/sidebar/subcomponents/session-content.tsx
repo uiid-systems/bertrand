@@ -5,6 +5,7 @@ import { FilesIcon } from "@uiid/icons";
 import type { SessionWithCategory } from "@/types";
 import { allStatsQuery, sessionsQuery } from "../../../api/queries";
 import { useSelectedProjects } from "../selected-projects";
+import { isLive } from "../sidebar.utils";
 
 type SessionContentProps = {
   session: SessionWithCategory;
@@ -15,9 +16,7 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
   const { data: sessions = [] } = useQuery(
     sessionsQuery({ projects: queryProjects }),
   );
-  const hasLiveSession = sessions.some(
-    (x) => x.session.status === "active" || x.session.status === "waiting",
-  );
+  const hasLiveSession = sessions.some(isLive);
   const { data: allStats } = useQuery(
     allStatsQuery({ hasLiveSession, projects: queryProjects }),
   );

@@ -107,7 +107,9 @@ const listAllStats = (
     const db = getDbForProject(project.slug)
     for (const { session } of getAllSessionsForProject(project)) {
       const isLive =
-        session.status === "active" || session.status === "waiting"
+        session.status === "active" ||
+        session.status === "waiting" ||
+        session.status === "blocked"
       if (isLive) {
         result[session.id] = liveStats(session.id, db)
         continue
@@ -126,7 +128,9 @@ const getStatsBySession = (
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
   if (!session) return null
-  const isLive = session.status === "active" || session.status === "waiting"
+  const isLive = session.status === "active" ||
+        session.status === "waiting" ||
+        session.status === "blocked"
   if (isLive) return liveStats(sessionId!, db)
   return getSessionStats(sessionId!, db) ?? liveStats(sessionId!, db)
 }

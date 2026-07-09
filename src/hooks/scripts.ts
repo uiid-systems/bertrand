@@ -151,6 +151,12 @@ ${EXTRACT_TOOL}
 # would look identical to an auto-approved one.
 touch "${runtimeDir}/perm-pending-$sid"
 
+# Flip the session to \`blocked\` so the sidebar shows the distinct
+# permission-request state (orange) instead of looking like Claude is still
+# working. on-permission-done.sh flips it back to active once the approved
+# tool runs.
+bq update --session-id "$sid" --event session.blocked
+
 # Badge + notify in background
 bq badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
 bq notify bertrand "Needs permission: $tool" &
@@ -189,6 +195,9 @@ if [ -f "$marker" ]; then
   had_marker=1
   rm -f "$marker"
   bq badge --clear &
+  # Approved tool is now running → clear the blocked state back to active.
+  # No-op if the session already moved on (update dedupes same-status flips).
+  bq update --session-id "$sid" --event session.active &
 fi
 
 cid="\${BERTRAND_CLAUDE_ID:-}"

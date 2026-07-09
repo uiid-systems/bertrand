@@ -27,6 +27,7 @@ import {
   formatRelativeTime,
   formatTimestamp,
   statusColor,
+  statusLabel,
 } from "../lib/format";
 import {
   segmentConversations,
@@ -150,7 +151,9 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const projectName = match.project?.name ?? activeProjectName;
   const sessionId = match.session.id;
   const isLive =
-    match.session.status === "active" || match.session.status === "waiting";
+    match.session.status === "active" ||
+    match.session.status === "waiting" ||
+    match.session.status === "blocked";
 
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
@@ -325,13 +328,16 @@ type SessionFooterProps = {
 
 function SessionFooter({ session, pendingQuestion }: SessionFooterProps) {
   const color = statusColor(session.status) as StatusProps["color"];
-  const isLive = session.status === "active" || session.status === "waiting";
+  const isLive =
+    session.status === "active" ||
+    session.status === "waiting" ||
+    session.status === "blocked";
 
   return (
     <Stack bt={1} p={4} gap={3} fullwidth>
       <Group ay="center" gap={2} fullwidth>
         <Status color={color} pulse={isLive} />
-        <Badge color={color}>{session.status}</Badge>
+        <Badge color={color}>{statusLabel(session.status)}</Badge>
         {pendingQuestion && (
           <Text size={1} shade="muted">
             {pendingQuestion}

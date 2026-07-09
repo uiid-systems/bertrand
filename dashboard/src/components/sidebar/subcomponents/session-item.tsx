@@ -8,7 +8,7 @@ import {
   Text,
 } from "@uiid/design-system";
 import type { SessionWithCategory } from "../../../api/types";
-import { formatRelativeTime, statusColor } from "../../../lib/format";
+import { formatRelativeTime, statusColor, statusLabel } from "../../../lib/format";
 import { CopyResumeButton } from "../../copy-resume-button";
 
 export type SessionItem = Omit<GroupProps, "children"> & {
@@ -43,7 +43,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
         </Text>
       </Group>
       <Badge data-slot="session-badge" color={color} ml="auto">
-        {session.status}
+        {statusLabel(session.status)}
       </Badge>
       <CopyResumeButton session={session} categoryPath={categoryPath} />
     </Group>

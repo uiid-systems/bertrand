@@ -9,7 +9,7 @@ import {
   Text,
 } from "@uiid/design-system";
 import { worktreesQuery } from "../api/queries";
-import { formatRelativeTime, statusColor } from "../lib/format";
+import { formatRelativeTime, statusColor, statusLabel } from "../lib/format";
 
 function WorktreesPage() {
   const { data: worktrees = [] } = useQuery(worktreesQuery);
@@ -68,7 +68,7 @@ function WorktreesPage() {
                   )}
                 </Stack>
                 <Badge color={color} ml="auto">
-                  {session.status}
+                  {statusLabel(session.status)}
                 </Badge>
               </Group>
             );

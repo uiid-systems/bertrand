@@ -22,7 +22,7 @@ interface SessionMetrics {
   durationS: number;
 }
 
-const ACTIVE_STATUSES = ["active", "waiting"];
+const ACTIVE_STATUSES = ["active", "waiting", "blocked"];
 
 function getMetrics(sessionId: string, name: string, status: string): SessionMetrics {
   const stats = getSessionStats(sessionId);
