@@ -44,7 +44,7 @@ const RESULT_PATH: string = outputPath;
 /**
  * Phase-marker instrumentation, gated on BERTRAND_DEBUG_TUI=<file-path>.
  * Logs to a file (not stderr) so output doesn't fight with alt-screen.
- * Used to diagnose terminal-rendering issues (e.g. Warp blank-screen).
+ * Used to diagnose terminal-rendering issues (e.g. a dropped first paint).
  * Each line: <elapsed-ms> <phase> <detail?>
  */
 const DEBUG_PATH = process.env.BERTRAND_DEBUG_TUI || null;
@@ -106,8 +106,8 @@ try {
         { alternateScreen: true, patchConsole: true, onRender },
       );
       phase("render() post");
-      // Warp (and likely any terminal with strict alt-screen activation
-      // semantics) drops the very first paint emitted after \x1b[?1049h.
+      // Some terminals with strict alt-screen activation semantics drop the
+      // very first paint emitted after \x1b[?1049h.
       // Force a second paint with a microtask boundary between it and the
       // initial commit — `invalidate()` resets the diff's prev buffer so
       // the upcoming repaint outputs the full content, and
@@ -142,8 +142,8 @@ try {
         { alternateScreen: true, patchConsole: true, onRender },
       );
       phase("render() post");
-      // Warp (and likely any terminal with strict alt-screen activation
-      // semantics) drops the very first paint emitted after \x1b[?1049h.
+      // Some terminals with strict alt-screen activation semantics drop the
+      // very first paint emitted after \x1b[?1049h.
       // Force a second paint with a microtask boundary between it and the
       // initial commit — `invalidate()` resets the diff's prev buffer so
       // the upcoming repaint outputs the full content, and
@@ -184,8 +184,8 @@ try {
         { alternateScreen: true, patchConsole: true, onRender },
       );
       phase("render() post");
-      // Warp (and likely any terminal with strict alt-screen activation
-      // semantics) drops the very first paint emitted after \x1b[?1049h.
+      // Some terminals with strict alt-screen activation semantics drop the
+      // very first paint emitted after \x1b[?1049h.
       // Force a second paint with a microtask boundary between it and the
       // initial commit — `invalidate()` resets the diff's prev buffer so
       // the upcoming repaint outputs the full content, and
@@ -226,8 +226,8 @@ try {
         { alternateScreen: true, patchConsole: true, onRender },
       );
       phase("render() post");
-      // Warp (and likely any terminal with strict alt-screen activation
-      // semantics) drops the very first paint emitted after \x1b[?1049h.
+      // Some terminals with strict alt-screen activation semantics drop the
+      // very first paint emitted after \x1b[?1049h.
       // Force a second paint with a microtask boundary between it and the
       // initial commit — `invalidate()` resets the diff's prev buffer so
       // the upcoming repaint outputs the full content, and

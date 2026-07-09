@@ -2,7 +2,6 @@
  * Bash hook script templates.
  *
  * Architecture: Claude Code hooks → bash scripts → `${BIN} update` → SQLite
- * Terminal integration via `${BIN} badge` / `${BIN} notify` (adapter-based).
  * The hooks read BERTRAND_SESSION (session ID) and BERTRAND_CLAUDE_ID from env.
  *
  * Two stderr channels by design:
@@ -18,7 +17,6 @@
  *   - jq -n kept for building meta JSON (safe escaping, acceptable cost)
  *   - permissionDoneScript folds diff extraction into the existing jq invocation
  *     so adding old_str/new_str capture costs nothing extra
- *   - badge/notify backgrounded where possible (terminal UI doesn't need to block Claude)
  *   - activeScript has a debounce guard to skip redundant updates
  */
 
@@ -73,9 +71,6 @@ if [ -n "$tpath" ]; then
   bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
 fi
 
-# Badge + notify in background — terminal UI doesn't need to block Claude
-bq badge message-question --color '#e0b956' --priority 20 --beep &
-bq notify bertrand "$question" &
 wait
 `;
 }
@@ -113,8 +108,6 @@ done_check="$(printf '%s' "$meta" | jq -r '.answers | to_entries | map(.value | 
 
 bq update --session-id "$sid" --event session.answered --meta "$meta"
 
-bq badge --clear &
-
 # The loop is healthy — the agent ended its turn on AskUserQuestion and the
 # user answered. Reset the Stop-hook nudge counter so its cap applies per
 # run of consecutive contract violations, not cumulatively across the session.
@@ -129,15 +122,13 @@ if printf '%s' "$done_check" | grep -q "Done for now"; then
 
   printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
 fi
-
-wait
 `;
 }
 
 /** PermissionRequest → write pending marker so PostToolUse can tag tool.used as approved */
 export function permissionWaitScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
-# Hook: PermissionRequest → mark pending, badge + notify
+# Hook: PermissionRequest → mark pending, flip session to blocked
 ${quietHelper(bin)}
 sid="\${BERTRAND_SESSION:-}"
 [ -z "$sid" ] && exit 0
@@ -156,11 +147,6 @@ touch "${runtimeDir}/perm-pending-$sid"
 # working. on-permission-done.sh flips it back to active once the approved
 # tool runs.
 bq update --session-id "$sid" --event session.blocked
-
-# Badge + notify in background
-bq badge bell-exclamation --color '#ff6b35' --priority 25 --beep &
-bq notify bertrand "Needs permission: $tool" &
-wait
 `;
 }
 
@@ -194,7 +180,6 @@ had_marker=0
 if [ -f "$marker" ]; then
   had_marker=1
   rm -f "$marker"
-  bq badge --clear &
   # Approved tool is now running → clear the blocked state back to active.
   # No-op if the session already moved on (update dedupes same-status flips).
   bq update --session-id "$sid" --event session.active &
@@ -259,7 +244,7 @@ export function userPromptScript(bin: string, runtimeDir: string): string {
 # The contract normally arrives via --append-system-prompt on bertrand's own
 # claude spawn, which reaches only that one process. Sessions that inherit the
 # BERTRAND_* env vars without going through launchClaude (background jobs,
-# nested \`claude\`, the Warp plugin's own launcher) never receive it. Re-
+# nested \`claude\`, an external launcher) never receive it. Re-
 # injecting here — through the durable env/hook channel — closes that gap.
 # Full contract on the first prompt of each conversation, a one-line reminder
 # thereafter, to keep the per-turn token cost low.
@@ -300,7 +285,7 @@ fi
  * contract — so we block it and force the loop to continue. This is the
  * mechanical guarantee that mirrors the multiSelect enforcement in
  * on-waiting.sh, and it works in any context the system-prompt contract can't
- * reach (background jobs, nested claude, the Warp launcher).
+ * reach (background jobs, nested claude, an external launcher).
  */
 export function doneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
@@ -345,7 +330,6 @@ fi
 # Terminal path: legitimate Done-for-now exit, or nudge cap exhausted.
 rm -f "$done_marker" "$nudge_marker"
 bq update --session-id "$sid" --event session.paused
-bq badge check --color '#58c142' --priority 10
 wait
 `;
 }

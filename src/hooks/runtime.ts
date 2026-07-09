@@ -10,7 +10,7 @@ import { paths } from "@/lib/paths";
  * state (`contract-sent-$cid`). The per-session markers are cleared along their
  * normal control flow, but `contract-sent-$cid` is intentionally write-once and
  * never removed by a hook — and sessions that bertrand didn't spawn (background
- * jobs, the Warp launcher) never reach finalizeSession, so their markers would
+ * jobs, an external launcher) never reach finalizeSession, so their markers would
  * otherwise accumulate forever.
  *
  * Two cleanup paths cover both cases:

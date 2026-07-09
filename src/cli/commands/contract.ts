@@ -12,7 +12,7 @@ import { helpText } from "@/cli/help";
  * bertrand's own `spawn("claude", …)` (see engine/process.ts). That's an argv
  * channel — it reaches exactly one process. Any Claude that runs inside the
  * bertrand environment but was *not* spawned by launchClaude (background jobs,
- * nested `claude` invocations, the Warp plugin's own launcher) inherits the
+ * nested `claude` invocations, an external launcher) inherits the
  * BERTRAND_* env vars — so every hook fires and treats it as a real session —
  * but never receives the contract argv.
  *

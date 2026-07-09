@@ -130,7 +130,7 @@ export interface ResumeOpts {
  */
 export async function launch(opts: LaunchOpts): Promise<string> {
   // Sweep orphaned contract-sent markers left by sessions bertrand never
-  // finalized (background jobs, the Warp launcher) before they accumulate.
+  // finalized (background jobs, an external launcher) before they accumulate.
   pruneStaleContractMarkers();
 
   // Check for duplicate session slug within the target category

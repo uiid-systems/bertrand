@@ -20,7 +20,7 @@ let stubBin: string;
 /**
  * Stub `bertrand` binary: the `contract` subcommand echoes a marker string so
  * the injection tests can assert which variant was requested; every other
- * subcommand (update/badge/assistant-message) is a silent no-op so it can't
+ * subcommand (update/assistant-message) is a silent no-op so it can't
  * pollute a hook's stdout.
  */
 const STUB = `#!/usr/bin/env bash

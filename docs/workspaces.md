@@ -151,8 +151,6 @@ and hands you a link:
 - **`bertrand open <session>`** — new command; opens the preview URL in the browser and
   lazily starts the server if it isn't running. (No `open`/`preview` command exists
   today — closest is `serve`.)
-- **Wave terminal** — surface the URL as a badge/link via the existing
-  `src/terminal/wave.ts` integration.
 
 ## Hard parts: DNS and TLS
 
@@ -259,7 +257,7 @@ We deliberately do the frontend-critical inner rings and leave the rest to conve
 - **Phase 2 — the endgame.** Privileged helper: clean `:443` URLs, local-CA valid HTTPS,
   `/etc/hosts` management, `*.local.bertrand.sh` branding. No port, no warning, no cd.
 - **Phase 3 — breadth.** Monorepo/multi-app, archive scripts, richer isolation
-  conventions (per-worktree DB), Wave terminal badges.
+  conventions (per-worktree DB).
 
 ## References
 

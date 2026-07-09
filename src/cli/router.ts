@@ -23,8 +23,6 @@ const HOOK_COMMANDS = new Set([
   "update",
   "assistant-message",
   "contract",
-  "notify",
-  "badge",
   "ensure-server",
 ]);
 
