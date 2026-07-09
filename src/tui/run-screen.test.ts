@@ -3,9 +3,9 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 /**
- * Regression tests for the Warp blank-screen fix.
+ * Regression tests for the alt-screen first-paint fix.
  *
- * Background: Warp drops the very first paint emitted after the
+ * Background: some terminals drop the very first paint emitted after the
  * \x1b[?1049h alt-screen-enter sequence. Storm screens whose component
  * tree contains a useEffect (Launch → Picker → text-field.tsx) get a
  * microtask-boundary repaint scheduled automatically and accidentally
@@ -16,7 +16,7 @@ import { join } from "path";
  *   app.screen.invalidate()  — reset diff prev buffer for a full repaint
  *   app.requestRepaint()     — schedule via queueMicrotask
  * This forces a second paint after a microtask boundary, which matches
- * what Warp respects.
+ * what those terminals respect.
  *
  * These tests guard against accidental removal of the pattern. They are
  * source-level (we don't try to render Storm in-process — that's an
@@ -25,7 +25,7 @@ import { join } from "path";
  */
 const RUN_SCREEN_PATH = join(import.meta.dir, "run-screen.tsx");
 
-describe("run-screen.tsx Warp first-paint workaround", () => {
+describe("run-screen.tsx alt-screen first-paint workaround", () => {
   const src = readFileSync(RUN_SCREEN_PATH, "utf-8");
 
   test("every render() call site is followed by invalidate + requestRepaint", () => {

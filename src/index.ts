@@ -10,8 +10,6 @@ const hotPath: Record<string, () => Promise<unknown>> = {
   update: () => import("./cli/commands/update"),
   "assistant-message": () => import("./cli/commands/assistant-message"),
   contract: () => import("./cli/commands/contract"),
-  badge: () => import("./cli/commands/badge"),
-  notify: () => import("./cli/commands/notify"),
   serve: () => import("./cli/commands/serve"),
   "ensure-server": () => import("./cli/commands/ensure-server"),
   sync: () => import("./cli/commands/sync"),
@@ -32,8 +30,6 @@ if (command && command in hotPath) {
     import("./cli/commands/assistant-message"),
     import("./cli/commands/contract"),
     import("./cli/commands/serve"),
-    import("./cli/commands/badge"),
-    import("./cli/commands/notify"),
     import("./cli/commands/sync"),
     import("./cli/commands/project"),
   ]);

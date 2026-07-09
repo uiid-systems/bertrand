@@ -13,13 +13,12 @@ Bertrand wraps Claude Code with two pieces:
 
 The agent never knows bertrand exists. Hooks fire, scripts call `bertrand update`, rows land in the DB, the dashboard reads them.
 
-When a session calls `AskUserQuestion`, bertrand marks it `waiting`, sets a Wave Terminal badge, and sends a notification. When you answer, the badge clears and the session moves to `active`.
+When a session calls `AskUserQuestion`, bertrand marks it `waiting`. When you answer, the session moves back to `active`.
 
 ## Prerequisites
 
 - **[Claude Code](https://code.claude.com/docs/en/overview)** — `--append-system-prompt` and hooks support required.
 - **[Bun](https://bun.sh/)** ≥ 1.3 — runtime for bertrand and the dashboard.
-- **[Wave Terminal](https://www.waveterm.dev/)** — optional, but the only supported terminal for badges/notifications. Without it, bertrand still tracks state; you just don't get focus management.
 
 ## Install
 
@@ -117,12 +116,6 @@ This spawns `bertrand serve` (API on `:5200`) and `vite` (dashboard on `:5199`).
 | `paused` | Session ended (Claude Code exited). |
 | `archived` | Manually archived; hidden from default views. |
 
-## Focus management (Wave)
-
-When a session enters `waiting`, hooks call `wsh badge` to mark the block tab and `wsh notify` to send a notification. When it returns to `active`, the badge clears.
-
-Other terminals fall back to no-ops; the session state is still tracked.
-
 ## Architecture
 
 ```
@@ -157,7 +150,6 @@ src/
   hooks/       # Hook script generation (bash templates)
   lib/         # Timing FSM, diff stats, engagement, formatting, tests
   server/      # Bun HTTP server (/api/*)
-  terminal/    # Terminal adapters (Wave, Noop)
   tui/         # Ink-based TUI screens
 dashboard/
   src/
@@ -172,7 +164,7 @@ schema/        # Drizzle migration SQL
 
 ```
 ~/.bertrand/
-  config.json                     # Terminal + bertrand settings
+  config.json                     # bertrand settings
   bertrand.db                     # SQLite (sessions, events, stats)
   hooks/
     on-waiting.sh                 # PreToolUse AskUserQuestion → session.waiting

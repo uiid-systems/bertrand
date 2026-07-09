@@ -14,8 +14,6 @@ const COMMANDS = [
   "sync",
   "import",
   "completion",
-  "badge",
-  "notify",
 ];
 
 function bashCompletion(): string {

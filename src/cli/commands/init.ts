@@ -1,5 +1,4 @@
 import { mkdirSync, writeFileSync, chmodSync } from "fs";
-import { execSync } from "child_process";
 import { join } from "path";
 import { register } from "@/cli/router";
 import { runMigrations } from "@/db/migrate";
@@ -9,15 +8,6 @@ import { paths } from "@/lib/paths";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { generateCompletions } from "@/lib/completions";
 import { readConfig, writeConfig, type BertrandConfig } from "@/lib/config";
-
-function detectTerminal(): "wave" | "other" {
-  try {
-    execSync("which wsh", { stdio: "ignore" });
-    return "wave";
-  } catch {
-    return "other";
-  }
-}
 
 const SOURCE_ENTRY = /\/src\/index\.tsx?$/;
 
@@ -77,17 +67,14 @@ register("init", async () => {
   }
   console.log(`  Bin:      ${bin}`);
 
-  // 4. Config (preserve existing overrides; fill in detected/resolved values)
+  // 4. Config (preserve existing overrides; fill in resolved values)
   const existing = readConfig();
-  const terminal = existing?.terminal ?? detectTerminal();
   const config: BertrandConfig = {
     ...existing,
-    terminal,
     bin,
     version: 1,
   };
   writeConfig(config);
-  console.log(`  Terminal: ${terminal}${existing?.terminal ? "" : " (auto-detected)"}`);
 
   // 5. Hooks
   installHookScripts(bin);

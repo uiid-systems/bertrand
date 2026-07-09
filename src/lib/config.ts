@@ -3,7 +3,6 @@ import { join } from "path";
 import { _getRegistryDir } from "@/lib/projects/registry";
 
 export interface BertrandConfig {
-  terminal: "wave" | "other";
   bin: string;
   version: number;
   sync?: {
