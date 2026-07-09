@@ -36,7 +36,12 @@ function statsFor(slug: string): ProjectStats {
       .all();
     return {
       total: all.length,
-      active: all.filter((s) => s.status === "active" || s.status === "waiting").length,
+      active: all.filter(
+        (s) =>
+          s.status === "active" ||
+          s.status === "waiting" ||
+          s.status === "blocked",
+      ).length,
       unreadable: false,
     };
   } catch {

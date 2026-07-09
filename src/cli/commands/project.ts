@@ -45,7 +45,12 @@ function countSessions(slug: string): SessionCounts {
       .all();
     return {
       total: all.length,
-      active: all.filter((s) => s.status === "active" || s.status === "waiting").length,
+      active: all.filter(
+        (s) =>
+          s.status === "active" ||
+          s.status === "waiting" ||
+          s.status === "blocked",
+      ).length,
     };
   } catch {
     // Corrupt sqlite, bad migration, perms — render as "?" in the list view

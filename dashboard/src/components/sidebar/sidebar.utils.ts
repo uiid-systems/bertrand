@@ -10,9 +10,13 @@ import { LIVE_STATUS_ORDER } from "./sidebar.constants";
 const activityTime = (s: SessionWithCategory): number =>
   new Date(s.session.updatedAt).getTime();
 
-/** Active or waiting — the states that belong in the pinned "Needs you" zone. */
+/**
+ * Blocked, waiting or active — the states that belong in the pinned "Needs you"
+ * zone (a live session: Claude has a process running or is halted on the user).
+ */
 export function isLive(s: SessionWithCategory): boolean {
-  return s.session.status === "active" || s.session.status === "waiting";
+  const st = s.session.status;
+  return st === "active" || st === "waiting" || st === "blocked";
 }
 
 /**

@@ -19,7 +19,7 @@ export type UnarchiveResult =
   | { ok: true; session: SessionRow }
   | { ok: false; reason: UnarchiveReason };
 
-const ACTIVE_STATUSES = ["active", "waiting"] as const;
+const ACTIVE_STATUSES = ["active", "waiting", "blocked"] as const;
 
 export function archiveSession(id: string): ArchiveResult {
   const session = getSession(id);

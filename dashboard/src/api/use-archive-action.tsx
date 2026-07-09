@@ -125,7 +125,10 @@ export function useArchiveAction(
     };
   }
 
-  const isLive = session.status === "active" || session.status === "waiting";
+  const isLive =
+    session.status === "active" ||
+    session.status === "waiting" ||
+    session.status === "blocked";
   return {
     kind: "archive",
     label: "Archive",

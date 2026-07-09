@@ -45,7 +45,7 @@ export const sessions = sqliteTable(
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     status: text("status", {
-      enum: ["active", "waiting", "paused", "archived"],
+      enum: ["active", "waiting", "blocked", "paused", "archived"],
     })
       .notNull()
       .default("paused"),

@@ -150,7 +150,9 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const projectName = match.project?.name ?? activeProjectName;
   const sessionId = match.session.id;
   const isLive =
-    match.session.status === "active" || match.session.status === "waiting";
+    match.session.status === "active" ||
+    match.session.status === "waiting" ||
+    match.session.status === "blocked";
 
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
@@ -325,7 +327,10 @@ type SessionFooterProps = {
 
 function SessionFooter({ session, pendingQuestion }: SessionFooterProps) {
   const color = statusColor(session.status) as StatusProps["color"];
-  const isLive = session.status === "active" || session.status === "waiting";
+  const isLive =
+    session.status === "active" ||
+    session.status === "waiting" ||
+    session.status === "blocked";
 
   return (
     <Stack bt={1} p={4} gap={3} fullwidth>

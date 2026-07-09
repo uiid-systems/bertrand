@@ -15,12 +15,14 @@ import {
 /** Status transitions implied by event types */
 const EVENT_STATUS_MAP: Record<string, SessionStatus> = {
   "session.waiting": "waiting",
+  "session.blocked": "blocked",
   "session.answered": "active",
+  "session.active": "active",
   "session.paused": "paused",
 };
 
 /**
- * Refuse status flips to `active`/`waiting` for sessions that have no owning
+ * Refuse status flips to `active`/`waiting`/`blocked` for sessions that have no owning
  * bertrand process (`pid === null`). Guards against the delayed-hook race:
  * Claude's PreToolUse hook can spawn `bertrand update --event session.waiting`
  * and then get its child reparented to init when Claude is SIGINT'd, so the
@@ -32,7 +34,8 @@ export function shouldIgnoreStatusFlip(
   sessionPid: number | null,
 ): boolean {
   if (!newStatus) return false;
-  if (newStatus !== "active" && newStatus !== "waiting") return false;
+  if (newStatus !== "active" && newStatus !== "waiting" && newStatus !== "blocked")
+    return false;
   return sessionPid === null;
 }
 
