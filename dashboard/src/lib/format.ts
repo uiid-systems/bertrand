@@ -1,5 +1,6 @@
 import type { EventRow, SessionRow } from "../api/types";
-import { colorOf, iconOf, labelOf } from "./timeline/categories";
+import { colorOf, labelOf } from "./timeline/categories";
+import { iconOf } from "./timeline/icons";
 
 type SessionStatus = SessionRow["status"];
 

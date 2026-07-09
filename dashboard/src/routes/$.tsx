@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -24,12 +24,17 @@ import {
   eventColor,
   eventIcon,
   eventTitle,
+  formatRelativeTime,
   formatTimestamp,
   statusColor,
 } from "../lib/format";
-import { applyTransforms } from "../lib/timeline/transforms";
+import {
+  segmentConversations,
+  type ConversationSegment,
+} from "../lib/timeline/segments";
 import { findSessionFromSplat } from "../lib/find-session-from-splat";
 import { EventContent } from "../components/timeline";
+import { ConversationNav } from "../components/conversation-nav";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
@@ -150,7 +155,20 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
   );
-  const events = useMemo(() => applyTransforms(rawEvents), [rawEvents]);
+  const segments = useMemo(
+    () => segmentConversations(rawEvents),
+    [rawEvents],
+  );
+
+  // Deep-link support: once segments render, honour a #conversation-… hash so
+  // a shared link scrolls to the right chapter (native fragment scrolling
+  // misses because the anchors mount after this async data resolves).
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (!hash || segments.length === 0) return;
+    const el = document.getElementById(hash);
+    if (el) el.scrollIntoView({ block: "start" });
+  }, [segments, sessionId]);
 
   const pendingQuestion = useMemo(() => {
     if (match.session.status !== "waiting") return null;
@@ -174,6 +192,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
       <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         <Group ay="center" gap={2}>
+          <ConversationNav segments={segments} />
           <CopyResumeButton
             session={match.session}
             categoryPath={match.categoryPath}
@@ -196,23 +215,14 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           </Sheet>
         </Group>
       </Group>
-      <Stack p={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
-        {events.length > 0 && (
-          <Timeline
-            activeIndex={events.length}
-            items={events.map((e) => ({
-              title: eventTitle(e),
-              time: formatTimestamp(e.createdAt),
-              color: eventColor(e.event),
-              media: <EventMedia event={e} />,
-              content: <EventContent event={e} />,
-            }))}
-            ItemProps={{
-              style: { width: "100%" },
-              ContentProps: { fullwidth: true, maxw: 860, pb: 4 },
-            }}
+      <Stack p={8} gap={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
+        {segments.map((segment) => (
+          <ConversationSegmentView
+            key={segment.conversationId}
+            segment={segment}
+            showHeader={segments.length > 1}
           />
-        )}
+        ))}
       </Stack>
       <SessionFooter
         session={match.session}
@@ -222,6 +232,61 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   );
 }
 SessionDetail.displayName = "SessionDetail";
+
+/**
+ * One conversation's timeline. When the session has more than one conversation,
+ * a header carries the ordinal, event count, relative start, and the first user
+ * prompt as a subtitle. The header's `id` is the deep-link anchor the
+ * conversation dropdown (and future docs rail) scrolls to.
+ */
+function ConversationSegmentView({
+  segment,
+  showHeader,
+}: {
+  readonly segment: ConversationSegment;
+  readonly showHeader: boolean;
+}) {
+  return (
+    <Stack ax="stretch" fullwidth gap={4}>
+      {showHeader && (
+        <Stack
+          id={segment.anchorId}
+          gap={1}
+          style={{ scrollMarginTop: 16 }}
+        >
+          <Group ay="baseline" gap={2}>
+            <Text weight="semibold">Conversation {segment.ordinal}</Text>
+            <Text size={1} shade="muted">
+              {segment.eventCount} events · {formatRelativeTime(segment.startedAt)}
+            </Text>
+          </Group>
+          {segment.title && (
+            <Text size={1} shade="muted" truncate>
+              {segment.title}
+            </Text>
+          )}
+        </Stack>
+      )}
+      {segment.events.length > 0 && (
+        <Timeline
+          activeIndex={segment.events.length}
+          items={segment.events.map((e) => ({
+            title: eventTitle(e),
+            time: formatTimestamp(e.createdAt),
+            color: eventColor(e.event),
+            media: <EventMedia event={e} />,
+            content: <EventContent event={e} />,
+          }))}
+          ItemProps={{
+            style: { width: "100%" },
+            ContentProps: { fullwidth: true, maxw: 860, pb: 4 },
+          }}
+        />
+      )}
+    </Stack>
+  );
+}
+ConversationSegmentView.displayName = "ConversationSegmentView";
 
 /** Per-event icon for the timeline's media column, tinted to the rail color. */
 function EventMedia({ event }: { readonly event: EventRow }) {
