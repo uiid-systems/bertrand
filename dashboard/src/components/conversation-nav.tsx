@@ -40,12 +40,14 @@ export function ConversationNav({
 
   return (
     <Select
+      fullwidth
       items={items}
       value={value}
       onValueChange={(next) => next && jumpTo(next)}
       placeholder="Jump to conversation"
       before={<MessagesSquareIcon />}
       size="small"
+      TriggerProps={{ style: { maxWidth: "320px" } }}
     />
   );
 }

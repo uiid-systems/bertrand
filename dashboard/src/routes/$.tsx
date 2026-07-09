@@ -158,10 +158,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
   );
-  const segments = useMemo(
-    () => segmentConversations(rawEvents),
-    [rawEvents],
-  );
+  const segments = useMemo(() => segmentConversations(rawEvents), [rawEvents]);
 
   // Deep-link support: once segments render, honour a #conversation-… hash so
   // a shared link scrolls to the right chapter (native fragment scrolling
@@ -192,7 +189,15 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
 
   return (
     <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
-      <Group bb={1} px={4} py={2} ay="center" ax="space-between" fullwidth>
+      <Group
+        ay="center"
+        ax="space-between"
+        px={4}
+        py={2}
+        gap={4}
+        bb={1}
+        fullwidth
+      >
         <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         <Group ay="center" gap={2}>
           <ConversationNav segments={segments} />
@@ -252,15 +257,12 @@ function ConversationSegmentView({
   return (
     <Stack ax="stretch" fullwidth gap={4}>
       {showHeader && (
-        <Stack
-          id={segment.anchorId}
-          gap={1}
-          style={{ scrollMarginTop: 16 }}
-        >
+        <Stack id={segment.anchorId} gap={1} style={{ scrollMarginTop: 16 }}>
           <Group ay="baseline" gap={2}>
             <Text weight="semibold">Conversation {segment.ordinal}</Text>
             <Text size={1} shade="muted">
-              {segment.eventCount} events · {formatRelativeTime(segment.startedAt)}
+              {segment.eventCount} events ·{" "}
+              {formatRelativeTime(segment.startedAt)}
             </Text>
           </Group>
           {segment.title && (
