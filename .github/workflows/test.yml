@@ -13,6 +13,26 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.11
+      # Installs ONLY root deps, never the dashboard's. `bun test` runs the
+      # dashboard's unit tests too, so this keeps the pure timeline logic honest:
+      # if a module in a test's import graph pulls in a UI package (e.g.
+      # @uiid/icons), resolution fails here. Do NOT add a dashboard install to
+      # this job — it would silently mask that guard. Dashboard deps belong to
+      # the `dashboard` job below.
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      # Root deps first: the dashboard tsconfig references ../src/types.ts.
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: dashboard
+      - run: bun run typecheck
+        working-directory: dashboard
