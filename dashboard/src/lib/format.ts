@@ -16,6 +16,23 @@ export function statusColor(status: SessionStatus) {
   return PALETTE_BY_STATUS[status];
 }
 
+const LABEL_BY_STATUS = {
+  active: "active",
+  waiting: "waiting",
+  blocked: "needs approval",
+  paused: "paused",
+  archived: "archived",
+} as const;
+
+/**
+ * Human-facing status label. Only `blocked` diverges from its raw value —
+ * "needs approval" reads better than the bare enum word wherever a status is
+ * shown as text (badges).
+ */
+export function statusLabel(status: SessionStatus): string {
+  return LABEL_BY_STATUS[status];
+}
+
 export function formatDuration(seconds: number): string {
   if (seconds < 1) return "0s";
 
