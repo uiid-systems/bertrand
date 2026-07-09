@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.0](https://github.com/uiid-systems/bertrand/compare/v0.26.0...v0.27.0) (2026-07-09)
+
+
+### Features
+
+* **dashboard:** segment session timeline by conversation ([#158](https://github.com/uiid-systems/bertrand/issues/158)) ([9ef34ac](https://github.com/uiid-systems/bertrand/commit/9ef34ac34f4026dff183a41564134180a447ced7))
+* **sidebar:** distinct blocked state for permission requests ([#160](https://github.com/uiid-systems/bertrand/issues/160)) ([bf5683c](https://github.com/uiid-systems/bertrand/commit/bf5683ccb024ae3e9653f86b891dbdc9068f32d5))
+
 ## [0.26.0](https://github.com/uiid-systems/bertrand/compare/v0.25.1...v0.26.0) (2026-07-07)
 
 
