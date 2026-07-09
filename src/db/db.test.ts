@@ -24,7 +24,7 @@ migrate(drizzle(sqlite), {
 
 // Now import query modules — they'll use the injected test DB
 const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
-const { createSession, getSession, getActiveSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
+const { createSession, getSession, getActiveSessions, getAllSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession, getLatestEventOfType } = await import("./queries/events.ts");
 const { createConversation, getConversationsBySession } = await import("./queries/conversations.ts");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
@@ -89,6 +89,25 @@ describe("sessions", () => {
     const active = getActiveSessions();
     expect(active.length).toBeGreaterThan(0);
     expect(active[0]!.session.status).toBe("active");
+  });
+
+  test("blocked ('needs approval') sessions count as live and survive the excludeArchived filter", () => {
+    // Regression: `blocked` was added as a live state (permission request) but
+    // the live/list queries still enumerated only active/waiting/paused, so a
+    // "needs approval" card silently vanished from the sidebar entirely.
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "needs-approval",
+      name: "needs-approval",
+    });
+    updateSessionStatus(session.id, "blocked");
+
+    const active = getActiveSessions();
+    expect(active.some((s) => s.session.id === session.id)).toBe(true);
+
+    const listed = getAllSessions({ excludeArchived: true });
+    expect(listed.some((s) => s.session.id === session.id)).toBe(true);
   });
 
   test("session rating defaults to null and can be set, updated, and cleared", () => {

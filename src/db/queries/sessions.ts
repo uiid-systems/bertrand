@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql, desc } from "drizzle-orm";
+import { eq, and, inArray, ne, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
@@ -7,6 +7,14 @@ import { parseSessionName } from "@/lib/parse-session-name";
 import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
 
 export type { SessionStatus };
+
+/**
+ * Statuses that count as "live" — a session the user is actively engaged with:
+ * Claude is working (`active`) or halted on the user (`waiting` for an answer,
+ * `blocked` on a permission approval). Mirrors ACTIVE_STATUSES in stats.ts and
+ * session-archive.ts. Keep these in sync when the status enum changes.
+ */
+const LIVE_STATUSES: SessionStatus[] = ["active", "waiting", "blocked"];
 
 export interface ResolvedSession {
   session: SessionRow;
@@ -114,7 +122,7 @@ export function getActiveSessions(): SessionWithCategory[] {
     .select({ session: sessions, categoryPath: categories.path })
     .from(sessions)
     .innerJoin(categories, eq(sessions.categoryId, categories.id))
-    .where(inArray(sessions.status, ["active", "waiting"]))
+    .where(inArray(sessions.status, LIVE_STATUSES))
     .all();
 }
 
@@ -127,7 +135,7 @@ export function countLiveSessions(db: Db = getDb()): number {
   const row = db
     .select({ n: sql<number>`count(*)` })
     .from(sessions)
-    .where(inArray(sessions.status, ["active", "waiting"]))
+    .where(inArray(sessions.status, LIVE_STATUSES))
     .get();
   return row?.n ?? 0;
 }
@@ -142,14 +150,12 @@ function selectSessions(
     .innerJoin(categories, eq(sessions.categoryId, categories.id));
 
   if (opts?.excludeArchived) {
+    // "Exclude archived" means exactly that — everything that isn't archived,
+    // including `blocked`. Enumerating the kept statuses here is what silently
+    // dropped `blocked` sessions from the sidebar when it was added as a live
+    // state, so filter on the one status we actually want to omit instead.
     return query
-      .where(
-        inArray(sessions.status, [
-          "active",
-          "waiting",
-          "paused",
-        ])
-      )
+      .where(ne(sessions.status, "archived"))
       .orderBy(desc(sessions.updatedAt))
       .all();
   }
