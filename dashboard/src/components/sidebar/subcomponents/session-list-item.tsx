@@ -45,7 +45,6 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
         p={2}
         fullwidth
         aria-current={isCurrent ? "page" : undefined}
-        InnerContainerProps={{ gap: 1 }}
         style={
           isCurrent
             ? {
@@ -57,7 +56,12 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
       >
         <Group gap={2} ay="center" fullwidth>
           <SessionLabel session={s} />
-          <Text size={-1} shade="muted" ml="auto">
+          <Text
+            size={-1}
+            shade="muted"
+            ml="auto"
+            style={{ whiteSpace: "nowrap" }}
+          >
             {formatRelativeTime(s.session.updatedAt)}
           </Text>
         </Group>

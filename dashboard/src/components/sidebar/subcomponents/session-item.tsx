@@ -8,7 +8,11 @@ import {
   Text,
 } from "@uiid/design-system";
 import type { SessionWithCategory } from "../../../api/types";
-import { formatRelativeTime, statusColor, statusLabel } from "../../../lib/format";
+import {
+  formatRelativeTime,
+  statusColor,
+  statusLabel,
+} from "../../../lib/format";
 import { CopyResumeButton } from "../../copy-resume-button";
 
 export type SessionItem = Omit<GroupProps, "children"> & {
@@ -38,7 +42,12 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
             {categoryPath} / {session.slug}
           </Text>
         </Stack>
-        <Text data-slot="session-time" size={-1} shade="muted">
+        <Text
+          data-slot="session-time"
+          size={-1}
+          shade="muted"
+          style={{ whiteSpace: "nowrap" }}
+        >
           {formatRelativeTime(session.startedAt)}
         </Text>
       </Group>
