@@ -7,7 +7,7 @@ type SessionStatus = SessionRow["status"];
 const PALETTE_BY_STATUS = {
   active: "green",
   waiting: "yellow",
-  blocked: "orange",
+  blocked: "red",
   paused: "neutral",
   archived: "neutral",
 } as const;
