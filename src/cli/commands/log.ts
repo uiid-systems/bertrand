@@ -1,228 +1,285 @@
 import { register } from "@/cli/router";
-import { getAllSessions, resolveSessionByName } from "@/db/queries/sessions";
+import { resolveSessionByName } from "@/db/queries/sessions";
 import { getEventsBySession } from "@/db/queries/events";
 import { getSessionStats } from "@/db/queries/stats";
 import { getConversationsBySession } from "@/db/queries/conversations";
-import type { SessionRow } from "@/types";
+import type { EventRow, SessionRow } from "@/types";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
 import { computeTimingsLive } from "@/lib/timing";
-import { formatAgo, formatDuration, formatTime, truncate } from "@/lib/format";
+import { truncate } from "@/lib/format";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
+import {
+  digestSession,
+  segmentByConversation,
+  type ConversationEvents,
+} from "@/lib/digest";
 
-// --- ANSI helpers ---
+/**
+ * `bertrand log` — agent-first session record, three zoom levels
+ * (see docs/agent-cli.md):
+ *
+ *   log <session>            digest: subject, decision trail, files, outcome
+ *   log <session> --events   filtered timeline (--conversation/--type/--since/--limit)
+ *   log <session> --full     complete record — dashboard parity, ~100KB+
+ *
+ * Output is always JSON: the CLI's consumer is an agent; humans have the TUI
+ * and the dashboard. `--json` is accepted as a no-op for older callers.
+ */
 
-const DIM = "\x1b[2m";
-const BOLD = "\x1b[1m";
-const RESET = "\x1b[0m";
-const PIPE_COLOR = "\x1b[38;5;238m";
+const EVENT_SUMMARY_MAX = 500;
 
-function ansi(code: number, text: string): string {
-  return `\x1b[${code}m${text}${RESET}`;
-}
+const USAGE = `Usage: bertrand log <category>/<slug> [--events | --full]
+  --events flags: --conversation <ordinal|id-prefix> --type <t,…> --since <ISO|24h|30m> --limit <n>
+  --type accepts groups (qa, prompt, assistant, tool, lifecycle) or raw event names.
+Run \`bertrand list\` to see sessions.`;
 
-function ansi256(code: number, text: string): string {
-  return `\x1b[38;5;${code}m${text}${RESET}`;
-}
+const HINT =
+  "bertrand log <session> --events [--conversation N] [--type qa,prompt,assistant,tool,lifecycle] [--since 24h] [--limit N] for the timeline; --full for the complete record.";
 
-// --- Status dots ---
-
-const STATUS_DOTS: Record<string, string> = {
-  active: ansi(32, "●"),
-  waiting: ansi(33, "●"),
-  paused: `${DIM}●${RESET}`,
-  archived: `${DIM}○${RESET}`,
+const TYPE_GROUPS: Record<string, string[]> = {
+  qa: ["session.waiting", "session.answered"],
+  prompt: ["user.prompt"],
+  assistant: ["assistant.message"],
+  tool: ["tool.used", "tool.work", "tool.applied"],
+  lifecycle: [
+    "claude.started",
+    "claude.ended",
+    "claude.discarded",
+    "worktree.entered",
+    "worktree.exited",
+  ],
 };
 
-// --- Session list (no args) ---
+// --- Flag parsing ---
 
-function showAllSessions() {
-  const project = resolveActiveProject();
-  const rows = getAllSessions()
-    .sort((a, b) => new Date(b.session.updatedAt).getTime() - new Date(a.session.updatedAt).getTime());
+type LogFlags = {
+  events: boolean;
+  full: boolean;
+  type?: string;
+  conversation?: string;
+  since?: string;
+  limit?: number;
+  target?: string;
+};
 
-  console.log(`${DIM}Project: ${project.slug} (${project.name})${RESET}`);
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
+}
 
-  if (rows.length === 0) {
-    console.log("No sessions.");
-    return;
+function parseFlags(args: string[]): LogFlags {
+  const flags: LogFlags = { events: false, full: false };
+  const positional: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    switch (arg) {
+      case "--events":
+        flags.events = true;
+        break;
+      case "--full":
+        flags.full = true;
+        break;
+      case "--json": // legacy no-op — output is always JSON
+        break;
+      case "--type":
+      case "--conversation":
+      case "--since":
+      case "--limit": {
+        const value = args[++i];
+        if (!value) fail(`${arg} requires a value.\n${USAGE}`);
+        if (arg === "--limit") {
+          const n = Number.parseInt(value, 10);
+          if (!Number.isInteger(n) || n <= 0) fail(`--limit must be a positive integer, got: ${value}`);
+          flags.limit = n;
+        } else {
+          flags[arg.slice(2) as "type" | "conversation" | "since"] = value;
+        }
+        break;
+      }
+      default:
+        if (arg.startsWith("--")) fail(`Unknown flag: ${arg}\n${USAGE}`);
+        positional.push(arg);
+    }
   }
 
-  const maxName = Math.max(...rows.map((r) => `${r.categoryPath}/${r.session.slug}`.length), 4);
+  flags.target = positional[0];
+  return flags;
+}
+
+/** Expand --type tokens: groups from TYPE_GROUPS, raw event names verbatim. */
+function expandTypes(csv: string): Set<string> {
+  const types = new Set<string>();
+  for (const token of csv.split(",").map((t) => t.trim()).filter(Boolean)) {
+    const group = TYPE_GROUPS[token];
+    if (group) group.forEach((t) => types.add(t));
+    else if (token.includes(".")) types.add(token);
+    else fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or a raw event name like user.prompt)`);
+  }
+  return types;
+}
+
+/** "24h" / "30m" / "7d" / "90s" relative to now, or any Date.parse-able string. */
+function parseSince(value: string): number {
+  const rel = value.match(/^(\d+)([smhd])$/);
+  if (rel) {
+    const unit = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[rel[2] as "s" | "m" | "h" | "d"];
+    return Date.now() - Number(rel[1]) * unit;
+  }
+  const t = Date.parse(value);
+  if (Number.isNaN(t)) fail(`--since must be an ISO date or relative like 24h/30m, got: ${value}`);
+  return t;
+}
+
+// --- Digest (default) ---
+
+function statsBlock(sessionId: string, eventCount: number, conversationCount: number) {
+  const stats = getSessionStats(sessionId);
+  if (stats) {
+    const { sessionId: _sid, updatedAt: _at, ...rest } = stats;
+    return rest;
+  }
+  // Live fallback for sessions that haven't been finalized yet.
+  const timing = computeTimingsLive(sessionId);
+  return {
+    eventCount,
+    conversationCount,
+    durationS: timing.durationS,
+    claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
+    userWaitS: Math.round(timing.totalUserWaitMs / 1000),
+    activePct: timing.activePct,
+  };
+}
+
+function showDigest(session: SessionRow, sessionName: string) {
+  const project = resolveActiveProject();
+  const rawEvents = getEventsBySession(session.id);
+  const conversations = digestSession(rawEvents);
 
   console.log(
-    `${DIM}${"  "} ${"NAME".padEnd(maxName)}  ${"STATUS".padEnd(10)}  ${"EVENTS".padEnd(6)}  LAST ACTIVE${RESET}`
+    JSON.stringify(
+      {
+        project: { slug: project.slug, name: project.name },
+        session: {
+          name: sessionName,
+          status: session.status,
+          summary: session.summary,
+          rating: session.rating,
+          worktreeBranch: session.worktreeBranch,
+          startedAt: session.startedAt,
+          updatedAt: session.updatedAt,
+        },
+        stats: statsBlock(session.id, rawEvents.length, conversations.length),
+        conversations,
+        hint: HINT,
+      },
+      null,
+      2,
+    ),
   );
-
-  for (const row of rows) {
-    const name = `${row.categoryPath}/${row.session.slug}`;
-    const dot = STATUS_DOTS[row.session.status] ?? "?";
-    const stats = getSessionStats(row.session.id);
-    const eventCount = String(stats?.eventCount ?? 0).padEnd(6);
-    const ago = formatAgo(row.session.updatedAt);
-    console.log(
-      `${dot} ${name.padEnd(maxName)}  ${row.session.status.padEnd(10)}  ${eventCount}  ${ago}`
-    );
-  }
 }
 
-// --- Timeline rendering ---
+// --- Filtered timeline (--events) ---
 
-const GAP_THRESHOLD_MS = 5000;
-
-type Segment = {
-  claudeId: string;
-  events: EnrichedEvent[];
+type TrimmedEvent = {
+  event: string;
+  at: string;
+  conversation: number;
+  summary: string;
+  files?: string[];
 };
 
-function segmentByConversation(events: EnrichedEvent[]): Segment[] {
-  const segments: Segment[] = [];
-  let current: Segment | null = null;
+function trimEvent(ev: EnrichedEvent, ordinal: number): TrimmedEvent {
+  const meta = ev.meta as Record<string, unknown> | null;
 
-  for (const ev of events) {
-    if (ev.event === "claude.started") {
-      current = { claudeId: ev.claudeId ?? "unknown", events: [ev] };
-      segments.push(current);
-    } else if (current) {
-      current.events.push(ev);
-    } else {
-      // Events before first claude.started go into their own segment
-      if (segments.length === 0) {
-        current = { claudeId: ev.claudeId ?? "unknown", events: [ev] };
-        segments.push(current);
-      } else {
-        segments[segments.length - 1]!.events.push(ev);
-      }
+  // Prefer the full text over the stored (pre-truncated) summary where the
+  // meta carries it; the 500-char cap here is the only truncation applied.
+  let text = ev.summary ?? "";
+  if (ev.event === "assistant.message" && typeof meta?.text === "string" && meta.text) {
+    text = meta.text;
+  }
+
+  const trimmed: TrimmedEvent = {
+    event: ev.event,
+    at: ev.createdAt,
+    conversation: ordinal,
+    summary: truncate(text, EVENT_SUMMARY_MAX),
+  };
+
+  if (ev.event === "tool.applied" && Array.isArray(meta?.permissions)) {
+    const files = meta.permissions
+      .map((p) => (p && typeof p === "object" ? (p as Record<string, unknown>).detail : ""))
+      .filter((d): d is string => typeof d === "string" && d.length > 0);
+    if (files.length > 0) trimmed.files = [...new Set(files)];
+  }
+
+  return trimmed;
+}
+
+function matchConversation(segments: ConversationEvents[], selector: string): ConversationEvents[] {
+  const matched = /^\d+$/.test(selector)
+    ? segments.filter((s) => s.ordinal === Number(selector))
+    : segments.filter((s) => s.conversationId.startsWith(selector));
+  if (matched.length === 0) {
+    fail(`No conversation matching "${selector}" — session has ${segments.length} conversation(s), ordinals 1–${segments.length}.`);
+  }
+  return matched;
+}
+
+/** Valid JSON array, one event per line — greppable and cheap to stream. */
+function printEventLines(items: TrimmedEvent[]) {
+  if (items.length === 0) {
+    console.log("[]");
+    return;
+  }
+  console.log("[");
+  console.log(items.map((item) => "  " + JSON.stringify(item)).join(",\n"));
+  console.log("]");
+}
+
+function showEvents(session: SessionRow, flags: LogFlags) {
+  const rawEvents = getEventsBySession(session.id);
+  let segments = segmentByConversation(rawEvents);
+  if (flags.conversation) segments = matchConversation(segments, flags.conversation);
+
+  const types = flags.type ? expandTypes(flags.type) : null;
+  const sinceMs = flags.since ? parseSince(flags.since) : null;
+
+  let out: TrimmedEvent[] = [];
+  for (const segment of segments) {
+    // Compaction (tool rollup, Q&A pairing, dedup) runs per conversation so
+    // runs of tool calls never merge across a conversation boundary.
+    const compacted = compact(enrichAll(segment.events));
+    for (const ev of compacted) {
+      if (types && !types.has(ev.event)) continue;
+      if (sinceMs !== null && new Date(ev.createdAt).getTime() < sinceMs) continue;
+      out.push(trimEvent(ev, segment.ordinal));
     }
   }
 
-  return segments;
+  if (flags.limit) out = out.slice(-flags.limit); // tail: the latest N
+
+  printEventLines(out);
 }
 
-function renderConnector(idx: number, total: number): string {
-  if (total === 1) return `${PIPE_COLOR}─${RESET}`;
-  if (idx === 0) return `${PIPE_COLOR}┌${RESET}`;
-  if (idx === total - 1) return `${PIPE_COLOR}└${RESET}`;
-  return `${PIPE_COLOR}├${RESET}`;
-}
+// --- Complete record (--full) ---
 
-function renderGap(prevTime: string, currTime: string): string | null {
-  const gap = new Date(currTime).getTime() - new Date(prevTime).getTime();
-  if (gap < GAP_THRESHOLD_MS) return null;
-  return `${PIPE_COLOR}│${RESET} ${DIM}  ··· ${formatDuration(gap)} ···${RESET}`;
-}
-
-function renderEventLine(ev: EnrichedEvent): string {
-  const time = formatTime(ev.createdAt);
-  const label = ansi256(ev.color, ev.label);
-  const detail = ev.summary ? `${DIM}${truncate(ev.summary, 60)}${RESET}` : "";
-  return `${DIM}${time}${RESET} ${label}${detail ? ` ${detail}` : ""}`;
-}
-
-function renderQAPair(block: EnrichedEvent, resume: EnrichedEvent | undefined): string[] {
-  const lines: string[] = [];
-  const time = formatTime(block.createdAt);
-  const question = block.summary ? truncate(block.summary, 60) : "";
-  lines.push(`${DIM}${time}${RESET} ${ansi256(block.color, block.label)}${question ? ` ${DIM}${question}${RESET}` : ""}`);
-
-  if (resume) {
-    const answer = resume.summary ? truncate(resume.summary, 60) : "";
-    lines.push(`${PIPE_COLOR}│${RESET}   ${ansi256(resume.color, "└ " + resume.label)}${answer ? ` ${DIM}${answer}${RESET}` : ""}`);
-  }
-
-  return lines;
-}
-
-function renderSegment(seg: Segment, segIdx: number, totalSegs: number) {
-  const lines: string[] = [];
-
-  // Conversation header (only if multiple segments)
-  if (totalSegs > 1) {
-    const header = `${BOLD}Conversation ${segIdx + 1}${RESET}`;
-    if (segIdx > 0) lines.push("");
-    lines.push(header);
-  }
-
-  for (let i = 0; i < seg.events.length; i++) {
-    const ev = seg.events[i]!;
-    const connector = renderConnector(i, seg.events.length);
-
-    // Gap indicator
-    if (i > 0) {
-      const gap = renderGap(seg.events[i - 1]!.createdAt, ev.createdAt);
-      if (gap) lines.push(gap);
-    }
-
-    // Q&A pair rendering
-    if (ev.event === "session.waiting") {
-      const next = seg.events[i + 1];
-      const resume = next?.event === "session.answered" ? next : undefined;
-      const qaLines = renderQAPair(ev, resume);
-      lines.push(`${connector} ${qaLines[0]}`);
-      for (let j = 1; j < qaLines.length; j++) {
-        lines.push(`  ${qaLines[j]}`);
-      }
-      if (resume) i++; // Skip the resume since we already rendered it
-      continue;
-    }
-
-    lines.push(`${connector} ${renderEventLine(ev)}`);
-  }
-
-  return lines;
-}
-
-function renderTimingFooter(sessionId: string): string[] {
-  const stats = getSessionStats(sessionId);
-  const lines: string[] = [];
-
-  let claudeWorkS: number;
-  let userWaitS: number;
-  let activePctVal: number;
-  let durationS: number;
-
-  if (stats) {
-    claudeWorkS = stats.claudeWorkS;
-    userWaitS = stats.userWaitS;
-    activePctVal = stats.activePct;
-    durationS = stats.durationS;
-  } else {
-    const timing = computeTimingsLive(sessionId);
-    claudeWorkS = Math.round(timing.totalClaudeWorkMs / 1000);
-    userWaitS = Math.round(timing.totalUserWaitMs / 1000);
-    activePctVal = timing.activePct;
-    durationS = timing.durationS;
-  }
-
-  if (durationS === 0) return lines;
-
-  lines.push("");
-  lines.push(
-    `${DIM}Duration: ${formatDuration(durationS * 1000)} · Claude: ${formatDuration(claudeWorkS * 1000)} (${activePctVal}%) · Wait: ${formatDuration(userWaitS * 1000)} (${100 - activePctVal}%)${RESET}`
-  );
-
-  return lines;
-}
-
-function renderBreadcrumb(projectSlug: string, projectName: string, sessionName: string): string {
-  const segments = sessionName.split("/").filter(Boolean);
-  const trail = segments.join(` ${DIM}›${RESET} `);
-  return `${DIM}${projectSlug} (${projectName})${RESET} ${DIM}·${RESET} ${BOLD}${trail}${RESET}`;
-}
-
-function showSessionLog(session: SessionRow, sessionName: string, isJson: boolean) {
-  const sessionId = session.id;
-  const rawEvents = getEventsBySession(sessionId);
-  const enriched = enrichAll(rawEvents);
-  const compacted = compact(enriched);
+function showFull(session: SessionRow, sessionName: string) {
   const project = resolveActiveProject();
+  const rawEvents = getEventsBySession(session.id);
+  const compacted = compact(enrichAll(rawEvents));
+  const stats = getSessionStats(session.id);
+  // The stored eventCount column is never written; report the real count.
+  const conversations = getConversationsBySession(session.id).map((c) => ({
+    ...c,
+    eventCount: rawEvents.filter((e: EventRow) => e.conversationId === c.id).length,
+  }));
 
-  if (isJson) {
-    const stats = getSessionStats(sessionId);
-    const conversations = getConversationsBySession(sessionId);
-    console.log(
-      JSON.stringify({
+  console.log(
+    JSON.stringify(
+      {
         project: { slug: project.slug, name: project.name },
         session: { ...session, name: sessionName },
         stats,
@@ -236,28 +293,11 @@ function showSessionLog(session: SessionRow, sessionName: string, isJson: boolea
           createdAt: e.createdAt,
           claudeId: e.claudeId,
         })),
-      }, null, 2)
-    );
-    return;
-  }
-
-  const segments = segmentByConversation(compacted);
-  const allLines: string[] = [];
-
-  allLines.push(renderBreadcrumb(project.slug, project.name, sessionName));
-  allLines.push("");
-
-  for (let i = 0; i < segments.length; i++) {
-    const segLines = renderSegment(segments[i]!, i, segments.length);
-    allLines.push(...segLines);
-  }
-
-  allLines.push(...renderTimingFooter(sessionId));
-
-  // Print lines (hybrid: for now always print to stdout, Storm viewport can be added later)
-  for (const line of allLines) {
-    console.log(line);
-  }
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 // --- Command ---
@@ -266,26 +306,16 @@ register("log", async (args) => {
   const { project: projectSlug, rest: argsWithoutProject } = extractProjectFlag(args);
   applyProjectFlag(projectSlug);
 
-  const isJson = argsWithoutProject.includes("--json");
-  const filteredArgs = argsWithoutProject.filter((a) => !a.startsWith("--"));
-  const target = filteredArgs[0];
+  const flags = parseFlags(argsWithoutProject);
 
-  // No args: show session list with summary
-  if (!target) {
-    showAllSessions();
-    return;
-  }
+  if (!flags.target) fail(USAGE);
 
-  // Full session log
-  const resolved = resolveSessionByName(target);
-  if (!resolved) {
-    console.error(`Session not found: ${target}`);
-    process.exit(1);
-  }
+  const resolved = resolveSessionByName(flags.target);
+  if (!resolved) fail(`Session not found: ${flags.target}`);
 
-  showSessionLog(
-    resolved.session,
-    `${resolved.categoryPath}/${resolved.slug}`,
-    isJson,
-  );
+  const sessionName = `${resolved.categoryPath}/${resolved.slug}`;
+
+  if (flags.full) showFull(resolved.session, sessionName);
+  else if (flags.events) showEvents(resolved.session, flags);
+  else showDigest(resolved.session, sessionName);
 });
