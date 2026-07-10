@@ -7,6 +7,9 @@ import {
   Breadcrumbs,
   Button,
   Group,
+  Resizable,
+  ResizableHandle,
+  ResizablePanel,
   Stack,
   Status,
   type StatusProps,
@@ -33,6 +36,7 @@ import {
 } from "../lib/timeline/segments";
 import { useMatchedSession } from "../lib/use-matched-session";
 import { EventContent } from "../components/timeline";
+import { SecondarySidebar } from "../components/secondary-sidebar";
 import { ConversationNav } from "../components/conversation-nav";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
@@ -163,7 +167,10 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   );
 
   return (
-    <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
+    <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>
+      {/* Breadcrumb bar spans above both the timeline and the secondary
+          sidebar; the horizontal split lives beneath it so the crumbs get the
+          full width to breathe. */}
       <Group
         ay="center"
         ax="space-between"
@@ -186,14 +193,35 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <ArchiveToggle session={match.session} project={projectSlug} />
         </Group>
       </Group>
-      <Stack p={8} gap={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
-        {segments.map((segment) => (
-          <ConversationSegmentView
-            key={segment.conversationId}
-            segment={segment}
-            showHeader={segments.length > 1}
-          />
-        ))}
+      <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
+        <Resizable direction="horizontal">
+          <ResizablePanel>
+            <Stack
+              p={8}
+              gap={8}
+              ax="stretch"
+              fullwidth
+              fullheight
+              style={{ overflowY: "auto" }}
+            >
+              {segments.map((segment) => (
+                <ConversationSegmentView
+                  key={segment.conversationId}
+                  segment={segment}
+                  showHeader={segments.length > 1}
+                />
+              ))}
+            </Stack>
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize={420} minSize={360} maxSize={640}>
+            <SecondarySidebar
+              sessionId={sessionId}
+              isLive={isLive}
+              projectSlug={projectSlug}
+            />
+          </ResizablePanel>
+        </Resizable>
       </Stack>
     </Stack>
   );
