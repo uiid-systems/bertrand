@@ -82,7 +82,12 @@ function parseFlags(args: string[]): LogFlags {
       case "--full":
         flags.full = true;
         break;
-      case "--json": // legacy no-op — output is always JSON
+      case "--json":
+        // Back-compat: contracts injected before the digest rework promised
+        // "--json returns the complete event timeline". Honor that promise —
+        // silently answering with the digest would make old callers read a
+        // missing `events` array as "this session has no events".
+        flags.full = true;
         break;
       case "--type":
       case "--conversation":
@@ -109,15 +114,25 @@ function parseFlags(args: string[]): LogFlags {
   return flags;
 }
 
-/** Expand --type tokens: groups from TYPE_GROUPS, raw event names verbatim. */
+/** Every event name that can appear post-compaction. */
+const KNOWN_EVENT_NAMES = new Set(Object.values(TYPE_GROUPS).flat());
+
+/** Expand --type tokens: groups from TYPE_GROUPS, or catalog event names. */
 function expandTypes(csv: string): Set<string> {
   const types = new Set<string>();
   for (const token of csv.split(",").map((t) => t.trim()).filter(Boolean)) {
     const group = TYPE_GROUPS[token];
-    if (group) group.forEach((t) => types.add(t));
-    else if (token.includes(".")) types.add(token);
-    else fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or a raw event name like user.prompt)`);
+    if (group) {
+      group.forEach((t) => types.add(t));
+    } else if (KNOWN_EVENT_NAMES.has(token)) {
+      types.add(token);
+    } else {
+      fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or an event name like user.prompt)`);
+    }
   }
+  // Compaction rolls runs of tool.used into synthetic tool.work rows before
+  // filtering, so a bare tool.used filter would never match anything.
+  if (types.has("tool.used")) types.add("tool.work");
   return types;
 }
 
@@ -133,19 +148,44 @@ function parseSince(value: string): number {
   return t;
 }
 
+/**
+ * Epoch ms for a stored event timestamp. SQLite's datetime('now') strings
+ * ("YYYY-MM-DD HH:MM:SS") are UTC but carry no zone marker, so new Date()
+ * would read them as LOCAL time and skew --since by the machine's UTC offset.
+ * ISO strings (transcript ingestion's backdated createdAt) parse as-is.
+ */
+function eventTimeMs(createdAt: string): number {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt)) {
+    return Date.parse(createdAt.replace(" ", "T") + "Z");
+  }
+  return Date.parse(createdAt);
+}
+
 // --- Digest (default) ---
 
-function statsBlock(sessionId: string, eventCount: number, conversationCount: number) {
-  const stats = getSessionStats(sessionId);
+const LIVE_STATUSES = new Set(["active", "waiting", "blocked"]);
+
+function statsBlock(
+  session: SessionRow,
+  rawEvents: EventRow[],
+  conversationCount: number,
+) {
+  // The stored stats row is only recomputed at finalize, so for a live
+  // session (including a finalized-then-resumed one) it's stale — compute
+  // from events instead. Stored rows serve paused/archived sessions.
+  const stats = LIVE_STATUSES.has(session.status) ? null : getSessionStats(session.id);
   if (stats) {
     const { sessionId: _sid, updatedAt: _at, ...rest } = stats;
     return rest;
   }
-  // Live fallback for sessions that haven't been finalized yet.
-  const timing = computeTimingsLive(sessionId);
+  const timing = computeTimingsLive(session.id);
+  const interactionCount = rawEvents.filter(
+    (e) => e.event === "session.waiting" || e.event === "session.answered",
+  ).length;
   return {
-    eventCount,
+    eventCount: rawEvents.length,
     conversationCount,
+    interactionCount,
     durationS: timing.durationS,
     claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
     userWaitS: Math.round(timing.totalUserWaitMs / 1000),
@@ -171,7 +211,7 @@ function showDigest(session: SessionRow, sessionName: string) {
           startedAt: session.startedAt,
           updatedAt: session.updatedAt,
         },
-        stats: statsBlock(session.id, rawEvents.length, conversations.length),
+        stats: statsBlock(session, rawEvents, conversations.length),
         conversations,
         hint: HINT,
       },
@@ -219,9 +259,16 @@ function trimEvent(ev: EnrichedEvent, ordinal: number): TrimmedEvent {
 }
 
 function matchConversation(segments: ConversationEvents[], selector: string): ConversationEvents[] {
-  const matched = /^\d+$/.test(selector)
-    ? segments.filter((s) => s.ordinal === Number(selector))
-    : segments.filter((s) => s.conversationId.startsWith(selector));
+  // An all-digit selector is normally an ordinal, but ~2% of 8-char UUID
+  // prefixes — which the digest publishes as `id` — are all digits too, so
+  // fall through to a prefix match when no ordinal matches.
+  let matched: ConversationEvents[] = [];
+  if (/^\d+$/.test(selector)) {
+    matched = segments.filter((s) => s.ordinal === Number(selector));
+  }
+  if (matched.length === 0) {
+    matched = segments.filter((s) => s.conversationId.startsWith(selector));
+  }
   if (matched.length === 0) {
     fail(`No conversation matching "${selector}" — session has ${segments.length} conversation(s), ordinals 1–${segments.length}.`);
   }
@@ -254,7 +301,7 @@ function showEvents(session: SessionRow, flags: LogFlags) {
     const compacted = compact(enrichAll(segment.events));
     for (const ev of compacted) {
       if (types && !types.has(ev.event)) continue;
-      if (sinceMs !== null && new Date(ev.createdAt).getTime() < sinceMs) continue;
+      if (sinceMs !== null && eventTimeMs(ev.createdAt) < sinceMs) continue;
       out.push(trimEvent(ev, segment.ordinal));
     }
   }

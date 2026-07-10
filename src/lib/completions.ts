@@ -6,6 +6,7 @@ const COMMANDS = [
   "init",
   "list",
   "log",
+  "search",
   "stats",
   "archive",
   "project",

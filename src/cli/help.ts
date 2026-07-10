@@ -25,8 +25,8 @@ Inspect sessions (read-only):
                                <session> is "<category>/<slug>" (see \`list\`).
   bertrand log <session> --events
                                Filtered event timeline when the digest isn't enough.
-                               Flags: --conversation <n> --type qa,prompt,assistant,tool
-                               --since <ISO|24h|30m> --limit <n>
+                               Flags: --conversation <n> --limit <n> --since <ISO|24h|30m>
+                               --type qa,prompt,assistant,tool,lifecycle (or event names)
   bertrand log <session> --full
                                Complete record with raw event meta (100KB+). For
                                debugging — too large to load into context.

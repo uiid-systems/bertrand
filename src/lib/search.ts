@@ -12,9 +12,11 @@
  * sibling project databases via getDbForProject().
  */
 
-import { and, eq, desc, like, sql, type SQL } from "drizzle-orm";
+import { and, eq, desc, inArray, like, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { events, sessions, categories, conversations } from "@/db/schema";
+import type { EventRow } from "@/types";
+import { events, sessions, categories } from "@/db/schema";
+import { segmentByConversation } from "@/lib/digest";
 
 export const SEARCH_TYPES = [
   "prompt",
@@ -72,15 +74,27 @@ export type SearchOpts = {
 };
 
 const SNIPPET_RADIUS = 80;
-const DEFAULT_LIMIT = 20;
+export const DEFAULT_LIMIT = 20;
 
 /** Escape LIKE wildcards in a user term; used with ESCAPE '\'. */
 function likePattern(term: string): string {
   return "%" + term.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
 }
 
+/**
+ * ASCII-only lowercase, mirroring SQLite's lower(). A full-Unicode
+ * toLowerCase would fold "Ü" in the term while lower() leaves the stored
+ * "Ü" alone — making uppercase non-ASCII terms unmatchable even against
+ * identical text. With ASCII folding, ASCII matches are case-insensitive
+ * and non-ASCII matches are exact-case (SQLite's own LIKE limitation
+ * without the ICU extension).
+ */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
 function likeClause(column: SQL, term: string): SQL {
-  return sql`${like(sql`lower(${column})`, likePattern(term.toLowerCase()))} ESCAPE '\\'`;
+  return sql`${like(sql`lower(${column})`, likePattern(asciiLower(term)))} ESCAPE '\\'`;
 }
 
 /** ±SNIPPET_RADIUS chars around the first match, whitespace-collapsed. */
@@ -112,24 +126,41 @@ function loadSessionIndex(db: Db): Map<string, SessionInfo> {
   );
 }
 
-/** conversation id → 1-based ordinal within its session (by startedAt). */
-function loadConversationOrdinals(db: Db): Map<string, number> {
+/**
+ * conversation id → ordinal for the given sessions, derived from event
+ * segmentation — the SAME numbering `log --events --conversation N` and the
+ * digest use. Deriving from the conversations table instead would disagree
+ * whenever leading legacy null-conversationId events form an extra segment,
+ * sending the documented drill-in path to the wrong conversation.
+ */
+function loadConversationOrdinals(
+  db: Db,
+  sessionIds: Set<string>,
+): Map<string, Map<string, number>> {
+  const bySession = new Map<string, Map<string, number>>();
+  if (sessionIds.size === 0) return bySession;
+
   const rows = db
     .select({
-      id: conversations.id,
-      sessionId: conversations.sessionId,
+      sessionId: events.sessionId,
+      conversationId: events.conversationId,
+      event: events.event,
+      createdAt: events.createdAt,
     })
-    .from(conversations)
-    .orderBy(conversations.startedAt, conversations.id)
+    .from(events)
+    .where(inArray(events.sessionId, [...sessionIds]))
+    .orderBy(events.createdAt, events.id)
     .all();
-  const perSession = new Map<string, number>();
-  const ordinals = new Map<string, number>();
-  for (const row of rows) {
-    const next = (perSession.get(row.sessionId) ?? 0) + 1;
-    perSession.set(row.sessionId, next);
-    ordinals.set(row.id, next);
+
+  for (const sessionId of sessionIds) {
+    const sessionEvents = rows.filter((r) => r.sessionId === sessionId);
+    const ordinals = new Map<string, number>();
+    for (const segment of segmentByConversation(sessionEvents as EventRow[])) {
+      ordinals.set(segment.conversationId, segment.ordinal);
+    }
+    bySession.set(sessionId, ordinals);
   }
-  return ordinals;
+  return bySession;
 }
 
 /**
@@ -143,7 +174,6 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
   const limit = opts.limit ?? DEFAULT_LIMIT;
 
   const sessionIndex = loadSessionIndex(db);
-  const ordinals = loadConversationOrdinals(db);
 
   let sessionFilter: string | undefined;
   if (opts.session) {
@@ -153,6 +183,8 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
   }
 
   const hits: SearchHit[] = [];
+  type PendingHit = { hit: SearchHit; sessionId: string; conversationId: string | null };
+  const pending: PendingHit[] = [];
 
   for (const type of types) {
     if (type === "summary") {
@@ -208,16 +240,32 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
     for (const row of rows) {
       const info = sessionIndex.get(row.sessionId);
       if (!info) continue;
-      hits.push({
-        project: projectSlug,
-        session: info.name,
-        status: info.status,
-        conversation: row.conversationId ? (ordinals.get(row.conversationId) ?? null) : null,
-        type,
-        at: row.createdAt,
-        snippet: makeSnippet(row.text ?? "", terms[0]!),
+      pending.push({
+        sessionId: row.sessionId,
+        conversationId: row.conversationId,
+        hit: {
+          project: projectSlug,
+          session: info.name,
+          status: info.status,
+          conversation: null, // resolved below from event segmentation
+          type,
+          at: row.createdAt,
+          snippet: makeSnippet(row.text ?? "", terms[0]!),
+        },
       });
     }
+  }
+
+  // Resolve ordinals only for sessions that actually have event hits.
+  const ordinals = loadConversationOrdinals(
+    db,
+    new Set(pending.map((p) => p.sessionId)),
+  );
+  for (const { hit, sessionId, conversationId } of pending) {
+    if (conversationId) {
+      hit.conversation = ordinals.get(sessionId)?.get(conversationId) ?? null;
+    }
+    hits.push(hit);
   }
 
   hits.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());

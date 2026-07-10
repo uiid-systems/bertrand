@@ -1,10 +1,13 @@
+import { existsSync } from "fs";
 import { register } from "@/cli/router";
 import { getDb, getDbForProject } from "@/db/client";
 import { listProjects } from "@/lib/projects/registry";
+import { projectPaths } from "@/lib/projects/paths";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 import {
   searchProject,
+  DEFAULT_LIMIT,
   SEARCH_TYPES,
   type SearchHit,
   type SearchType,
@@ -94,15 +97,19 @@ register("search", async (args) => {
   if (allProjects) {
     const hits: SearchHit[] = [];
     for (const project of listProjects()) {
+      // A registry entry with no local DB file was never opened on this
+      // machine — skip it explicitly. getDbForProject would CREATE and
+      // migrate an empty DB as a side effect of the read, and stray
+      // bertrand.db files are the sentinel project recovery scans for.
+      if (!existsSync(projectPaths(project.slug).db)) continue;
       try {
         hits.push(...searchProject(getDbForProject(project.slug), project.slug, opts));
       } catch {
-        // A sibling project's DB may be missing or mid-migration — skip it
-        // rather than failing the whole sweep.
+        // Unreadable or mid-migration DB — skip it rather than failing the sweep.
       }
     }
     hits.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-    printHits(hits.slice(0, limit ?? 20));
+    printHits(hits.slice(0, limit ?? DEFAULT_LIMIT));
     return;
   }
 

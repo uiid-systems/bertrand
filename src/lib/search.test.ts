@@ -133,6 +133,52 @@ describe("searchProject", () => {
     expect(searchProject(testDb, "p", { terms: ["%"] })).toEqual([]);
     expect(searchProject(testDb, "p", { terms: ["_"] })).toEqual([]);
   });
+
+  test("ordinals match log's event segmentation when legacy events lead the session", () => {
+    const s3 = createSession({ categoryId: cat.id, slug: "legacy-lead", name: "legacy-lead" });
+    const convo = "cccccccc-0000-0000-0000-000000000003";
+    // Legacy pre-tracking conversation: null conversationId, own claude.started.
+    insertEvent({
+      sessionId: s3.id,
+      event: "claude.started",
+      meta: {},
+      createdAt: "2026-06-01 10:00:00",
+    });
+    insertEvent({
+      sessionId: s3.id,
+      event: "user.prompt",
+      meta: { prompt: "legacy work" },
+      createdAt: "2026-06-01 10:01:00",
+    });
+    // Tracked conversation added on resume.
+    createConversation({ id: convo, sessionId: s3.id });
+    insertEvent({
+      sessionId: s3.id,
+      conversationId: convo,
+      event: "user.prompt",
+      meta: { prompt: "tracked xylophone work" },
+      createdAt: "2026-06-02 10:00:00",
+    });
+
+    const hits = searchProject(testDb, "p", { terms: ["xylophone"] });
+    expect(hits.length).toBe(1);
+    // The conversations table alone would say ordinal 1; event segmentation
+    // (what `log --events --conversation N` uses) puts the legacy segment
+    // first, so the tracked conversation is ordinal 2.
+    expect(hits[0]!.conversation).toBe(2);
+  });
+
+  test("uppercase non-ASCII terms match exact-case text", () => {
+    const s4 = createSession({ categoryId: cat.id, slug: "unicode", name: "unicode" });
+    insertEvent({
+      sessionId: s4.id,
+      event: "user.prompt",
+      meta: { prompt: "die Übergabe planen" },
+    });
+    const hits = searchProject(testDb, "p", { terms: ["Übergabe"] });
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.session).toBe("cli/unicode");
+  });
 });
 
 describe("makeSnippet", () => {

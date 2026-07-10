@@ -14,8 +14,9 @@
  * has to be derived from what's already recorded.
  */
 
-import { getEdgeEventOfType } from "@/db/queries/events";
+import { getEventsByType } from "@/db/queries/events";
 import { setSessionSummary } from "@/db/queries/sessions";
+import type { EventRow } from "@/types";
 import { truncate } from "@/lib/format";
 
 const SUBJECT_MAX = 120;
@@ -33,17 +34,23 @@ function oneLine(text: string): string {
  * valuable thing in an outcome); md-style links keep their label only.
  */
 function condense(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/^\s*\|.*\|\s*$/gm, " ")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/^\s*>\s?/gm, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1");
+  return (
+    markdown
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/^\s*\|.*\|\s*$/gm, " ")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^\s*[-*+]\s+/gm, "")
+      .replace(/^\s*\d+\.\s+/gm, "")
+      .replace(/^\s*>\s?/gm, "")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      // Inline code unwraps BEFORE emphasis so asterisks inside spans (globs,
+      // multiplication) can't be mistaken for markers. No single-asterisk
+      // italic rule at all — paired asterisks in prose are far more often
+      // globs ("*.tmp and *.log") than italics, and deleting glob chunks
+      // garbles the summary worse than a stray marker ever would.
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+  );
 }
 
 /**
@@ -65,17 +72,31 @@ function metaStr(meta: Record<string, unknown> | null, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/** First event whose meta[key] is a non-empty string, scanning from `edge`. */
+function edgeText(rows: EventRow[], key: string, edge: "first" | "last"): string {
+  const ordered = edge === "first" ? rows : [...rows].reverse();
+  for (const row of ordered) {
+    const text = metaStr(row.meta, key);
+    if (text) return text;
+  }
+  return "";
+}
+
 /**
  * "<first prompt> → <last assistant message>", either side optional.
  * Null when the session has neither (nothing worth saying).
+ *
+ * The outcome side scans backwards for the last message with non-empty
+ * meta.text: the transcript flush emits trailing "thinking only" events with
+ * an empty text, and blindly taking the newest row would blank the outcome.
  */
 export function deriveSessionSummary(sessionId: string): string | null {
-  const firstPrompt = getEdgeEventOfType(sessionId, "user.prompt", "first");
-  const lastMessage = getEdgeEventOfType(sessionId, "assistant.message", "last");
+  const prompts = getEventsByType(sessionId, "user.prompt");
+  const messages = getEventsByType(sessionId, "assistant.message");
 
-  const subject = truncate(oneLine(metaStr(firstPrompt?.meta ?? null, "prompt")), SUBJECT_MAX);
+  const subject = truncate(oneLine(edgeText(prompts, "prompt", "first")), SUBJECT_MAX);
   const outcome = cutAtSentence(
-    oneLine(condense(metaStr(lastMessage?.meta ?? null, "text"))),
+    oneLine(condense(edgeText(messages, "text", "last"))),
     OUTCOME_MAX,
   );
 
