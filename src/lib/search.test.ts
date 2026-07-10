@@ -168,6 +168,42 @@ describe("searchProject", () => {
     expect(hits[0]!.conversation).toBe(2);
   });
 
+  test("a hit in an earlier leg of a re-resumed conversation gets that leg's ordinal", () => {
+    const s5 = createSession({ categoryId: cat.id, slug: "re-resumed", name: "re-resumed" });
+    const convoA = "dddddddd-0000-0000-0000-000000000004";
+    const convoB = "eeeeeeee-0000-0000-0000-000000000005";
+    createConversation({ id: convoA, sessionId: s5.id });
+    createConversation({ id: convoB, sessionId: s5.id });
+    // A, then B, then A resumed again → segments A=1, B=2, A=3.
+    insertEvent({
+      sessionId: s5.id,
+      conversationId: convoA,
+      event: "user.prompt",
+      meta: { prompt: "quixotic first leg" },
+      createdAt: "2026-06-01 10:00:00",
+    });
+    insertEvent({
+      sessionId: s5.id,
+      conversationId: convoB,
+      event: "user.prompt",
+      meta: { prompt: "second conversation" },
+      createdAt: "2026-06-02 10:00:00",
+    });
+    insertEvent({
+      sessionId: s5.id,
+      conversationId: convoA,
+      event: "user.prompt",
+      meta: { prompt: "resumed tail" },
+      createdAt: "2026-06-03 10:00:00",
+    });
+
+    const hits = searchProject(testDb, "p", { terms: ["quixotic"] });
+    expect(hits.length).toBe(1);
+    // Last-wins conversation-keyed ordinals would report 3; the hit lives in
+    // the first leg, so the per-event mapping must say 1.
+    expect(hits[0]!.conversation).toBe(1);
+  });
+
   test("uppercase non-ASCII terms match exact-case text", () => {
     const s4 = createSession({ categoryId: cat.id, slug: "unicode", name: "unicode" });
     insertEvent({

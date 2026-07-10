@@ -1,5 +1,6 @@
 import type { EnrichedEvent } from "./catalog";
 import { lookup } from "./catalog";
+import { parseDbTime } from "./format";
 
 /**
  * Stage 1: Relocate session.answered events to sit immediately after their matching session.waiting.
@@ -83,11 +84,12 @@ export function collapsePermissions(events: EnrichedEvent[]): EnrichedEvent[] {
         ? formatSinglePermission(batch[0]!)
         : sorted.map(([tool, count]) => `${count}× ${tool}`).join(", ");
 
-    // Use midpoint timestamp
+    // Use midpoint timestamp. parseDbTime, not new Date(): sqlite strings
+    // are UTC without a zone marker, and a local-time parse here would
+    // launder the machine's UTC offset into the synthetic ISO timestamp.
     const first = batch[0]!;
     const last = batch[batch.length - 1]!;
-    const midMs =
-      (new Date(first.createdAt).getTime() + new Date(last.createdAt).getTime()) / 2;
+    const midMs = (parseDbTime(first.createdAt) + parseDbTime(last.createdAt)) / 2;
 
     result.push({
       ...first,

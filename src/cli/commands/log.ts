@@ -6,8 +6,8 @@ import { getConversationsBySession } from "@/db/queries/conversations";
 import type { EventRow, SessionRow } from "@/types";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
-import { computeTimingsLive } from "@/lib/timing";
-import { truncate } from "@/lib/format";
+import { computeSessionStats } from "@/lib/timing";
+import { parseDbTime, truncate } from "@/lib/format";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 import {
@@ -25,7 +25,9 @@ import {
  *   log <session> --full     complete record — dashboard parity, ~100KB+
  *
  * Output is always JSON: the CLI's consumer is an agent; humans have the TUI
- * and the dashboard. `--json` is accepted as a no-op for older callers.
+ * and the dashboard. Bare `--json` returns the full record — contracts
+ * injected before the digest rework promised exactly that — but it defers to
+ * `--events`, whose callers postdate the rework and want the filtered view.
  */
 
 const EVENT_SUMMARY_MAX = 500;
@@ -57,6 +59,7 @@ const TYPE_GROUPS: Record<string, string[]> = {
 type LogFlags = {
   events: boolean;
   full: boolean;
+  json: boolean;
   type?: string;
   conversation?: string;
   since?: string;
@@ -70,7 +73,7 @@ function fail(message: string): never {
 }
 
 function parseFlags(args: string[]): LogFlags {
-  const flags: LogFlags = { events: false, full: false };
+  const flags: LogFlags = { events: false, full: false, json: false };
   const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -83,11 +86,9 @@ function parseFlags(args: string[]): LogFlags {
         flags.full = true;
         break;
       case "--json":
-        // Back-compat: contracts injected before the digest rework promised
-        // "--json returns the complete event timeline". Honor that promise —
-        // silently answering with the digest would make old callers read a
-        // missing `events` array as "this session has no events".
-        flags.full = true;
+        // Recorded separately, resolved at dispatch: bare --json means the
+        // old full record; --events --json keeps the filtered timeline.
+        flags.json = true;
         break;
       case "--type":
       case "--conversation":
@@ -124,7 +125,14 @@ function expandTypes(csv: string): Set<string> {
     const group = TYPE_GROUPS[token];
     if (group) {
       group.forEach((t) => types.add(t));
-    } else if (KNOWN_EVENT_NAMES.has(token)) {
+    } else if (token.includes(".")) {
+      // Dotted names outside the catalog still pass — real databases carry
+      // event types from older binaries (permission.request, session.resumed,
+      // …) that --events prints and must stay filterable. The stderr warning
+      // is the loud signal for typos, without breaking legacy names.
+      if (!KNOWN_EVENT_NAMES.has(token)) {
+        console.error(`warning: --type ${token} is not a known event type — results may be empty`);
+      }
       types.add(token);
     } else {
       fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or an event name like user.prompt)`);
@@ -148,28 +156,11 @@ function parseSince(value: string): number {
   return t;
 }
 
-/**
- * Epoch ms for a stored event timestamp. SQLite's datetime('now') strings
- * ("YYYY-MM-DD HH:MM:SS") are UTC but carry no zone marker, so new Date()
- * would read them as LOCAL time and skew --since by the machine's UTC offset.
- * ISO strings (transcript ingestion's backdated createdAt) parse as-is.
- */
-function eventTimeMs(createdAt: string): number {
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt)) {
-    return Date.parse(createdAt.replace(" ", "T") + "Z");
-  }
-  return Date.parse(createdAt);
-}
-
 // --- Digest (default) ---
 
 const LIVE_STATUSES = new Set(["active", "waiting", "blocked"]);
 
-function statsBlock(
-  session: SessionRow,
-  rawEvents: EventRow[],
-  conversationCount: number,
-) {
+function statsBlock(session: SessionRow) {
   // The stored stats row is only recomputed at finalize, so for a live
   // session (including a finalized-then-resumed one) it's stale — compute
   // from events instead. Stored rows serve paused/archived sessions.
@@ -178,19 +169,10 @@ function statsBlock(
     const { sessionId: _sid, updatedAt: _at, ...rest } = stats;
     return rest;
   }
-  const timing = computeTimingsLive(session.id);
-  const interactionCount = rawEvents.filter(
-    (e) => e.event === "session.waiting" || e.event === "session.answered",
-  ).length;
-  return {
-    eventCount: rawEvents.length,
-    conversationCount,
-    interactionCount,
-    durationS: timing.durationS,
-    claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
-    userWaitS: Math.round(timing.totalUserWaitMs / 1000),
-    activePct: timing.activePct,
-  };
+  // computeSessionStats is the same full-shape computation finalize persists
+  // and the dashboard's liveStats endpoint serves — using it keeps the live
+  // and stored paths shape-identical (incl. linesAdded/linesRemoved/filesTouched).
+  return computeSessionStats(session.id);
 }
 
 function showDigest(session: SessionRow, sessionName: string) {
@@ -211,7 +193,7 @@ function showDigest(session: SessionRow, sessionName: string) {
           startedAt: session.startedAt,
           updatedAt: session.updatedAt,
         },
-        stats: statsBlock(session, rawEvents, conversations.length),
+        stats: statsBlock(session),
         conversations,
         hint: HINT,
       },
@@ -259,16 +241,24 @@ function trimEvent(ev: EnrichedEvent, ordinal: number): TrimmedEvent {
 }
 
 function matchConversation(segments: ConversationEvents[], selector: string): ConversationEvents[] {
-  // An all-digit selector is normally an ordinal, but ~2% of 8-char UUID
+  // Exact id match first: unknown-N ids would otherwise prefix-collide
+  // ("unknown-1" must not also select unknown-10…).
+  let matched = segments.filter((s) => s.conversationId === selector);
+
+  // An all-digit selector is normally an ordinal. ~2% of 8-char UUID
   // prefixes — which the digest publishes as `id` — are all digits too, so
-  // fall through to a prefix match when no ordinal matches.
-  let matched: ConversationEvents[] = [];
-  if (/^\d+$/.test(selector)) {
+  // fall through to a prefix match, but only at the published prefix length:
+  // a short out-of-range ordinal (a typo, a stale digest) must fail loudly,
+  // not silently select whichever UUID happens to start with that digit.
+  if (matched.length === 0 && /^\d+$/.test(selector)) {
     matched = segments.filter((s) => s.ordinal === Number(selector));
-  }
-  if (matched.length === 0) {
+    if (matched.length === 0 && selector.length >= 8) {
+      matched = segments.filter((s) => s.conversationId.startsWith(selector));
+    }
+  } else if (matched.length === 0) {
     matched = segments.filter((s) => s.conversationId.startsWith(selector));
   }
+
   if (matched.length === 0) {
     fail(`No conversation matching "${selector}" — session has ${segments.length} conversation(s), ordinals 1–${segments.length}.`);
   }
@@ -301,7 +291,7 @@ function showEvents(session: SessionRow, flags: LogFlags) {
     const compacted = compact(enrichAll(segment.events));
     for (const ev of compacted) {
       if (types && !types.has(ev.event)) continue;
-      if (sinceMs !== null && eventTimeMs(ev.createdAt) < sinceMs) continue;
+      if (sinceMs !== null && parseDbTime(ev.createdAt) < sinceMs) continue;
       out.push(trimEvent(ev, segment.ordinal));
     }
   }
@@ -362,7 +352,9 @@ register("log", async (args) => {
 
   const sessionName = `${resolved.categoryPath}/${resolved.slug}`;
 
-  if (flags.full) showFull(resolved.session, sessionName);
+  // Bare --json means the pre-rework full record; alongside --events it's a
+  // no-op so filter flags are never silently discarded.
+  if (flags.full || (flags.json && !flags.events)) showFull(resolved.session, sessionName);
   else if (flags.events) showEvents(resolved.session, flags);
   else showDigest(resolved.session, sessionName);
 });

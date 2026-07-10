@@ -6,11 +6,13 @@
  * sibling agent actually needs (see docs/agent-cli.md). Everything derives
  * from existing event rows; no schema involvement.
  *
- * Segmentation mirrors dashboard/src/lib/timeline/segments.ts: events are
- * grouped by `conversationId`, and legacy rows with a null conversationId
- * (predating conversation tracking) carry forward into the current segment.
- * This module is dependency-free below `@/types` + `@/lib/format` so the
- * dashboard can adopt it later (its `@/*` alias already points at `src/`).
+ * Segmentation extends dashboard/src/lib/timeline/segments.ts: events are
+ * grouped by `conversationId`, legacy null-conversationId rows carry forward
+ * into the current segment, and — beyond the dashboard's rule — a
+ * null-conversation claude.started opens a new segment so pre-tracking
+ * sessions keep their conversation boundaries. The dashboard should adopt
+ * this module to close that gap (its `@/*` alias already points at `src/`;
+ * this module is dependency-free below `@/types` + `@/lib/format`).
  */
 
 import type { EventRow } from "@/types";

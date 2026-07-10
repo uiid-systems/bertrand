@@ -127,21 +127,21 @@ function loadSessionIndex(db: Db): Map<string, SessionInfo> {
 }
 
 /**
- * conversation id → ordinal for the given sessions, derived from event
+ * event id → conversation ordinal for the given sessions, derived from event
  * segmentation — the SAME numbering `log --events --conversation N` and the
  * digest use. Deriving from the conversations table instead would disagree
- * whenever leading legacy null-conversationId events form an extra segment,
- * sending the documented drill-in path to the wrong conversation.
+ * whenever leading legacy null-conversationId events form an extra segment.
+ * Keyed per EVENT (not per conversation id) because a resumed-earlier
+ * conversation can span multiple segments — a hit in the first leg must
+ * point at that leg's ordinal, not the last one.
  */
-function loadConversationOrdinals(
-  db: Db,
-  sessionIds: Set<string>,
-): Map<string, Map<string, number>> {
-  const bySession = new Map<string, Map<string, number>>();
-  if (sessionIds.size === 0) return bySession;
+function loadEventOrdinals(db: Db, sessionIds: Set<string>): Map<number, number> {
+  const ordinals = new Map<number, number>();
+  if (sessionIds.size === 0) return ordinals;
 
   const rows = db
     .select({
+      id: events.id,
       sessionId: events.sessionId,
       conversationId: events.conversationId,
       event: events.event,
@@ -154,13 +154,13 @@ function loadConversationOrdinals(
 
   for (const sessionId of sessionIds) {
     const sessionEvents = rows.filter((r) => r.sessionId === sessionId);
-    const ordinals = new Map<string, number>();
     for (const segment of segmentByConversation(sessionEvents as EventRow[])) {
-      ordinals.set(segment.conversationId, segment.ordinal);
+      for (const ev of segment.events) {
+        if (typeof ev.id === "number") ordinals.set(ev.id, segment.ordinal);
+      }
     }
-    bySession.set(sessionId, ordinals);
   }
-  return bySession;
+  return ordinals;
 }
 
 /**
@@ -183,7 +183,7 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
   }
 
   const hits: SearchHit[] = [];
-  type PendingHit = { hit: SearchHit; sessionId: string; conversationId: string | null };
+  type PendingHit = { hit: SearchHit; sessionId: string; eventId: number };
   const pending: PendingHit[] = [];
 
   for (const type of types) {
@@ -226,8 +226,8 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
 
     const rows = db
       .select({
+        id: events.id,
         sessionId: events.sessionId,
-        conversationId: events.conversationId,
         createdAt: events.createdAt,
         text: sql<string>`${column}`,
       })
@@ -242,7 +242,7 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
       if (!info) continue;
       pending.push({
         sessionId: row.sessionId,
-        conversationId: row.conversationId,
+        eventId: row.id,
         hit: {
           project: projectSlug,
           session: info.name,
@@ -257,14 +257,9 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
   }
 
   // Resolve ordinals only for sessions that actually have event hits.
-  const ordinals = loadConversationOrdinals(
-    db,
-    new Set(pending.map((p) => p.sessionId)),
-  );
-  for (const { hit, sessionId, conversationId } of pending) {
-    if (conversationId) {
-      hit.conversation = ordinals.get(sessionId)?.get(conversationId) ?? null;
-    }
+  const ordinals = loadEventOrdinals(db, new Set(pending.map((p) => p.sessionId)));
+  for (const { hit, eventId } of pending) {
+    hit.conversation = ordinals.get(eventId) ?? null;
     hits.push(hit);
   }
 
