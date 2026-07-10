@@ -280,13 +280,20 @@ function ConversationSegmentView({
             media: <EventMedia event={e} />,
             content: <EventContent event={e} />,
             title: (
-              <Text weight="bold" color={eventColor(e.event)}>
+              <Text
+                render={<p />}
+                weight="bold"
+                color={eventColor(e.event)}
+                balance
+              >
                 {eventTitle(e)}
               </Text>
             ),
             time: (
               <Badge color={eventColor(e.event)} size="small">
-                {formatTimestamp(e.createdAt)}
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {formatTimestamp(e.createdAt)}
+                </span>
               </Badge>
             ),
           }))}
