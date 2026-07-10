@@ -205,17 +205,26 @@ export function emitAssistantMessage(args: EventTarget & {
   thinkingBlocks: number;
   thinkingBytes: number;
   summary?: string;
+  /** Transcript entry uuid — exact-dedup key for re-ingestion. */
+  uuid?: string;
+  /** Transcript ISO timestamp — when Claude actually said it. */
+  timestamp?: string;
+  /** Row createdAt override (sqlite format) so timeline order matches reality. */
+  createdAt?: string;
 }) {
   return insertEvent({
     sessionId: args.sessionId,
     conversationId: args.conversationId,
     event: "assistant.message",
     summary: args.summary,
+    createdAt: args.createdAt,
     meta: {
       model: args.model,
       text: args.text,
       thinkingBlocks: args.thinkingBlocks,
       thinkingBytes: args.thinkingBytes,
+      uuid: args.uuid,
+      timestamp: args.timestamp,
       claude_id: args.conversationId,
     },
   });

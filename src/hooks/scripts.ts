@@ -61,17 +61,13 @@ question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut 
 # Clear working debounce marker so next resume→working transition fires
 rm -f "${runtimeDir}/working-$sid"
 
-bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')"
-
-# Capture the latest assistant turn's text. Dedup inside the
-# command makes it idempotent vs the matching Stop-time capture so the same
-# turn never lands twice.
+# The transcript path rides along so update ingests the turn's assistant
+# output (narration + trailing thinking, hence --flush) before inserting the
+# waiting event — cards land in true order. An empty path is ignored by the
+# update flag parser.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
-if [ -n "$tpath" ]; then
-  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" &
-fi
 
-wait
+bq update --session-id "$sid" --event session.waiting --meta "$(jq -n --arg q "$question" --arg cid "$cid" '{question:$q, claude_id:$cid}')" --transcript-path "$tpath" --flush
 `;
 }
 
@@ -175,6 +171,11 @@ ${EXTRACT_TOOL}
 # EnterWorktree/ExitWorktree have their own worktree.entered/exited hooks.
 case "$tool" in AskUserQuestion|EnterWorktree|ExitWorktree) exit 0 ;; esac
 
+# Transcript path rides along on the update calls below: the command ingests
+# any new assistant output (the narration that preceded this tool call)
+# before inserting the tool event, keeping the timeline in true order.
+tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
+
 marker="${runtimeDir}/perm-pending-$sid"
 had_marker=0
 if [ -f "$marker" ]; then
@@ -206,7 +207,7 @@ case "$tool" in
         claude_id: $cid
       }
     ')"
-    bq update --session-id "$sid" --event tool.applied --summary "$summary" --meta "$meta"
+    bq update --session-id "$sid" --event tool.applied --summary "$summary" --meta "$meta" --transcript-path "$tpath"
     wait
     exit 0
     ;;
@@ -227,7 +228,7 @@ esac
 
 outcome="auto"
 [ "$had_marker" = "1" ] && outcome="approved"
-bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')"
+bq update --session-id "$sid" --event tool.used --meta "$(jq -n --arg t "$tool" --arg d "$detail" --arg o "$outcome" --arg cid "$cid" '{tool:$t, detail:$d, outcome:$o, claude_id:$cid}')" --transcript-path "$tpath"
 wait
 `;
 }
@@ -300,13 +301,14 @@ cid="\${BERTRAND_CLAUDE_ID:-}"
 done_marker="${runtimeDir}/done-$sid"
 nudge_marker="${runtimeDir}/auq-nudge-$sid"
 
-# Capture the assistant turn either way. Stdout is muted so it can never corrupt
-# a decision-JSON payload. Dedups against the most-recent AskUQ-time capture, so
-# a Done-for-now exit lands zero new events; a dropped-AUQ Stop records the
-# stray turn; intermediate Stops with fresh output land normally.
+# Ingest the turn's remaining assistant output either way (--flush emits any
+# trailing thinking-only block). Stdout is muted so it can never corrupt a
+# decision-JSON payload. The ingest cursor makes this idempotent vs the
+# AskUQ-time tick — a Done-for-now exit lands zero new events; a dropped-AUQ
+# Stop records the stray turn.
 tpath="$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)"
 if [ -n "$tpath" ]; then
-  bq assistant-message --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" >/dev/null &
+  bq ingest-transcript --session-id "$sid" --transcript-path "$tpath" --conversation-id "$cid" --flush >/dev/null &
 fi
 
 if [ ! -f "$done_marker" ]; then
@@ -327,10 +329,11 @@ if [ ! -f "$done_marker" ]; then
   # Cap reached — stop nudging and let the session pause normally.
 fi
 
-# Terminal path: legitimate Done-for-now exit, or nudge cap exhausted.
+# Terminal path: legitimate Done-for-now exit, or nudge cap exhausted. Let the
+# ingest finish first so the final assistant events precede the paused flip.
 rm -f "$done_marker" "$nudge_marker"
-bq update --session-id "$sid" --event session.paused
 wait
+bq update --session-id "$sid" --event session.paused
 `;
 }
 

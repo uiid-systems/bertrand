@@ -20,7 +20,7 @@ let stubBin: string;
 /**
  * Stub `bertrand` binary: the `contract` subcommand echoes a marker string so
  * the injection tests can assert which variant was requested; every other
- * subcommand (update/assistant-message) is a silent no-op so it can't
+ * subcommand (update/ingest-transcript) is a silent no-op so it can't
  * pollute a hook's stdout.
  */
 const STUB = `#!/usr/bin/env bash
@@ -181,6 +181,33 @@ describe("on-enter-worktree.sh — worktree tracking", () => {
   test("outside a bertrand session (no BERTRAND_SESSION) → no marker", () => {
     run("on-enter-worktree.sh", JSON.stringify({ cwd: workDir }));
     expect(existsSync(marker(`worktree-${SID}`))).toBe(false);
+  });
+});
+
+describe("transcript ingestion ticks", () => {
+  // The rendered scripts must carry the transcript path into the bertrand
+  // invocations that tick ingestion — content checks, since the stub binary
+  // can't observe its own argv here.
+  const rendered = (name: keyof typeof HOOK_SCRIPTS) =>
+    HOOK_SCRIPTS[name]("BIN", "RUNTIME");
+
+  test("on-waiting.sh flushes via the session.waiting update", () => {
+    const script = rendered("on-waiting.sh");
+    expect(script).toContain('--transcript-path "$tpath" --flush');
+    expect(script).not.toContain("assistant-message");
+  });
+
+  test("on-permission-done.sh ticks ingestion on both tool event paths", () => {
+    const script = rendered("on-permission-done.sh");
+    const ticks = script.match(/--transcript-path "\$tpath"/g) ?? [];
+    expect(ticks.length).toBe(2); // tool.applied + tool.used
+  });
+
+  test("on-done.sh flushes via the standalone ingest command", () => {
+    const script = rendered("on-done.sh");
+    expect(script).toContain("ingest-transcript");
+    expect(script).toContain("--flush");
+    expect(script).not.toContain("assistant-message");
   });
 });
 
