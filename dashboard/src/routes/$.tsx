@@ -27,7 +27,6 @@ import {
   formatRelativeTime,
   formatTimestamp,
   statusColor,
-  statusLabel,
 } from "../lib/format";
 import {
   segmentConversations,
@@ -154,6 +153,9 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
     match.session.status === "active" ||
     match.session.status === "waiting" ||
     match.session.status === "blocked";
+  const statusDotColor = statusColor(
+    match.session.status,
+  ) as StatusProps["color"];
 
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
@@ -169,17 +171,6 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
     const el = document.getElementById(hash);
     if (el) el.scrollIntoView({ block: "start" });
   }, [segments, sessionId]);
-
-  const pendingQuestion = useMemo(() => {
-    if (match.session.status !== "waiting") return null;
-    for (let i = rawEvents.length - 1; i >= 0; i--) {
-      if (rawEvents[i].event === "session.waiting") {
-        const q = rawEvents[i].meta?.question;
-        return typeof q === "string" ? q : null;
-      }
-    }
-    return null;
-  }, [rawEvents, match.session.status]);
 
   const breadcrumbs = buildBreadcrumbs(
     projectName,
@@ -198,7 +189,10 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
         bb={1}
         fullwidth
       >
-        <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
+        <Group ay="center" gap={2}>
+          <Status color={statusDotColor} pulse={isLive} />
+          <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
+        </Group>
         <Group ay="center" gap={2}>
           <ConversationNav segments={segments} />
           <CopyResumeButton
@@ -232,10 +226,6 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           />
         ))}
       </Stack>
-      <SessionFooter
-        session={match.session}
-        pendingQuestion={pendingQuestion}
-      />
     </Stack>
   );
 }
@@ -337,31 +327,3 @@ function ArchiveToggle({ session }: { readonly session: SessionRow }) {
   );
 }
 ArchiveToggle.displayName = "ArchiveToggle";
-
-type SessionFooterProps = {
-  readonly session: SessionRow;
-  readonly pendingQuestion: string | null;
-};
-
-function SessionFooter({ session, pendingQuestion }: SessionFooterProps) {
-  const color = statusColor(session.status) as StatusProps["color"];
-  const isLive =
-    session.status === "active" ||
-    session.status === "waiting" ||
-    session.status === "blocked";
-
-  return (
-    <Stack bt={1} p={4} gap={3} fullwidth>
-      <Group ay="center" gap={2} fullwidth>
-        <Status color={color} pulse={isLive} />
-        <Badge color={color}>{statusLabel(session.status)}</Badge>
-        {pendingQuestion && (
-          <Text size={1} shade="muted">
-            {pendingQuestion}
-          </Text>
-        )}
-      </Group>
-    </Stack>
-  );
-}
-SessionFooter.displayName = "SessionFooter";
