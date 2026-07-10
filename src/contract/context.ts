@@ -1,28 +1,49 @@
-import { getSessionsByCategory } from "@/db/queries/sessions";
+import { getAllSessions, setSessionSummary } from "@/db/queries/sessions";
+import { deriveSessionSummary } from "@/lib/summary";
 import { formatAgo } from "@/lib/format";
 
 /**
- * Build sibling sessions context layer.
- * Shows other sessions in the same category so the agent knows what's running nearby,
- * and tells it how to pull the full record for any of them via the CLI.
+ * Sibling sessions context layer, injected into every session's contract.
+ *
+ * Project-wide (docs/agent-cli.md, Spec 2): a session's relevant neighbors
+ * are rarely confined to its own category, so every non-archived session in
+ * the active project gets a line — capped so the block stays a few hundred
+ * tokens. Summaries come from the pause-time derivation in lib/summary.ts.
+ * Archived sessions are excluded from injection; they stay discoverable via
+ * `bertrand list --all`.
  */
-export function buildSiblingContext(
-  categoryId: string,
-  categoryPath: string,
-  currentSessionId: string
-): string {
-  const siblings = getSessionsByCategory(categoryId).filter(
-    (s) => s.id !== currentSessionId
-  );
 
-  if (siblings.length === 0) return "";
+const MAX_SIBLINGS = 12;
 
-  const lines = siblings.map((s) => {
+export function buildSiblingContext(currentSessionId: string): string {
+  const rows = getAllSessions({ excludeArchived: true })
+    .filter((r) => r.session.id !== currentSessionId)
+    .sort(
+      (a, b) =>
+        new Date(b.session.updatedAt).getTime() -
+        new Date(a.session.updatedAt).getTime(),
+    );
+
+  if (rows.length === 0) return "";
+
+  const shown = rows.slice(0, MAX_SIBLINGS);
+  const lines = shown.map(({ session: s, categoryPath }) => {
     const ago = s.updatedAt ? formatAgo(s.updatedAt) : "unknown";
-    const summary = s.summary ? ` — "${s.summary}"` : "";
+    // Lazy backfill: sessions paused before the pause-time derivation existed
+    // have a NULL summary — heal them the first time they render as siblings.
+    let summaryText = s.summary;
+    if (!summaryText) {
+      summaryText = deriveSessionSummary(s.id);
+      if (summaryText) setSessionSummary(s.id, summaryText);
+    }
+    const summary = summaryText ? ` — "${summaryText}"` : "";
     const worktree = s.worktreeBranch ? ` [worktree: ${s.worktreeBranch}]` : "";
     return `- ${categoryPath}/${s.slug}: ${s.status}${worktree}${summary} (${ago})`;
   });
+
+  if (rows.length > shown.length) {
+    lines.push(`- …plus ${rows.length - shown.length} more — run \`bertrand list\``);
+  }
 
   const guidance = [
     "",

@@ -2,6 +2,7 @@ import { register } from "@/cli/router";
 import { getSession, updateSession, updateSessionStatus } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
 import { ingestTranscript } from "@/db/events/ingest";
+import { storeSessionSummary } from "@/lib/summary";
 import type { SessionStatus } from "@/db/queries/sessions";
 import {
   emitSessionAnswered,
@@ -223,5 +224,10 @@ register("update", async (args) => {
 
   if (newStatus && !ignoreStatusFlip) {
     updateSessionStatus(sessionId, newStatus);
+    // Pause is the moment the session becomes a "sibling" to everyone else —
+    // refresh its one-line summary so the injected context has substance.
+    // on-done.sh waits for its transcript flush before emitting this event,
+    // so the final assistant message is already ingested here.
+    if (newStatus === "paused") storeSessionSummary(sessionId);
   }
 });
