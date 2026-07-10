@@ -16,7 +16,7 @@ type EventCardProps = React.PropsWithChildren<{
  * timeline rail + icon (see `colorOf`/`iconOf` usage in the route), not on the
  * card surface itself.
  */
-export function EventCard({ compact = false, children }: EventCardProps) {
+export function EventCard({ compact = true, children }: EventCardProps) {
   return (
     <Stack data-slot="event-content" py={compact ? 2 : 4} fullwidth>
       <Card p={compact ? 3 : undefined} gap={compact ? 2 : 4} fullwidth>

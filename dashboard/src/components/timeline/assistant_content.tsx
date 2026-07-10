@@ -19,16 +19,16 @@ export function AssistantContent({ event }: AssistantContentProps) {
 
   const text = ((meta?.text as string) ?? "").trim();
   const thinkingBlocks = (meta?.thinkingBlocks as number) ?? 0;
-  const thinkingBytes = (meta?.thinkingBytes as number) ?? 0;
+  // const thinkingBytes = (meta?.thinkingBytes as number) ?? 0;
 
   if (!text && thinkingBlocks === 0) return null;
 
   return (
     <EventCard>
       <Stack data-slot="assistant-content" gap={2}>
-        {thinkingBlocks > 0 && (
+        {/* {thinkingBlocks > 0 && (
           <Badge color="indigo">{`Thought ${thoughtDots(thinkingBytes)}`}</Badge>
-        )}
+        )} */}
         {text && <Markdown>{text}</Markdown>}
       </Stack>
     </EventCard>

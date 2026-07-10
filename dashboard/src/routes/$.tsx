@@ -276,15 +276,23 @@ function ConversationSegmentView({
         <Timeline
           activeIndex={segment.events.length}
           items={segment.events.map((e) => ({
-            title: eventTitle(e),
-            time: formatTimestamp(e.createdAt),
             color: eventColor(e.event),
             media: <EventMedia event={e} />,
             content: <EventContent event={e} />,
+            title: (
+              <Text weight="bold" color={eventColor(e.event)}>
+                {eventTitle(e)}
+              </Text>
+            ),
+            time: (
+              <Badge color={eventColor(e.event)} size="small">
+                {formatTimestamp(e.createdAt)}
+              </Badge>
+            ),
           }))}
           ItemProps={{
             style: { width: "100%" },
-            ContentProps: { fullwidth: true, maxw: 860, pb: 4 },
+            ContentProps: { gap: 0, fullwidth: true, maxw: 680, pb: 4 },
           }}
         />
       )}
