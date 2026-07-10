@@ -5,9 +5,9 @@ import { InteractionContent } from "./interaction_content";
 import { LifecycleContent } from "./lifecycle_content";
 import { WorkContent } from "./work_content";
 
-type EventContentProps = {
+type EventContentProps = Readonly<{
   event: EventRow;
-};
+}>;
 
 export function EventContent({ event }: EventContentProps) {
   const category = categoryOf(event.event);

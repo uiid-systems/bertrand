@@ -46,7 +46,7 @@ export const SecondarySidebar = ({
   });
 
   return (
-    <SidebarWrapper data-slot="secondary-sidebar" {...props} p={0} minw={540}>
+    <SidebarWrapper data-slot="secondary-sidebar" {...props}>
       {stats && <SessionStats stats={stats} engagement={engagement} />}
     </SidebarWrapper>
   );
@@ -183,7 +183,14 @@ const SessionStats = ({ stats, engagement }: SessionStatsProps) => {
     });
   }
 
-  return <Tabs items={tabs} fullwidth ContainerProps={{ fullwidth: true }} />;
+  return (
+    <Tabs
+      items={tabs}
+      size="sm"
+      fullwidth
+      ContainerProps={{ fullwidth: true }}
+    />
+  );
 };
 SessionStats.displayName = "SessionStats";
 

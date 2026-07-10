@@ -134,6 +134,20 @@ describe("collapsePermissions", () => {
   });
 });
 
+describe("collapsePermissions timestamp handling", () => {
+  test("tool.work midpoint treats sqlite-format timestamps as UTC", () => {
+    // "YYYY-MM-DD HH:MM:SS" strings from datetime('now') are UTC; a local
+    // parse would shift the synthetic timestamp by the machine's UTC offset.
+    const events = [
+      ev("tool.used", "2026-04-12 10:00:00", { meta: { tool: "Bash" } }),
+      ev("tool.used", "2026-04-12 10:00:10", { meta: { tool: "Bash" } }),
+    ];
+    const result = collapsePermissions(events);
+    expect(result.length).toBe(1);
+    expect(result[0]!.createdAt).toBe("2026-04-12T10:00:05.000Z");
+  });
+});
+
 describe("deduplicate", () => {
   test("collapses consecutive identical events", () => {
     const events = [

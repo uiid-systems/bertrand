@@ -57,11 +57,7 @@ register("contract", async (args) => {
     return;
   }
 
-  const siblingContext = buildSiblingContext(
-    session.categoryId,
-    categoryPath,
-    session.id,
-  );
+  const siblingContext = buildSiblingContext(session.id);
   process.stdout.write(
     buildContract(sessionName, helpText({ agent: true }), siblingContext),
   );

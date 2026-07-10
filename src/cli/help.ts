@@ -19,11 +19,23 @@ const COMMAND_REFERENCE = `Usage:
 
 Inspect sessions (read-only):
   bertrand list [--json]       List sessions in the active project with status + activity.
-  bertrand log <session> [--json]
-                               Full record for one session: metadata, stats,
-                               conversations, and the complete event timeline.
-                               <session> is "<category>/<slug>" (see \`list\`). Use this
-                               to see what was decided or tried in another session.
+  bertrand log <session>       Session digest (JSON): per-conversation subject, Q&A
+                               decision trail, files touched, and outcome. Start here —
+                               ~1-2KB per conversation covers what was decided and tried.
+                               <session> is "<category>/<slug>" (see \`list\`).
+  bertrand log <session> --events
+                               Filtered event timeline when the digest isn't enough.
+                               Flags: --conversation <n> --limit <n> --since <ISO|24h|30m>
+                               --type qa,prompt,assistant,tool,lifecycle (or event names)
+  bertrand log <session> --full
+                               Complete record with raw event meta (100KB+). For
+                               debugging — too large to load into context.
+  bertrand search <term…>      Find where something was discussed or decided across
+                               sessions. Terms AND-ed, case-insensitive. Returns
+                               pointers (session, conversation, snippet) — drill in
+                               with \`log <session> --events --conversation <n>\`.
+                               Flags: --type prompt,question,answer,assistant,summary,tool
+                               --session <name> --limit <n> --all-projects
   bertrand stats <session> [--json]
                                Aggregate statistics (durations, interactions, diff metrics).
 
@@ -35,8 +47,8 @@ Manage sessions & projects:
                                (bertrand sync --help)
   bertrand serve               Start the local dashboard HTTP server.
 
-Add --json to list/log/stats for machine-readable output. Most commands accept
---project <slug> to target a project other than the active one.`;
+\`log\` always emits JSON; add --json to list/stats for the same. Most commands
+accept --project <slug> to target a project other than the active one.`;
 
 const HUMAN_HEADER = `bertrand — multi-session workflow manager for Claude Code
 

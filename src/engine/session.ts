@@ -24,6 +24,7 @@ import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { launchClaude, isClaudeRunning } from "./process";
 import { computeAndPersist } from "@/lib/timing";
+import { storeSessionSummary } from "@/lib/summary";
 import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
 import { claudeSessionExists } from "@/lib/transcript";
@@ -177,7 +178,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Build contract with context
-  const siblingContext = buildSiblingContext(categoryId, opts.categoryPath, session.id);
+  const siblingContext = buildSiblingContext(session.id);
   const contract = buildContract(sessionName, helpText({ agent: true }), siblingContext);
 
   // Launch Claude
@@ -230,8 +231,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   }
 
   // Build contract
-  const categoryPath = category?.path ?? "";
-  const siblingContext = buildSiblingContext(session.categoryId, categoryPath, session.id);
+  const siblingContext = buildSiblingContext(session.id);
   const contract = buildContract(sessionName, helpText({ agent: true }), siblingContext);
 
   const exitCode = await launchClaude({
@@ -278,6 +278,7 @@ function finalizeSession(
     pid: null,
     endedAt: new Date().toISOString(),
   });
+  storeSessionSummary(sessionId);
 
   if (liveSession?.sessionId === sessionId) liveSession = null;
 
