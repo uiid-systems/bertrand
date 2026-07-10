@@ -98,6 +98,51 @@ describe("unarchiveSession", () => {
   });
 });
 
+describe("archiveSession / unarchiveSession with explicit db (cross-project)", () => {
+  // Reproduces the dashboard multi-project bug: a session living in a
+  // non-active project's DB. Without the db arg the lookup hits the active DB
+  // and returns not-found; passing the owning DB resolves and mutates it.
+  const otherSqlite = new Database(
+    join(mkdtempSync(join(tmpdir(), "bertrand-archive-other-")), "other.db"),
+  );
+  otherSqlite.exec("PRAGMA journal_mode = WAL");
+  otherSqlite.exec("PRAGMA foreign_keys = ON");
+  const otherDb = drizzle(otherSqlite, { schema });
+  migrate(drizzle(otherSqlite), {
+    migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
+  });
+
+  // Seed a paused session into the other DB by pointing the query layer at it
+  // transiently, then restore the active (test) DB.
+  _setDb(otherDb);
+  const otherCategory = createCategory({ slug: "other-proj", name: "Other" });
+  const otherSession = createSession({
+    categoryId: otherCategory.id,
+    slug: "cross-1",
+    name: "cross-1",
+  });
+  _setDb(testDb);
+
+  test("without db arg, a session in another project's DB is not-found", () => {
+    const result = archiveSession(otherSession.id);
+    expect(result).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  test("with the owning db arg, archive succeeds", () => {
+    const result = archiveSession(otherSession.id, otherDb);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.session.status).toBe("archived");
+    expect(getSession(otherSession.id, otherDb)!.status).toBe("archived");
+  });
+
+  test("with the owning db arg, unarchive succeeds", () => {
+    const result = unarchiveSession(otherSession.id, otherDb);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.session.status).toBe("paused");
+    expect(getSession(otherSession.id, otherDb)!.status).toBe("paused");
+  });
+});
+
 describe("archiveAllPaused", () => {
   test("archives only paused sessions, skips active/waiting/archived", () => {
     // Fresh category to isolate from prior tests

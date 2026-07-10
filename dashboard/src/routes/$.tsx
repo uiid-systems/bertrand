@@ -183,7 +183,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             session={match.session}
             categoryPath={match.categoryPath}
           />
-          <ArchiveToggle session={match.session} />
+          <ArchiveToggle session={match.session} project={projectSlug} />
         </Group>
       </Group>
       <Stack p={8} gap={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
@@ -277,8 +277,14 @@ function EventMedia({ event }: { readonly event: EventRow }) {
 }
 EventMedia.displayName = "EventMedia";
 
-function ArchiveToggle({ session }: { readonly session: SessionRow }) {
-  const action = useArchiveAction(session);
+function ArchiveToggle({
+  session,
+  project,
+}: {
+  readonly session: SessionRow;
+  readonly project?: string;
+}) {
+  const action = useArchiveAction(session, project);
   const { Icon } = action;
   return (
     <Button
