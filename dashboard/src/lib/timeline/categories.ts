@@ -1,8 +1,4 @@
-export type EventCategory =
-  | "interaction"
-  | "work"
-  | "lifecycle"
-  | "assistant"
+export type EventCategory = "interaction" | "work" | "lifecycle" | "assistant";
 
 export type TimelineColor =
   | "red"
@@ -12,48 +8,64 @@ export type TimelineColor =
   | "blue"
   | "indigo"
   | "purple"
-  | "neutral"
+  | "neutral";
 
 type EventInfo = {
-  category: EventCategory
-  color: TimelineColor
-  label: string
-}
+  category: EventCategory;
+  color: TimelineColor;
+  label: string;
+};
 
 export const EVENT_CATALOG = {
-  "claude.started": { category: "lifecycle", color: "blue", label: "session started" },
-  "claude.ended": { category: "lifecycle", color: "blue", label: "ended" },
-  "claude.discarded": { category: "lifecycle", color: "neutral", label: "discarded" },
-  "session.waiting": { category: "interaction", color: "green", label: "waiting" },
+  "claude.started": {
+    category: "lifecycle",
+    color: "orange",
+    label: "session started",
+  },
+  "claude.ended": { category: "lifecycle", color: "orange", label: "ended" },
+  "claude.discarded": {
+    category: "lifecycle",
+    color: "neutral",
+    label: "discarded",
+  },
+  "session.waiting": {
+    category: "interaction",
+    color: "green",
+    label: "waiting",
+  },
   "session.answered": { category: "interaction", color: "green", label: "Q&A" },
-  "user.prompt": { category: "interaction", color: "green", label: "prompt" },
+  "user.prompt": { category: "interaction", color: "blue", label: "prompt" },
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
   "tool.applied": { category: "work", color: "yellow", label: "applied" },
   "tool.used": { category: "work", color: "yellow", label: "tool" },
-  "assistant.message": { category: "assistant", color: "indigo", label: "assistant" },
-} as const satisfies Record<string, EventInfo>
+  "assistant.message": {
+    category: "assistant",
+    color: "indigo",
+    label: "assistant",
+  },
+} as const satisfies Record<string, EventInfo>;
 
 /** Every event kind with catalog metadata. Icons live in `./icons`, keyed by this union. */
-export type KnownEvent = keyof typeof EVENT_CATALOG
+export type KnownEvent = keyof typeof EVENT_CATALOG;
 
 const DEFAULT_INFO: EventInfo = {
   category: "lifecycle",
   color: "neutral",
   label: "unknown",
-}
+};
 
 function lookup(event: string): EventInfo {
-  return EVENT_CATALOG[event as KnownEvent] ?? DEFAULT_INFO
+  return EVENT_CATALOG[event as KnownEvent] ?? DEFAULT_INFO;
 }
 
 export function categoryOf(event: string): EventCategory {
-  return lookup(event).category
+  return lookup(event).category;
 }
 
 export function colorOf(event: string): TimelineColor {
-  return lookup(event).color
+  return lookup(event).color;
 }
 
 export function labelOf(event: string): string {
-  return lookup(event).label
+  return lookup(event).label;
 }

@@ -18,8 +18,8 @@ type EventCardProps = React.PropsWithChildren<{
  */
 export function EventCard({ compact = true, children }: EventCardProps) {
   return (
-    <Stack data-slot="event-content" py={compact ? 2 : 4} fullwidth>
-      <Card p={compact ? 3 : undefined} gap={compact ? 2 : 4} fullwidth>
+    <Stack data-slot="event-content" py={4} fullwidth>
+      <Card p={3} gap={2} fullwidth>
         {children}
       </Card>
     </Stack>
