@@ -23,6 +23,7 @@ if (command && command in hotPath) {
     import("./cli/commands/init"),
     import("./cli/commands/list"),
     import("./cli/commands/log"),
+    import("./cli/commands/search"),
     import("./cli/commands/stats"),
     import("./cli/commands/backfill-stats"),
     import("./cli/commands/archive"),

@@ -30,6 +30,12 @@ Inspect sessions (read-only):
   bertrand log <session> --full
                                Complete record with raw event meta (100KB+). For
                                debugging — too large to load into context.
+  bertrand search <term…>      Find where something was discussed or decided across
+                               sessions. Terms AND-ed, case-insensitive. Returns
+                               pointers (session, conversation, snippet) — drill in
+                               with \`log <session> --events --conversation <n>\`.
+                               Flags: --type prompt,question,answer,assistant,summary,tool
+                               --session <name> --limit <n> --all-projects
   bertrand stats <session> [--json]
                                Aggregate statistics (durations, interactions, diff metrics).
 
