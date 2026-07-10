@@ -16,6 +16,11 @@ export function statusColor(status: SessionStatus) {
   return PALETTE_BY_STATUS[status];
 }
 
+/** A session is "live" while Claude is engaged: active, awaiting a reply, or blocked on approval. */
+export function isLiveStatus(status: SessionStatus): boolean {
+  return status === "active" || status === "waiting" || status === "blocked";
+}
+
 const LABEL_BY_STATUS = {
   active: "active",
   waiting: "waiting",

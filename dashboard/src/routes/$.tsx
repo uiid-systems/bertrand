@@ -7,14 +7,12 @@ import {
   Breadcrumbs,
   Button,
   Group,
-  Sheet,
   Stack,
   Status,
   type StatusProps,
   Text,
   Timeline,
 } from "@uiid/design-system";
-import { PanelRightIcon } from "@uiid/icons";
 
 import { eventsQuery, projectsQuery, sessionsQuery } from "../api/queries";
 import { useSelectedProjects } from "../components/sidebar/selected-projects";
@@ -26,16 +24,16 @@ import {
   eventTitle,
   formatRelativeTime,
   formatTimestamp,
+  isLiveStatus,
   statusColor,
 } from "../lib/format";
 import {
   segmentConversations,
   type ConversationSegment,
 } from "../lib/timeline/segments";
-import { findSessionFromSplat } from "../lib/find-session-from-splat";
+import { useMatchedSession } from "../lib/use-matched-session";
 import { EventContent } from "../components/timeline";
 import { ConversationNav } from "../components/conversation-nav";
-import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
@@ -77,26 +75,15 @@ function buildBreadcrumbs(
 
 function SplatPage() {
   const { _splat = "" } = Route.useParams();
-  const { projects, queryProjects } = useSelectedProjects();
+  const { queryProjects } = useSelectedProjects();
   const { data: visibleSessions = [] } = useQuery(
     sessionsQuery({ projects: queryProjects }),
   );
-  // Fallback list spans every project (and archived rows) so a deep-linked
-  // session still resolves even when it belongs to a project the view filter
-  // currently hides.
-  const { data: allSessions = [] } = useQuery(
-    sessionsQuery({
-      includeArchived: true,
-      projects: projects.map((p) => p.slug),
-    }),
-  );
 
-  // Resolve session-detail first against the visible list, then the full
-  // list (so an archived or filtered-out session opened by deep link still
-  // loads even when "show archived" is off in the sidebar).
-  const match =
-    findSessionFromSplat(_splat, visibleSessions) ??
-    findSessionFromSplat(_splat, allSessions);
+  // Resolve session-detail against the visible list, then a full fallback list
+  // (see useMatchedSession), so an archived or filtered-out session opened by
+  // deep link still loads even when "show archived" is off in the sidebar.
+  const match = useMatchedSession(_splat);
 
   if (match) return <SessionDetail match={match} />;
   return <CategoryDetail categoryPath={_splat} sessions={visibleSessions} />;
@@ -149,10 +136,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const projectSlug = match.project?.slug;
   const projectName = match.project?.name ?? activeProjectName;
   const sessionId = match.session.id;
-  const isLive =
-    match.session.status === "active" ||
-    match.session.status === "waiting" ||
-    match.session.status === "blocked";
+  const isLive = isLiveStatus(match.session.status);
   const statusDotColor = statusColor(
     match.session.status,
   ) as StatusProps["color"];
@@ -200,21 +184,6 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             categoryPath={match.categoryPath}
           />
           <ArchiveToggle session={match.session} />
-          <Sheet
-            side="right"
-            title="Session stats"
-            trigger={
-              <Button tooltip="Session stats" variant="subtle" size="small">
-                <PanelRightIcon />
-              </Button>
-            }
-          >
-            <SecondarySidebar
-              sessionId={sessionId}
-              isLive={isLive}
-              projectSlug={projectSlug}
-            />
-          </Sheet>
         </Group>
       </Group>
       <Stack p={8} gap={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
@@ -288,8 +257,7 @@ function ConversationSegmentView({
             ),
           }))}
           ItemProps={{
-            style: { width: "100%" },
-            ContentProps: { gap: 0, fullwidth: true, maxw: 680, pb: 4 },
+            ContentProps: { maxw: 680, pb: 6 },
           }}
         />
       )}
