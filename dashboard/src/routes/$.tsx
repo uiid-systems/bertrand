@@ -257,8 +257,7 @@ function ConversationSegmentView({
             ),
           }))}
           ItemProps={{
-            style: { width: "100%" },
-            ContentProps: { gap: 0, fullwidth: true, maxw: 680, pb: 4 },
+            ContentProps: { maxw: 680, pb: 6 },
           }}
         />
       )}
