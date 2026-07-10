@@ -213,6 +213,20 @@ export function updateSession(
     .get();
 }
 
+/**
+ * Set the summary WITHOUT bumping updatedAt. Summary derivation is metadata
+ * upkeep, not session activity — the lazy sibling backfill in particular
+ * would otherwise mark every old session "just now" and wreck recency sorts.
+ */
+export function setSessionSummary(id: string, summary: string) {
+  return getDb()
+    .update(sessions)
+    .set({ summary })
+    .where(eq(sessions.id, id))
+    .returning()
+    .get();
+}
+
 export function setSessionRating(id: string, rating: number | null) {
   return getDb()
     .update(sessions)
