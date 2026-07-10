@@ -13,7 +13,10 @@ import {
 } from "@uiid/design-system";
 
 import { sessionsQuery } from "../api/queries";
+import { isLiveStatus } from "../lib/format";
+import { useMatchedSession } from "../lib/use-matched-session";
 import { Sidebar } from "../components/sidebar";
+import { SecondarySidebar } from "../components/secondary-sidebar";
 import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import { TopBar } from "../components/topbar";
 
@@ -52,6 +55,13 @@ function AppShell() {
     sessionsQuery({ projects: queryProjects }),
   );
 
+  // Resolve the current route to a session so the secondary sidebar can render
+  // as a sibling of <main> (mirroring the primary sidebar) rather than being
+  // nested inside the route content. Non-session routes leave `match` null and
+  // the panel simply doesn't mount.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const match = useMatchedSession(pathname);
+
   return (
     <Stack fullwidth style={{ position: "fixed", height: "100dvh" }}>
       <TopBar sessionCount={sessions.length} />
@@ -66,6 +76,19 @@ function AppShell() {
             <Outlet />
           </Stack>
         </ResizablePanel>
+
+        {match && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel defaultSize={420} minSize={360} maxSize={640}>
+              <SecondarySidebar
+                sessionId={match.session.id}
+                isLive={isLiveStatus(match.session.status)}
+                projectSlug={match.project?.slug}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </Resizable>
     </Stack>
   );

@@ -100,7 +100,7 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
           label: (
             <Group ay="center" gap={2}>
               <Checkbox checked={checked} disabled />
-              <Text size={1}>{rest}</Text>
+              <Text>{rest}</Text>
             </Group>
           ),
         };
@@ -126,14 +126,14 @@ function buildListItems(children: ReactNode): ListItemOrGroup[] {
       }
 
       return {
-        label: <Text size={1}>{liChildren}</Text>,
+        label: <Text>{liChildren}</Text>,
       };
     });
 }
 
 export const defaultComponents: Components = {
   p: ({ children }) => (
-    <Text my={1} size={1} render={<p />}>
+    <Text my={1} render={<p />}>
       {children}
     </Text>
   ),

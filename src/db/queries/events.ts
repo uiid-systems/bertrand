@@ -67,6 +67,21 @@ export function getEventsByType(
     .all() as EventRow[];
 }
 
+/** First or last event of a given type in a session, by createdAt. */
+export function getEdgeEventOfType(
+  sessionId: string,
+  eventType: string,
+  edge: "first" | "last",
+): EventRow | undefined {
+  return getDb()
+    .select()
+    .from(events)
+    .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
+    .orderBy(edge === "first" ? events.createdAt : desc(events.createdAt), events.id)
+    .limit(1)
+    .get() as EventRow | undefined;
+}
+
 export function getLatestEvent(sessionId: string) {
   return getDb()
     .select()

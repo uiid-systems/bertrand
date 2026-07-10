@@ -17,9 +17,9 @@ type QuestionDef = {
   options: QuestionOption[];
 };
 
-type InteractionContentProps = {
+type InteractionContentProps = Readonly<{
   event: EventRow;
-};
+}>;
 
 function findQuestion(
   questions: QuestionDef[] | undefined,
@@ -139,11 +139,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
 
     if (entries.length === 1) {
       const [question, answer] = entries[0];
-      return (
-        <EventCard>
-          {renderQuestionBody(question, answer)}
-        </EventCard>
-      );
+      return <EventCard>{renderQuestionBody(question, answer)}</EventCard>;
     }
 
     const tabs: TabProps[] = entries.map(([question, answer], i) => {
@@ -157,7 +153,12 @@ export function InteractionContent({ event }: InteractionContentProps) {
 
     return (
       <EventCard>
-        <Tabs items={tabs} ContainerProps={{ fullwidth: true, mt: 6 }} />
+        <Tabs
+          items={tabs}
+          size="sm"
+          ContainerProps={{ mt: 6 }}
+          ListProps={{ style: { backgroundColor: "var(--shade-background)" } }}
+        />
       </EventCard>
     );
   }

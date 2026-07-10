@@ -3,9 +3,9 @@ import { Badge, Group } from "@uiid/design-system";
 import type { EventRow } from "../../api/types";
 import { EventCard } from "./event_card";
 
-type LifecycleContentProps = {
+type LifecycleContentProps = Readonly<{
   event: EventRow;
-};
+}>;
 
 function shortId(id: string | undefined): string | undefined {
   if (!id) return undefined;
@@ -21,13 +21,15 @@ export function LifecycleContent({ event }: LifecycleContentProps) {
     undefined;
   const id = shortId(claudeId ?? undefined);
   const exitCode =
-    event.event === "claude.ended" ? (meta?.exit_code as number | undefined) : undefined;
+    event.event === "claude.ended"
+      ? (meta?.exit_code as number | undefined)
+      : undefined;
   const showExit = typeof exitCode === "number" && exitCode !== 0;
 
   if (!id && !showExit) return null;
 
   return (
-    <EventCard compact>
+    <EventCard>
       <Group gap={2} ay="center">
         {id && (
           <Badge color="neutral" size="small">
