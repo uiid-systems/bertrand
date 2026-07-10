@@ -1,4 +1,5 @@
 import { getActiveSessions, updateSession } from "@/db/queries/sessions";
+import { storeSessionSummary } from "@/lib/summary";
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -25,6 +26,9 @@ export function recoverStaleSessions(): number {
         status: "paused",
         pid: null,
       });
+      // Crashed sessions never hit a normal pause path — derive their
+      // sibling-context summary here so they aren't blank to neighbors.
+      storeSessionSummary(session.id);
       recovered++;
     }
   }

@@ -21,7 +21,7 @@ const aliases = new Map<string, string>();
  */
 const HOOK_COMMANDS = new Set([
   "update",
-  "assistant-message",
+  "ingest-transcript",
   "contract",
   "ensure-server",
 ]);
