@@ -1,6 +1,7 @@
 import { register } from "@/cli/router";
 import { getSession, updateSession, updateSessionStatus } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
+import { ingestTranscript } from "@/db/events/ingest";
 import type { SessionStatus } from "@/db/queries/sessions";
 import {
   emitSessionAnswered,
@@ -128,8 +129,11 @@ register("update", async (args) => {
   let event = "";
   let metaJson = "";
   let summaryArg: string | undefined;
+  let transcriptPath = "";
+  let flush = false;
 
   // Parse flags: --session-id <id> --event <type> [--summary <text>] [--meta <json>]
+  //              [--transcript-path <path>] [--flush]
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     const next = args[i + 1];
@@ -145,6 +149,11 @@ register("update", async (args) => {
     } else if (arg === "--meta" && next) {
       metaJson = next;
       i++;
+    } else if (arg === "--transcript-path" && next) {
+      transcriptPath = next;
+      i++;
+    } else if (arg === "--flush") {
+      flush = true;
     }
   }
 
@@ -158,19 +167,6 @@ register("update", async (args) => {
     console.error(`Session not found: ${sessionId}`);
     process.exit(1);
   }
-
-  // Skip redundant status updates — session.waiting/answered fire frequently
-  // and are no-ops when the status is already where we'd flip it to.
-  const newStatus = EVENT_STATUS_MAP[event];
-  if (newStatus && newStatus === session.status) {
-    return;
-  }
-
-  // See shouldIgnoreStatusFlip — defends against delayed-hook races where a
-  // reparented PostToolUse hook child commits `session.answered` after
-  // bertrand has finalized the row. The event still gets inserted so the
-  // timeline records what the hook tried to say.
-  const ignoreStatusFlip = shouldIgnoreStatusFlip(newStatus, session.pid);
 
   let meta: Record<string, unknown> = {};
   if (metaJson) {
@@ -190,6 +186,30 @@ register("update", async (args) => {
     undefined;
   const conversationId =
     rawConvoId && getConversation(rawConvoId) ? rawConvoId : undefined;
+
+  // Ingest new assistant output BEFORE inserting this tick's own event, so
+  // the narration that preceded a tool call lands ahead of its tool.used row.
+  // Best-effort: capture must never break the hook that carried it.
+  if (transcriptPath) {
+    try {
+      ingestTranscript({ sessionId, conversationId, transcriptPath, flush });
+    } catch {
+      // swallowed — hooks run with stderr discarded anyway
+    }
+  }
+
+  // Skip redundant status updates — session.waiting/answered fire frequently
+  // and are no-ops when the status is already where we'd flip it to.
+  const newStatus = EVENT_STATUS_MAP[event];
+  if (newStatus && newStatus === session.status) {
+    return;
+  }
+
+  // See shouldIgnoreStatusFlip — defends against delayed-hook races where a
+  // reparented PostToolUse hook child commits `session.answered` after
+  // bertrand has finalized the row. The event still gets inserted so the
+  // timeline records what the hook tried to say.
+  const ignoreStatusFlip = shouldIgnoreStatusFlip(newStatus, session.pid);
 
   // Dispatch is best-effort: some events (session.paused) flip status without
   // writing an event row. Unknown events from a stale binary/hook combo are

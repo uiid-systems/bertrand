@@ -136,7 +136,7 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
   return summary;
 }
 
-function contentBlocks(
+export function contentBlocks(
   entry: Record<string, unknown>,
 ): Array<Record<string, unknown>> | null {
   const message = entry.message as Record<string, unknown> | undefined;

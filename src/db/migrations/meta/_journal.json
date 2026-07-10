@@ -57,6 +57,13 @@
       "when": 1782249283327,
       "tag": "0007_awesome_justin_hammer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783649949064,
+      "tag": "0008_stormy_the_fallen",
+      "breakpoints": true
     }
   ]
 }

@@ -139,6 +139,27 @@ export const events = sqliteTable(
   ]
 );
 
+// Transcript ingestion bookmarks — one per transcript file. Keyed by path
+// rather than conversation id: a transcript is machine-local state, and a
+// nested session can inherit BERTRAND_CLAUDE_ID while writing a different
+// file. The pending counters carry thinking blocks seen since the last text
+// event so they attach to the next narration (or flush as a "thinking only"
+// event at turn end).
+export const ingestCursors = sqliteTable("ingest_cursors", {
+  transcriptPath: text("transcript_path").primaryKey(),
+  offset: integer("offset").notNull().default(0),
+  lastUuid: text("last_uuid"),
+  pendingThinkingBlocks: integer("pending_thinking_blocks")
+    .notNull()
+    .default(0),
+  pendingThinkingBytes: integer("pending_thinking_bytes").notNull().default(0),
+  pendingUuid: text("pending_uuid"),
+  pendingTimestamp: text("pending_timestamp"),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
 // Materialized stats — updated at session end, avoids full event scan
 export const sessionStats = sqliteTable("session_stats", {
   sessionId: text("session_id")
