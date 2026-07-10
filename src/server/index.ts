@@ -333,13 +333,13 @@ export function startServer(port = PORT) {
       if (req.method === "POST") {
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
-          const response = archiveResponse(archiveSession(archiveMatch[1]!))
+          const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))
           response.headers.set("Access-Control-Allow-Origin", "*")
           return response
         }
         const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
         if (unarchiveMatch) {
-          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!))
+          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!, resolveDb(url)))
           response.headers.set("Access-Control-Allow-Origin", "*")
           return response
         }

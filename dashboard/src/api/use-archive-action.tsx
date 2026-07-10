@@ -44,6 +44,7 @@ export type ArchiveAction = {
  */
 export function useArchiveAction(
   session: Pick<SessionRow, "id" | "slug" | "status">,
+  project?: string,
 ): ArchiveAction {
   const qc = useQueryClient();
   const toast = useToastManager();
@@ -53,7 +54,7 @@ export function useArchiveAction(
   // Silent inverse — used by the Undo button so we don't double-toast.
   const runSilent = (verb: ArchiveActionKind) => {
     const fn = verb === "archive" ? archiveSession : unarchiveSession;
-    return fn(session.id)
+    return fn(session.id, project)
       .then(invalidate)
       .catch((err) => {
         toast.add({
@@ -88,7 +89,7 @@ export function useArchiveAction(
   };
 
   const archive = useMutation({
-    mutationFn: () => archiveSession(session.id),
+    mutationFn: () => archiveSession(session.id, project),
     onSuccess: () => {
       invalidate();
       successToast("Archived", "unarchive");
@@ -101,7 +102,7 @@ export function useArchiveAction(
   });
 
   const unarchive = useMutation({
-    mutationFn: () => unarchiveSession(session.id),
+    mutationFn: () => unarchiveSession(session.id, project),
     onSuccess: () => {
       invalidate();
       successToast("Unarchived", "archive");

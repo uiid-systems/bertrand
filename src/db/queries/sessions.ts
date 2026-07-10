@@ -185,8 +185,12 @@ export function getAllSessionsForProject(
   }));
 }
 
-export function updateSessionStatus(id: string, status: SessionStatus): SessionRow {
-  return getDb()
+export function updateSessionStatus(
+  id: string,
+  status: SessionStatus,
+  db: Db = getDb(),
+): SessionRow {
+  return db
     .update(sessions)
     .set({ status, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
