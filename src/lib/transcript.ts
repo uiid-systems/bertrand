@@ -136,11 +136,42 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
   return summary;
 }
 
+function contentBlocks(
+  entry: Record<string, unknown>,
+): Array<Record<string, unknown>> | null {
+  const message = entry.message as Record<string, unknown> | undefined;
+  const content = message?.content;
+  return Array.isArray(content)
+    ? (content as Array<Record<string, unknown>>)
+    : null;
+}
+
 /**
- * Extract the latest assistant turn — all consecutive assistant entries since
- * the most recent user entry. Claude Code splits a turn across multiple
- * assistant entries (thinking is its own entry, response is another), so we
- * collect them all and aggregate.
+ * True when a `type:"user"` entry represents actual user input — the start of
+ * a new turn. Claude Code writes every tool result back into the transcript
+ * as a user entry too (in a tool-heavy conversation those outnumber real
+ * prompts ~13:1), so mid-turn tool results must NOT count as boundaries. But
+ * an answered AskUserQuestion is user input arriving *as* a tool_result, and
+ * in bertrand's loop it is the usual turn boundary — hence the auqIds check.
+ */
+function isTurnBoundary(
+  entry: Record<string, unknown>,
+  auqIds: Set<string>,
+): boolean {
+  const blocks = contentBlocks(entry);
+  if (!blocks) return true; // string content — a typed prompt
+  const results = blocks.filter((b) => b.type === "tool_result");
+  if (results.length === 0) return true; // text/attachment prompt
+  return results.some((r) => auqIds.has(r.tool_use_id as string));
+}
+
+/**
+ * Extract the latest assistant turn — all assistant entries since the most
+ * recent user input (a typed prompt or an answered AskUserQuestion). Claude
+ * Code splits a turn across multiple assistant entries (thinking is its own
+ * entry, response is another) and interleaves tool results as `type:"user"`
+ * entries mid-turn, so we skip those and aggregate everything back to the
+ * last real boundary.
  *
  * Thinking blocks on Opus 4.7 are signature-only ({"thinking":"","signature":...})
  * — we surface the count and total signature byte size as a depth proxy.
@@ -151,19 +182,37 @@ export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
   const text = readFileSync(filePath, "utf-8");
   const lines = text.split("\n");
 
-  const assistantEntries: Record<string, unknown>[] = [];
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
+  const entries: Record<string, unknown>[] = [];
+  for (const line of lines) {
     if (!line) continue;
-
-    let entry: Record<string, unknown>;
     try {
-      entry = JSON.parse(line);
+      entries.push(JSON.parse(line));
     } catch {
       continue;
     }
+  }
 
-    if (entry.type === "user") break;
+  // Forward pass: collect AskUserQuestion tool_use ids so their tool_results
+  // can be recognized as turn boundaries in the backwards walk.
+  const auqIds = new Set<string>();
+  for (const entry of entries) {
+    if (entry.type !== "assistant") continue;
+    for (const block of contentBlocks(entry) ?? []) {
+      if (
+        block.type === "tool_use" &&
+        block.name === "AskUserQuestion" &&
+        typeof block.id === "string"
+      ) {
+        auqIds.add(block.id);
+      }
+    }
+  }
+
+  const assistantEntries: Record<string, unknown>[] = [];
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (!entry) continue;
+    if (entry.type === "user" && isTurnBoundary(entry, auqIds)) break;
     if (entry.type === "assistant") assistantEntries.push(entry);
   }
 
