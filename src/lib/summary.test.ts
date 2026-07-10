@@ -79,6 +79,43 @@ describe("deriveSessionSummary", () => {
     expect(deriveSessionSummary(s.id)).toBe("just a question");
   });
 
+  test("outcome strips markdown noise and cuts at a sentence boundary", () => {
+    const s = makeSession("markdown");
+    insertEvent({ sessionId: s.id, event: "user.prompt", meta: { prompt: "subject" } });
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: {
+        text:
+          "**PR [#160](https://github.com/x/pull/160) is up** — `blocked` state done.\n\n" +
+          "| Key | Bytes |\n|-----|-------|\n| a | 17 |\n\n" +
+          "```ts\nconst noise = true\n```\n" +
+          "- bullet one\n> quoted\n## Heading\nAnd a much longer trailing explanation " +
+          "that runs on and on and would normally get chopped mid-word by a naive cap.",
+      },
+    });
+    const summary = deriveSessionSummary(s.id)!;
+    expect(summary).toContain("PR #160 is up — blocked state done.");
+    expect(summary).not.toContain("**");
+    expect(summary).not.toContain("|");
+    expect(summary).not.toContain("```");
+    expect(summary).not.toContain("https://github.com"); // md link unwraps to its label
+    // Sentence-boundary cut: ends cleanly, not with a mid-word ellipsis.
+    expect(summary.endsWith(".")).toBe(true);
+  });
+
+  test("bare URLs survive condensing", () => {
+    const s = makeSession("bare-url");
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: { text: "PR opened: **https://github.com/x/pull/9** — review when ready." },
+    });
+    expect(deriveSessionSummary(s.id)).toBe(
+      "PR opened: https://github.com/x/pull/9 — review when ready.",
+    );
+  });
+
   test("session with no prompts or messages derives null", () => {
     const s = makeSession("empty");
     insertEvent({ sessionId: s.id, event: "claude.started", meta: { cwd: "/x" } });

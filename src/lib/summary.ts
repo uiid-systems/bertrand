@@ -26,6 +26,40 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Strip markdown structure that turns to noise when flattened to one line:
+ * code fences and table rows disappear entirely, emphasis/heading/bullet/link
+ * markers unwrap to their text. Bare URLs survive (PR links are the most
+ * valuable thing in an outcome); md-style links keep their label only.
+ */
+function condense(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^\s*\|.*\|\s*$/gm, " ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
+}
+
+/**
+ * Cut at the last sentence boundary inside the budget when one exists past
+ * 40% of it — final messages lead with the outcome, so a clean first
+ * sentence beats a mid-word ellipsis. Falls back to a hard truncate.
+ */
+function cutAtSentence(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const window = text.slice(0, max);
+  // (?<!\d) so "1." list remnants and version numbers don't count as endings.
+  const match = window.match(/^[\s\S]*(?<!\d)[.!?](?=\s)/);
+  if (match && match[0].length >= max * 0.4) return match[0].trim();
+  return truncate(text, max);
+}
+
 function metaStr(meta: Record<string, unknown> | null, key: string): string {
   const value = meta?.[key];
   return typeof value === "string" ? value : "";
@@ -40,7 +74,10 @@ export function deriveSessionSummary(sessionId: string): string | null {
   const lastMessage = getEdgeEventOfType(sessionId, "assistant.message", "last");
 
   const subject = truncate(oneLine(metaStr(firstPrompt?.meta ?? null, "prompt")), SUBJECT_MAX);
-  const outcome = truncate(oneLine(metaStr(lastMessage?.meta ?? null, "text")), OUTCOME_MAX);
+  const outcome = cutAtSentence(
+    oneLine(condense(metaStr(lastMessage?.meta ?? null, "text"))),
+    OUTCOME_MAX,
+  );
 
   if (subject && outcome) return `${subject} → ${outcome}`;
   return subject || outcome || null;
