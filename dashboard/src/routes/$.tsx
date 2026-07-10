@@ -27,6 +27,7 @@ import {
   isLiveStatus,
   statusColor,
 } from "../lib/format";
+import { categoryOf } from "../lib/timeline/categories";
 import {
   segmentConversations,
   type ConversationSegment,
@@ -233,21 +234,15 @@ function ConversationSegmentView({
       )}
       {segment.events.length > 0 && (
         <Timeline
-          activeIndex={segment.events.length}
+          defaultStatus="completed"
+          gap={6}
+          ContentProps={{ maxw: 680 }}
           items={segment.events.map((e) => ({
             color: eventColor(e.event),
-            media: <EventMedia event={e} />,
+            marker: <EventMarker event={e} />,
             content: <EventContent event={e} />,
-            title: (
-              <Text
-                render={<p />}
-                weight="bold"
-                color={eventColor(e.event)}
-                balance
-              >
-                {eventTitle(e)}
-              </Text>
-            ),
+            title: eventTitle(e),
+            TitleProps: { color: eventColor(e.event) },
             time: (
               <Badge color={eventColor(e.event)} size="small">
                 <span style={{ whiteSpace: "nowrap" }}>
@@ -255,10 +250,12 @@ function ConversationSegmentView({
                 </span>
               </Badge>
             ),
+            // Lifecycle rows are just an id/exit badge — no card surface.
+            CardProps:
+              categoryOf(e.event) === "lifecycle"
+                ? { variant: "ghost" as const }
+                : undefined,
           }))}
-          ItemProps={{
-            ContentProps: { maxw: 680, pb: 6 },
-          }}
         />
       )}
     </Stack>
@@ -266,16 +263,12 @@ function ConversationSegmentView({
 }
 ConversationSegmentView.displayName = "ConversationSegmentView";
 
-/** Per-event icon for the timeline's media column, tinted to the rail color. */
-function EventMedia({ event }: { readonly event: EventRow }) {
+/** Per-event icon rendered inside the timeline marker on the rail. */
+function EventMarker({ event }: { readonly event: EventRow }) {
   const Icon = eventIcon(event.event);
-  return (
-    <Text color={eventColor(event.event)} render={<span />}>
-      <Icon size={16} />
-    </Text>
-  );
+  return <Icon size={12} />;
 }
-EventMedia.displayName = "EventMedia";
+EventMarker.displayName = "EventMarker";
 
 function ArchiveToggle({ session }: { readonly session: SessionRow }) {
   const action = useArchiveAction(session);
