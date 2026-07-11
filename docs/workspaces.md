@@ -145,7 +145,10 @@ Conductor's genuinely good idea is a small, declarative lifecycle — not its GU
 We adopt the same three-verb lifecycle and inject equivalent env into both the setup and
 run commands:
 
-- `BERTRAND_PORT` (+ a small reserved block, e.g. `+0..+9`, for apps that need several)
+- `BERTRAND_PORT` (a single port per workspace — the allocator reserves exactly one
+  slot, so we deliberately do *not* export a `+0..+9` block until allocation can
+  reserve strides; a promised-but-unreserved block would collide with neighboring
+  sessions' base ports. Multi-port apps are Phase 3.)
 - `BERTRAND_WORKSPACE` (the session/worktree slug, for naming DB files, data dirs, etc.)
 - `BERTRAND_ROOT` (the main checkout path, for symlinking shared files)
 - `BERTRAND_PREVIEW_URL` (the stable URL, exported so the app/logs can print it)

@@ -5,11 +5,8 @@
  * "what a workspace command sees".
  */
 
-/** Number of ports in the reserved block, base..base+size-1 (doc: "+0..+9"). */
-const DEFAULT_PORT_BLOCK = 10;
-
 export interface WorkspaceEnvInput {
-  /** Base port allocated to this workspace. */
+  /** Port allocated to this workspace. */
   port: number;
   /** Session/worktree slug — for naming per-workspace DB files, data dirs, etc. */
   slug: string;
@@ -17,35 +14,30 @@ export interface WorkspaceEnvInput {
   root: string;
   /** The stable preview URL, exported so the app/logs can print it. */
   previewUrl: string;
-  /** Reserved-block size; defaults to 10 (base..base+9). */
-  portBlockSize?: number;
 }
 
 /**
  * Build the env map for a workspace command.
  *
- * `BERTRAND_PORT` is the base; `BERTRAND_PORT_0..N` name the whole reserved
- * block without arithmetic, so a run script for an app that needs several
- * ports can reference `$BERTRAND_PORT_1` directly (`_0` equals the base).
+ * One port per workspace: the allocator reserves exactly one slot, so one
+ * port is all we can honestly promise. (An earlier draft exported a
+ * `BERTRAND_PORT_0..9` block, but the registry never reserved those ports —
+ * a neighboring session could be allocated one of them as its *base*. Strided
+ * allocation can bring the block back if multi-port apps show up in Phase 3.)
  *
- * `PORT` is also set to the base as a best-effort zero-config nicety: Next,
- * CRA and many servers honor it, so an auto-detected `dev` script binds the
- * deterministic port with no user config. Apps that ignore `PORT` (e.g. Vite)
- * should reference `$BERTRAND_PORT` in a committed `run` override instead.
+ * `PORT` is also set as a best-effort zero-config nicety: Next, CRA and many
+ * servers honor it, so an auto-detected `dev` script binds the deterministic
+ * port with no user config. Apps that ignore `PORT` (e.g. Vite) should
+ * reference `$BERTRAND_PORT` in a committed `run` override instead.
  */
 export function workspaceEnv(input: WorkspaceEnvInput): Record<string, string> {
-  const size = input.portBlockSize ?? DEFAULT_PORT_BLOCK;
-  const env: Record<string, string> = {
+  return {
     BERTRAND_PORT: String(input.port),
     BERTRAND_WORKSPACE: input.slug,
     BERTRAND_ROOT: input.root,
     BERTRAND_PREVIEW_URL: input.previewUrl,
     PORT: String(input.port),
   };
-  for (let i = 0; i < size; i++) {
-    env[`BERTRAND_PORT_${i}`] = String(input.port + i);
-  }
-  return env;
 }
 
 /**

@@ -19,18 +19,11 @@ describe("workspaceEnv", () => {
     expect(env.PORT).toBe("4300");
   });
 
-  test("emits a base..base+9 reserved block by default", () => {
+  test("does not promise a port block the allocator never reserved", () => {
     const env = workspaceEnv(base);
-    expect(env.BERTRAND_PORT_0).toBe("4300");
-    expect(env.BERTRAND_PORT_9).toBe("4309");
-    expect(env.BERTRAND_PORT_10).toBeUndefined();
-  });
-
-  test("honors a custom block size", () => {
-    const env = workspaceEnv({ ...base, portBlockSize: 2 });
-    expect(env.BERTRAND_PORT_0).toBe("4300");
-    expect(env.BERTRAND_PORT_1).toBe("4301");
-    expect(env.BERTRAND_PORT_2).toBeUndefined();
+    expect(env.BERTRAND_PORT_0).toBeUndefined();
+    expect(env.BERTRAND_PORT_1).toBeUndefined();
+    expect(env.BERTRAND_PORT_9).toBeUndefined();
   });
 });
 
