@@ -8,6 +8,7 @@ import type {
   EngagementStats,
   ArchiveErrorReason,
   WorkspaceServerStatus,
+  WorktreeSessionRow,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -84,7 +85,7 @@ export const sessionsQuery = (
 
 export const worktreesQuery = queryOptions({
   queryKey: ["worktrees"],
-  queryFn: () => fetchJson<SessionWithCategory[]>("/api/worktrees"),
+  queryFn: () => fetchJson<WorktreeSessionRow[]>("/api/worktrees"),
   refetchInterval: 2000,
   placeholderData: keepPreviousData,
 })

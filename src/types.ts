@@ -20,6 +20,16 @@ export type SessionWithCategory = {
   project?: { slug: string; name: string };
 };
 
+/**
+ * /api/worktrees row: a worktree-bearing session plus the branch git
+ * *currently* has checked out. The DB's worktree_branch is a snapshot from
+ * EnterWorktree time and goes stale when the worktree switches branches
+ * mid-life, so the server re-reads it from git per response.
+ */
+export type WorktreeSessionRow = SessionWithCategory & {
+  branch: string | null;
+};
+
 export type EngagementStats = {
   toolUsage: Record<string, number>;
   discardRate: { discarded: number; total: number };

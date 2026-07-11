@@ -1,7 +1,7 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
-import { getMainWorktree } from "@/lib/git"
+import { getMainWorktree, getWorktreeBranch } from "@/lib/git"
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
@@ -38,6 +38,7 @@ import { getDbForProject, invalidateDbCache, type Db } from "@/db/client"
 import type {
   SessionRow,
   SessionWithCategory,
+  WorktreeSessionRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -167,9 +168,9 @@ const getActiveProjectMeta = (): unknown => {
 }
 
 // Sessions currently working in a worktree. Derived from the worktree_path
-// column the EnterWorktree hook maintains — no git shell-out, so this stays a
-// synchronous handler like the rest. Scoped like /api/sessions: `?projects=`
-// merges the named projects, omitting it covers the active project alone.
+// column the EnterWorktree hook maintains. Scoped like /api/sessions:
+// `?projects=` merges the named projects, omitting it covers the active
+// project alone.
 const listWorktreeSessions = (
   _params: object,
   url: URL,
@@ -179,6 +180,25 @@ const listWorktreeSessions = (
       getAllSessionsForProject(project, { excludeArchived: true }),
     )
     .filter(({ session }) => session.worktreePath != null)
+
+// /api/worktrees — each row enriched with the branch git *currently* has
+// checked out. worktree_branch in the DB is a snapshot from EnterWorktree
+// time; a worktree that switched branches mid-life would otherwise display
+// its entry-time branch forever. Falls back to the recorded value when git
+// can't answer (deleted dir, detached HEAD).
+const listWorktrees = (
+  _params: object,
+  url: URL,
+): Promise<WorktreeSessionRow[]> =>
+  Promise.all(
+    listWorktreeSessions({}, url).map(async (row) => ({
+      ...row,
+      branch:
+        (row.session.worktreePath != null && existsSync(row.session.worktreePath)
+          ? await getWorktreeBranch(row.session.worktreePath)
+          : null) ?? row.session.worktreeBranch,
+    })),
+  )
 
 // Dev-server status per worktree-bearing session, keyed by session id. A
 // read with no allocation side effects (getWorkspaceServer never reserves a
@@ -230,7 +250,7 @@ const getWorktreeLogs = (
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
-  [/^\/api\/worktrees$/, listWorktreeSessions],
+  [/^\/api\/worktrees$/, listWorktrees],
   [/^\/api\/worktrees\/status$/, listWorktreeStatus],
   [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
