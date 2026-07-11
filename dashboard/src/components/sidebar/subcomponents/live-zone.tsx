@@ -38,6 +38,7 @@ export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
       trigger={
         <Group
           data-slot="sidebar-live-zone"
+          className="sidebar-zone-trigger"
           ay="center"
           gap={2}
           fullwidth
@@ -50,7 +51,7 @@ export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
           ) : (
             <ChevronRightIcon size={14} />
           )}
-          <Text weight="bold" size={0}>
+          <Text className="sidebar-zone-title" weight="bold" size={0}>
             Needs you
           </Text>
           <Text size={-1} shade="muted">

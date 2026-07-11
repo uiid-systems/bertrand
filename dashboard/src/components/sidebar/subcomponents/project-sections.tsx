@@ -7,7 +7,7 @@ import type { SessionGroup } from "../sidebar.types";
 import { useCollapsedProjects } from "../use-collapsed-projects";
 import { SessionListItem } from "./session-list-item";
 
-type ProjectAccordionProps = {
+type ProjectSectionsProps = {
   projects: SessionGroup[];
 };
 
@@ -17,7 +17,7 @@ type ProjectAccordionProps = {
  * own padding. Sections default to expanded; the user's collapses persist
  * across reloads via `useCollapsedProjects`.
  */
-export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
+export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
   const { collapsed, setCollapsed } = useCollapsedProjects();
 
   const setOpen = useCallback(
@@ -45,6 +45,7 @@ export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
             PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
             trigger={
               <Group
+                className="sidebar-zone-trigger"
                 ay="center"
                 gap={2}
                 fullwidth
@@ -57,7 +58,7 @@ export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
                 ) : (
                   <ChevronRightIcon size={14} />
                 )}
-                <Text weight="bold" size={0}>
+                <Text className="sidebar-zone-title" weight="bold" size={0}>
                   {group.category}
                 </Text>
                 <Text size={-1} shade="muted">
@@ -84,4 +85,4 @@ export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
     </Stack>
   );
 };
-ProjectAccordion.displayName = "ProjectAccordion";
+ProjectSections.displayName = "ProjectSections";

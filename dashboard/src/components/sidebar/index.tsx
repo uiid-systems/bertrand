@@ -18,7 +18,7 @@ import { ProjectSelector } from "./subcomponents/project-selector";
 import { buildSidebarLayout } from "./sidebar.utils";
 
 import { LiveZone } from "./subcomponents/live-zone";
-import { ProjectAccordion } from "./subcomponents/project-accordion";
+import { ProjectSections } from "./subcomponents/project-sections";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -106,7 +106,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
       ) : (
         <Stack ax="stretch" gap={3} fullwidth>
           <LiveZone sessions={live} showEmpty={!trimmedQuery} />
-          {projects.length > 0 && <ProjectAccordion projects={projects} />}
+          {projects.length > 0 && <ProjectSections projects={projects} />}
         </Stack>
       )}
     </SidebarWrapper>
