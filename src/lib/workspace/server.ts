@@ -10,6 +10,7 @@ import {
   renameSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
@@ -136,7 +137,11 @@ export function readWorkspaceLog(sessionId: string, lines = 200): string {
   }
 }
 
+/** Placeholder pid a start writes while it holds the exclusive start lock. */
+const STARTING_PID = -1;
+
 interface PidState {
+  /** A real pid, or STARTING_PID while a start holds the lock. */
   pid: number;
   /** Epoch ms when we spawned it; null for legacy bare-number pid files. */
   startedAt: number | null;
@@ -147,7 +152,10 @@ function readState(sessionId: string): PidState | null {
     const raw = readFileSync(pidFile(sessionId), "utf-8").trim();
     try {
       const parsed = JSON.parse(raw) as { pid?: unknown; startedAt?: unknown };
-      if (typeof parsed.pid === "number" && parsed.pid > 0) {
+      if (
+        typeof parsed.pid === "number" &&
+        (parsed.pid > 0 || parsed.pid === STARTING_PID)
+      ) {
         return {
           pid: parsed.pid,
           startedAt: typeof parsed.startedAt === "number" ? parsed.startedAt : null,
@@ -291,6 +299,27 @@ export async function getWorkspaceServer(
   sessionId: string,
 ): Promise<WorkspaceServerStatus> {
   const state = readState(sessionId);
+
+  // A start in progress holds a placeholder claim. The locked section is
+  // synchronous and completes in milliseconds, so a claim old enough to
+  // notice means the starting process crashed mid-way — clear it so the
+  // session can't be wedged forever.
+  if (state?.pid === STARTING_PID) {
+    const fresh =
+      state.startedAt != null && Date.now() - state.startedAt < 60_000;
+    if (!fresh) removePid(sessionId);
+    const claimPort = getPort(sessionId);
+    return {
+      running: false,
+      pid: null,
+      port: claimPort,
+      observedPort: null,
+      listening: false,
+      url: claimPort != null ? localhostPreviewUrl(claimPort) : null,
+      logFile: logFile(sessionId),
+    };
+  }
+
   const pid = state?.pid ?? null;
   // "Running" requires the pid to be alive AND verifiably ours — a recycled
   // pid after a reboot must read as a stale file, not a phantom server.
@@ -337,12 +366,27 @@ export async function startWorkspaceServer(
   const { sessionId, worktreePath, root, slug } = input;
 
   // Idempotency check goes through the same identity-verified read as status
-  // reporting; it also clears any stale state file as a side effect.
+  // reporting; it also clears any stale or abandoned state file.
   const existing = await getWorkspaceServer(sessionId);
   if (existing.running) return existing;
 
   const config = deps.resolve(worktreePath);
   if (!config) return null;
+
+  // Exclusive start lock. Two triggers can race a start (the CLI and the
+  // dashboard are separate processes; in-process, the await above is a yield
+  // point) — the state file is claimed atomically (wx) with a placeholder,
+  // so exactly one caller spawns. Losing the race returns the winner's
+  // status; an abandoned claim is cleared by getWorkspaceServer after 60s.
+  mkdirSync(deps.dir, { recursive: true });
+  let lockFd: number;
+  try {
+    lockFd = openSync(pidFile(sessionId), "wx");
+  } catch {
+    return getWorkspaceServer(sessionId);
+  }
+  writeSync(lockFd, JSON.stringify({ pid: STARTING_PID, startedAt: Date.now() }));
+  closeSync(lockFd);
 
   const port = allocatePort(sessionId);
   const url = localhostPreviewUrl(port);
@@ -353,7 +397,6 @@ export async function startWorkspaceServer(
     ? `${config.scripts.setup} && ${config.scripts.run}`
     : config.scripts.run;
 
-  mkdirSync(deps.dir, { recursive: true });
   rotateLog(sessionId);
   const logFd = openSync(logFile(sessionId), "a");
 
@@ -380,6 +423,10 @@ export async function startWorkspaceServer(
   if (child.pid) {
     const state: PidState = { pid: child.pid, startedAt: Date.now() };
     writeFileSync(pidFile(sessionId), JSON.stringify(state));
+  } else {
+    // Spawn yielded no pid — release the start lock rather than hold a
+    // claim for a server that doesn't exist.
+    removePid(sessionId);
   }
 
   // A freshly spawned server can't have bound anything yet; callers poll
@@ -409,7 +456,9 @@ export async function startWorkspaceServer(
  */
 export async function stopWorkspaceServer(sessionId: string): Promise<void> {
   const state = readState(sessionId);
-  if (state && isAlive(state.pid)) {
+  // pid > 0 also excludes a STARTING_PID claim: kill(-(-1)) / kill(-1) have
+  // catastrophic wildcard meanings to the OS, so they must never reach it.
+  if (state && state.pid > 0 && isAlive(state.pid)) {
     if (await verifyPidIdentity(state.pid, state.startedAt)) {
       killGroup(state.pid, "SIGTERM");
       const dead = await waitForDeath(state.pid, deps.termGraceMs);

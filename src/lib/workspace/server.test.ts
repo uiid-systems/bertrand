@@ -1,5 +1,12 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -127,6 +134,35 @@ describe("startWorkspaceServer", () => {
     cleanupPids.push(first.pid!);
     const second = (await startWorkspaceServer(input(worktree)))!;
     expect(second.pid).toBe(first.pid);
+  });
+
+  test("concurrent starts race to one spawn (start lock)", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const [a, b] = await Promise.all([
+      startWorkspaceServer(input(worktree)),
+      startWorkspaceServer(input(worktree)),
+    ]);
+    const winner = [a, b].find((s) => s?.pid != null && s.pid > 0)!;
+    cleanupPids.push(winner.pid!);
+    // exactly one process exists; the loser reports the winner's server
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.running).toBe(true);
+    expect(status.pid).toBe(winner.pid);
+    expect(a?.port).toBe(b?.port ?? null);
+  });
+
+  test("an abandoned start claim is cleared and start proceeds", async () => {
+    const { worktree, stateDir } = freshDirs(() => sleeper());
+    mkdirSync(stateDir, { recursive: true });
+    // a start that crashed between locking and spawning, 2 minutes ago
+    writeFileSync(
+      join(stateDir, "sess-1.pid"),
+      JSON.stringify({ pid: -1, startedAt: Date.now() - 120_000 }),
+    );
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    expect(status).not.toBeNull();
+    expect(status.pid).toBeGreaterThan(0);
+    cleanupPids.push(status.pid!);
   });
 
   test("streams the command's output to the log file", async () => {
