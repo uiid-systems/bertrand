@@ -18,7 +18,7 @@ import { ProjectSelector } from "./subcomponents/project-selector";
 import { buildSidebarLayout } from "./sidebar.utils";
 
 import { LiveZone } from "./subcomponents/live-zone";
-import { ProjectAccordion } from "./subcomponents/project-accordion";
+import { ProjectSections } from "./subcomponents/project-sections";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -69,40 +69,44 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
   return (
     <SidebarWrapper {...WrapperProps}>
-      <ProjectSelector />
-      <Group ay="center" gap={2} fullwidth>
-        <Input
-          ref={inputRef}
-          placeholder="Search for a session"
-          before={<SearchIcon />}
-          after={<Kbd hotkey={["meta", "k"]} />}
-          size="small"
-          fullwidth
-          style={{ flex: 1, minWidth: 0 }}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <ToggleButton
-          size="small"
-          variant="subtle"
-          tooltip={includeArchived ? "Hide archived" : "Show archived"}
-          pressed={includeArchived}
-          onPressedChange={setIncludeArchived}
-          icon={{
-            unpressed: <EyeOffIcon />,
-            pressed: <EyeIcon />,
-          }}
-        />
-      </Group>
+      {/* Header controls carry their own horizontal inset now that the
+          sidebar container is full-bleed and section triggers span edge-to-edge. */}
+      <Stack ax="stretch" gap={3} fullwidth px={4}>
+        <ProjectSelector />
+        <Group ay="center" gap={2} fullwidth>
+          <Input
+            ref={inputRef}
+            placeholder="Search for a session"
+            before={<SearchIcon />}
+            after={<Kbd hotkey={["meta", "k"]} />}
+            size="small"
+            fullwidth
+            style={{ flex: 1, minWidth: 0 }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <ToggleButton
+            size="small"
+            variant="subtle"
+            tooltip={includeArchived ? "Hide archived" : "Show archived"}
+            pressed={includeArchived}
+            onPressedChange={setIncludeArchived}
+            icon={{
+              unpressed: <EyeOffIcon />,
+              pressed: <EyeIcon />,
+            }}
+          />
+        </Group>
+      </Stack>
 
       {isEmpty ? (
-        <Text size={-1} shade="muted" style={{ padding: "0.5rem" }}>
+        <Text size={-1} shade="muted" px={4} py={2}>
           {trimmedQuery ? `No sessions match "${query}".` : "No sessions yet."}
         </Text>
       ) : (
         <Stack ax="stretch" gap={3} fullwidth>
           <LiveZone sessions={live} showEmpty={!trimmedQuery} />
-          {projects.length > 0 && <ProjectAccordion projects={projects} />}
+          {projects.length > 0 && <ProjectSections projects={projects} />}
         </Stack>
       )}
     </SidebarWrapper>

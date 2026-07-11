@@ -4,6 +4,12 @@
   box-sizing: border-box;
 }
 
+/* Full-width sidebar zone triggers ("Needs you", per-project sections).
+   A simple underline on the title (not the count) signals they're clickable. */
+.sidebar-zone-trigger:hover .sidebar-zone-title {
+  text-decoration: underline;
+}
+
 html,
 body {
   margin: 0;

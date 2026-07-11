@@ -9,7 +9,6 @@ export const SidebarWrapper = ({ children, ...props }: SidebarWrapperProps) => (
     ax="stretch"
     fullwidth
     gap={3}
-    p={4}
     pb={64}
     {...props}
   >
