@@ -32,11 +32,7 @@ function RootLayout() {
         style={{ position: "fixed", inset: 0, height: "100dvh" }}
       >
         <TopBar />
-        <Stack
-          render={<main />}
-          fullwidth
-          style={{ flex: 1, overflow: "auto" }}
-        >
+        <Stack fullwidth style={{ flex: 1, overflow: "auto" }}>
           <Outlet />
         </Stack>
       </Stack>

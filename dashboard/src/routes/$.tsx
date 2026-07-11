@@ -243,7 +243,7 @@ function ConversationSegmentView({
   readonly showHeader: boolean;
 }) {
   return (
-    <Stack ax="stretch" fullwidth gap={4}>
+    <Stack ax="stretch" fullwidth gap={4} pb={52}>
       {showHeader && (
         <Stack id={segment.anchorId} gap={1} style={{ scrollMarginTop: 16 }}>
           <Group ay="baseline" gap={2}>

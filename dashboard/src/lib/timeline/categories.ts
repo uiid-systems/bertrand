@@ -20,9 +20,13 @@ export const EVENT_CATALOG = {
   "claude.started": {
     category: "lifecycle",
     color: "orange",
-    label: "session started",
+    label: "Session started",
   },
-  "claude.ended": { category: "lifecycle", color: "orange", label: "ended" },
+  "claude.ended": {
+    category: "lifecycle",
+    color: "orange",
+    label: "Session ended",
+  },
   "claude.discarded": {
     category: "lifecycle",
     color: "neutral",
@@ -34,14 +38,18 @@ export const EVENT_CATALOG = {
     label: "waiting",
   },
   "session.answered": { category: "interaction", color: "green", label: "Q&A" },
-  "user.prompt": { category: "interaction", color: "blue", label: "prompt" },
+  "user.prompt": {
+    category: "interaction",
+    color: "blue",
+    label: "User prompted",
+  },
   "tool.work": { category: "work", color: "yellow", label: "tool work" },
   "tool.applied": { category: "work", color: "yellow", label: "applied" },
   "tool.used": { category: "work", color: "yellow", label: "tool" },
   "assistant.message": {
     category: "assistant",
     color: "indigo",
-    label: "assistant",
+    label: "Agent's response",
   },
 } as const satisfies Record<string, EventInfo>;
 
