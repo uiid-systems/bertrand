@@ -1,4 +1,5 @@
 import { register } from "@/cli/router";
+import { ensureHooksCurrent } from "@/hooks/install";
 import { getSession, updateSession, updateSessionStatus } from "@/db/queries/sessions";
 import { getConversation } from "@/db/queries/conversations";
 import { ingestTranscript } from "@/db/events/ingest";
@@ -126,6 +127,15 @@ export function dispatchHookEvent(
 }
 
 register("update", async (args) => {
+  // Self-heal stale hooks before anything else: after a binary upgrade the
+  // scripts on disk may call commands this binary no longer has. Best-effort —
+  // healing must never break the tick that carried it.
+  try {
+    ensureHooksCurrent();
+  } catch {
+    // hooks run with stderr discarded anyway
+  }
+
   let sessionId = "";
   let event = "";
   let metaJson = "";
