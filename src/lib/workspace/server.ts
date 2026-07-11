@@ -2,9 +2,11 @@ import { execFile, spawn } from "child_process";
 import {
   appendFileSync,
   closeSync,
+  existsSync,
   fstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   renameSync,
@@ -14,7 +16,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
-import { allocatePort, getPort, releasePort } from "./port";
+import { allocatePort, getPort, prunePorts, releasePort } from "./port";
 import { localhostPreviewUrl, workspaceEnv } from "./env";
 import { resolveWorkspace } from "./resolve";
 import type { WorkspaceRunConfig } from "./types";
@@ -470,4 +472,80 @@ export async function stopWorkspaceServer(sessionId: string): Promise<void> {
   }
   removePid(sessionId);
   releasePort(sessionId);
+}
+
+/**
+ * Tear down a session's workspace when its worktree life ends (archive today;
+ * worktree removal when that lands): stop the dev server, run the repo's
+ * committed `archive` script if one exists, release the port. Best-effort by
+ * design — teardown must never block or fail the state change that triggered
+ * it, so callers typically fire-and-forget this.
+ */
+export async function teardownWorkspace(input: {
+  sessionId: string;
+  worktreePath: string | null;
+  slug?: string;
+}): Promise<void> {
+  const { sessionId, worktreePath, slug } = input;
+  const port = getPort(sessionId); // read before stop releases it
+  await stopWorkspaceServer(sessionId);
+
+  if (!worktreePath || !existsSync(worktreePath)) return;
+  const archive = deps.resolve(worktreePath)?.scripts.archive;
+  if (!archive) return;
+
+  // The archive script runs like the dev server did: detached, in the
+  // worktree, output appended to the session's workspace log. It gets the
+  // env it likely names (`docker compose -p $BERTRAND_WORKSPACE down`).
+  const env: Record<string, string> = {};
+  if (port != null) env.BERTRAND_PORT = String(port);
+  if (slug) env.BERTRAND_WORKSPACE = slug;
+  try {
+    mkdirSync(deps.dir, { recursive: true });
+    appendFileSync(logFile(sessionId), `\n[bertrand] running archive script: ${archive}\n`);
+    const logFd = openSync(logFile(sessionId), "a");
+    const child = spawn("sh", ["-c", archive], {
+      cwd: worktreePath,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      env: { ...process.env, ...env },
+    });
+    child.on("error", (err) => {
+      try {
+        appendFileSync(logFile(sessionId), `[bertrand] archive script failed to spawn: ${err.message}\n`);
+      } catch {
+        // best-effort
+      }
+    });
+    child.unref();
+    closeSync(logFd);
+  } catch {
+    // best-effort: a broken archive script must not break archiving
+  }
+}
+
+/**
+ * Stop every workspace server whose session is no longer entitled to one and
+ * drop its port allocation. Callers pass the ids that should KEEP their
+ * workspace (live, worktree-bearing sessions); everything else found in the
+ * state dir or the port registry is reclaimed. Run on dashboard-server boot,
+ * this sweeps up servers and ports leaked while nothing was watching —
+ * sessions archived from the TUI, worktrees deleted by hand, reboots.
+ */
+export async function reapOrphanWorkspaces(
+  keepSessionIds: Iterable<string>,
+): Promise<void> {
+  const keep = new Set(keepSessionIds);
+  let files: string[];
+  try {
+    files = readdirSync(deps.dir);
+  } catch {
+    files = []; // no state dir yet — still prune the registry below
+  }
+  for (const f of files) {
+    if (!f.endsWith(".pid")) continue;
+    const sessionId = f.slice(0, -".pid".length);
+    if (!keep.has(sessionId)) await stopWorkspaceServer(sessionId);
+  }
+  prunePorts(keep);
 }

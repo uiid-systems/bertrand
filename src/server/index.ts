@@ -7,6 +7,7 @@ import {
   stopWorkspaceServer,
   getWorkspaceServer,
   readWorkspaceLog,
+  reapOrphanWorkspaces,
   type WorkspaceServerStatus,
 } from "@/lib/workspace"
 import {
@@ -191,7 +192,18 @@ const listWorktreeStatus = async (
   const out: Record<string, WorkspaceServerStatus> = {}
   await Promise.all(
     listWorktreeSessions({}, url).map(async ({ session }) => {
-      out[session.id] = await getWorkspaceServer(session.id)
+      const status = await getWorkspaceServer(session.id)
+      // Self-heal: a worktree dir deleted out from under a session makes its
+      // preview meaningless — reclaim the server + port in the background;
+      // the next poll reports it idle.
+      if (
+        session.worktreePath != null &&
+        !existsSync(session.worktreePath) &&
+        (status.running || status.port != null)
+      ) {
+        void stopWorkspaceServer(session.id)
+      }
+      out[session.id] = status
     }),
   )
   return out
@@ -382,7 +394,33 @@ async function serveDashboard(pathname: string): Promise<Response | null> {
   return new Response(Bun.file(join(DASHBOARD_DIR, "index.html")))
 }
 
+/**
+ * Reap workspace servers and port allocations orphaned while nothing was
+ * watching — sessions archived from the TUI, worktrees deleted by hand,
+ * reboots. Keep = every non-archived, worktree-bearing session across all
+ * projects; everything else in the workspace state dir / port registry is
+ * reclaimed. Best-effort: reaping must never block serving.
+ */
+function reapOrphanedWorkspaceState(): void {
+  try {
+    const keep: string[] = []
+    for (const project of listProjects()) {
+      const sessions = getAllSessionsForProject(
+        { slug: project.slug, name: project.name },
+        { excludeArchived: true },
+      )
+      for (const { session } of sessions) {
+        if (session.worktreePath != null) keep.push(session.id)
+      }
+    }
+    void reapOrphanWorkspaces(keep)
+  } catch (err) {
+    console.error("[server] workspace reap failed:", err)
+  }
+}
+
 export function startServer(port = PORT) {
+  reapOrphanedWorkspaceState()
   const server = Bun.serve({
     port,
     // Loopback only. The API has no auth, answers with CORS *, and now

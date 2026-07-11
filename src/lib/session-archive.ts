@@ -3,6 +3,7 @@ import {
   getAllSessions,
   updateSessionStatus,
 } from "@/db/queries/sessions";
+import { teardownWorkspace } from "@/lib/workspace";
 import type { Db } from "@/db/client";
 import type {
   SessionRow,
@@ -34,6 +35,14 @@ export function archiveSession(id: string, db?: Db): ArchiveResult {
   }
 
   const updated = updateSessionStatus(id, "archived", db);
+  // An archived session's workspace ends with it: stop the dev server, run
+  // the repo's archive script, release the port. Fire-and-forget — teardown
+  // is best-effort and must not delay or fail the archive itself.
+  void teardownWorkspace({
+    sessionId: updated.id,
+    worktreePath: updated.worktreePath,
+    slug: updated.slug,
+  });
   return { ok: true, session: updated };
 }
 
@@ -57,6 +66,11 @@ export function archiveAllPaused(): { archived: ArchivedRow[] } {
   const archived: ArchivedRow[] = [];
   for (const row of paused) {
     const updated = updateSessionStatus(row.session.id, "archived");
+    void teardownWorkspace({
+      sessionId: updated.id,
+      worktreePath: updated.worktreePath,
+      slug: updated.slug,
+    });
     archived.push({ session: updated, categoryPath: row.categoryPath });
   }
   return { archived };

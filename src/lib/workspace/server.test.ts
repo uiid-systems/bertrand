@@ -14,6 +14,8 @@ import {
   stopWorkspaceServer,
   getWorkspaceServer,
   readWorkspaceLog,
+  teardownWorkspace,
+  reapOrphanWorkspaces,
   _setServerDeps,
   _resetServerDeps,
 } from "@/lib/workspace/server";
@@ -190,6 +192,82 @@ describe("startWorkspaceServer", () => {
     // fresh log has only the new run; the old run moved to .log.1
     expect(readFileSync(second.logFile, "utf-8")).not.toContain("run-one");
     expect(readFileSync(`${second.logFile}.1`, "utf-8")).toContain("run-one");
+  });
+});
+
+describe("teardownWorkspace", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("stops the server, releases the port, and runs the archive script", async () => {
+    const { worktree } = freshDirs((dir) => ({
+      scripts: { run: "sleep 30", archive: "touch archived-marker" },
+      packageManager: "bun",
+      source: "detected",
+    }));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await teardownWorkspace({
+      sessionId: "sess-1",
+      worktreePath: worktree,
+      slug: "my-feature",
+    });
+
+    expect(isAlive(pid)).toBe(false);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.port).toBeNull();
+    // the committed archive script actually ran, in the worktree cwd
+    await waitFor(() => existsSync(join(worktree, "archived-marker")));
+    expect(existsSync(join(worktree, "archived-marker"))).toBe(true);
+  });
+
+  test("is safe when the worktree is already gone", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    await teardownWorkspace({
+      sessionId: "sess-1",
+      worktreePath: join(worktree, "no-longer-exists"),
+      slug: "my-feature",
+    });
+    expect((await getWorkspaceServer("sess-1")).running).toBe(false);
+  });
+});
+
+describe("reapOrphanWorkspaces", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("stops servers and drops ports for sessions not in the keep set", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await reapOrphanWorkspaces([]);
+    expect(isAlive(pid)).toBe(false);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.running).toBe(false);
+    expect(after.port).toBeNull();
+  });
+
+  test("leaves kept sessions untouched", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await reapOrphanWorkspaces(["sess-1"]);
+    expect(isAlive(pid)).toBe(true);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.running).toBe(true);
+    expect(after.port).toBe(status.port);
   });
 });
 

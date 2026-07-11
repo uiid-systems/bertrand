@@ -28,6 +28,8 @@ export {
   stopWorkspaceServer,
   getWorkspaceServer,
   readWorkspaceLog,
+  teardownWorkspace,
+  reapOrphanWorkspaces,
   type WorkspaceServerStatus,
   type StartWorkspaceInput,
 } from "./server";
