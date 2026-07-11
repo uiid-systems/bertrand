@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -55,14 +55,22 @@ async function waitFor(
   }
 }
 
-function freshDirs(resolve: (dir: string) => WorkspaceRunConfig | null): {
+function freshDirs(
+  resolve: (dir: string) => WorkspaceRunConfig | null,
+  termGraceMs?: number,
+): {
   worktree: string;
+  stateDir: string;
 } {
   const base = mkdtempSync(join(tmpdir(), "bertrand-wss-"));
   dirs.push(base);
-  _setServerDeps({ dir: join(base, "state"), resolve });
+  _setServerDeps({
+    dir: join(base, "state"),
+    resolve,
+    ...(termGraceMs != null ? { termGraceMs } : {}),
+  });
   _setPortDeps({ registryDir: join(base, "ports") });
-  return { worktree: base };
+  return { worktree: base, stateDir: join(base, "state") };
 }
 
 const input = (worktree: string) => ({
@@ -184,8 +192,8 @@ describe("stopWorkspaceServer", () => {
     const pid = status.pid!;
     cleanupPids.push(pid);
 
-    stopWorkspaceServer("sess-1");
-    await waitFor(() => !isAlive(pid));
+    await stopWorkspaceServer("sess-1");
+    // stop resolves only once the process is confirmed dead
     expect(isAlive(pid)).toBe(false);
     // stop releases the port, so status is fully cleared
     const after = await getWorkspaceServer("sess-1");
@@ -195,9 +203,44 @@ describe("stopWorkspaceServer", () => {
     expect(after.url).toBeNull();
   });
 
-  test("is a no-op for a session that was never started", () => {
+  test("escalates to SIGKILL when the group ignores SIGTERM", async () => {
+    // The sh leader traps TERM and respawns its sleep forever; only KILL
+    // takes it down. Short grace keeps the test fast.
+    const { worktree } = freshDirs(
+      () => sleeper("trap '' TERM; while :; do sleep 1; done"),
+      300,
+    );
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+    await waitFor(() => isAlive(pid));
+
+    await stopWorkspaceServer("sess-1");
+    expect(isAlive(pid)).toBe(false);
+  });
+
+  test("never signals a pid it cannot verify as ours (recycled-pid guard)", async () => {
+    const { worktree, stateDir } = freshDirs(() => sleeper());
+    // Simulate a pre-reboot state file whose pid now belongs to someone else:
+    // a live process we did NOT record spawning at that time.
+    const foreign = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(foreign.pid!);
+    writeFileSync(
+      join(stateDir, "sess-1.pid"),
+      JSON.stringify({ pid: foreign.pid, startedAt: 1_000 }), // "spawned" in 1970
+    );
+
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.running).toBe(false); // identity mismatch reads as stale
+
+    await stopWorkspaceServer("sess-1");
+    // the innocent process group was not killed
+    expect(isAlive(foreign.pid!)).toBe(true);
+  });
+
+  test("is a no-op for a session that was never started", async () => {
     freshDirs(() => sleeper());
-    expect(() => stopWorkspaceServer("never")).not.toThrow();
+    await stopWorkspaceServer("never");
   });
 });
 

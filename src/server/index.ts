@@ -437,7 +437,9 @@ export function startServer(port = PORT) {
             r.headers.set("Access-Control-Allow-Origin", "*")
             return r
           }
-          stopWorkspaceServer(session.id)
+          // Awaited: stop only resolves once the process is confirmed dead
+          // (or SIGKILLed), so the client's follow-up status read is truthful.
+          await stopWorkspaceServer(session.id)
           const r = Response.json({ ok: true })
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r

@@ -65,11 +65,14 @@ export interface StartWorkspaceInput {
 interface Deps {
   dir: string;
   resolve: (dir: string) => WorkspaceRunConfig | null;
+  /** How long stop waits after SIGTERM before escalating to SIGKILL. */
+  termGraceMs: number;
 }
 
 const defaultDeps: Deps = {
   dir: join(paths.root, "workspaces"),
   resolve: resolveWorkspace,
+  termGraceMs: 3_000,
 };
 let deps: Deps = defaultDeps;
 
@@ -133,10 +136,29 @@ export function readWorkspaceLog(sessionId: string, lines = 200): string {
   }
 }
 
-function readPid(sessionId: string): number | null {
+interface PidState {
+  pid: number;
+  /** Epoch ms when we spawned it; null for legacy bare-number pid files. */
+  startedAt: number | null;
+}
+
+function readState(sessionId: string): PidState | null {
   try {
-    const pid = Number(readFileSync(pidFile(sessionId), "utf-8").trim());
-    return Number.isFinite(pid) && pid > 0 ? pid : null;
+    const raw = readFileSync(pidFile(sessionId), "utf-8").trim();
+    try {
+      const parsed = JSON.parse(raw) as { pid?: unknown; startedAt?: unknown };
+      if (typeof parsed.pid === "number" && parsed.pid > 0) {
+        return {
+          pid: parsed.pid,
+          startedAt: typeof parsed.startedAt === "number" ? parsed.startedAt : null,
+        };
+      }
+      return null;
+    } catch {
+      // legacy format: a bare pid — identity falls back to the pgid check
+      const pid = Number(raw);
+      return Number.isFinite(pid) && pid > 0 ? { pid, startedAt: null } : null;
+    }
   } catch {
     return null;
   }
@@ -149,6 +171,72 @@ function isAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/** Parse ps's etime format `[[dd-]hh:]mm:ss` into milliseconds. */
+function parseEtimeMs(etime: string): number | null {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(etime.trim());
+  if (!m) return null;
+  const [, dd, hh, mm, ss] = m;
+  return (
+    (((Number(dd ?? 0) * 24 + Number(hh ?? 0)) * 60 + Number(mm)) * 60 +
+      Number(ss)) *
+    1000
+  );
+}
+
+/**
+ * Guard against PID recycling: a pid file survives reboots and OS pids get
+ * reused, so before treating (or worse, group-killing) a pid as ours, check
+ * that it still looks like the process we spawned. Two cheap signals from one
+ * `ps` call: our detached children lead their own process group (pgid == pid),
+ * and the process start time (now − etime; elapsed time is TZ-independent,
+ * unlike lstart's wall-clock string) must match when we recorded spawning it.
+ * An unverifiable pid is treated as NOT ours — the failure mode is a stale
+ * status, never a SIGTERM into an innocent process group.
+ */
+function verifyPidIdentity(pid: number, startedAt: number | null): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile("ps", ["-o", "pgid=,etime=", "-p", String(pid)], (err, stdout) => {
+      if (err) return resolve(false); // process gone
+      const m = /^(\d+)\s+(\S+)$/.exec(stdout.trim());
+      if (!m) return resolve(false);
+      if (Number(m[1]) !== pid) return resolve(false); // not a group leader
+      if (startedAt != null) {
+        const elapsed = parseEtimeMs(m[2]!);
+        if (elapsed != null) {
+          const processStart = Date.now() - elapsed;
+          // etime has second precision and clocks drift; 120s of slack is
+          // still far tighter than any realistic pid-recycling window.
+          if (Math.abs(processStart - startedAt) > 120_000) {
+            return resolve(false);
+          }
+        }
+      }
+      resolve(true);
+    });
+  });
+}
+
+function killGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // already gone
+    }
+  }
+}
+
+async function waitForDeath(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return !isAlive(pid);
 }
 
 function removePid(sessionId: string): void {
@@ -202,8 +290,14 @@ function listeningPorts(pgid: number): Promise<number[]> {
 export async function getWorkspaceServer(
   sessionId: string,
 ): Promise<WorkspaceServerStatus> {
-  const pid = readPid(sessionId);
-  const running = pid != null && isAlive(pid);
+  const state = readState(sessionId);
+  const pid = state?.pid ?? null;
+  // "Running" requires the pid to be alive AND verifiably ours — a recycled
+  // pid after a reboot must read as a stale file, not a phantom server.
+  const running =
+    pid != null &&
+    isAlive(pid) &&
+    (await verifyPidIdentity(pid, state!.startedAt));
   if (pid != null && !running) removePid(sessionId); // clear stale
   const port = getPort(sessionId);
 
@@ -242,11 +336,10 @@ export async function startWorkspaceServer(
 ): Promise<WorkspaceServerStatus | null> {
   const { sessionId, worktreePath, root, slug } = input;
 
-  const existing = readPid(sessionId);
-  if (existing != null && isAlive(existing)) {
-    return getWorkspaceServer(sessionId);
-  }
-  if (existing != null) removePid(sessionId); // stale
+  // Idempotency check goes through the same identity-verified read as status
+  // reporting; it also clears any stale state file as a side effect.
+  const existing = await getWorkspaceServer(sessionId);
+  if (existing.running) return existing;
 
   const config = deps.resolve(worktreePath);
   if (!config) return null;
@@ -284,7 +377,10 @@ export async function startWorkspaceServer(
   // The child holds its own copy of the fd; keeping ours open would leak one
   // fd per start for the life of this process.
   closeSync(logFd);
-  if (child.pid) writeFileSync(pidFile(sessionId), String(child.pid));
+  if (child.pid) {
+    const state: PidState = { pid: child.pid, startedAt: Date.now() };
+    writeFileSync(pidFile(sessionId), JSON.stringify(state));
+  }
 
   // A freshly spawned server can't have bound anything yet; callers poll
   // getWorkspaceServer for the listening/observed-port transition.
@@ -304,17 +400,22 @@ export async function startWorkspaceServer(
  * a missing PID file or an already-dead process is not an error. Signals the
  * whole process group (negative pid) so the `sh -c` wrapper and the dev server
  * it spawned both go down, not just the shell.
+ *
+ * Ordered for truth-telling: SIGTERM the group, wait out the grace period,
+ * escalate to SIGKILL if it ignored us, and only clear the state/port once
+ * the process is confirmed dead — so a status read right after stop resolves
+ * never reports a half-stopped server. A pid that fails the identity check
+ * (recycled after a reboot) is never signalled; we just drop our stale claim.
  */
-export function stopWorkspaceServer(sessionId: string): void {
-  const pid = readPid(sessionId);
-  if (pid != null) {
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        // already gone
+export async function stopWorkspaceServer(sessionId: string): Promise<void> {
+  const state = readState(sessionId);
+  if (state && isAlive(state.pid)) {
+    if (await verifyPidIdentity(state.pid, state.startedAt)) {
+      killGroup(state.pid, "SIGTERM");
+      const dead = await waitForDeath(state.pid, deps.termGraceMs);
+      if (!dead) {
+        killGroup(state.pid, "SIGKILL");
+        await waitForDeath(state.pid, 1_000);
       }
     }
   }
