@@ -92,7 +92,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
       return (
         <Stack gap={4} fullwidth>
           {manualAnswer && (
-            <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
+            <Stack data-slot="interaction-content-note" m={2} fullwidth>
               <Text color="yellow" weight="bold" size={1}>
                 Answered manually:
               </Text>
@@ -125,7 +125,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
             />
           )}
           {additionalNote && (
-            <Stack data-slot="interaction-content-note" gap={4} m={2} fullwidth>
+            <Stack data-slot="interaction-content-note" m={2} fullwidth>
               <Text color="green" weight="bold" size={1}>
                 Additional notes:
               </Text>

@@ -54,6 +54,16 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Killed children of THIS process stay signalable as zombies until the
+ * event loop reaps them — poll briefly so assertions don't race the reap
+ * (flaked on loaded CI runners).
+ */
+async function expectDead(pid: number): Promise<void> {
+  await waitFor(() => !isAlive(pid));
+  expect(isAlive(pid)).toBe(false);
+}
+
 async function waitFor(
   pred: () => boolean | Promise<boolean>,
   ms = 5000,
@@ -217,7 +227,7 @@ describe("teardownWorkspace", () => {
       slug: "my-feature",
     });
 
-    expect(isAlive(pid)).toBe(false);
+    await expectDead(pid);
     const after = await getWorkspaceServer("sess-1");
     expect(after.port).toBeNull();
     // the committed archive script actually ran, in the worktree cwd
@@ -251,7 +261,7 @@ describe("reapOrphanWorkspaces", () => {
     cleanupPids.push(pid);
 
     await reapOrphanWorkspaces([]);
-    expect(isAlive(pid)).toBe(false);
+    await expectDead(pid);
     const after = await getWorkspaceServer("sess-1");
     expect(after.running).toBe(false);
     expect(after.port).toBeNull();
@@ -307,8 +317,8 @@ describe("stopWorkspaceServer", () => {
     cleanupPids.push(pid);
 
     await stopWorkspaceServer("sess-1");
-    // stop resolves only once the process is confirmed dead
-    expect(isAlive(pid)).toBe(false);
+    // stop resolves once the process is confirmed dead (zombie counts; reap may lag)
+    await expectDead(pid);
     // stop releases the port, so status is fully cleared
     const after = await getWorkspaceServer("sess-1");
     expect(after.running).toBe(false);
@@ -330,7 +340,7 @@ describe("stopWorkspaceServer", () => {
     await waitFor(() => isAlive(pid));
 
     await stopWorkspaceServer("sess-1");
-    expect(isAlive(pid)).toBe(false);
+    await expectDead(pid);
   });
 
   test("never signals a pid it cannot verify as ours (recycled-pid guard)", async () => {

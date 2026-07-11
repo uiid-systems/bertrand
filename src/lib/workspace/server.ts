@@ -240,13 +240,34 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
+/**
+ * Dead for our purposes: fully gone (ESRCH), or a zombie awaiting its
+ * parent's wait(). A zombie runs no code and holds no ports, but kill(pid, 0)
+ * still succeeds on it — and when the stopper is also the spawner (the
+ * dashboard server stopping a preview it started), the reap can lag the kill,
+ * so a bare liveness probe would spuriously report the process as alive.
+ */
+function isEffectivelyDead(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    execFile("ps", ["-o", "stat=", "-p", String(pid)], (err, stdout) => {
+      if (err) return resolve(true); // vanished between the checks
+      resolve(stdout.trim().startsWith("Z"));
+    });
+  });
+}
+
 async function waitForDeath(pid: number, ms: number): Promise<boolean> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (!isAlive(pid)) return true;
+    if (await isEffectivelyDead(pid)) return true;
     await new Promise((r) => setTimeout(r, 50));
   }
-  return !isAlive(pid);
+  return isEffectivelyDead(pid);
 }
 
 function removePid(sessionId: string): void {
