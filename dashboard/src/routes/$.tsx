@@ -262,6 +262,7 @@ function ConversationSegmentView({
       {segment.events.length > 0 && (
         <Timeline
           activeIndex={segment.events.length}
+          ContentProps={{ maxw: 680, pb: 6 }}
           items={segment.events.map((e) => ({
             color: eventColor(e.event),
             media: <EventMedia event={e} />,
@@ -284,9 +285,6 @@ function ConversationSegmentView({
               </Badge>
             ),
           }))}
-          ItemProps={{
-            ContentProps: { maxw: 680, pb: 6 },
-          }}
         />
       )}
     </Stack>
