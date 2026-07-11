@@ -108,3 +108,63 @@ prose ride against an AUQ call, and use a root `CONVERSATION.md` as the narratio
 in bertrand+Fable sessions. So sessions in this repo behave correctly even before any
 bertrand changes ship. Porting that behavior to other projects is exactly what Layer 1
 automates.
+
+## Hard evidence: the text never reaches the transcript (2026-07-11)
+
+The controlled reproduction the Diagnosis section asked for happened by accident, from
+inside session `timeline/fix-assistant-card` (claude-fable-5), by inspecting that
+session's own transcript JSONL mid-conversation. The answer to "TUI rendering or
+bertrand's wrapping?" is **neither**: the text blocks are missing from
+`~/.claude/projects/<project>/<uuid>.jsonl` itself. No downstream consumer — TUI,
+bertrand ingestion, `claude --resume` — can ever recover them.
+
+The signature, from one measured turn (~10 narration messages written, 3 survived):
+
+- **Survives** — response emitted as `thinking → text → tool_use`, i.e. the prose sits
+  immediately before the tool call. Transcript records all three blocks.
+- **Destroyed** — response emitted as `thinking → text → thinking → tool_use`, i.e. the
+  model narrates and then thinks again before choosing tool parameters (Fable's normal
+  interleaved-thinking pattern for non-trivial calls). Transcript records
+  `thinking, thinking, tool_use` — the text block between the two thinking blocks is
+  simply absent. Same request id, monotonic timestamps, no gap entry.
+
+Grouping the transcript's assistant entries by `requestId` makes the pattern obvious:
+every request known to have carried narration that never surfaced shows two thinking
+entries and no text entry. This also explains why Opus sessions look mostly fine —
+Opus thinks once at the start of a response, so its prose is never sandwiched between
+thinking blocks.
+
+Consequences for the layered fixes above:
+
+- Layer 2's transcript-tail check can't catch this — the denied evidence never lands in
+  the transcript to begin with. Only its AUQ-adjacent case remains useful.
+- Layer 3 (surfacing captured text in bertrand) is still worth it, but it can only
+  surface the ~30% that survives.
+- Layer 1 (file-based narration channel) is the only complete mitigation until the
+  upstream fix ships, because Write/Edit tool calls persist their payload regardless.
+
+### Upstream report draft (Layer 4, ready to file against Claude Code)
+
+> **Title:** Assistant text blocks followed by interleaved thinking are dropped from the
+> session transcript (claude-fable-5)
+>
+> **Environment:** Claude Code CLI, model `claude-fable-5`, macOS. Observed in every
+> turn with interleaved thinking; reproduction rate ~70% of mid-turn text blocks in
+> tool-heavy turns.
+>
+> **Repro:** Run a tool-heavy task that makes the model narrate between tool calls
+> (easily forced with a PreToolUse-hooked AskUserQuestion loop, but not specific to it).
+> After the turn, group the transcript JSONL's `type:"assistant"` entries by
+> `requestId` and compare against what the model emitted.
+>
+> **Expected:** every content block of the API response appears as a transcript entry:
+> `thinking, text, thinking, tool_use`.
+>
+> **Actual:** `thinking, thinking, tool_use` — the text block that was followed by
+> another thinking block in the same response is not written (and is not rendered in
+> the TUI either). Text blocks emitted directly before `tool_use` with no intervening
+> thinking block are persisted and rendered normally.
+>
+> **Impact:** the model's narration is unrecoverable — not in the terminal, not in the
+> transcript, not on resume. Any tooling that audits or replays transcripts sees a
+> model that silently calls tools without explanation.
