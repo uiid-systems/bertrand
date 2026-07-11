@@ -1,11 +1,13 @@
 import { execFile } from "child_process"
-import { existsSync, readFileSync } from "fs"
+import { existsSync } from "fs"
 import { join } from "path"
 import { getMainWorktree } from "@/lib/git"
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
   getWorkspaceServer,
+  readWorkspaceLog,
+  reapOrphanWorkspaces,
   type WorkspaceServerStatus,
 } from "@/lib/workspace"
 import {
@@ -190,7 +192,18 @@ const listWorktreeStatus = async (
   const out: Record<string, WorkspaceServerStatus> = {}
   await Promise.all(
     listWorktreeSessions({}, url).map(async ({ session }) => {
-      out[session.id] = await getWorkspaceServer(session.id)
+      const status = await getWorkspaceServer(session.id)
+      // Self-heal: a worktree dir deleted out from under a session makes its
+      // preview meaningless — reclaim the server + port in the background;
+      // the next poll reports it idle.
+      if (
+        session.worktreePath != null &&
+        !existsSync(session.worktreePath) &&
+        (status.running || status.port != null)
+      ) {
+        void stopWorkspaceServer(session.id)
+      }
+      out[session.id] = status
     }),
   )
   return out
@@ -200,23 +213,18 @@ const listWorktreeStatus = async (
 // NaN falls back). 404s unknown sessions — the id both scopes the request
 // (via `?project=`, like the other per-session endpoints) and names a file
 // on disk, so it must resolve to a real session before we touch the fs.
-const getWorktreeLogs = async (
+const getWorktreeLogs = (
   { sessionId }: { sessionId?: string },
   url: URL,
-): Promise<Response | { logs: string }> => {
+): Response | { logs: string } => {
   const session = getSession(sessionId!, resolveDb(url))
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 })
   }
-  const { logFile } = await getWorkspaceServer(session.id)
   const requested = Number(url.searchParams.get("lines") ?? 200)
   const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
-  try {
-    const lines = readFileSync(logFile, "utf-8").split("\n")
-    return { logs: lines.slice(-n).join("\n") }
-  } catch {
-    return { logs: "" }
-  }
+  // Bounded tail read — never the whole file; this is on the 2s poll path.
+  return { logs: readWorkspaceLog(session.id, n) }
 }
 
 const routes: [RegExp, RouteHandler][] = [
@@ -386,7 +394,33 @@ async function serveDashboard(pathname: string): Promise<Response | null> {
   return new Response(Bun.file(join(DASHBOARD_DIR, "index.html")))
 }
 
+/**
+ * Reap workspace servers and port allocations orphaned while nothing was
+ * watching — sessions archived from the TUI, worktrees deleted by hand,
+ * reboots. Keep = every non-archived, worktree-bearing session across all
+ * projects; everything else in the workspace state dir / port registry is
+ * reclaimed. Best-effort: reaping must never block serving.
+ */
+function reapOrphanedWorkspaceState(): void {
+  try {
+    const keep: string[] = []
+    for (const project of listProjects()) {
+      const sessions = getAllSessionsForProject(
+        { slug: project.slug, name: project.name },
+        { excludeArchived: true },
+      )
+      for (const { session } of sessions) {
+        if (session.worktreePath != null) keep.push(session.id)
+      }
+    }
+    void reapOrphanWorkspaces(keep)
+  } catch (err) {
+    console.error("[server] workspace reap failed:", err)
+  }
+}
+
 export function startServer(port = PORT) {
+  reapOrphanedWorkspaceState()
   const server = Bun.serve({
     port,
     // Loopback only. The API has no auth, answers with CORS *, and now
@@ -441,7 +475,9 @@ export function startServer(port = PORT) {
             r.headers.set("Access-Control-Allow-Origin", "*")
             return r
           }
-          stopWorkspaceServer(session.id)
+          // Awaited: stop only resolves once the process is confirmed dead
+          // (or SIGKILLed), so the client's follow-up status read is truthful.
+          await stopWorkspaceServer(session.id)
           const r = Response.json({ ok: true })
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r

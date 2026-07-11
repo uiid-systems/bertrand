@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -61,6 +61,14 @@ describe("allocatePort", () => {
   test("throws when the whole range is exhausted", () => {
     for (let i = 0; i < RANGE_SIZE; i++) allocatePort(`fill-${i}`);
     expect(() => allocatePort("one-too-many")).toThrow(/no free preview port/);
+  });
+
+  test("writes atomically — only ports.json remains, no temp files", () => {
+    const dir = freshRegistry();
+    allocatePort("sess-a");
+    allocatePort("sess-b");
+    releasePort("sess-a");
+    expect(readdirSync(dir)).toEqual(["ports.json"]);
   });
 });
 

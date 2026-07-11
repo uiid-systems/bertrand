@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
 
@@ -51,7 +51,15 @@ function read(): PortRegistry {
 
 function write(reg: PortRegistry): void {
   mkdirSync(deps.registryDir, { recursive: true });
-  writeFileSync(registryPath(), JSON.stringify(reg, null, 2) + "\n");
+  // Atomic replace: two processes write this registry (the dashboard server
+  // and the CLI). A plain write can be seen torn by a concurrent reader,
+  // which parses as {} — and the next write would then persist an empty
+  // registry, silently dropping every allocation. Rename never exposes a
+  // partial file. (The pid in the temp name keeps concurrent writers from
+  // clobbering each other's temp file.)
+  const tmp = `${registryPath()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(reg, null, 2) + "\n");
+  renameSync(tmp, registryPath());
 }
 
 /** djb2 — small, stable string hash. Only needs to spread ids across the range. */

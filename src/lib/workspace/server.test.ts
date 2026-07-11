@@ -1,11 +1,21 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
   getWorkspaceServer,
+  readWorkspaceLog,
+  teardownWorkspace,
+  reapOrphanWorkspaces,
   _setServerDeps,
   _resetServerDeps,
 } from "@/lib/workspace/server";
@@ -44,6 +54,16 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Killed children of THIS process stay signalable as zombies until the
+ * event loop reaps them — poll briefly so assertions don't race the reap
+ * (flaked on loaded CI runners).
+ */
+async function expectDead(pid: number): Promise<void> {
+  await waitFor(() => !isAlive(pid));
+  expect(isAlive(pid)).toBe(false);
+}
+
 async function waitFor(
   pred: () => boolean | Promise<boolean>,
   ms = 5000,
@@ -54,14 +74,22 @@ async function waitFor(
   }
 }
 
-function freshDirs(resolve: (dir: string) => WorkspaceRunConfig | null): {
+function freshDirs(
+  resolve: (dir: string) => WorkspaceRunConfig | null,
+  termGraceMs?: number,
+): {
   worktree: string;
+  stateDir: string;
 } {
   const base = mkdtempSync(join(tmpdir(), "bertrand-wss-"));
   dirs.push(base);
-  _setServerDeps({ dir: join(base, "state"), resolve });
+  _setServerDeps({
+    dir: join(base, "state"),
+    resolve,
+    ...(termGraceMs != null ? { termGraceMs } : {}),
+  });
   _setPortDeps({ registryDir: join(base, "ports") });
-  return { worktree: base };
+  return { worktree: base, stateDir: join(base, "state") };
 }
 
 const input = (worktree: string) => ({
@@ -120,12 +148,159 @@ describe("startWorkspaceServer", () => {
     expect(second.pid).toBe(first.pid);
   });
 
+  test("concurrent starts race to one spawn (start lock)", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const [a, b] = await Promise.all([
+      startWorkspaceServer(input(worktree)),
+      startWorkspaceServer(input(worktree)),
+    ]);
+    const winner = [a, b].find((s) => s?.pid != null && s.pid > 0)!;
+    cleanupPids.push(winner.pid!);
+    // exactly one process exists; the loser reports the winner's server
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.running).toBe(true);
+    expect(status.pid).toBe(winner.pid);
+    expect(a?.port).toBe(b?.port ?? null);
+  });
+
+  test("an abandoned start claim is cleared and start proceeds", async () => {
+    const { worktree, stateDir } = freshDirs(() => sleeper());
+    mkdirSync(stateDir, { recursive: true });
+    // a start that crashed between locking and spawning, 2 minutes ago
+    writeFileSync(
+      join(stateDir, "sess-1.pid"),
+      JSON.stringify({ pid: -1, startedAt: Date.now() - 120_000 }),
+    );
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    expect(status).not.toBeNull();
+    expect(status.pid).toBeGreaterThan(0);
+    cleanupPids.push(status.pid!);
+  });
+
   test("streams the command's output to the log file", async () => {
     const { worktree } = freshDirs(() => sleeper("echo preview-marker && sleep 30"));
     const status = (await startWorkspaceServer(input(worktree)))!;
     cleanupPids.push(status.pid!);
     await waitFor(() => readFileSync(status.logFile, "utf-8").includes("preview-marker"));
     expect(readFileSync(status.logFile, "utf-8")).toContain("preview-marker");
+  });
+
+  test("rotates the previous run's log on restart", async () => {
+    let marker = "run-one";
+    const { worktree } = freshDirs(() => sleeper(`echo ${marker} && sleep 30`));
+
+    const first = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(first.pid!);
+    await waitFor(() => readFileSync(first.logFile, "utf-8").includes("run-one"));
+
+    await stopWorkspaceServer("sess-1");
+    marker = "run-two";
+    const second = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(second.pid!);
+    await waitFor(() => readFileSync(second.logFile, "utf-8").includes("run-two"));
+
+    // fresh log has only the new run; the old run moved to .log.1
+    expect(readFileSync(second.logFile, "utf-8")).not.toContain("run-one");
+    expect(readFileSync(`${second.logFile}.1`, "utf-8")).toContain("run-one");
+  });
+});
+
+describe("teardownWorkspace", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("stops the server, releases the port, and runs the archive script", async () => {
+    const { worktree } = freshDirs((dir) => ({
+      scripts: { run: "sleep 30", archive: "touch archived-marker" },
+      packageManager: "bun",
+      source: "detected",
+    }));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await teardownWorkspace({
+      sessionId: "sess-1",
+      worktreePath: worktree,
+      slug: "my-feature",
+    });
+
+    await expectDead(pid);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.port).toBeNull();
+    // the committed archive script actually ran, in the worktree cwd
+    await waitFor(() => existsSync(join(worktree, "archived-marker")));
+    expect(existsSync(join(worktree, "archived-marker"))).toBe(true);
+  });
+
+  test("is safe when the worktree is already gone", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    await teardownWorkspace({
+      sessionId: "sess-1",
+      worktreePath: join(worktree, "no-longer-exists"),
+      slug: "my-feature",
+    });
+    expect((await getWorkspaceServer("sess-1")).running).toBe(false);
+  });
+});
+
+describe("reapOrphanWorkspaces", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("stops servers and drops ports for sessions not in the keep set", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await reapOrphanWorkspaces([]);
+    await expectDead(pid);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.running).toBe(false);
+    expect(after.port).toBeNull();
+  });
+
+  test("leaves kept sessions untouched", async () => {
+    const { worktree } = freshDirs(() => sleeper());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+
+    await reapOrphanWorkspaces(["sess-1"]);
+    expect(isAlive(pid)).toBe(true);
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.running).toBe(true);
+    expect(after.port).toBe(status.port);
+  });
+});
+
+describe("readWorkspaceLog", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("returns only the requested tail, not the whole file", async () => {
+    const { worktree } = freshDirs(() => sleeper("seq 1 500 && sleep 30"));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    await waitFor(() => readFileSync(status.logFile, "utf-8").includes("500"));
+
+    const tail = readWorkspaceLog("sess-1", 5);
+    expect(tail).toContain("500");
+    expect(tail).not.toContain("494");
+  });
+
+  test("is empty for a session with no log", () => {
+    freshDirs(() => sleeper());
+    expect(readWorkspaceLog("never-started")).toBe("");
   });
 });
 
@@ -141,9 +316,9 @@ describe("stopWorkspaceServer", () => {
     const pid = status.pid!;
     cleanupPids.push(pid);
 
-    stopWorkspaceServer("sess-1");
-    await waitFor(() => !isAlive(pid));
-    expect(isAlive(pid)).toBe(false);
+    await stopWorkspaceServer("sess-1");
+    // stop resolves once the process is confirmed dead (zombie counts; reap may lag)
+    await expectDead(pid);
     // stop releases the port, so status is fully cleared
     const after = await getWorkspaceServer("sess-1");
     expect(after.running).toBe(false);
@@ -152,9 +327,44 @@ describe("stopWorkspaceServer", () => {
     expect(after.url).toBeNull();
   });
 
-  test("is a no-op for a session that was never started", () => {
+  test("escalates to SIGKILL when the group ignores SIGTERM", async () => {
+    // The sh leader traps TERM and respawns its sleep forever; only KILL
+    // takes it down. Short grace keeps the test fast.
+    const { worktree } = freshDirs(
+      () => sleeper("trap '' TERM; while :; do sleep 1; done"),
+      300,
+    );
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    const pid = status.pid!;
+    cleanupPids.push(pid);
+    await waitFor(() => isAlive(pid));
+
+    await stopWorkspaceServer("sess-1");
+    await expectDead(pid);
+  });
+
+  test("never signals a pid it cannot verify as ours (recycled-pid guard)", async () => {
+    const { worktree, stateDir } = freshDirs(() => sleeper());
+    // Simulate a pre-reboot state file whose pid now belongs to someone else:
+    // a live process we did NOT record spawning at that time.
+    const foreign = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(foreign.pid!);
+    writeFileSync(
+      join(stateDir, "sess-1.pid"),
+      JSON.stringify({ pid: foreign.pid, startedAt: 1_000 }), // "spawned" in 1970
+    );
+
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.running).toBe(false); // identity mismatch reads as stale
+
+    await stopWorkspaceServer("sess-1");
+    // the innocent process group was not killed
+    expect(isAlive(foreign.pid!)).toBe(true);
+  });
+
+  test("is a no-op for a session that was never started", async () => {
     freshDirs(() => sleeper());
-    expect(() => stopWorkspaceServer("never")).not.toThrow();
+    await stopWorkspaceServer("never");
   });
 });
 
