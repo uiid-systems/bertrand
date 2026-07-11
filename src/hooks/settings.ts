@@ -94,6 +94,15 @@ export function installHookSettings(opts: { quiet?: boolean } = {}) {
     merged[eventType] = [...existing, ...bertrandGroups];
   }
 
+  // Prune bertrand groups under event types we no longer install — leftovers
+  // from retired hooks would otherwise fire scripts this binary doesn't ship.
+  for (const eventType of Object.keys(merged)) {
+    if (eventType in BERTRAND_HOOKS) continue;
+    const kept = merged[eventType]!.filter((g) => !isBertrandGroup(g));
+    if (kept.length > 0) merged[eventType] = kept;
+    else delete merged[eventType];
+  }
+
   settings.hooks = merged;
 
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
@@ -119,8 +128,10 @@ export function hookSettingsAreCurrent(): boolean {
     ? (settings.hooks as HooksByEvent)
     : {}) as HooksByEvent;
 
-  for (const [eventType, expected] of Object.entries(BERTRAND_HOOKS)) {
+  const eventTypes = new Set([...Object.keys(hooks), ...Object.keys(BERTRAND_HOOKS)]);
+  for (const eventType of eventTypes) {
     const actual = (hooks[eventType] ?? []).filter(isBertrandGroup);
+    const expected = BERTRAND_HOOKS[eventType] ?? [];
     if (JSON.stringify(actual) !== JSON.stringify(expected)) return false;
   }
   return true;

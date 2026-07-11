@@ -1,9 +1,11 @@
 import {
   chmodSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "fs";
 import { join } from "path";
@@ -40,9 +42,29 @@ export function installHookScripts(bin: string, opts: InstallOptions = {}) {
     renameSync(tmpPath, filePath);
   }
 
+  for (const orphan of orphanScripts(dir)) {
+    unlinkSync(join(dir, orphan));
+    if (!opts.quiet) console.log(`  Removed retired hook script: ${orphan}`);
+  }
+
   if (!opts.quiet) {
     console.log(`Installed ${Object.keys(HOOK_SCRIPTS).length} hook scripts to ${dir}`);
   }
+}
+
+/**
+ * Script files from hooks that were renamed or retired. Nothing references
+ * them once settings.json is rewritten, but leaving them around makes the
+ * install state ambiguous (which of these actually fire?).
+ */
+function orphanScripts(dir: string): string[] {
+  let files: string[];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return files.filter((f) => f.endsWith(".sh") && !(f in HOOK_SCRIPTS));
 }
 
 /** True when every installed hook script matches what this binary would write. */
@@ -58,7 +80,7 @@ export function hookScriptsAreCurrent(bin: string, opts: InstallOptions = {}): b
     }
     if (installed !== scriptFn(bin, runtimeDir)) return false;
   }
-  return true;
+  return orphanScripts(dir).length === 0;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -58,5 +58,16 @@ describe("hookScriptsAreCurrent", () => {
     installHookScripts(BIN, { quiet: true, dir: hooksDir, runtimeDir });
     rmSync(join(hooksDir, Object.keys(HOOK_SCRIPTS)[0]!));
     expect(hookScriptsAreCurrent(BIN, { dir: hooksDir, runtimeDir })).toBe(false);
+  });
+
+  test("orphaned scripts from retired hooks flag drift and are pruned on install", () => {
+    installHookScripts(BIN, { quiet: true, dir: hooksDir, runtimeDir });
+    const orphan = join(hooksDir, "on-retired.sh");
+    writeFileSync(orphan, "#!/usr/bin/env bash\n");
+    expect(hookScriptsAreCurrent(BIN, { dir: hooksDir, runtimeDir })).toBe(false);
+
+    installHookScripts(BIN, { quiet: true, dir: hooksDir, runtimeDir });
+    expect(existsSync(orphan)).toBe(false);
+    expect(hookScriptsAreCurrent(BIN, { dir: hooksDir, runtimeDir })).toBe(true);
   });
 });
