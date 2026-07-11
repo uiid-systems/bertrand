@@ -1,11 +1,12 @@
 import { execFile } from "child_process"
-import { existsSync, readFileSync } from "fs"
+import { existsSync } from "fs"
 import { join } from "path"
 import { getMainWorktree } from "@/lib/git"
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
   getWorkspaceServer,
+  readWorkspaceLog,
   type WorkspaceServerStatus,
 } from "@/lib/workspace"
 import {
@@ -200,23 +201,18 @@ const listWorktreeStatus = async (
 // NaN falls back). 404s unknown sessions — the id both scopes the request
 // (via `?project=`, like the other per-session endpoints) and names a file
 // on disk, so it must resolve to a real session before we touch the fs.
-const getWorktreeLogs = async (
+const getWorktreeLogs = (
   { sessionId }: { sessionId?: string },
   url: URL,
-): Promise<Response | { logs: string }> => {
+): Response | { logs: string } => {
   const session = getSession(sessionId!, resolveDb(url))
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 })
   }
-  const { logFile } = await getWorkspaceServer(session.id)
   const requested = Number(url.searchParams.get("lines") ?? 200)
   const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
-  try {
-    const lines = readFileSync(logFile, "utf-8").split("\n")
-    return { logs: lines.slice(-n).join("\n") }
-  } catch {
-    return { logs: "" }
-  }
+  // Bounded tail read — never the whole file; this is on the 2s poll path.
+  return { logs: readWorkspaceLog(session.id, n) }
 }
 
 const routes: [RegExp, RouteHandler][] = [

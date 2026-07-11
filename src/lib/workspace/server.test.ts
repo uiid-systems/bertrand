@@ -6,6 +6,7 @@ import {
   startWorkspaceServer,
   stopWorkspaceServer,
   getWorkspaceServer,
+  readWorkspaceLog,
   _setServerDeps,
   _resetServerDeps,
 } from "@/lib/workspace/server";
@@ -126,6 +127,48 @@ describe("startWorkspaceServer", () => {
     cleanupPids.push(status.pid!);
     await waitFor(() => readFileSync(status.logFile, "utf-8").includes("preview-marker"));
     expect(readFileSync(status.logFile, "utf-8")).toContain("preview-marker");
+  });
+
+  test("rotates the previous run's log on restart", async () => {
+    let marker = "run-one";
+    const { worktree } = freshDirs(() => sleeper(`echo ${marker} && sleep 30`));
+
+    const first = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(first.pid!);
+    await waitFor(() => readFileSync(first.logFile, "utf-8").includes("run-one"));
+
+    await stopWorkspaceServer("sess-1");
+    marker = "run-two";
+    const second = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(second.pid!);
+    await waitFor(() => readFileSync(second.logFile, "utf-8").includes("run-two"));
+
+    // fresh log has only the new run; the old run moved to .log.1
+    expect(readFileSync(second.logFile, "utf-8")).not.toContain("run-one");
+    expect(readFileSync(`${second.logFile}.1`, "utf-8")).toContain("run-one");
+  });
+});
+
+describe("readWorkspaceLog", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("returns only the requested tail, not the whole file", async () => {
+    const { worktree } = freshDirs(() => sleeper("seq 1 500 && sleep 30"));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    await waitFor(() => readFileSync(status.logFile, "utf-8").includes("500"));
+
+    const tail = readWorkspaceLog("sess-1", 5);
+    expect(tail).toContain("500");
+    expect(tail).not.toContain("494");
+  });
+
+  test("is empty for a session with no log", () => {
+    freshDirs(() => sleeper());
+    expect(readWorkspaceLog("never-started")).toBe("");
   });
 });
 

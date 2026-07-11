@@ -1,5 +1,16 @@
 import { execFile, spawn } from "child_process";
-import { mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import {
+  appendFileSync,
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
 import { allocatePort, getPort, releasePort } from "./port";
@@ -78,6 +89,48 @@ function pidFile(sessionId: string): string {
 
 function logFile(sessionId: string): string {
   return join(deps.dir, `${sessionId}.log`);
+}
+
+/**
+ * Rotate the previous run's log out of the way (one generation kept as
+ * `.log.1`) so logs don't grow forever across restarts and a fresh start
+ * reads as a fresh log.
+ */
+function rotateLog(sessionId: string): void {
+  try {
+    renameSync(logFile(sessionId), `${logFile(sessionId)}.1`);
+  } catch {
+    // no previous log — first start
+  }
+}
+
+/**
+ * Tail of a session's dev-server log. Reads a bounded window from the end of
+ * the file — this sits on the dashboard's poll path and dev-server logs grow
+ * without limit, so whole-file reads are off the table.
+ */
+export function readWorkspaceLog(sessionId: string, lines = 200): string {
+  const MAX_BYTES = 64 * 1024;
+  try {
+    const fd = openSync(logFile(sessionId), "r");
+    try {
+      const size = fstatSync(fd).size;
+      const start = Math.max(0, size - MAX_BYTES);
+      const buf = Buffer.alloc(size - start);
+      readSync(fd, buf, 0, buf.length, start);
+      let text = buf.toString("utf-8");
+      if (start > 0) {
+        // drop the partial line a mid-file cut leaves at the top
+        const nl = text.indexOf("\n");
+        if (nl !== -1) text = text.slice(nl + 1);
+      }
+      return text.split("\n").slice(-Math.max(1, lines)).join("\n");
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return "";
+  }
 }
 
 function readPid(sessionId: string): number | null {
@@ -208,6 +261,7 @@ export async function startWorkspaceServer(
     : config.scripts.run;
 
   mkdirSync(deps.dir, { recursive: true });
+  rotateLog(sessionId);
   const logFd = openSync(logFile(sessionId), "a");
 
   const child = spawn("sh", ["-c", command], {
@@ -216,7 +270,20 @@ export async function startWorkspaceServer(
     stdio: ["ignore", logFd, logFd],
     env: { ...process.env, ...env },
   });
+  // Without a listener, a spawn failure raises an uncaught exception in the
+  // *calling* process (the dashboard server). Surface it in the log instead.
+  child.on("error", (err) => {
+    try {
+      appendFileSync(logFile(sessionId), `\n[bertrand] failed to spawn dev server: ${err.message}\n`);
+    } catch {
+      // the log itself is best-effort
+    }
+    removePid(sessionId);
+  });
   child.unref();
+  // The child holds its own copy of the fd; keeping ours open would leak one
+  // fd per start for the life of this process.
+  closeSync(logFd);
   if (child.pid) writeFileSync(pidFile(sessionId), String(child.pid));
 
   // A freshly spawned server can't have bound anything yet; callers poll

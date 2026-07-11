@@ -27,6 +27,7 @@ export {
   startWorkspaceServer,
   stopWorkspaceServer,
   getWorkspaceServer,
+  readWorkspaceLog,
   type WorkspaceServerStatus,
   type StartWorkspaceInput,
 } from "./server";
