@@ -44,6 +44,26 @@
   the `archive` script is never executed), stale-PID identity checks before
   group-kill, atomic registry writes, SIGKILL escalation on stop, and log
   rotation/tail-reads.
+- **2026-07-11 (later)** — **Bulletproofing follow-up** closes all of the
+  gaps above (stacked on #152):
+  - *Lifecycle:* archiving a session stops its dev server, runs the repo's
+    committed `archive` script (detached + logged, with `BERTRAND_PORT`/
+    `BERTRAND_WORKSPACE`), and releases the port. Dashboard-server boot reaps
+    orphaned servers/ports across all projects; the status poll self-heals
+    sessions whose worktree dir vanished.
+  - *Process safety:* state files record `{pid, startedAt}`; one `ps` call
+    verifies a pid still leads its own group and started when we spawned it
+    before it is trusted or group-killed — a recycled pid after a reboot
+    reads as stale, never as a phantom server, and is never signalled. Stop
+    escalates SIGTERM → SIGKILL and only clears state once death is
+    confirmed.
+  - *State integrity:* the port registry writes via temp-file + rename (a
+    torn read can't wipe allocations); starts claim the state file
+    exclusively (O_EXCL) so a CLI start racing a dashboard start spawns once.
+  - *Logs:* rotated to `.log.1` per start; the logs endpoint tail-reads a
+    bounded window instead of whole-file reads on the poll path; the parent
+    closes its log fd; spawn errors land in the log instead of crashing the
+    dashboard server.
 - **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
   helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
   **not yet designed**. One thing worth remembering when we pick it up: a single
