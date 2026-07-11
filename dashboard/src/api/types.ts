@@ -2,6 +2,7 @@ export type {
   SessionRow,
   SessionStatus,
   SessionWithCategory,
+  WorktreeSessionRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,

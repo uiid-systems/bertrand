@@ -59,6 +59,21 @@ export async function getRepoRoot(): Promise<string> {
 }
 
 /**
+ * The branch a worktree currently has checked out. The DB records the branch
+ * at EnterWorktree time, but a worktree can switch branches over its life —
+ * display must follow git, not the entry-time snapshot. Null when detached
+ * or unreadable; callers fall back to the recorded value.
+ */
+export async function getWorktreeBranch(cwd: string): Promise<string | null> {
+  try {
+    const out = (await $`git -C ${cwd} rev-parse --abbrev-ref HEAD`.text()).trim();
+    return out && out !== "HEAD" ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The main working tree for the repo a worktree belongs to. `git worktree
  * list` always reports the main working tree first, so we take that entry.
  * Used to resolve `BERTRAND_ROOT` (for symlinking shared files) from a
