@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.28.0](https://github.com/uiid-systems/bertrand/compare/v0.27.0...v0.28.0) (2026-07-11)
+
+
+### Features
+
+* **dashboard:** restore secondary sidebar as a resizable panel ([#169](https://github.com/uiid-systems/bertrand/issues/169)) ([59c7843](https://github.com/uiid-systems/bertrand/commit/59c784384fdf96699f0d265eeb0d9b2fce922d32))
+* **log:** agent-first digest output with --events and --full zoom levels ([#165](https://github.com/uiid-systems/bertrand/issues/165)) ([08fd31f](https://github.com/uiid-systems/bertrand/commit/08fd31fb4265c2ab5221d35c5829b8bd07c4ea1b))
+* **search:** cross-session pointer search ([#167](https://github.com/uiid-systems/bertrand/issues/167)) ([d9e3a4f](https://github.com/uiid-systems/bertrand/commit/d9e3a4f0106927aacfac4d76b7381d6f35b5e087))
+* **sessions:** derive summaries at pause, widen sibling context to project scope ([#166](https://github.com/uiid-systems/bertrand/issues/166)) ([0b61f09](https://github.com/uiid-systems/bertrand/commit/0b61f098e7798bd38c65a79b5c2061889cd9e55d))
+* **timeline:** cursor-based transcript ingestion for assistant messages ([#164](https://github.com/uiid-systems/bertrand/issues/164)) ([1aaa846](https://github.com/uiid-systems/bertrand/commit/1aaa84624ab98e71c86473051679231b39c91b7a))
+
+
+### Bug Fixes
+
+* **dashboard:** scope archive/unarchive to the session's project ([#168](https://github.com/uiid-systems/bertrand/issues/168)) ([619cdb1](https://github.com/uiid-systems/bertrand/commit/619cdb123c561636012d2c0ab0a1a7dd3bdd7763))
+* **dashboard:** use red for the blocked "needs approval" status ([26ab2b4](https://github.com/uiid-systems/bertrand/commit/26ab2b49e66c91599ba009fe63a640ae86aadbf8))
+* **transcript:** capture the whole assistant turn, not just the tail ([#163](https://github.com/uiid-systems/bertrand/issues/163)) ([608bd41](https://github.com/uiid-systems/bertrand/commit/608bd417bf96dc615906d0062cf40a562ad08ccf))
+
+
+### Refactoring
+
+* **dashboard:** breadcrumbs above both main and the secondary sidebar ([#170](https://github.com/uiid-systems/bertrand/issues/170)) ([58d55f8](https://github.com/uiid-systems/bertrand/commit/58d55f84a84ba9f9b7802280074fcd983576760b))
+* **dashboard:** tidy conversation nav width + session-detail header layout ([e61a153](https://github.com/uiid-systems/bertrand/commit/e61a153834385cbf0e95d574ef933b104d5995c1))
+* **dashboard:** timeline polish + design-system 0.0.33 ([9035d8c](https://github.com/uiid-systems/bertrand/commit/9035d8cedaba02aeb267d3717cd4e48ec5816915))
+* timeline tinkering ([73de743](https://github.com/uiid-systems/bertrand/commit/73de7438bff4fb9a7426f9a10d36b68f6c3406ba))
+* tinkering ([fbd53e7](https://github.com/uiid-systems/bertrand/commit/fbd53e75b7f1531458cab1c109fd21716c4b6f89))
+
 ## [0.27.0](https://github.com/uiid-systems/bertrand/compare/v0.26.0...v0.27.0) (2026-07-09)
 
 
