@@ -64,6 +64,13 @@
     bounded window instead of whole-file reads on the poll path; the parent
     closes its log fd; spawn errors land in the log instead of crashing the
     dashboard server.
+  - *Dogfood:* this repo now commits a `bertrand` override in `package.json`
+    — the living example. Auto-detection would be wrong here (`scripts.dev`
+    is the CLI/TUI, not a server); the override serves the worktree's
+    dashboard via vite on `$BERTRAND_PORT` (`--strictPort`), whose `/api`
+    proxy hits the live session server on `:5200` — preview UI changes
+    against real data, without touching the running server the way
+    `dashboard/dev.ts` deliberately does.
 - **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
   helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
   **not yet designed**. One thing worth remembering when we pick it up: a single
