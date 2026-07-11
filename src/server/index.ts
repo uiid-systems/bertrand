@@ -9,7 +9,6 @@ import {
   type WorkspaceServerStatus,
 } from "@/lib/workspace"
 import {
-  getAllSessions,
   getAllSessionsForProject,
   getSession,
   countLiveSessions,
@@ -167,32 +166,47 @@ const getActiveProjectMeta = (): unknown => {
 
 // Sessions currently working in a worktree. Derived from the worktree_path
 // column the EnterWorktree hook maintains — no git shell-out, so this stays a
-// synchronous handler like the rest. Phase 1 can enrich each row with live git
-// state (liveness, diff stats) once dev-server management lands.
-const listWorktreeSessions = (): SessionWithCategory[] =>
-  getAllSessions({ excludeArchived: true }).filter(
-    ({ session }) => session.worktreePath != null,
-  )
+// synchronous handler like the rest. Scoped like /api/sessions: `?projects=`
+// merges the named projects, omitting it covers the active project alone.
+const listWorktreeSessions = (
+  _params: object,
+  url: URL,
+): SessionWithCategory[] =>
+  resolveProjectScope(url)
+    .flatMap((project) =>
+      getAllSessionsForProject(project, { excludeArchived: true }),
+    )
+    .filter(({ session }) => session.worktreePath != null)
 
 // Dev-server status per worktree-bearing session, keyed by session id. A pure
 // read (getWorkspaceServer never allocates), so polling this from the
 // dashboard doesn't spin up or reserve anything — start is an explicit action.
-const listWorktreeStatus = (): Record<string, WorkspaceServerStatus> => {
+const listWorktreeStatus = (
+  _params: object,
+  url: URL,
+): Record<string, WorkspaceServerStatus> => {
   const out: Record<string, WorkspaceServerStatus> = {}
-  for (const { session } of getAllSessions({ excludeArchived: true })) {
-    if (session.worktreePath == null) continue
+  for (const { session } of listWorktreeSessions({}, url)) {
     out[session.id] = getWorkspaceServer(session.id)
   }
   return out
 }
 
-// Tail of a workspace's dev-server log. `?lines=N` bounds it (default 200).
+// Tail of a workspace's dev-server log. `?lines=N` bounds it (default 200,
+// NaN falls back). 404s unknown sessions — the id both scopes the request
+// (via `?project=`, like the other per-session endpoints) and names a file
+// on disk, so it must resolve to a real session before we touch the fs.
 const getWorktreeLogs = (
   { sessionId }: { sessionId?: string },
   url: URL,
-): { logs: string } => {
-  const { logFile } = getWorkspaceServer(sessionId!)
-  const n = Math.max(1, Number(url.searchParams.get("lines") ?? 200))
+): Response | { logs: string } => {
+  const session = getSession(sessionId!, resolveDb(url))
+  if (!session) {
+    return Response.json({ error: "Session not found" }, { status: 404 })
+  }
+  const { logFile } = getWorkspaceServer(session.id)
+  const requested = Number(url.searchParams.get("lines") ?? 200)
+  const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
   try {
     const lines = readFileSync(logFile, "utf-8").split("\n")
     return { logs: lines.slice(-n).join("\n") }
@@ -290,11 +304,13 @@ async function handleOpen(req: Request): Promise<Response> {
 }
 
 // Start a session's workspace dev server (dashboard "start" button — the same
-// lazy trigger as `bertrand open`). Resolves the main checkout for
+// lazy trigger as `bertrand open`). Resolves the session against `?project=`
+// like every other per-session endpoint (the archive endpoints' "Session not
+// found" bug is the cautionary tale), resolves the main checkout for
 // BERTRAND_ROOT, then hands off to the 1B manager. Idempotent: a live server
 // returns its existing status.
-async function handleWorktreeStart(sessionId: string): Promise<Response> {
-  const session = getSession(sessionId)
+async function handleWorktreeStart(sessionId: string, url: URL): Promise<Response> {
+  const session = getSession(sessionId, resolveDb(url))
   if (!session) return Response.json({ error: "Session not found" }, { status: 404 })
   if (!session.worktreePath) {
     return Response.json({ error: "Session has no worktree" }, { status: 409 })
@@ -318,12 +334,15 @@ async function handleWorktreeStart(sessionId: string): Promise<Response> {
   return Response.json(status)
 }
 
-function match(pathname: string, url: URL): Response {
+async function match(pathname: string, url: URL): Promise<Response> {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
     if (!m) continue
     try {
-      const result = handler(m.groups ?? {}, url)
+      const result = await handler(m.groups ?? {}, url)
+      // Handlers that need a status code return a Response directly;
+      // everything else returns data for the JSON-200 default.
+      if (result instanceof Response) return result
       return Response.json(result ?? null)
     } catch (err) {
       console.error(`[server] ${pathname} failed:`, err)
@@ -402,13 +421,23 @@ export function startServer(port = PORT) {
       if (req.method === "POST") {
         const startMatch = /^\/api\/worktrees\/([^/]+)\/start$/.exec(url.pathname)
         if (startMatch) {
-          const r = await handleWorktreeStart(startMatch[1]!)
+          const r = await handleWorktreeStart(startMatch[1]!, url)
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r
         }
         const stopMatch = /^\/api\/worktrees\/([^/]+)\/stop$/.exec(url.pathname)
         if (stopMatch) {
-          stopWorkspaceServer(stopMatch[1]!)
+          // Validate the id resolves to a real session (scoped via ?project=
+          // like start) before acting on files/processes keyed by it. Stop
+          // itself stays best-effort — a session whose worktree is already
+          // gone must still be stoppable for cleanup.
+          const session = getSession(stopMatch[1]!, resolveDb(url))
+          if (!session) {
+            const r = Response.json({ error: "Session not found" }, { status: 404 })
+            r.headers.set("Access-Control-Allow-Origin", "*")
+            return r
+          }
+          stopWorkspaceServer(session.id)
           const r = Response.json({ ok: true })
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r
@@ -428,7 +457,7 @@ export function startServer(port = PORT) {
       }
 
       if (url.pathname.startsWith("/api/")) {
-        const response = match(url.pathname, url)
+        const response = await match(url.pathname, url)
         response.headers.set("Access-Control-Allow-Origin", "*")
         return response
       }
@@ -436,7 +465,7 @@ export function startServer(port = PORT) {
       const dashboardResponse = await serveDashboard(url.pathname)
       if (dashboardResponse) return dashboardResponse
 
-      const response = match(url.pathname, url)
+      const response = await match(url.pathname, url)
       response.headers.set("Access-Control-Allow-Origin", "*")
       return response
     },
