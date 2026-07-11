@@ -46,7 +46,7 @@
     "prepublishOnly": "bun run build"
   },
   "bertrand": {
-    "setup": "bun install && cd dashboard && bun install",
+    "setup": "bun install && (cd dashboard && bun install)",
     "run": "cd dashboard && bunx vite --port $BERTRAND_PORT --strictPort"
   },
   "dependencies": {
