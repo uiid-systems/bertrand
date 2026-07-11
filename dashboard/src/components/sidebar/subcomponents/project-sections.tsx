@@ -1,6 +1,13 @@
 import { useCallback } from "react";
 
-import { Collapsible, Group, List, Stack, Text } from "@uiid/design-system";
+import {
+  Badge,
+  Collapsible,
+  Group,
+  List,
+  Stack,
+  Text,
+} from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { SessionGroup } from "../sidebar.types";
@@ -61,9 +68,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
                 <Text className="sidebar-zone-title" weight="bold" size={0}>
                   {group.category}
                 </Text>
-                <Text size={-1} shade="muted">
-                  {group.sessions.length}
-                </Text>
+                <Badge ml="auto">{group.sessions.length}</Badge>
               </Group>
             }
           >

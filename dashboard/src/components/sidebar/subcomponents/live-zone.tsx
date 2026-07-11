@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Collapsible, Group, List, Text } from "@uiid/design-system";
+import { Badge, Collapsible, Group, List, Text } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
@@ -41,9 +41,9 @@ export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
           className="sidebar-zone-trigger"
           ay="center"
           gap={2}
-          fullwidth
           px={4}
           py={2}
+          fullwidth
           style={{ cursor: "pointer" }}
         >
           {open ? (
@@ -54,17 +54,11 @@ export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
           <Text className="sidebar-zone-title" weight="bold" size={0}>
             Needs you
           </Text>
-          <Text size={-1} shade="muted">
-            {sessions.length}
-          </Text>
+          <Badge ml="auto">{sessions.length}</Badge>
         </Group>
       }
     >
-      {sessions.length === 0 ? (
-        <Text size={-1} shade="muted" px={4} py={1}>
-          Nothing needs you right now.
-        </Text>
-      ) : (
+      {sessions.length > 0 && (
         <List
           data-slot="sidebar-list"
           marker="none"

@@ -71,7 +71,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     <SidebarWrapper {...WrapperProps}>
       {/* Header controls carry their own horizontal inset now that the
           sidebar container is full-bleed and section triggers span edge-to-edge. */}
-      <Stack ax="stretch" gap={3} fullwidth px={4}>
+      <Stack ax="stretch" gap={3} fullwidth p={4}>
         <ProjectSelector />
         <Group ay="center" gap={2} fullwidth>
           <Input
