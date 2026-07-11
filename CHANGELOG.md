@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.1](https://github.com/uiid-systems/bertrand/compare/v0.28.0...v0.28.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **hooks:** self-heal installed hooks on binary upgrade ([#173](https://github.com/uiid-systems/bertrand/issues/173)) ([0816fce](https://github.com/uiid-systems/bertrand/commit/0816fced93cf0490a02c672c4f1abeeb422e1030))
+
+
+### Refactoring
+
+* **dashboard:** swap sidebar accordions for full-width collapsibles ([#171](https://github.com/uiid-systems/bertrand/issues/171)) ([487e445](https://github.com/uiid-systems/bertrand/commit/487e44591a6b8ab463329bb6568b9ad928534aac))
+* sidebar collapsible ([c981086](https://github.com/uiid-systems/bertrand/commit/c9810868d41290292f3468e8ea2146453e4ddc38))
+
 ## [0.28.0](https://github.com/uiid-systems/bertrand/compare/v0.27.0...v0.28.0) (2026-07-11)
 
 
