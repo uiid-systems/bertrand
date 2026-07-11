@@ -74,7 +74,7 @@ function isBertrandGroup(group: HookGroup): boolean {
  * Preserves all other settings and non-bertrand hook entries.
  * Claude Code schema: hooks is Record<EventType, Array<{matcher, hooks: [...]}>>.
  */
-export function installHookSettings() {
+export function installHookSettings(opts: { quiet?: boolean } = {}) {
   let settings: Record<string, unknown> = {};
 
   try {
@@ -99,5 +99,29 @@ export function installHookSettings() {
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
 
-  console.log(`Updated ${SETTINGS_PATH} with bertrand hooks`);
+  if (!opts.quiet) console.log(`Updated ${SETTINGS_PATH} with bertrand hooks`);
+}
+
+/**
+ * True when settings.json carries exactly the bertrand hook groups this
+ * binary would install — per event type, the bertrand-owned groups must match
+ * BERTRAND_HOOKS verbatim. Non-bertrand groups are ignored.
+ */
+export function hookSettingsAreCurrent(): boolean {
+  let settings: Record<string, unknown>;
+  try {
+    settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
+  } catch {
+    return false;
+  }
+
+  const hooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks)
+    ? (settings.hooks as HooksByEvent)
+    : {}) as HooksByEvent;
+
+  for (const [eventType, expected] of Object.entries(BERTRAND_HOOKS)) {
+    const actual = (hooks[eventType] ?? []).filter(isBertrandGroup);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) return false;
+  }
+  return true;
 }

@@ -1,5 +1,6 @@
 import { register } from "@/cli/router";
 import { startTui, runSessionLoop } from "@/tui/app";
+import { ensureHooksCurrent } from "@/hooks/install";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { launch } from "@/engine/session";
 import { recoverStaleSessions } from "@/engine/recovery";
@@ -20,6 +21,9 @@ function reportFatal(err: unknown): never {
 
 register("launch", async (args) => {
   try {
+    // Refresh hook scripts/settings if this binary was upgraded since install
+    ensureHooksCurrent();
+
     // Recover any sessions stuck in working/blocked/prompting from crashed processes
     recoverStaleSessions();
 
