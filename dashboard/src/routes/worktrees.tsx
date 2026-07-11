@@ -31,6 +31,15 @@ function WorktreeRow({
   const qc = useQueryClient();
   const [showLogs, setShowLogs] = useState(false);
   const running = preview?.running ?? false;
+  // "listening" is observed by the server (lsof), not assumed from the PID —
+  // a process that's installing/compiling, or that bound a different port,
+  // must not render as a working preview.
+  const listening = preview?.listening ?? false;
+  const portMismatch =
+    listening &&
+    preview?.observedPort != null &&
+    preview?.port != null &&
+    preview.observedPort !== preview.port;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["worktree-status"] });
   const start = useMutation({ mutationFn: () => startWorktree(session.id), onSuccess: refresh });
@@ -51,7 +60,7 @@ function WorktreeRow({
   return (
     <Stack gap={2} py={2} px={2} bb={1} fullwidth>
       <Group ay="center" gap={3} fullwidth>
-        <Status color={running ? "green" : color} />
+        <Status color={listening ? "green" : running ? "yellow" : color} />
         <Stack gap={1}>
           <Text family="mono" weight="bold">
             {session.worktreeBranch ?? "(unknown branch)"}
@@ -73,7 +82,7 @@ function WorktreeRow({
         </Stack>
 
         <Group gap={2} ay="center" ml="auto">
-          {running && preview?.url && (
+          {listening && preview?.url && (
             <Text
               size={-1}
               family="mono"
@@ -82,8 +91,10 @@ function WorktreeRow({
               {preview.url}
             </Text>
           )}
-          {running ? (
+          {listening ? (
             <Badge color="green">running</Badge>
+          ) : running ? (
+            <Badge color="yellow">starting</Badge>
           ) : (
             <Badge color="neutral">idle</Badge>
           )}
@@ -105,6 +116,21 @@ function WorktreeRow({
       {error && (
         <Text size={-1} shade="muted">
           ⚠ {error.message}
+        </Text>
+      )}
+
+      {portMismatch && (
+        <Text size={-1} shade="muted">
+          ⚠ App bound :{preview!.observedPort} instead of the assigned :
+          {preview!.port} — the URL follows the real port. Commit a run
+          override that passes $BERTRAND_PORT to pin it.
+        </Text>
+      )}
+
+      {running && !listening && (
+        <Text size={-1} shade="muted">
+          Process is up but nothing is listening yet (installing/compiling —
+          check the logs if this persists).
         </Text>
       )}
 

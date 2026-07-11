@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import { mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
@@ -24,7 +24,19 @@ export interface WorkspaceServerStatus {
   pid: number | null;
   /** Allocated port, or null when the session has never been started. */
   port: number | null;
-  /** Preview URL, or null when no port is allocated. */
+  /**
+   * Port the process group is actually LISTENing on, or null when nothing is
+   * (yet). Can legitimately differ from `port`: the app may ignore `PORT`
+   * (Vite), pin its own port, or auto-increment on a conflict (Next).
+   */
+  observedPort: number | null;
+  /** True when the running process group accepts connections on observedPort. */
+  listening: boolean;
+  /**
+   * Preview URL. Follows `observedPort` when listening — the URL must always
+   * be true — and falls back to the allocated port (the URL the server *will*
+   * get) while starting. Null when no port is allocated.
+   */
   url: string | null;
   logFile: string;
 }
@@ -95,22 +107,72 @@ function removePid(sessionId: string): void {
 }
 
 /**
- * Current status of a session's workspace server — a pure read, no side
- * effects. `running` reflects a live PID; `port`/`url` are reported only when
- * a port is already allocated (i.e. the session has been started at least
- * once and not stopped), so merely *viewing* the dashboard never allocates a
- * port for a session you haven't opened. Allocation happens on start.
+ * TCP ports the process group is LISTENing on. The detached child is its own
+ * group leader, so its pid doubles as the pgid and `lsof -g` covers both the
+ * `sh -c` wrapper and whatever dev server it spawned. Best-effort: any lsof
+ * failure (not installed, no matches — it exits 1 for both) reads as "nothing
+ * observed", never as an error.
  */
-export function getWorkspaceServer(sessionId: string): WorkspaceServerStatus {
+function listeningPorts(pgid: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "lsof",
+      ["-a", "-g", String(pgid), "-iTCP", "-sTCP:LISTEN", "-n", "-P", "-Fn"],
+      (err, stdout) => {
+        if (err) return resolve([]);
+        const ports = new Set<number>();
+        for (const line of stdout.split("\n")) {
+          // -Fn emits name lines like `n*:4700` / `n127.0.0.1:4700`.
+          const m = /^n.*:(\d+)$/.exec(line.trim());
+          if (m) ports.add(Number(m[1]));
+        }
+        resolve([...ports].sort((a, b) => a - b));
+      },
+    );
+  });
+}
+
+/**
+ * Current status of a session's workspace server — a read with no allocation
+ * side effects. `running` reflects a live PID; `port`/`url` are reported only
+ * when a port is already allocated (i.e. the session has been started at
+ * least once and not stopped), so merely *viewing* the dashboard never
+ * allocates a port for a session you haven't opened. Allocation happens on
+ * start.
+ *
+ * Listening state is *observed*, not assumed: we ask the OS which port the
+ * process group actually bound rather than trusting that the app honored
+ * `PORT`. This is what lets callers distinguish "installing/compiling"
+ * (running, not listening) from "up" (listening), and keeps the reported URL
+ * correct even when the app picked its own port.
+ */
+export async function getWorkspaceServer(
+  sessionId: string,
+): Promise<WorkspaceServerStatus> {
   const pid = readPid(sessionId);
   const running = pid != null && isAlive(pid);
   if (pid != null && !running) removePid(sessionId); // clear stale
   const port = getPort(sessionId);
+
+  const observed = running ? await listeningPorts(pid!) : [];
+  // Prefer the allocated port when the group holds several (e.g. an HMR
+  // socket next to the app); otherwise the lowest bound port is the app.
+  const observedPort =
+    observed.length === 0
+      ? null
+      : port != null && observed.includes(port)
+        ? port
+        : observed[0]!;
+  const listening = observedPort != null;
+
+  const urlPort = observedPort ?? port;
   return {
     running,
     pid: running ? pid : null,
     port,
-    url: port != null ? localhostPreviewUrl(port) : null,
+    observedPort,
+    listening,
+    url: urlPort != null ? localhostPreviewUrl(urlPort) : null,
     logFile: logFile(sessionId),
   };
 }
@@ -122,9 +184,9 @@ export function getWorkspaceServer(sessionId: string): WorkspaceServerStatus {
  * should treat that as "nothing to run", not an error. Idempotent: a live
  * server short-circuits and its status is returned unchanged.
  */
-export function startWorkspaceServer(
+export async function startWorkspaceServer(
   input: StartWorkspaceInput,
-): WorkspaceServerStatus | null {
+): Promise<WorkspaceServerStatus | null> {
   const { sessionId, worktreePath, root, slug } = input;
 
   const existing = readPid(sessionId);
@@ -157,10 +219,14 @@ export function startWorkspaceServer(
   child.unref();
   if (child.pid) writeFileSync(pidFile(sessionId), String(child.pid));
 
+  // A freshly spawned server can't have bound anything yet; callers poll
+  // getWorkspaceServer for the listening/observed-port transition.
   return {
     running: child.pid != null,
     pid: child.pid ?? null,
     port,
+    observedPort: null,
+    listening: false,
     url,
     logFile: logFile(sessionId),
   };

@@ -178,17 +178,21 @@ const listWorktreeSessions = (
     )
     .filter(({ session }) => session.worktreePath != null)
 
-// Dev-server status per worktree-bearing session, keyed by session id. A pure
-// read (getWorkspaceServer never allocates), so polling this from the
-// dashboard doesn't spin up or reserve anything — start is an explicit action.
-const listWorktreeStatus = (
+// Dev-server status per worktree-bearing session, keyed by session id. A
+// read with no allocation side effects (getWorkspaceServer never reserves a
+// port), so polling this from the dashboard doesn't spin up anything — start
+// is an explicit action. Statuses resolve in parallel: the observed-port
+// check shells out to lsof, but only for sessions with a live process.
+const listWorktreeStatus = async (
   _params: object,
   url: URL,
-): Record<string, WorkspaceServerStatus> => {
+): Promise<Record<string, WorkspaceServerStatus>> => {
   const out: Record<string, WorkspaceServerStatus> = {}
-  for (const { session } of listWorktreeSessions({}, url)) {
-    out[session.id] = getWorkspaceServer(session.id)
-  }
+  await Promise.all(
+    listWorktreeSessions({}, url).map(async ({ session }) => {
+      out[session.id] = await getWorkspaceServer(session.id)
+    }),
+  )
   return out
 }
 
@@ -196,15 +200,15 @@ const listWorktreeStatus = (
 // NaN falls back). 404s unknown sessions — the id both scopes the request
 // (via `?project=`, like the other per-session endpoints) and names a file
 // on disk, so it must resolve to a real session before we touch the fs.
-const getWorktreeLogs = (
+const getWorktreeLogs = async (
   { sessionId }: { sessionId?: string },
   url: URL,
-): Response | { logs: string } => {
+): Promise<Response | { logs: string }> => {
   const session = getSession(sessionId!, resolveDb(url))
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 })
   }
-  const { logFile } = getWorkspaceServer(session.id)
+  const { logFile } = await getWorkspaceServer(session.id)
   const requested = Number(url.searchParams.get("lines") ?? 200)
   const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
   try {
@@ -319,8 +323,8 @@ async function handleWorktreeStart(sessionId: string, url: URL): Promise<Respons
     return Response.json({ error: "Worktree path no longer exists" }, { status: 409 })
   }
   const root = await getMainWorktree(session.worktreePath)
-  const status = startWorkspaceServer({
-    sessionId,
+  const status = await startWorkspaceServer({
+    sessionId: session.id,
     worktreePath: session.worktreePath,
     root,
     slug: session.slug,

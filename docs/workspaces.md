@@ -19,6 +19,31 @@
   `http://localhost:<port>` for now, and the reverse proxy (former 1C) moved to
   Phase 2 because loopback ports need no routing. Start is **lazy** (via
   `bertrand open` / the dashboard) — nothing auto-starts on worktree entry.
+- **2026-07-11** — **Hardening pass** on #152 after a strategy review, built
+  around one invariant: *the preview URL must always be true.*
+  - **Observed ports.** Status no longer assumes the app honored `PORT`; the
+    server asks the OS (`lsof -g` on the process group) which port is actually
+    LISTENing. The dashboard distinguishes idle / starting / running, the URL
+    follows the *real* port (so zero-config Vite works despite ignoring
+    `PORT`), and a mismatch is surfaced with a pointer to `$BERTRAND_PORT`.
+    `bertrand open` only opens the browser on an observed listener and reports
+    a died-during-startup process instead of timing out silently.
+  - **Port contract honesty.** Dropped the `BERTRAND_PORT_0..9` block — the
+    allocator only ever reserved the base port, so the block could collide
+    with neighboring sessions. One port per workspace until allocation can
+    reserve strides.
+  - **Project scoping.** Worktree endpoints resolve sessions through the same
+    `?projects=`/`?project=` helpers as the rest of the API (the archive
+    "Session not found" bug was the cautionary tale); the logs endpoint 404s
+    unknown ids instead of composing file paths from URL segments.
+  - **Loopback bind.** The dashboard API (unauthenticated, CORS `*`, now able
+    to spawn processes and read dev logs) binds `127.0.0.1` only.
+
+  Known gaps deliberately deferred to a bulletproofing follow-up: teardown
+  wiring (nothing stops servers or prunes ports on archive/worktree removal;
+  the `archive` script is never executed), stale-PID identity checks before
+  group-kill, atomic registry writes, SIGKILL escalation on stop, and log
+  rotation/tail-reads.
 - **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
   helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
   **not yet designed**. One thing worth remembering when we pick it up: a single

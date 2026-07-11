@@ -22,6 +22,19 @@ const sleeper = (run = "sleep 30"): WorkspaceRunConfig => ({
   source: "detected",
 });
 
+/**
+ * A config whose run command actually LISTENs, so observed-port detection has
+ * something to find. `portExpr` is evaluated in the child (e.g.
+ * `Number(process.env.PORT) + 7` to simulate an app ignoring its assignment).
+ */
+const listener = (portExpr = "Number(process.env.PORT)"): WorkspaceRunConfig => ({
+  scripts: {
+    run: `bun -e "Bun.serve({ port: ${portExpr}, fetch: () => new Response('ok') }); setTimeout(() => {}, 30000)"`,
+  },
+  packageManager: "bun",
+  source: "detected",
+});
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -31,10 +44,13 @@ function isAlive(pid: number): boolean {
   }
 }
 
-async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
+async function waitFor(
+  pred: () => boolean | Promise<boolean>,
+  ms = 5000,
+): Promise<void> {
   const start = Date.now();
-  while (!pred() && Date.now() - start < ms) {
-    await new Promise((r) => setTimeout(r, 25));
+  while (!(await pred()) && Date.now() - start < ms) {
+    await new Promise((r) => setTimeout(r, 50));
   }
 }
 
@@ -75,9 +91,9 @@ describe("startWorkspaceServer", () => {
     _resetPortDeps();
   });
 
-  test("spawns a live process and reports a status with port + url", () => {
+  test("spawns a live process and reports a status with port + url", async () => {
     const { worktree } = freshDirs(() => sleeper());
-    const status = startWorkspaceServer(input(worktree))!;
+    const status = (await startWorkspaceServer(input(worktree)))!;
     cleanupPids.push(status.pid!);
 
     expect(status.running).toBe(true);
@@ -85,25 +101,28 @@ describe("startWorkspaceServer", () => {
     expect(isAlive(status.pid!)).toBe(true);
     expect(status.port).toBeGreaterThanOrEqual(4700);
     expect(status.url).toBe(`http://localhost:${status.port}`);
+    // fresh spawn: nothing can be listening yet — that arrives via polling
+    expect(status.listening).toBe(false);
+    expect(status.observedPort).toBeNull();
     expect(existsSync(status.logFile)).toBe(true);
   });
 
-  test("returns null when the worktree has no previewable dev command", () => {
+  test("returns null when the worktree has no previewable dev command", async () => {
     const { worktree } = freshDirs(() => null);
-    expect(startWorkspaceServer(input(worktree))).toBeNull();
+    expect(await startWorkspaceServer(input(worktree))).toBeNull();
   });
 
-  test("is idempotent — a live server short-circuits, no second spawn", () => {
+  test("is idempotent — a live server short-circuits, no second spawn", async () => {
     const { worktree } = freshDirs(() => sleeper());
-    const first = startWorkspaceServer(input(worktree))!;
+    const first = (await startWorkspaceServer(input(worktree)))!;
     cleanupPids.push(first.pid!);
-    const second = startWorkspaceServer(input(worktree))!;
+    const second = (await startWorkspaceServer(input(worktree)))!;
     expect(second.pid).toBe(first.pid);
   });
 
   test("streams the command's output to the log file", async () => {
     const { worktree } = freshDirs(() => sleeper("echo preview-marker && sleep 30"));
-    const status = startWorkspaceServer(input(worktree))!;
+    const status = (await startWorkspaceServer(input(worktree)))!;
     cleanupPids.push(status.pid!);
     await waitFor(() => readFileSync(status.logFile, "utf-8").includes("preview-marker"));
     expect(readFileSync(status.logFile, "utf-8")).toContain("preview-marker");
@@ -118,7 +137,7 @@ describe("stopWorkspaceServer", () => {
 
   test("kills the process, clears the PID file, and releases the port", async () => {
     const { worktree } = freshDirs(() => sleeper());
-    const status = startWorkspaceServer(input(worktree))!;
+    const status = (await startWorkspaceServer(input(worktree)))!;
     const pid = status.pid!;
     cleanupPids.push(pid);
 
@@ -126,7 +145,7 @@ describe("stopWorkspaceServer", () => {
     await waitFor(() => !isAlive(pid));
     expect(isAlive(pid)).toBe(false);
     // stop releases the port, so status is fully cleared
-    const after = getWorkspaceServer("sess-1");
+    const after = await getWorkspaceServer("sess-1");
     expect(after.running).toBe(false);
     expect(after.pid).toBeNull();
     expect(after.port).toBeNull();
@@ -145,22 +164,53 @@ describe("getWorkspaceServer", () => {
     _resetPortDeps();
   });
 
-  test("reports not-running with no port before any start (no allocation on read)", () => {
+  test("reports not-running with no port before any start (no allocation on read)", async () => {
     freshDirs(() => sleeper());
-    const status = getWorkspaceServer("sess-1");
+    const status = await getWorkspaceServer("sess-1");
     expect(status.running).toBe(false);
     expect(status.pid).toBeNull();
     expect(status.port).toBeNull();
+    expect(status.listening).toBe(false);
+    expect(status.observedPort).toBeNull();
     expect(status.url).toBeNull();
   });
 
-  test("reports the running server's port + url", () => {
+  test("a running process that binds nothing is not 'listening'", async () => {
     const { worktree } = freshDirs(() => sleeper());
-    const started = startWorkspaceServer(input(worktree))!;
+    const started = (await startWorkspaceServer(input(worktree)))!;
     cleanupPids.push(started.pid!);
-    const status = getWorkspaceServer("sess-1");
+    const status = await getWorkspaceServer("sess-1");
     expect(status.running).toBe(true);
-    expect(status.port).toBe(started.port);
+    expect(status.listening).toBe(false);
+    expect(status.observedPort).toBeNull();
+    // url still reports the assigned port so callers can show "will be here"
     expect(status.url).toBe(`http://localhost:${started.port}`);
+  });
+
+  test("observes the assigned port when the app honors PORT", async () => {
+    const { worktree } = freshDirs(() => listener());
+    const started = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(started.pid!);
+
+    await waitFor(async () => (await getWorkspaceServer("sess-1")).listening);
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.listening).toBe(true);
+    expect(status.observedPort).toBe(started.port);
+    expect(status.url).toBe(`http://localhost:${started.port}`);
+  });
+
+  test("follows the real port when the app ignores PORT", async () => {
+    // Simulates Vite/pinned-port apps: binds assigned+7, not the assignment.
+    const { worktree } = freshDirs(() => listener("Number(process.env.PORT) + 7"));
+    const started = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(started.pid!);
+
+    await waitFor(async () => (await getWorkspaceServer("sess-1")).listening);
+    const status = await getWorkspaceServer("sess-1");
+    expect(status.listening).toBe(true);
+    expect(status.port).toBe(started.port); // the assignment is still reported
+    expect(status.observedPort).toBe(started.port! + 7);
+    // the URL must always be true: it follows the observed port
+    expect(status.url).toBe(`http://localhost:${started.port! + 7}`);
   });
 });
