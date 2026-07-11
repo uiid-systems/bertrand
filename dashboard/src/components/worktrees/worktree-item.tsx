@@ -22,8 +22,6 @@ import { formatRelativeTime, statusColor } from "../../lib/format";
 export type WorktreeItemProps = {
   entry: WorktreeSessionRow;
   preview?: WorkspaceServerStatus;
-  /** Show the full worktree path — useful on the page, too wide for a sidebar. */
-  showPath?: boolean;
 };
 
 const truncate = {
@@ -42,7 +40,7 @@ const truncate = {
  * hasn't bound yet — installing, compiling, or pointed at the wrong port —
  * shows as "starting" with the notes below explaining why.
  */
-export const WorktreeItem = ({ entry, preview, showPath }: WorktreeItemProps) => {
+export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   const { session, categoryPath, branch } = entry;
   const qc = useQueryClient();
   const [showLogs, setShowLogs] = useState(false);
@@ -88,7 +86,13 @@ export const WorktreeItem = ({ entry, preview, showPath }: WorktreeItemProps) =>
     >
       <Group ay="center" gap={2} fullwidth>
         <Status color={listening ? "green" : running ? "yellow" : color} />
-        <Text family="mono" weight="bold" size={0} style={truncate}>
+        <Text
+          family="mono"
+          weight="bold"
+          size={0}
+          style={truncate}
+          title={session.worktreePath ?? undefined}
+        >
           {branch ?? "(unknown branch)"}
         </Text>
         {listening ? (
@@ -179,11 +183,6 @@ export const WorktreeItem = ({ entry, preview, showPath }: WorktreeItemProps) =>
         </pre>
       )}
 
-      {showPath && session.worktreePath && (
-        <Text size={-1} shade="muted" family="mono" style={truncate}>
-          {session.worktreePath}
-        </Text>
-      )}
     </Stack>
   );
 };
