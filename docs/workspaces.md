@@ -1,8 +1,55 @@
 # Workspaces & Live Preview
 
-**Status:** Design / proposed
-**Date:** 2026-06-23
+**Status:** Phase 1 built & verified (in review, [#152](https://github.com/uiid-systems/bertrand/pull/152)); Phase 2 deferred
+**Date:** 2026-06-23 (updated 2026-07-05)
 **Owner:** Adam
+
+## Progress log
+
+- **2026-06-23** — Design written. Phase 0 (worktree visibility) shipped in
+  [#142](https://github.com/uiid-systems/bertrand/pull/142).
+- **2026-07-05** — **Phase 1 built end-to-end** in
+  [#152](https://github.com/uiid-systems/bertrand/pull/152): `src/lib/workspace/`
+  (dev-command resolution + env contract, deterministic ports, detached
+  dev-server manager), the `bertrand open <session>` command, and live preview
+  controls on the dashboard worktrees panel (URL, start/stop, tailed logs).
+  Verified against a real git worktree + a real spawned dev server: detection,
+  `PORT`/`BERTRAND_*` env injection, allocation, idempotent start, and clean
+  stop all confirmed. Two decisions settled: previews are plain
+  `http://localhost:<port>` for now, and the reverse proxy (former 1C) moved to
+  Phase 2 because loopback ports need no routing. Start is **lazy** (via
+  `bertrand open` / the dashboard) — nothing auto-starts on worktree entry.
+- **2026-07-11** — **Hardening pass** on #152 after a strategy review, built
+  around one invariant: *the preview URL must always be true.*
+  - **Observed ports.** Status no longer assumes the app honored `PORT`; the
+    server asks the OS (`lsof -g` on the process group) which port is actually
+    LISTENing. The dashboard distinguishes idle / starting / running, the URL
+    follows the *real* port (so zero-config Vite works despite ignoring
+    `PORT`), and a mismatch is surfaced with a pointer to `$BERTRAND_PORT`.
+    `bertrand open` only opens the browser on an observed listener and reports
+    a died-during-startup process instead of timing out silently.
+  - **Port contract honesty.** Dropped the `BERTRAND_PORT_0..9` block — the
+    allocator only ever reserved the base port, so the block could collide
+    with neighboring sessions. One port per workspace until allocation can
+    reserve strides.
+  - **Project scoping.** Worktree endpoints resolve sessions through the same
+    `?projects=`/`?project=` helpers as the rest of the API (the archive
+    "Session not found" bug was the cautionary tale); the logs endpoint 404s
+    unknown ids instead of composing file paths from URL segments.
+  - **Loopback bind.** The dashboard API (unauthenticated, CORS `*`, now able
+    to spawn processes and read dev logs) binds `127.0.0.1` only.
+
+  Known gaps deliberately deferred to a bulletproofing follow-up: teardown
+  wiring (nothing stops servers or prunes ports on archive/worktree removal;
+  the `archive` script is never executed), stale-PID identity checks before
+  group-kill, atomic registry writes, SIGKILL escalation on stop, and log
+  rotation/tail-reads.
+- **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
+  helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
+  **not yet designed**. One thing worth remembering when we pick it up: a single
+  public `*.local.bertrand.sh` DNS record covers hosts at any depth (RFC 4592),
+  but TLS wildcards match only one label — so nested `<slug>.<project>` hosts
+  need a per-project cert (cheap to mint locally) or a flattened single-label host.
 
 ## Goal
 
@@ -123,7 +170,10 @@ Conductor's genuinely good idea is a small, declarative lifecycle — not its GU
 We adopt the same three-verb lifecycle and inject equivalent env into both the setup and
 run commands:
 
-- `BERTRAND_PORT` (+ a small reserved block, e.g. `+0..+9`, for apps that need several)
+- `BERTRAND_PORT` (a single port per workspace — the allocator reserves exactly one
+  slot, so we deliberately do *not* export a `+0..+9` block until allocation can
+  reserve strides; a promised-but-unreserved block would collide with neighboring
+  sessions' base ports. Multi-port apps are Phase 3.)
 - `BERTRAND_WORKSPACE` (the session/worktree slug, for naming DB files, data dirs, etc.)
 - `BERTRAND_ROOT` (the main checkout path, for symlinking shared files)
 - `BERTRAND_PREVIEW_URL` (the stable URL, exported so the app/logs can print it)
@@ -248,12 +298,39 @@ We deliberately do the frontend-critical inner rings and leave the rest to conve
 
 ## Phased rollout
 
-- **Phase 0 — visibility.** Wire `lib/git.ts` + the `EnterWorktree` hook so a session
-  tracks its worktree (marker + event + DB). Show active worktrees in the dashboard
-  again. No dev servers yet.
+- **Phase 0 — visibility.** ✅ Shipped ([#142](https://github.com/uiid-systems/bertrand/pull/142)).
+  Wire `lib/git.ts` + the `EnterWorktree` hook so a session tracks its worktree (marker +
+  event + DB). Show active worktrees in the dashboard again. No dev servers yet.
 - **Phase 1 — preview, no sudo.** Per-worktree dev server (auto-detected `dev` command),
   deterministic port, HTTP reverse proxy on a high port, URL surfaced in dashboard +
   `bertrand open`. URL still has a port — acceptable interim. Proves the flow end-to-end.
+  Split into reviewable slices:
+  - **1A — dev-command resolution + env contract.** ✅ Shipped
+    ([#152](https://github.com/uiid-systems/bertrand/pull/152)). `src/lib/workspace/`:
+    lockfile→package-manager detection, repo-committed override
+    (`package.json#bertrand` / `.bertrand/config.json`), `resolveWorkspace(dir)`, and the
+    `BERTRAND_PORT`/`_WORKSPACE`/`_ROOT`/`_PREVIEW_URL` env contract. Pure logic, no spawning.
+  - **1B — port allocation + dev-server process manager.** ✅ Shipped (in
+    [#152](https://github.com/uiid-systems/bertrand/pull/152)). Deterministic per-session
+    port (`4700..4899`, collision/prune handling); spawn the resolved `setup && run` in the
+    worktree cwd with the injected env, PID file + tailable log file, group-kill on stop.
+  - **1D — surfacing.** `bertrand open <session>` (lazy-starts the server + opens the URL)
+    and the dashboard worktrees panel (URL, start/stop, tailed logs).
+
+  **URL decision (settled):** Phase 1 previews are plain `http://localhost:<port>`. The
+  branded `*.local.bertrand.sh` wildcard DNS record **is not set up yet** (confirmed via
+  `dig`; apex `bertrand.sh` → `216.198.79.1`, wildcard empty), so subdomains + TLS move
+  wholesale to Phase 2. `localhostPreviewUrl()` in `src/lib/workspace/env.ts` is the single
+  seam that changes when they land.
+
+  **1C (reverse proxy) moved to Phase 2.** With `localhost:<port>` there is nothing to
+  route — each dev server already listens on its own loopback port, so you open it
+  directly. Host-header routing only earns its keep once branded subdomains exist, so the
+  proxy ships with them in Phase 2. Phase 1 is therefore **1A + 1B + 1D**.
+
+  **Start trigger (settled): lazy on `bertrand open`,** not eager-on-entry. The 1B
+  mechanism does no auto-starting; `bertrand open` (and the dashboard's start button) are
+  the only things that spawn a server, so nothing runs for a session you never view.
 - **Phase 2 — the endgame.** Privileged helper: clean `:443` URLs, local-CA valid HTTPS,
   `/etc/hosts` management, `*.local.bertrand.sh` branding. No port, no warning, no cd.
 - **Phase 3 — breadth.** Monorepo/multi-app, archive scripts, richer isolation

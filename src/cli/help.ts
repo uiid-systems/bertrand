@@ -41,6 +41,8 @@ Inspect sessions (read-only):
 
 Manage sessions & projects:
   bertrand archive <session>   Archive or unarchive a session.
+  bertrand open <session>      Start the session worktree's dev server and open its
+                               live preview URL in the browser (lazy: starts on demand).
   bertrand project <op>        list | create | switch | current | rename | remove | import
                                (bertrand project --help)
   bertrand sync <op>           onboard | push | pull | status | invite | enable | disable

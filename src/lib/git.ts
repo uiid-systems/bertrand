@@ -57,3 +57,15 @@ export async function removeWorktree(
 export async function getRepoRoot(): Promise<string> {
   return (await $`git rev-parse --show-toplevel`.text()).trim();
 }
+
+/**
+ * The main working tree for the repo a worktree belongs to. `git worktree
+ * list` always reports the main working tree first, so we take that entry.
+ * Used to resolve `BERTRAND_ROOT` (for symlinking shared files) from a
+ * session's worktree path. Falls back to the given path if parsing fails.
+ */
+export async function getMainWorktree(cwd: string): Promise<string> {
+  const out = await $`git -C ${cwd} worktree list --porcelain`.text();
+  const first = out.split("\n").find((l) => l.startsWith("worktree "));
+  return first ? first.slice(9).trim() : cwd;
+}

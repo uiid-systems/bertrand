@@ -1,8 +1,14 @@
 import { execFile } from "child_process"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { join } from "path"
+import { getMainWorktree } from "@/lib/git"
 import {
-  getAllSessions,
+  startWorkspaceServer,
+  stopWorkspaceServer,
+  getWorkspaceServer,
+  type WorkspaceServerStatus,
+} from "@/lib/workspace"
+import {
   getAllSessionsForProject,
   getSession,
   countLiveSessions,
@@ -160,17 +166,65 @@ const getActiveProjectMeta = (): unknown => {
 
 // Sessions currently working in a worktree. Derived from the worktree_path
 // column the EnterWorktree hook maintains — no git shell-out, so this stays a
-// synchronous handler like the rest. Phase 1 can enrich each row with live git
-// state (liveness, diff stats) once dev-server management lands.
-const listWorktreeSessions = (): SessionWithCategory[] =>
-  getAllSessions({ excludeArchived: true }).filter(
-    ({ session }) => session.worktreePath != null,
+// synchronous handler like the rest. Scoped like /api/sessions: `?projects=`
+// merges the named projects, omitting it covers the active project alone.
+const listWorktreeSessions = (
+  _params: object,
+  url: URL,
+): SessionWithCategory[] =>
+  resolveProjectScope(url)
+    .flatMap((project) =>
+      getAllSessionsForProject(project, { excludeArchived: true }),
+    )
+    .filter(({ session }) => session.worktreePath != null)
+
+// Dev-server status per worktree-bearing session, keyed by session id. A
+// read with no allocation side effects (getWorkspaceServer never reserves a
+// port), so polling this from the dashboard doesn't spin up anything — start
+// is an explicit action. Statuses resolve in parallel: the observed-port
+// check shells out to lsof, but only for sessions with a live process.
+const listWorktreeStatus = async (
+  _params: object,
+  url: URL,
+): Promise<Record<string, WorkspaceServerStatus>> => {
+  const out: Record<string, WorkspaceServerStatus> = {}
+  await Promise.all(
+    listWorktreeSessions({}, url).map(async ({ session }) => {
+      out[session.id] = await getWorkspaceServer(session.id)
+    }),
   )
+  return out
+}
+
+// Tail of a workspace's dev-server log. `?lines=N` bounds it (default 200,
+// NaN falls back). 404s unknown sessions — the id both scopes the request
+// (via `?project=`, like the other per-session endpoints) and names a file
+// on disk, so it must resolve to a real session before we touch the fs.
+const getWorktreeLogs = async (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): Promise<Response | { logs: string }> => {
+  const session = getSession(sessionId!, resolveDb(url))
+  if (!session) {
+    return Response.json({ error: "Session not found" }, { status: 404 })
+  }
+  const { logFile } = await getWorkspaceServer(session.id)
+  const requested = Number(url.searchParams.get("lines") ?? 200)
+  const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
+  try {
+    const lines = readFileSync(logFile, "utf-8").split("\n")
+    return { logs: lines.slice(-n).join("\n") }
+  } catch {
+    return { logs: "" }
+  }
+}
 
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
   [/^\/api\/worktrees$/, listWorktreeSessions],
+  [/^\/api\/worktrees\/status$/, listWorktreeStatus],
+  [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
@@ -253,12 +307,46 @@ async function handleOpen(req: Request): Promise<Response> {
   })
 }
 
-function match(pathname: string, url: URL): Response {
+// Start a session's workspace dev server (dashboard "start" button — the same
+// lazy trigger as `bertrand open`). Resolves the session against `?project=`
+// like every other per-session endpoint (the archive endpoints' "Session not
+// found" bug is the cautionary tale), resolves the main checkout for
+// BERTRAND_ROOT, then hands off to the 1B manager. Idempotent: a live server
+// returns its existing status.
+async function handleWorktreeStart(sessionId: string, url: URL): Promise<Response> {
+  const session = getSession(sessionId, resolveDb(url))
+  if (!session) return Response.json({ error: "Session not found" }, { status: 404 })
+  if (!session.worktreePath) {
+    return Response.json({ error: "Session has no worktree" }, { status: 409 })
+  }
+  if (!existsSync(session.worktreePath)) {
+    return Response.json({ error: "Worktree path no longer exists" }, { status: 409 })
+  }
+  const root = await getMainWorktree(session.worktreePath)
+  const status = await startWorkspaceServer({
+    sessionId: session.id,
+    worktreePath: session.worktreePath,
+    root,
+    slug: session.slug,
+  })
+  if (!status) {
+    return Response.json(
+      { error: "No dev command found in worktree" },
+      { status: 422 },
+    )
+  }
+  return Response.json(status)
+}
+
+async function match(pathname: string, url: URL): Promise<Response> {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
     if (!m) continue
     try {
-      const result = handler(m.groups ?? {}, url)
+      const result = await handler(m.groups ?? {}, url)
+      // Handlers that need a status code return a Response directly;
+      // everything else returns data for the JSON-200 default.
+      if (result instanceof Response) return result
       return Response.json(result ?? null)
     } catch (err) {
       console.error(`[server] ${pathname} failed:`, err)
@@ -301,6 +389,10 @@ async function serveDashboard(pathname: string): Promise<Response | null> {
 export function startServer(port = PORT) {
   const server = Bun.serve({
     port,
+    // Loopback only. The API has no auth, answers with CORS *, and now
+    // includes state-changing endpoints that spawn processes and expose dev
+    // logs — none of which should be reachable from the LAN.
+    hostname: "127.0.0.1",
     async fetch(req) {
       const url = new URL(req.url)
 
@@ -331,6 +423,29 @@ export function startServer(port = PORT) {
       }
 
       if (req.method === "POST") {
+        const startMatch = /^\/api\/worktrees\/([^/]+)\/start$/.exec(url.pathname)
+        if (startMatch) {
+          const r = await handleWorktreeStart(startMatch[1]!, url)
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
+        const stopMatch = /^\/api\/worktrees\/([^/]+)\/stop$/.exec(url.pathname)
+        if (stopMatch) {
+          // Validate the id resolves to a real session (scoped via ?project=
+          // like start) before acting on files/processes keyed by it. Stop
+          // itself stays best-effort — a session whose worktree is already
+          // gone must still be stoppable for cleanup.
+          const session = getSession(stopMatch[1]!, resolveDb(url))
+          if (!session) {
+            const r = Response.json({ error: "Session not found" }, { status: 404 })
+            r.headers.set("Access-Control-Allow-Origin", "*")
+            return r
+          }
+          stopWorkspaceServer(session.id)
+          const r = Response.json({ ok: true })
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
           const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))
@@ -346,7 +461,7 @@ export function startServer(port = PORT) {
       }
 
       if (url.pathname.startsWith("/api/")) {
-        const response = match(url.pathname, url)
+        const response = await match(url.pathname, url)
         response.headers.set("Access-Control-Allow-Origin", "*")
         return response
       }
@@ -354,7 +469,7 @@ export function startServer(port = PORT) {
       const dashboardResponse = await serveDashboard(url.pathname)
       if (dashboardResponse) return dashboardResponse
 
-      const response = match(url.pathname, url)
+      const response = await match(url.pathname, url)
       response.headers.set("Access-Control-Allow-Origin", "*")
       return response
     },
