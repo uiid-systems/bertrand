@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
-import { Accordion, Group, List, Text } from "@uiid/design-system";
+import { Collapsible, Group, List, Stack, Text } from "@uiid/design-system";
+import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { SessionGroup } from "../sidebar.types";
 import { useCollapsedProjects } from "../use-collapsed-projects";
@@ -11,75 +12,76 @@ type ProjectAccordionProps = {
 };
 
 /**
- * Zone B — the stable navigation area. One collapsible section per project
- * (ghost variant, so no card chrome). Sections default to expanded; the user's
- * collapses persist across reloads via `useCollapsedProjects`.
+ * Zone B — the stable navigation area. One custom collapsible section per
+ * project: a full-width trigger bar we style ourselves, content carrying its
+ * own padding. Sections default to expanded; the user's collapses persist
+ * across reloads via `useCollapsedProjects`.
  */
 export const ProjectAccordion = ({ projects }: ProjectAccordionProps) => {
   const { collapsed, setCollapsed } = useCollapsedProjects();
 
-  const allKeys = useMemo(() => projects.map((g) => g.key), [projects]);
-  const openValue = useMemo(
-    () => allKeys.filter((k) => !collapsed.includes(k)),
-    [allKeys, collapsed],
-  );
-
-  const handleChange = useCallback(
-    (value: unknown[]) => {
-      const open = value.filter((v): v is string => typeof v === "string");
-      // Keep collapsed state for projects not currently on screen (filtered out
-      // by search or the project selector) so it survives their return.
-      const offscreen = collapsed.filter((k) => !allKeys.includes(k));
-      const nowCollapsed = allKeys.filter((k) => !open.includes(k));
-      setCollapsed([...offscreen, ...nowCollapsed]);
+  const setOpen = useCallback(
+    (key: string, open: boolean) => {
+      // Everything already in `collapsed` (including offscreen projects filtered
+      // out by search or the selector) is preserved; we only flip this key.
+      const rest = collapsed.filter((k) => k !== key);
+      setCollapsed(open ? rest : [...rest, key]);
     },
-    [allKeys, collapsed, setCollapsed],
-  );
-
-  const items = useMemo(
-    () =>
-      projects.map((group) => ({
-        value: group.key,
-        trigger: (
-          <Group ay="center" gap={2} fullwidth>
-            <Text weight="bold" size={0}>
-              {group.category}
-            </Text>
-            <Text size={-1} shade="muted">
-              {group.sessions.length}
-            </Text>
-          </Group>
-        ),
-        content: (
-          <List
-            data-slot="sidebar-list"
-            marker="none"
-            ax="stretch"
-            gap={1}
-            fullwidth
-          >
-            {group.sessions.map((s) => (
-              <SessionListItem key={s.session.id} session={s} />
-            ))}
-          </List>
-        ),
-      })),
-    [projects],
+    [collapsed, setCollapsed],
   );
 
   return (
-    <Accordion
-      data-slot="sidebar-projects"
-      ghost
-      multiple
-      size="small"
-      fullwidth
-      value={openValue}
-      onValueChange={handleChange}
-      items={items}
-      ContentProps={{ p: 0, fullwidth: true }}
-      PanelProps={{ style: { overflow: "visible", transition: "none" } }}
-    />
+    <Stack data-slot="sidebar-projects" ax="stretch" gap={1} fullwidth>
+      {projects.map((group) => {
+        const open = !collapsed.includes(group.key);
+        return (
+          <Collapsible
+            key={group.key}
+            instant
+            RootProps={{
+              open,
+              onOpenChange: (next) => setOpen(group.key, next),
+            }}
+            PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
+            trigger={
+              <Group
+                ay="center"
+                gap={2}
+                fullwidth
+                px={4}
+                py={2}
+                style={{ cursor: "pointer" }}
+              >
+                {open ? (
+                  <ChevronDownIcon size={14} />
+                ) : (
+                  <ChevronRightIcon size={14} />
+                )}
+                <Text weight="bold" size={0}>
+                  {group.category}
+                </Text>
+                <Text size={-1} shade="muted">
+                  {group.sessions.length}
+                </Text>
+              </Group>
+            }
+          >
+            <List
+              data-slot="sidebar-list"
+              marker="none"
+              ax="stretch"
+              gap={1}
+              fullwidth
+              px={4}
+            >
+              {group.sessions.map((s) => (
+                <SessionListItem key={s.session.id} session={s} />
+              ))}
+            </List>
+          </Collapsible>
+        );
+      })}
+    </Stack>
   );
 };
 ProjectAccordion.displayName = "ProjectAccordion";
