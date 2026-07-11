@@ -4,7 +4,6 @@ import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { EventRow } from "../../api/types";
 import { DiffBlock } from "../diff/diff-block";
-import { EventCard } from "./event_card";
 
 type EditEntry = { oldStr: string; newStr: string };
 
@@ -76,25 +75,12 @@ export function WorkContent({ event }: WorkContentProps) {
 
     // Diff entries: CodeBlock's filename header already shows the file
     // path, so a separate label row above it would just repeat it.
-    if (hasDiff(p))
-      return (
-        <EventCard>
-          <DiffContent permission={p} />
-        </EventCard>
-      );
+    if (hasDiff(p)) return <DiffContent permission={p} />;
 
-    return (
-      <EventCard>
-        <PermissionLabel permission={p} />
-      </EventCard>
-    );
+    return <PermissionLabel permission={p} />;
   }
 
-  return (
-    <EventCard>
-      <MultiPermissionContent permissions={permissions} />
-    </EventCard>
-  );
+  return <MultiPermissionContent permissions={permissions} />;
 }
 
 function MultiPermissionContent({

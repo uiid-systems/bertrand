@@ -1,7 +1,6 @@
 import { Badge, Group } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
-import { EventCard } from "./event_card";
 
 type LifecycleContentProps = Readonly<{
   event: EventRow;
@@ -29,20 +28,18 @@ export function LifecycleContent({ event }: LifecycleContentProps) {
   if (!id && !showExit) return null;
 
   return (
-    <EventCard>
-      <Group gap={2} ay="center">
-        {id && (
-          <Badge color="neutral" size="small">
-            {id}
-          </Badge>
-        )}
-        {showExit && (
-          <Badge color="red" size="small">
-            {`exit ${exitCode}`}
-          </Badge>
-        )}
-      </Group>
-    </EventCard>
+    <Group data-slot="lifecycle-content" gap={2} ay="center">
+      {id && (
+        <Badge color="neutral" size="small">
+          {id}
+        </Badge>
+      )}
+      {showExit && (
+        <Badge color="red" size="small">
+          {`exit ${exitCode}`}
+        </Badge>
+      )}
+    </Group>
   );
 }
 LifecycleContent.displayName = "LifecycleContent";

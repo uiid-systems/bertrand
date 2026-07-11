@@ -7,6 +7,9 @@ import {
   Breadcrumbs,
   Button,
   Group,
+  Resizable,
+  ResizableHandle,
+  ResizablePanel,
   Stack,
   Status,
   type StatusProps,
@@ -27,12 +30,14 @@ import {
   isLiveStatus,
   statusColor,
 } from "../lib/format";
+import { categoryOf } from "../lib/timeline/categories";
 import {
   segmentConversations,
   type ConversationSegment,
 } from "../lib/timeline/segments";
 import { useMatchedSession } from "../lib/use-matched-session";
 import { EventContent } from "../components/timeline";
+import { SecondarySidebar } from "../components/secondary-sidebar";
 import { ConversationNav } from "../components/conversation-nav";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
@@ -163,7 +168,10 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   );
 
   return (
-    <Stack ax="stretch" fullwidth style={{ overflow: "hidden" }}>
+    <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>
+      {/* Breadcrumb bar spans above both the timeline and the secondary
+          sidebar; the horizontal split lives beneath it so the crumbs get the
+          full width to breathe. */}
       <Group
         ay="center"
         ax="space-between"
@@ -186,14 +194,35 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <ArchiveToggle session={match.session} project={projectSlug} />
         </Group>
       </Group>
-      <Stack p={8} gap={8} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
-        {segments.map((segment) => (
-          <ConversationSegmentView
-            key={segment.conversationId}
-            segment={segment}
-            showHeader={segments.length > 1}
-          />
-        ))}
+      <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
+        <Resizable direction="horizontal">
+          <ResizablePanel>
+            <Stack
+              p={8}
+              gap={8}
+              ax="stretch"
+              fullwidth
+              fullheight
+              style={{ overflowY: "auto" }}
+            >
+              {segments.map((segment) => (
+                <ConversationSegmentView
+                  key={segment.conversationId}
+                  segment={segment}
+                  showHeader={segments.length > 1}
+                />
+              ))}
+            </Stack>
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize={420} minSize={360} maxSize={640}>
+            <SecondarySidebar
+              sessionId={sessionId}
+              isLive={isLive}
+              projectSlug={projectSlug}
+            />
+          </ResizablePanel>
+        </Resizable>
       </Stack>
     </Stack>
   );
@@ -234,20 +263,13 @@ function ConversationSegmentView({
       {segment.events.length > 0 && (
         <Timeline
           activeIndex={segment.events.length}
+          ContentProps={{ maxw: 960, pt: 0, pb: 6 }}
           items={segment.events.map((e) => ({
             color: eventColor(e.event),
-            media: <EventMedia event={e} />,
+            marker: <EventMarker event={e} />,
             content: <EventContent event={e} />,
-            title: (
-              <Text
-                render={<p />}
-                weight="bold"
-                color={eventColor(e.event)}
-                balance
-              >
-                {eventTitle(e)}
-              </Text>
-            ),
+            title: eventTitle(e),
+            TitleProps: { color: eventColor(e.event) },
             time: (
               <Badge color={eventColor(e.event)} size="small">
                 <span style={{ whiteSpace: "nowrap" }}>
@@ -255,10 +277,12 @@ function ConversationSegmentView({
                 </span>
               </Badge>
             ),
+            // Lifecycle rows are just an id/exit badge — no card surface.
+            CardProps:
+              categoryOf(e.event) === "lifecycle"
+                ? { variant: "ghost" as const }
+                : undefined,
           }))}
-          ItemProps={{
-            ContentProps: { maxw: 680, pb: 6 },
-          }}
         />
       )}
     </Stack>
@@ -266,16 +290,12 @@ function ConversationSegmentView({
 }
 ConversationSegmentView.displayName = "ConversationSegmentView";
 
-/** Per-event icon for the timeline's media column, tinted to the rail color. */
-function EventMedia({ event }: { readonly event: EventRow }) {
+/** Per-event icon rendered inside the timeline marker on the rail. */
+function EventMarker({ event }: { readonly event: EventRow }) {
   const Icon = eventIcon(event.event);
-  return (
-    <Text color={eventColor(event.event)} render={<span />}>
-      <Icon size={16} />
-    </Text>
-  );
+  return <Icon size={12} />;
 }
-EventMedia.displayName = "EventMedia";
+EventMarker.displayName = "EventMarker";
 
 function ArchiveToggle({
   session,

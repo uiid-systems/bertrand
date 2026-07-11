@@ -2,7 +2,6 @@ import { List, Stack, Tabs, Text, type TabProps } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
 import { Markdown } from "../markdown";
-import { EventCard } from "./event_card";
 
 type QuestionOption = {
   label: string;
@@ -139,7 +138,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
 
     if (entries.length === 1) {
       const [question, answer] = entries[0];
-      return <EventCard>{renderQuestionBody(question, answer)}</EventCard>;
+      return renderQuestionBody(question, answer);
     }
 
     const tabs: TabProps[] = entries.map(([question, answer], i) => {
@@ -152,14 +151,12 @@ export function InteractionContent({ event }: InteractionContentProps) {
     });
 
     return (
-      <EventCard>
-        <Tabs
-          items={tabs}
-          size="sm"
-          ContainerProps={{ mt: 6 }}
-          ListProps={{ style: { backgroundColor: "var(--shade-background)" } }}
-        />
-      </EventCard>
+      <Tabs
+        items={tabs}
+        size="sm"
+        ContainerProps={{ mt: 6 }}
+        ListProps={{ style: { backgroundColor: "var(--shade-background)" } }}
+      />
     );
   }
 
@@ -167,11 +164,7 @@ export function InteractionContent({ event }: InteractionContentProps) {
     const prompt = meta?.prompt as string | undefined;
     if (!prompt) return null;
 
-    return (
-      <EventCard>
-        <Markdown>{prompt}</Markdown>
-      </EventCard>
-    );
+    return <Markdown>{prompt}</Markdown>;
   }
 
   return null;
