@@ -48,8 +48,8 @@ export const SecondarySidebar = ({
 
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
-      {stats && <SessionStats stats={stats} engagement={engagement} />}
       <WorktreeZone />
+      {stats && <SessionStats stats={stats} engagement={engagement} />}
     </SidebarWrapper>
   );
 };
