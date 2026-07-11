@@ -27,10 +27,12 @@ export class ArchiveError extends Error {
 async function postSessionAction(
   id: string,
   action: "archive" | "unarchive",
+  project?: string,
 ): Promise<SessionRow> {
-  const res = await fetch(apiUrl(`/api/sessions/${id}/${action}`), {
-    method: "POST",
-  })
+  const res = await fetch(
+    apiUrl(`/api/sessions/${id}/${action}${projectParam(project)}`),
+    { method: "POST" },
+  )
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as {
       error?: string
@@ -41,8 +43,10 @@ async function postSessionAction(
   return res.json()
 }
 
-export const archiveSession = (id: string) => postSessionAction(id, "archive")
-export const unarchiveSession = (id: string) => postSessionAction(id, "unarchive")
+export const archiveSession = (id: string, project?: string) =>
+  postSessionAction(id, "archive", project)
+export const unarchiveSession = (id: string, project?: string) =>
+  postSessionAction(id, "unarchive", project)
 
 /**
  * Serialize a projects filter into a query string. `undefined` omits the param

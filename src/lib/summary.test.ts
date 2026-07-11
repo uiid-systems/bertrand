@@ -121,6 +121,54 @@ describe("deriveSessionSummary", () => {
     insertEvent({ sessionId: s.id, event: "claude.started", meta: { cwd: "/x" } });
     expect(deriveSessionSummary(s.id)).toBeNull();
   });
+
+  test("trailing thinking-only flush event does not blank the outcome", () => {
+    const s = makeSession("thinking-only");
+    insertEvent({ sessionId: s.id, event: "user.prompt", meta: { prompt: "subject" } });
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: { text: "shipped the fix" },
+      createdAt: "2026-07-10 10:00:00",
+    });
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      summary: "thinking only",
+      meta: { text: "", thinkingBlocks: 2 },
+      createdAt: "2026-07-10 10:05:00",
+    });
+    expect(deriveSessionSummary(s.id)).toBe("subject → shipped the fix");
+  });
+
+  test("same-second messages resolve to the last inserted", () => {
+    const s = makeSession("tie-break");
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: { text: "intermediate narration" },
+      createdAt: "2026-07-10 10:00:00",
+    });
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: { text: "final recap" },
+      createdAt: "2026-07-10 10:00:00",
+    });
+    expect(deriveSessionSummary(s.id)).toBe("final recap");
+  });
+
+  test("globs and paired asterisks survive condensing", () => {
+    const s = makeSession("globs");
+    insertEvent({
+      sessionId: s.id,
+      event: "assistant.message",
+      meta: { text: "Cleaned up `rm *.tmp` and renamed *.test.ts files" },
+    });
+    expect(deriveSessionSummary(s.id)).toBe(
+      "Cleaned up rm *.tmp and renamed *.test.ts files",
+    );
+  });
 });
 
 describe("storeSessionSummary", () => {

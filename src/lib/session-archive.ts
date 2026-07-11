@@ -3,6 +3,7 @@ import {
   getAllSessions,
   updateSessionStatus,
 } from "@/db/queries/sessions";
+import type { Db } from "@/db/client";
 import type {
   SessionRow,
   ArchiveReason,
@@ -21,8 +22,8 @@ export type UnarchiveResult =
 
 const ACTIVE_STATUSES = ["active", "waiting", "blocked"] as const;
 
-export function archiveSession(id: string): ArchiveResult {
-  const session = getSession(id);
+export function archiveSession(id: string, db?: Db): ArchiveResult {
+  const session = getSession(id, db);
   if (!session) return { ok: false, reason: "not-found" };
 
   if ((ACTIVE_STATUSES as readonly string[]).includes(session.status)) {
@@ -32,18 +33,18 @@ export function archiveSession(id: string): ArchiveResult {
     return { ok: false, reason: "already-archived" };
   }
 
-  const updated = updateSessionStatus(id, "archived");
+  const updated = updateSessionStatus(id, "archived", db);
   return { ok: true, session: updated };
 }
 
-export function unarchiveSession(id: string): UnarchiveResult {
-  const session = getSession(id);
+export function unarchiveSession(id: string, db?: Db): UnarchiveResult {
+  const session = getSession(id, db);
   if (!session) return { ok: false, reason: "not-found" };
   if (session.status !== "archived") {
     return { ok: false, reason: "not-archived" };
   }
 
-  const updated = updateSessionStatus(id, "paused");
+  const updated = updateSessionStatus(id, "paused", db);
   return { ok: true, session: updated };
 }
 

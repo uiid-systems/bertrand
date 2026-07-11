@@ -31,10 +31,16 @@ export function buildSiblingContext(currentSessionId: string): string {
     const ago = s.updatedAt ? formatAgo(s.updatedAt) : "unknown";
     // Lazy backfill: sessions paused before the pause-time derivation existed
     // have a NULL summary — heal them the first time they render as siblings.
+    // Guarded: this runs on the session-launch path, and a SQLITE_BUSY from a
+    // neighbor's metadata upkeep must never prevent this session's start.
     let summaryText = s.summary;
     if (!summaryText) {
-      summaryText = deriveSessionSummary(s.id);
-      if (summaryText) setSessionSummary(s.id, summaryText);
+      try {
+        summaryText = deriveSessionSummary(s.id);
+        if (summaryText) setSessionSummary(s.id, summaryText);
+      } catch {
+        summaryText = null;
+      }
     }
     const summary = summaryText ? ` — "${summaryText}"` : "";
     const worktree = s.worktreeBranch ? ` [worktree: ${s.worktreeBranch}]` : "";

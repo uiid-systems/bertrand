@@ -59,7 +59,29 @@ describe("segmentByConversation", () => {
     ];
     const segments = segmentByConversation(events);
     expect(segments.length).toBe(2);
-    expect(segments[0]!.conversationId).toBe("unknown");
+    expect(segments[0]!.conversationId).toBe("unknown-1");
+  });
+
+  test("legacy sessions split into segments at null-conversation claude.started boundaries", () => {
+    // Pre-conversation-tracking sessions have all-null conversationIds but
+    // one claude.started per conversation — those must not collapse into one.
+    const events = [
+      ev("claude.started", { conversationId: null }),
+      ev("user.prompt", { conversationId: null }),
+      ev("session.waiting", { conversationId: null, meta: { question: "Q1?" } }),
+      ev("claude.started", { conversationId: null }),
+      ev("user.prompt", { conversationId: null }),
+      ev("session.answered", { conversationId: null, meta: { answers: { q: "A2" } } }),
+    ];
+    const segments = segmentByConversation(events);
+    expect(segments.length).toBe(2);
+    expect(segments[0]!.conversationId).toBe("unknown-1");
+    expect(segments[1]!.conversationId).toBe("unknown-2");
+    // Q&A must not pair across the boundary: segment 2's answer has no
+    // question, segment 1's question stays open.
+    const digests = segments.map(digestConversation);
+    expect(digests[0]!.decisions).toEqual([{ q: "Q1?", a: null, at: "2026-07-10 12:00:00" }]);
+    expect(digests[1]!.decisions).toEqual([{ q: "", a: "A2", at: "2026-07-10 12:00:00" }]);
   });
 
   test("empty input produces no segments", () => {
@@ -125,6 +147,40 @@ describe("digestConversation", () => {
     expect(digest.decisions).toEqual([
       { q: "Ship it?", a: null, at: "2026-07-10 12:00:00" },
     ]);
+  });
+
+  test("a question dismissed by a follow-up question is kept, not overwritten", () => {
+    const events = [
+      ev("session.waiting", {
+        conversationId: cid,
+        createdAt: "2026-07-10 10:00:00",
+        meta: { question: "Q1 dismissed?" },
+      }),
+      ev("session.waiting", {
+        conversationId: cid,
+        createdAt: "2026-07-10 10:05:00",
+        meta: { question: "Q2 answered?" },
+      }),
+      ev("session.answered", { conversationId: cid, meta: { answers: { q: "yes" } } }),
+    ];
+    const digest = digestConversation({ conversationId: cid, ordinal: 1, events });
+    expect(digest.decisions).toEqual([
+      { q: "Q1 dismissed?", a: null, at: "2026-07-10 10:00:00" },
+      { q: "Q2 answered?", a: "yes", at: "2026-07-10 12:00:00" },
+    ]);
+  });
+
+  test("thinking-only flush events cannot overwrite the outcome", () => {
+    const events = [
+      ev("assistant.message", { conversationId: cid, meta: { text: "the real outcome" } }),
+      ev("assistant.message", {
+        conversationId: cid,
+        summary: "thinking only",
+        meta: { text: "", thinkingBlocks: 1 },
+      }),
+    ];
+    const digest = digestConversation({ conversationId: cid, ordinal: 1, events });
+    expect(digest.outcome).toBe("the real outcome");
   });
 
   test("truncates long fields", () => {

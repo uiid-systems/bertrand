@@ -6,8 +6,8 @@ import { getConversationsBySession } from "@/db/queries/conversations";
 import type { EventRow, SessionRow } from "@/types";
 import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
-import { computeTimingsLive } from "@/lib/timing";
-import { truncate } from "@/lib/format";
+import { computeSessionStats } from "@/lib/timing";
+import { parseDbTime, truncate } from "@/lib/format";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 import {
@@ -25,7 +25,9 @@ import {
  *   log <session> --full     complete record — dashboard parity, ~100KB+
  *
  * Output is always JSON: the CLI's consumer is an agent; humans have the TUI
- * and the dashboard. `--json` is accepted as a no-op for older callers.
+ * and the dashboard. Bare `--json` returns the full record — contracts
+ * injected before the digest rework promised exactly that — but it defers to
+ * `--events`, whose callers postdate the rework and want the filtered view.
  */
 
 const EVENT_SUMMARY_MAX = 500;
@@ -57,6 +59,7 @@ const TYPE_GROUPS: Record<string, string[]> = {
 type LogFlags = {
   events: boolean;
   full: boolean;
+  json: boolean;
   type?: string;
   conversation?: string;
   since?: string;
@@ -70,7 +73,7 @@ function fail(message: string): never {
 }
 
 function parseFlags(args: string[]): LogFlags {
-  const flags: LogFlags = { events: false, full: false };
+  const flags: LogFlags = { events: false, full: false, json: false };
   const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -82,7 +85,10 @@ function parseFlags(args: string[]): LogFlags {
       case "--full":
         flags.full = true;
         break;
-      case "--json": // legacy no-op — output is always JSON
+      case "--json":
+        // Recorded separately, resolved at dispatch: bare --json means the
+        // old full record; --events --json keeps the filtered timeline.
+        flags.json = true;
         break;
       case "--type":
       case "--conversation":
@@ -109,15 +115,32 @@ function parseFlags(args: string[]): LogFlags {
   return flags;
 }
 
-/** Expand --type tokens: groups from TYPE_GROUPS, raw event names verbatim. */
+/** Every event name that can appear post-compaction. */
+const KNOWN_EVENT_NAMES = new Set(Object.values(TYPE_GROUPS).flat());
+
+/** Expand --type tokens: groups from TYPE_GROUPS, or catalog event names. */
 function expandTypes(csv: string): Set<string> {
   const types = new Set<string>();
   for (const token of csv.split(",").map((t) => t.trim()).filter(Boolean)) {
     const group = TYPE_GROUPS[token];
-    if (group) group.forEach((t) => types.add(t));
-    else if (token.includes(".")) types.add(token);
-    else fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or a raw event name like user.prompt)`);
+    if (group) {
+      group.forEach((t) => types.add(t));
+    } else if (token.includes(".")) {
+      // Dotted names outside the catalog still pass — real databases carry
+      // event types from older binaries (permission.request, session.resumed,
+      // …) that --events prints and must stay filterable. The stderr warning
+      // is the loud signal for typos, without breaking legacy names.
+      if (!KNOWN_EVENT_NAMES.has(token)) {
+        console.error(`warning: --type ${token} is not a known event type — results may be empty`);
+      }
+      types.add(token);
+    } else {
+      fail(`Unknown --type: ${token} (groups: ${Object.keys(TYPE_GROUPS).join(", ")}, or an event name like user.prompt)`);
+    }
   }
+  // Compaction rolls runs of tool.used into synthetic tool.work rows before
+  // filtering, so a bare tool.used filter would never match anything.
+  if (types.has("tool.used")) types.add("tool.work");
   return types;
 }
 
@@ -135,22 +158,21 @@ function parseSince(value: string): number {
 
 // --- Digest (default) ---
 
-function statsBlock(sessionId: string, eventCount: number, conversationCount: number) {
-  const stats = getSessionStats(sessionId);
+const LIVE_STATUSES = new Set(["active", "waiting", "blocked"]);
+
+function statsBlock(session: SessionRow) {
+  // The stored stats row is only recomputed at finalize, so for a live
+  // session (including a finalized-then-resumed one) it's stale — compute
+  // from events instead. Stored rows serve paused/archived sessions.
+  const stats = LIVE_STATUSES.has(session.status) ? null : getSessionStats(session.id);
   if (stats) {
     const { sessionId: _sid, updatedAt: _at, ...rest } = stats;
     return rest;
   }
-  // Live fallback for sessions that haven't been finalized yet.
-  const timing = computeTimingsLive(sessionId);
-  return {
-    eventCount,
-    conversationCount,
-    durationS: timing.durationS,
-    claudeWorkS: Math.round(timing.totalClaudeWorkMs / 1000),
-    userWaitS: Math.round(timing.totalUserWaitMs / 1000),
-    activePct: timing.activePct,
-  };
+  // computeSessionStats is the same full-shape computation finalize persists
+  // and the dashboard's liveStats endpoint serves — using it keeps the live
+  // and stored paths shape-identical (incl. linesAdded/linesRemoved/filesTouched).
+  return computeSessionStats(session.id);
 }
 
 function showDigest(session: SessionRow, sessionName: string) {
@@ -171,7 +193,7 @@ function showDigest(session: SessionRow, sessionName: string) {
           startedAt: session.startedAt,
           updatedAt: session.updatedAt,
         },
-        stats: statsBlock(session.id, rawEvents.length, conversations.length),
+        stats: statsBlock(session),
         conversations,
         hint: HINT,
       },
@@ -219,9 +241,24 @@ function trimEvent(ev: EnrichedEvent, ordinal: number): TrimmedEvent {
 }
 
 function matchConversation(segments: ConversationEvents[], selector: string): ConversationEvents[] {
-  const matched = /^\d+$/.test(selector)
-    ? segments.filter((s) => s.ordinal === Number(selector))
-    : segments.filter((s) => s.conversationId.startsWith(selector));
+  // Exact id match first: unknown-N ids would otherwise prefix-collide
+  // ("unknown-1" must not also select unknown-10…).
+  let matched = segments.filter((s) => s.conversationId === selector);
+
+  // An all-digit selector is normally an ordinal. ~2% of 8-char UUID
+  // prefixes — which the digest publishes as `id` — are all digits too, so
+  // fall through to a prefix match, but only at the published prefix length:
+  // a short out-of-range ordinal (a typo, a stale digest) must fail loudly,
+  // not silently select whichever UUID happens to start with that digit.
+  if (matched.length === 0 && /^\d+$/.test(selector)) {
+    matched = segments.filter((s) => s.ordinal === Number(selector));
+    if (matched.length === 0 && selector.length >= 8) {
+      matched = segments.filter((s) => s.conversationId.startsWith(selector));
+    }
+  } else if (matched.length === 0) {
+    matched = segments.filter((s) => s.conversationId.startsWith(selector));
+  }
+
   if (matched.length === 0) {
     fail(`No conversation matching "${selector}" — session has ${segments.length} conversation(s), ordinals 1–${segments.length}.`);
   }
@@ -254,7 +291,7 @@ function showEvents(session: SessionRow, flags: LogFlags) {
     const compacted = compact(enrichAll(segment.events));
     for (const ev of compacted) {
       if (types && !types.has(ev.event)) continue;
-      if (sinceMs !== null && new Date(ev.createdAt).getTime() < sinceMs) continue;
+      if (sinceMs !== null && parseDbTime(ev.createdAt) < sinceMs) continue;
       out.push(trimEvent(ev, segment.ordinal));
     }
   }
@@ -315,7 +352,9 @@ register("log", async (args) => {
 
   const sessionName = `${resolved.categoryPath}/${resolved.slug}`;
 
-  if (flags.full) showFull(resolved.session, sessionName);
+  // Bare --json means the pre-rework full record; alongside --events it's a
+  // no-op so filter flags are never silently discarded.
+  if (flags.full || (flags.json && !flags.events)) showFull(resolved.session, sessionName);
   else if (flags.events) showEvents(resolved.session, flags);
   else showDigest(resolved.session, sessionName);
 });

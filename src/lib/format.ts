@@ -30,6 +30,20 @@ export function formatAgo(isoOrDate: string | Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/**
+ * Epoch ms for a stored timestamp. SQLite's datetime('now') strings
+ * ("YYYY-MM-DD HH:MM:SS") are UTC but carry no zone marker, so new Date()
+ * would read them as LOCAL time and skew comparisons by the machine's UTC
+ * offset. ISO strings (transcript ingestion's backdated createdAt) parse
+ * as-is.
+ */
+export function parseDbTime(timestamp: string): number {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(timestamp)) {
+    return Date.parse(timestamp.replace(" ", "T") + "Z");
+  }
+  return Date.parse(timestamp);
+}
+
 /** Truncate text to maxLen, adding ellipsis if needed */
 export function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;

@@ -61,7 +61,9 @@ export function getEventsByType(
     .select()
     .from(events)
     .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
-    .orderBy(events.createdAt)
+    // id tiebreak: createdAt has one-second resolution, so same-second rows
+    // must fall back to insertion order to stay deterministic.
+    .orderBy(events.createdAt, events.id)
     .all() as EventRow[];
 }
 
