@@ -366,6 +366,10 @@ async function serveDashboard(pathname: string): Promise<Response | null> {
 export function startServer(port = PORT) {
   const server = Bun.serve({
     port,
+    // Loopback only. The API has no auth, answers with CORS *, and now
+    // includes state-changing endpoints that spawn processes and expose dev
+    // logs — none of which should be reachable from the LAN.
+    hostname: "127.0.0.1",
     async fetch(req) {
       const url = new URL(req.url)
 
