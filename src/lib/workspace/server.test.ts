@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterAll } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -114,7 +114,29 @@ const input = (worktree: string) => ({
   slug: "my-feature",
 });
 
+// Tear down each test's spawned servers before the next test starts. Leaving
+// them alive until afterAll piled every test's process onto the shared
+// 4700–4899 preview-port range at once; since every test also targets the same
+// session id (so the same base port), that contention is what made the
+// port-assignment and teardown-timing assertions flake on loaded CI runners.
+// Reclaiming ports per test keeps one live server at a time, mirroring
+// production's one-server-per-session model.
+afterEach(async () => {
+  const pids = cleanupPids.splice(0);
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
+  await Promise.all(pids.map((pid) => waitFor(() => isEffectivelyDead(pid))));
+});
+
 afterAll(() => {
+  // Backstop: afterEach normally drains cleanupPids, so this only catches pids
+  // from a test that threw before its afterEach ran.
   for (const pid of cleanupPids) {
     try {
       process.kill(-pid, "SIGKILL");
