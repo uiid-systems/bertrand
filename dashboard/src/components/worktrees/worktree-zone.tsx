@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Badge, Collapsible, Group, Stack, Text } from "@uiid/design-system";
+import { Badge, Button, Collapsible, Group, Stack, Text } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import { worktreesQuery, worktreeStatusQuery } from "../../api/queries";
+import { EDITORS, usePreferredEditor } from "../../lib/editor";
 
 import { WorktreeItem } from "./worktree-item";
 
@@ -19,6 +20,7 @@ import { WorktreeItem } from "./worktree-item";
  */
 export const WorktreeZone = () => {
   const [open, setOpen] = useState(true);
+  const [editor, setEditor] = usePreferredEditor();
   const { data: worktrees = [] } = useQuery(worktreesQuery);
   const { data: statusById = {} } = useQuery(worktreeStatusQuery);
 
@@ -28,6 +30,7 @@ export const WorktreeZone = () => {
     <Collapsible
       instant
       RootProps={{ open, onOpenChange: setOpen }}
+      TriggerProps={{ nativeButton: false }}
       PanelProps={{ style: { width: "100%" } }}
       trigger={
         <Group
@@ -53,6 +56,24 @@ export const WorktreeZone = () => {
       }
     >
       <Stack ax="stretch" gap={1} fullwidth px={4} py={2}>
+        <Group ay="center" gap={2} pb={1}>
+          <Text size={-1} shade="muted">
+            Open in
+          </Text>
+          <Group gap={1} ay="center">
+            {EDITORS.map((e) => (
+              <Button
+                key={e.id}
+                size="xsmall"
+                variant={editor === e.id ? "inverted" : "subtle"}
+                aria-pressed={editor === e.id}
+                onClick={() => setEditor(e.id)}
+              >
+                {e.label}
+              </Button>
+            ))}
+          </Group>
+        </Group>
         {worktrees.map((entry) => (
           <WorktreeItem
             key={entry.session.id}

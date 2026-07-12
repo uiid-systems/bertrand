@@ -11,6 +11,8 @@ import {
   Text,
 } from "@uiid/design-system";
 
+import { ExternalLinkIcon } from "@uiid/icons";
+
 import {
   startWorktree,
   stopWorktree,
@@ -18,6 +20,7 @@ import {
 } from "../../api/queries";
 import type { WorktreeSessionRow, WorkspaceServerStatus } from "../../api/types";
 import { formatRelativeTime, statusColor } from "../../lib/format";
+import { editorFileUri, editorLabel, usePreferredEditor } from "../../lib/editor";
 
 export type WorktreeItemProps = {
   entry: WorktreeSessionRow;
@@ -43,6 +46,7 @@ const truncate = {
 export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   const { session, categoryPath, branch } = entry;
   const qc = useQueryClient();
+  const [editor] = usePreferredEditor();
   const [showLogs, setShowLogs] = useState(false);
   const running = preview?.running ?? false;
   const listening = preview?.listening ?? false;
@@ -130,6 +134,20 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
           </Text>
         )}
         <Group gap={1} ay="center" ml="auto">
+          {session.worktreePath && (
+            <Button
+              size="xsmall"
+              variant="ghost"
+              shape="square"
+              aria-label={`Open worktree in ${editorLabel(editor)}`}
+              tooltip={`Open in ${editorLabel(editor)}`}
+              render={
+                <a href={editorFileUri(editor, session.worktreePath)} />
+              }
+            >
+              <ExternalLinkIcon size={13} />
+            </Button>
+          )}
           {running ? (
             <Button size="xsmall" variant="subtle" onClick={() => stop.mutate()} loading={stop.isPending}>
               Stop
