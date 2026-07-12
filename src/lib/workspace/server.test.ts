@@ -81,7 +81,10 @@ async function expectDead(pid: number): Promise<void> {
 
 async function waitFor(
   pred: () => boolean | Promise<boolean>,
-  ms = 5000,
+  // Generous on purpose: these tests spawn and kill real `bun` processes, and
+  // process death + zombie reap lags badly on loaded CI runners. Must stay
+  // under the per-test budget (see `bun test --timeout` in CI).
+  ms = 15000,
 ): Promise<void> {
   const start = Date.now();
   while (!(await pred()) && Date.now() - start < ms) {

@@ -41,7 +41,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test
+      # --timeout: match the test workflow — process-spawning workspace tests
+      # need more than the default 5s budget on loaded runners.
+      - run: bun test --timeout 20000
       - run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
