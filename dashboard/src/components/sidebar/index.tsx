@@ -8,6 +8,7 @@ import {
   Stack,
   Text,
   ToggleButton,
+  Separator,
 } from "@uiid/design-system";
 import { EyeIcon, EyeOffIcon, SearchIcon } from "@uiid/icons";
 
@@ -71,7 +72,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     <SidebarWrapper {...WrapperProps}>
       {/* Header controls carry their own horizontal inset now that the
           sidebar container is full-bleed and section triggers span edge-to-edge. */}
-      <Stack ax="stretch" gap={3} fullwidth p={4}>
+      <Stack ax="stretch" gap={2} fullwidth p={2}>
         <ProjectSelector />
         <Group ay="center" gap={2} fullwidth>
           <Input
@@ -99,15 +100,17 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
         </Group>
       </Stack>
 
+      <Separator py={0} />
+
       {isEmpty ? (
         <Text size={-1} shade="muted" px={4} py={2}>
           {trimmedQuery ? `No sessions match "${query}".` : "No sessions yet."}
         </Text>
       ) : (
-        <Stack ax="stretch" gap={3} fullwidth>
-          <LiveZone sessions={live} showEmpty={!trimmedQuery} />
+        <>
+          <LiveZone sessions={live} />
           {projects.length > 0 && <ProjectSections projects={projects} />}
-        </Stack>
+        </>
       )}
     </SidebarWrapper>
   );

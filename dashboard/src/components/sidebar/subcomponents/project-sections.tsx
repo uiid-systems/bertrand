@@ -38,7 +38,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
   );
 
   return (
-    <Stack data-slot="sidebar-projects" ax="stretch" gap={1} fullwidth>
+    <Stack data-slot="sidebar-projects" ax="stretch" fullwidth>
       {projects.map((group) => {
         const open = !collapsed.includes(group.key);
         return (

@@ -1,6 +1,13 @@
 import { useState } from "react";
 
-import { Badge, Collapsible, Group, List, Text } from "@uiid/design-system";
+import {
+  Badge,
+  Collapsible,
+  Group,
+  List,
+  Text,
+  Separator,
+} from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
@@ -9,56 +16,49 @@ import { SessionListItem } from "./session-list-item";
 
 type LiveZoneProps = {
   sessions: SessionWithCategory[];
-  /**
-   * Show the reassuring empty state when there's nothing live. Suppressed while
-   * a search is narrowing the list, where a "nothing needs you" line would be
-   * noise rather than signal.
-   */
-  showEmpty: boolean;
 };
 
 /**
  * Zone A — the pinned, cross-project "Needs you" section: sessions waiting on
  * the user or actively running. A custom collapsible: the trigger is a
  * full-width bar we own the styling of, the content carries its own padding.
- * Open by default. An empty zone is a feature — "nothing needs you" is a calm,
- * legible state — so it keeps its place with copy rather than vanishing, except
- * while searching.
+ * Open by default. Renders nothing when nothing is live — the zone only earns
+ * its space when something actually needs the user.
  */
-export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
+export const LiveZone = ({ sessions }: LiveZoneProps) => {
   const [open, setOpen] = useState(true);
 
-  if (sessions.length === 0 && !showEmpty) return null;
+  if (sessions.length === 0) return null;
 
   return (
-    <Collapsible
-      instant
-      RootProps={{ open, onOpenChange: setOpen }}
-      PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
-      trigger={
-        <Group
-          data-slot="sidebar-live-zone"
-          className="sidebar-zone-trigger"
-          ay="center"
-          gap={2}
-          px={4}
-          py={2}
-          fullwidth
-          style={{ cursor: "pointer" }}
-        >
-          {open ? (
-            <ChevronDownIcon size={14} />
-          ) : (
-            <ChevronRightIcon size={14} />
-          )}
-          <Text className="sidebar-zone-title" weight="bold" size={0}>
-            Needs you
-          </Text>
-          <Badge ml="auto">{sessions.length}</Badge>
-        </Group>
-      }
-    >
-      {sessions.length > 0 && (
+    <>
+      <Collapsible
+        instant
+        RootProps={{ open, onOpenChange: setOpen }}
+        PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
+        trigger={
+          <Group
+            data-slot="sidebar-live-zone"
+            className="sidebar-zone-trigger"
+            ay="center"
+            gap={2}
+            px={4}
+            py={2}
+            fullwidth
+            style={{ cursor: "pointer" }}
+          >
+            {open ? (
+              <ChevronDownIcon size={14} />
+            ) : (
+              <ChevronRightIcon size={14} />
+            )}
+            <Text className="sidebar-zone-title" weight="bold" size={0}>
+              Needs you
+            </Text>
+            <Badge ml="auto">{sessions.length}</Badge>
+          </Group>
+        }
+      >
         <List
           data-slot="sidebar-list"
           marker="none"
@@ -71,8 +71,9 @@ export const LiveZone = ({ sessions, showEmpty }: LiveZoneProps) => {
             <SessionListItem key={s.session.id} session={s} />
           ))}
         </List>
-      )}
-    </Collapsible>
+      </Collapsible>
+      <Separator py={0} />
+    </>
   );
 };
 LiveZone.displayName = "LiveZone";
