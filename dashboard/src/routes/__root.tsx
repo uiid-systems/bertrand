@@ -16,6 +16,7 @@ import { sessionsQuery } from "../api/queries";
 import { Sidebar } from "../components/sidebar";
 import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import { TopBar } from "../components/topbar";
+import { useSessionNotifications } from "../lib/use-session-notifications";
 
 import "../globals.css";
 
@@ -47,6 +48,10 @@ function AppShell() {
   const { data: sessions = [] } = useQuery(
     sessionsQuery({ projects: queryProjects }),
   );
+
+  // Fire browser notifications when any session (across all projects) crosses
+  // into waiting/blocked. Self-contained — runs its own global query.
+  useSessionNotifications();
 
   // The secondary sidebar lives inside the session route (see routes/$.tsx),
   // nested beside <main> beneath a shared breadcrumb bar. Here the shell only

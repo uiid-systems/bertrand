@@ -8,6 +8,7 @@ import {
 } from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
+import { NotificationToggle } from "../notification-toggle";
 
 type TopBarProps = {
   sessionCount?: number;
@@ -44,6 +45,7 @@ export const TopBar = ({ sessionCount }: TopBarProps) => {
             icon={<FileDiffIcon />}
           />
         </Group>
+        <NotificationToggle />
         <ThemeToggle />
       </Group>
     </TopBarWrapper>
