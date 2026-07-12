@@ -540,6 +540,19 @@ export async function teardownWorkspace(input: {
     });
     child.unref();
     closeSync(logFd);
+    // Wait (bounded) for the script to finish: worktree deletion removes the
+    // directory right after teardown resolves, and an in-flight script would
+    // lose its cwd mid-run. Archive callers `void` this promise, so the wait
+    // costs them nothing; the timeout keeps a hung script from wedging anyone.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 30_000);
+      const done = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      child.once("exit", done);
+      child.once("error", done);
+    });
   } catch {
     // best-effort: a broken archive script must not break archiving
   }

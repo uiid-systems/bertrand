@@ -16,8 +16,8 @@ export function insertEvent(opts: {
    * where they were *said*, not where the ingest tick happened to run.
    */
   createdAt?: string;
-}) {
-  return getDb()
+}, db: Db = getDb()) {
+  return db
     .insert(events)
     .values({
       sessionId: opts.sessionId,

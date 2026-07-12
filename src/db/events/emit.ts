@@ -20,6 +20,7 @@
  */
 
 import { insertEvent } from "@/db/queries/events";
+import type { Db } from "@/db/client";
 
 type EventTarget = {
   sessionId: string;
@@ -246,8 +247,12 @@ export function emitWorktreeEntered(
   });
 }
 
+// The db override exists for the dashboard server, which deletes worktrees
+// across projects and must write the event to the owning project's DB, not
+// the active one. Hook-path callers omit it.
 export function emitWorktreeExited(
   args: EventTarget & { path?: string; branch?: string },
+  db?: Db,
 ) {
   return insertEvent({
     sessionId: args.sessionId,
@@ -255,6 +260,6 @@ export function emitWorktreeExited(
     event: "worktree.exited",
     summary: args.branch ? `exited worktree ${args.branch}` : "exited worktree",
     meta: { path: args.path, branch: args.branch, claude_id: args.conversationId },
-  });
+  }, db);
 }
 
