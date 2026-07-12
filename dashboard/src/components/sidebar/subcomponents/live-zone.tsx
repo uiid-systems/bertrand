@@ -35,6 +35,7 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
       <Collapsible
         instant
         RootProps={{ open, onOpenChange: setOpen }}
+        TriggerProps={{ nativeButton: false }}
         PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
         trigger={
           <Group

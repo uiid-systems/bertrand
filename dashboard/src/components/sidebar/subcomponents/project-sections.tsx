@@ -49,6 +49,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
               open,
               onOpenChange: (next) => setOpen(group.key, next),
             }}
+            TriggerProps={{ nativeButton: false }}
             PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
             trigger={
               <Group
