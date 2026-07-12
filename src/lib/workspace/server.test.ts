@@ -9,6 +9,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { execFileSync } from "node:child_process";
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
@@ -55,13 +56,27 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * Killed children of THIS process stay signalable as zombies until the
- * event loop reaps them — poll briefly so assertions don't race the reap
- * (flaked on loaded CI runners).
+ * A SIGKILL'd child of THIS process becomes a zombie until the runtime reaps
+ * it, and `kill(pid, 0)` keeps succeeding on a zombie — so a bare liveness
+ * probe can wait indefinitely for a reap that lags under CI load (the flake
+ * this replaces). A zombie runs no code and holds no ports; treat it as dead,
+ * exactly as the server's own `isEffectivelyDead` does.
  */
+function isEffectivelyDead(pid: number): boolean {
+  if (!isAlive(pid)) return true; // fully gone (ESRCH)
+  try {
+    const stat = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {
+      encoding: "utf8",
+    });
+    return stat.trim().startsWith("Z"); // zombie
+  } catch {
+    return true; // vanished between the two checks
+  }
+}
+
 async function expectDead(pid: number): Promise<void> {
-  await waitFor(() => !isAlive(pid));
-  expect(isAlive(pid)).toBe(false);
+  await waitFor(() => isEffectivelyDead(pid));
+  expect(isEffectivelyDead(pid)).toBe(true);
 }
 
 async function waitFor(
