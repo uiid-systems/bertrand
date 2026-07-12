@@ -126,6 +126,7 @@ function InfoPermissions({ permissions }: { permissions: PermissionDetail[] }) {
   return (
     <Collapsible
       RootProps={{ open, onOpenChange: setOpen }}
+      TriggerProps={{ nativeButton: false }}
       trigger={
         <Group gap={1} ay="center" style={{ cursor: "pointer" }}>
           {open ? (
