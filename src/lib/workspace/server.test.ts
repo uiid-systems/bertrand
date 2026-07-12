@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterAll } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -9,6 +9,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { execFileSync } from "node:child_process";
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
@@ -55,18 +56,35 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * Killed children of THIS process stay signalable as zombies until the
- * event loop reaps them — poll briefly so assertions don't race the reap
- * (flaked on loaded CI runners).
+ * A SIGKILL'd child of THIS process becomes a zombie until the runtime reaps
+ * it, and `kill(pid, 0)` keeps succeeding on a zombie — so a bare liveness
+ * probe can wait indefinitely for a reap that lags under CI load (the flake
+ * this replaces). A zombie runs no code and holds no ports; treat it as dead,
+ * exactly as the server's own `isEffectivelyDead` does.
  */
+function isEffectivelyDead(pid: number): boolean {
+  if (!isAlive(pid)) return true; // fully gone (ESRCH)
+  try {
+    const stat = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {
+      encoding: "utf8",
+    });
+    return stat.trim().startsWith("Z"); // zombie
+  } catch {
+    return true; // vanished between the two checks
+  }
+}
+
 async function expectDead(pid: number): Promise<void> {
-  await waitFor(() => !isAlive(pid));
-  expect(isAlive(pid)).toBe(false);
+  await waitFor(() => isEffectivelyDead(pid));
+  expect(isEffectivelyDead(pid)).toBe(true);
 }
 
 async function waitFor(
   pred: () => boolean | Promise<boolean>,
-  ms = 5000,
+  // Generous on purpose: these tests spawn and kill real `bun` processes, and
+  // process death + zombie reap lags badly on loaded CI runners. Must stay
+  // under the per-test budget (see `bun test --timeout` in CI).
+  ms = 15000,
 ): Promise<void> {
   const start = Date.now();
   while (!(await pred()) && Date.now() - start < ms) {
@@ -99,7 +117,29 @@ const input = (worktree: string) => ({
   slug: "my-feature",
 });
 
+// Tear down each test's spawned servers before the next test starts. Leaving
+// them alive until afterAll piled every test's process onto the shared
+// 4700–4899 preview-port range at once; since every test also targets the same
+// session id (so the same base port), that contention is what made the
+// port-assignment and teardown-timing assertions flake on loaded CI runners.
+// Reclaiming ports per test keeps one live server at a time, mirroring
+// production's one-server-per-session model.
+afterEach(async () => {
+  const pids = cleanupPids.splice(0);
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
+  await Promise.all(pids.map((pid) => waitFor(() => isEffectivelyDead(pid))));
+});
+
 afterAll(() => {
+  // Backstop: afterEach normally drains cleanupPids, so this only catches pids
+  // from a test that threw before its afterEach ran.
   for (const pid of cleanupPids) {
     try {
       process.kill(-pid, "SIGKILL");
