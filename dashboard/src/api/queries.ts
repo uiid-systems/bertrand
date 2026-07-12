@@ -7,6 +7,7 @@ import type {
   SessionStatsRow,
   EngagementStats,
   ArchiveErrorReason,
+  RemoveWorktreeReason,
   WorkspaceServerStatus,
   WorktreeSessionRow,
 } from "./types"
@@ -109,6 +110,46 @@ async function postWorktreeAction(id: string, action: "start" | "stop"): Promise
 
 export const startWorktree = (id: string) => postWorktreeAction(id, "start")
 export const stopWorktree = (id: string) => postWorktreeAction(id, "stop")
+
+/**
+ * Typed failure for worktree deletion so the confirm modal can branch on the
+ * reason — `dirty` in particular flips the primary action to "Force delete"
+ * instead of dead-ending on an error string.
+ */
+export class WorktreeDeleteError extends Error {
+  reason: RemoveWorktreeReason | "unknown"
+  /** Raw git stderr, when the server had it — shown as fine print. */
+  detail?: string
+  constructor(message: string, reason: RemoveWorktreeReason | "unknown", detail?: string) {
+    super(message)
+    this.name = "WorktreeDeleteError"
+    this.reason = reason
+    this.detail = detail
+  }
+}
+
+export async function deleteWorktree(
+  id: string,
+  opts: { force?: boolean } = {},
+): Promise<void> {
+  const res = await fetch(apiUrl(`/api/worktrees/${id}/delete`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force: opts.force === true }),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string
+      reason?: RemoveWorktreeReason
+      detail?: string
+    }
+    throw new WorktreeDeleteError(
+      body.error ?? `${res.status} ${res.statusText}`,
+      body.reason ?? "unknown",
+      body.detail,
+    )
+  }
+}
 
 export async function fetchWorktreeLogs(id: string, lines = 200): Promise<string> {
   const res = await fetch(apiUrl(`/api/worktrees/${id}/logs?lines=${lines}`))

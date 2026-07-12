@@ -48,7 +48,7 @@ export const SecondarySidebar = ({
 
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
-      <WorktreeZone />
+      <WorktreeZone sessionId={sessionId} />
       {/* {stats && <SessionStats stats={stats} engagement={engagement} />} */}
     </SidebarWrapper>
   );

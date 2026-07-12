@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Badge, Button, Collapsible, Group, Stack, Text } from "@uiid/design-system";
+import { Button, Collapsible, Group, Stack, Text } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import { worktreesQuery, worktreeStatusQuery } from "../../api/queries";
@@ -9,22 +9,27 @@ import { EDITORS, usePreferredEditor } from "../../lib/editor";
 
 import { WorktreeItem } from "./worktree-item";
 
+export type WorktreeZoneProps = {
+  /** The session the sidebar belongs to — only its worktree is shown. */
+  sessionId: string;
+};
+
 /**
- * Collapsible "Worktrees" section for the secondary sidebar — the same
+ * Collapsible "Worktree" section for the secondary sidebar — the same
  * custom-collapsible pattern as the primary sidebar's zones (full-width
- * trigger bar, chevron + title + count badge, open by default). Lists every
- * worktree-bearing session with live preview state and controls; the row for
- * the session being viewed is marked aria-current. Renders nothing when no
- * session holds a worktree — in a stats sidebar an empty section is noise,
- * not signal.
+ * trigger bar, chevron + title, open by default). The sidebar is per-session,
+ * so this shows the one worktree belonging to the session being viewed, with
+ * live preview state and controls. Renders nothing when the session has no
+ * worktree — in a stats sidebar an empty section is noise, not signal.
  */
-export const WorktreeZone = () => {
+export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
   const [open, setOpen] = useState(true);
   const [editor, setEditor] = usePreferredEditor();
   const { data: worktrees = [] } = useQuery(worktreesQuery);
   const { data: statusById = {} } = useQuery(worktreeStatusQuery);
 
-  if (worktrees.length === 0) return null;
+  const entry = worktrees.find((w) => w.session.id === sessionId);
+  if (!entry) return null;
 
   return (
     <Collapsible
@@ -49,9 +54,8 @@ export const WorktreeZone = () => {
             <ChevronRightIcon size={14} />
           )}
           <Text className="sidebar-zone-title" weight="bold" size={0}>
-            Worktrees
+            Worktree
           </Text>
-          <Badge ml="auto">{worktrees.length}</Badge>
         </Group>
       }
     >
@@ -74,13 +78,7 @@ export const WorktreeZone = () => {
             ))}
           </Group>
         </Group>
-        {worktrees.map((entry) => (
-          <WorktreeItem
-            key={entry.session.id}
-            entry={entry}
-            preview={statusById[entry.session.id]}
-          />
-        ))}
+        <WorktreeItem entry={entry} preview={statusById[sessionId]} />
       </Stack>
     </Collapsible>
   );
