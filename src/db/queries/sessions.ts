@@ -207,9 +207,10 @@ export function updateSession(
     endedAt: string;
     worktreePath: string | null;
     worktreeBranch: string | null;
-  }>
+  }>,
+  db: Db = getDb(),
 ) {
-  return getDb()
+  return db
     .update(sessions)
     .set({ ...data, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))

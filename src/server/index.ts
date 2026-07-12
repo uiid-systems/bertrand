@@ -25,6 +25,7 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
+import { removeSessionWorktree } from "@/lib/worktree-remove"
 import {
   listProjects,
   setActiveProjectSlug,
@@ -366,6 +367,40 @@ async function handleWorktreeStart(sessionId: string, url: URL): Promise<Respons
   return Response.json(status)
 }
 
+const WORKTREE_DELETE_ERROR: Record<string, { status: number; message: string }> = {
+  "not-found": { status: 404, message: "Session not found" },
+  "no-worktree": { status: 409, message: "Session has no worktree" },
+  active: { status: 409, message: "Session is live — end it before deleting its worktree" },
+  dirty: { status: 409, message: "Worktree has uncommitted changes" },
+  "git-failed": { status: 500, message: "git worktree remove failed" },
+}
+
+// Delete a session's worktree (dashboard "delete" button). The heavy lifting
+// — live-session guard, teardown, git removal, record clearing — lives in
+// removeSessionWorktree; this handler just parses `force` and maps result
+// reasons onto status codes. `dirty` deliberately surfaces as 409 with its
+// reason so the client can gate the force retry behind a second confirmation.
+async function handleWorktreeDelete(
+  sessionId: string,
+  url: URL,
+  req: Request,
+): Promise<Response> {
+  let force = false
+  try {
+    const body = (await req.json()) as { force?: unknown }
+    force = body?.force === true
+  } catch {
+    // no/invalid body — a plain (non-force) delete
+  }
+  const result = await removeSessionWorktree(sessionId, { force, db: resolveDb(url) })
+  if (result.ok) return Response.json({ ok: true })
+  const meta = WORKTREE_DELETE_ERROR[result.reason]!
+  return Response.json(
+    { error: meta.message, reason: result.reason, detail: result.detail },
+    { status: meta.status },
+  )
+}
+
 async function match(pathname: string, url: URL): Promise<Response> {
   for (const [pattern, handler] of routes) {
     const m = pattern.exec(pathname)
@@ -499,6 +534,12 @@ export function startServer(port = PORT) {
           // (or SIGKILLed), so the client's follow-up status read is truthful.
           await stopWorkspaceServer(session.id)
           const r = Response.json({ ok: true })
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
+        const deleteMatch = /^\/api\/worktrees\/([^/]+)\/delete$/.exec(url.pathname)
+        if (deleteMatch) {
+          const r = await handleWorktreeDelete(deleteMatch[1]!, url, req)
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r
         }
