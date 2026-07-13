@@ -2,6 +2,8 @@ import type { sessions, events, sessionStats } from "./db/schema";
 // Type-only — erased at build; keeps this barrel free of runtime imports.
 import type { WorkspaceServerStatus } from "./lib/workspace/server";
 
+export type { ChangedFile, WorktreeChangedFiles } from "./lib/git";
+
 export type SessionRow = typeof sessions.$inferSelect;
 export type SessionStatus = SessionRow["status"];
 
