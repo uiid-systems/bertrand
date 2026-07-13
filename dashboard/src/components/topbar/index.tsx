@@ -5,6 +5,7 @@ import {
   ChartGanttIcon,
   FileDiffIcon,
   CaseSensitiveIcon,
+  GitBranchIcon,
 } from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
@@ -31,6 +32,12 @@ export const TopBar = ({ sessionCount }: TopBarProps) => {
             to="/"
             tooltip="Session timeline"
             icon={<ChartGanttIcon />}
+          />
+
+          <DevButton
+            to="/worktrees"
+            tooltip="Worktrees"
+            icon={<GitBranchIcon />}
           />
 
           <DevButton
