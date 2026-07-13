@@ -1,28 +1,20 @@
 import { useCallback } from "react";
 
-import {
-  Badge,
-  Collapsible,
-  Group,
-  List,
-  Stack,
-  Text,
-} from "@uiid/design-system";
-import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
+import { Badge, List, Stack } from "@uiid/design-system";
 
 import type { SessionGroup } from "../sidebar.types";
 import { useCollapsedProjects } from "../use-collapsed-projects";
 import { SessionListItem } from "./session-list-item";
+import { SidebarZone } from "./sidebar-zone";
 
 type ProjectSectionsProps = {
   projects: SessionGroup[];
 };
 
 /**
- * Zone B — the stable navigation area. One custom collapsible section per
- * project: a full-width trigger bar we style ourselves, content carrying its
- * own padding. Sections default to expanded; the user's collapses persist
- * across reloads via `useCollapsedProjects`.
+ * Zone B — the stable navigation area. One collapsible section per project.
+ * Sections default to expanded; the user's collapses persist across reloads
+ * via `useCollapsedProjects`.
  */
 export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
   const { collapsed, setCollapsed } = useCollapsedProjects();
@@ -39,63 +31,37 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
 
   return (
     <Stack data-slot="sidebar-projects" ax="stretch" fullwidth>
-      {projects.map((group) => {
-        const open = !collapsed.includes(group.key);
-        return (
-          <Collapsible
-            key={group.key}
-            instant
-            RootProps={{
-              open,
-              onOpenChange: (next) => setOpen(group.key, next),
-              style: { marginBlockEnd: 8 },
-            }}
-            TriggerProps={{ nativeButton: false }}
-            PanelProps={{
-              style: {
-                width: "100%",
-                paddingBlockStart: 8,
-                paddingBlockEnd: 16,
-              },
-            }}
-            trigger={
-              <Group
-                className="sidebar-zone-trigger"
-                ay="center"
-                gap={2}
-                fullwidth
-                mb={2}
-                style={{ cursor: "pointer" }}
-              >
-                {open ? (
-                  <ChevronDownIcon size={14} />
-                ) : (
-                  <ChevronRightIcon size={14} />
-                )}
-                <Text className="sidebar-zone-title" weight="bold" size={0}>
-                  {group.category}
-                </Text>
-                <Badge color="neutral" ml="auto">
-                  {group.sessions.length}
-                </Badge>
-              </Group>
-            }
+      {projects.map((group) => (
+        <SidebarZone
+          key={group.key}
+          title={group.category}
+          badge={
+            <Badge color="neutral" ml="auto">
+              {group.sessions.length}
+            </Badge>
+          }
+          open={!collapsed.includes(group.key)}
+          onOpenChange={(next) => setOpen(group.key, next)}
+          RootProps={{ style: { marginBlockEnd: 8 } }}
+          PanelProps={{
+            style: { paddingBlockStart: 8, paddingBlockEnd: 16 },
+          }}
+          TriggerGroupProps={{ mb: 2 }}
+        >
+          <List
+            data-slot="sidebar-list"
+            marker="none"
+            ax="stretch"
+            gap={1}
+            fullwidth
+            px={2}
           >
-            <List
-              data-slot="sidebar-list"
-              marker="none"
-              ax="stretch"
-              gap={1}
-              fullwidth
-              px={2}
-            >
-              {group.sessions.map((s) => (
-                <SessionListItem key={s.session.id} session={s} />
-              ))}
-            </List>
-          </Collapsible>
-        );
-      })}
+            {group.sessions.map((s) => (
+              <SessionListItem key={s.session.id} session={s} />
+            ))}
+          </List>
+        </SidebarZone>
+      ))}
     </Stack>
   );
 };
