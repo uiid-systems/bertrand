@@ -207,9 +207,12 @@ export function computeSessionStats(
  * Compute and persist stats. Called at session end so the materialized
  * row stays warm for paused/archived sessions.
  */
-export function computeAndPersist(sessionId: string): SessionStatsData {
-  const data = computeSessionStats(sessionId);
-  upsertSessionStats(sessionId, data);
+export function computeAndPersist(
+  sessionId: string,
+  db: Db = getDb(),
+): SessionStatsData {
+  const data = computeSessionStats(sessionId, db);
+  upsertSessionStats(sessionId, data, db);
   return data;
 }
 

@@ -15,9 +15,9 @@ import {
   getSession,
   countLiveSessions,
 } from "@/db/queries/sessions"
-import { getEventsBySession, getEventsByType } from "@/db/queries/events"
+import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
-import { computeSessionStats } from "@/lib/timing"
+import { computeSessionStats, computeAndPersist } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -49,10 +49,39 @@ const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
+/**
+ * Live stats are recomputed from a full event walk (timings + diff parse over
+ * every meta blob), and the dashboard polls them every 2s per live session.
+ * Events are append-only, so max(event.id) is a complete change token — cache
+ * the last result per session and only recompute when the log actually grew.
+ * Session ids are globally unique nanoids, so one map is safe across project
+ * DBs. Unbounded but tiny: one row per session ever polled this process.
+ */
+const liveStatsCache = new Map<string, { maxId: number; row: SessionStatsRow }>()
+
 function liveStats(sessionId: string, db?: Db): SessionStatsRow {
-  return {
+  const maxId = getMaxEventId(sessionId, db)
+  const cached = liveStatsCache.get(sessionId)
+  if (cached && cached.maxId === maxId) return cached.row
+  const row: SessionStatsRow = {
     sessionId,
     ...computeSessionStats(sessionId, db),
+    updatedAt: new Date().toISOString(),
+  }
+  liveStatsCache.set(sessionId, { maxId, row })
+  return row
+}
+
+/**
+ * Fallback for a non-live session missing its materialized session_stats row
+ * (sessions ended before stats persistence existed, or by a crash). Computing
+ * is unavoidable once, but persisting the result means it's once — not on
+ * every 2s poll forever.
+ */
+function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
+  return {
+    sessionId,
+    ...computeAndPersist(sessionId, db),
     updatedAt: new Date().toISOString(),
   }
 }
@@ -130,7 +159,7 @@ const listAllStats = (
         continue
       }
       result[session.id] =
-        getSessionStats(session.id, db) ?? liveStats(session.id, db)
+        getSessionStats(session.id, db) ?? backfilledStats(session.id, db)
     }
   }
   return result
@@ -147,7 +176,7 @@ const getStatsBySession = (
         session.status === "waiting" ||
         session.status === "blocked"
   if (isLive) return liveStats(sessionId!, db)
-  return getSessionStats(sessionId!, db) ?? liveStats(sessionId!, db)
+  return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
 }
 
 const getEngagement = (
