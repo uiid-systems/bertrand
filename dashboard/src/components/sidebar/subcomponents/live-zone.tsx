@@ -43,8 +43,6 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
             className="sidebar-zone-trigger"
             ay="center"
             gap={2}
-            px={4}
-            py={2}
             fullwidth
             style={{ cursor: "pointer" }}
           >
@@ -56,7 +54,9 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
             <Text className="sidebar-zone-title" weight="bold" size={0}>
               Needs you
             </Text>
-            <Badge ml="auto">{sessions.length}</Badge>
+            <Badge color="blue" ml="auto">
+              {sessions.length}
+            </Badge>
           </Group>
         }
       >
@@ -66,7 +66,6 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
           ax="stretch"
           gap={1}
           fullwidth
-          px={4}
         >
           {sessions.map((s) => (
             <SessionListItem key={s.session.id} session={s} />

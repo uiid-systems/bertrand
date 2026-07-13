@@ -1,4 +1,10 @@
-import { Button, Group, SelectMultiple } from "@uiid/design-system";
+import {
+  Button,
+  Group,
+  Kbd,
+  type GroupProps,
+  SelectMultiple,
+} from "@uiid/design-system";
 import { ActivityIcon, FolderIcon } from "@uiid/icons";
 
 import { useSelectedProjects } from "../selected-projects";
@@ -9,7 +15,7 @@ import { useSelectedProjects } from "../selected-projects";
  * active project. Disabled when there's only one project (nothing to filter).
  * The activity button snaps the view back to the live-projects default.
  */
-export const ProjectSelector = () => {
+export const ProjectSelector = ({ ...props }: GroupProps) => {
   const { projects, selected, setSelected, resetToLive, isAtLiveDefault } =
     useSelectedProjects();
 
@@ -22,13 +28,14 @@ export const ProjectSelector = () => {
   const multiple = projects.length > 1;
 
   return (
-    <Group ay="center" gap={1} fullwidth>
+    <Group ay="center" gap={1} fullwidth {...props}>
       <SelectMultiple
         placeholder="Select projects"
         items={items}
         value={value}
         onValueChange={(next) => setSelected(next)}
         before={<FolderIcon />}
+        after={<Kbd hotkey={["meta", "j"]} />}
         size="small"
         disabled={!multiple}
         fullwidth

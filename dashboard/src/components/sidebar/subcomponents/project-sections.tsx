@@ -48,17 +48,23 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
             RootProps={{
               open,
               onOpenChange: (next) => setOpen(group.key, next),
+              style: { marginBlockEnd: 8 },
             }}
             TriggerProps={{ nativeButton: false }}
-            PanelProps={{ style: { width: "100%", paddingBlock: 8 } }}
+            PanelProps={{
+              style: {
+                width: "100%",
+                paddingBlockStart: 8,
+                paddingBlockEnd: 16,
+              },
+            }}
             trigger={
               <Group
                 className="sidebar-zone-trigger"
                 ay="center"
                 gap={2}
                 fullwidth
-                px={4}
-                py={2}
+                mb={2}
                 style={{ cursor: "pointer" }}
               >
                 {open ? (
@@ -69,7 +75,9 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
                 <Text className="sidebar-zone-title" weight="bold" size={0}>
                   {group.category}
                 </Text>
-                <Badge ml="auto">{group.sessions.length}</Badge>
+                <Badge color="neutral" ml="auto">
+                  {group.sessions.length}
+                </Badge>
               </Group>
             }
           >
@@ -79,7 +87,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
               ax="stretch"
               gap={1}
               fullwidth
-              px={4}
+              px={2}
             >
               {group.sessions.map((s) => (
                 <SessionListItem key={s.session.id} session={s} />
