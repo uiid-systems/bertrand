@@ -216,51 +216,64 @@ const listWorktreeSessions = (
     )
     .filter(({ session }) => session.worktreePath != null)
 
-// /api/worktrees — each row enriched with the branch git *currently* has
-// checked out. worktree_branch in the DB is a snapshot from EnterWorktree
-// time; a worktree that switched branches mid-life would otherwise display
-// its entry-time branch forever. Falls back to the recorded value when git
-// can't answer (deleted dir, detached HEAD).
+/**
+ * Current checked-out branch per worktree, cached briefly. The lookup is a
+ * git subprocess per worktree and sits on the dashboard's 2s poll; branch
+ * switches are rare enough that a short TTL trades a few seconds of staleness
+ * for not forking git 30× a minute per worktree.
+ */
+const BRANCH_TTL_MS = 15_000
+const branchCache = new Map<string, { at: number; branch: string | null }>()
+
+async function cachedWorktreeBranch(worktreePath: string): Promise<string | null> {
+  const cached = branchCache.get(worktreePath)
+  if (cached && Date.now() - cached.at < BRANCH_TTL_MS) return cached.branch
+  const branch = await getWorktreeBranch(worktreePath)
+  branchCache.set(worktreePath, { at: Date.now(), branch })
+  return branch
+}
+
+// /api/worktrees — one scan produces everything the dashboard's worktree UI
+// needs: each row enriched with the branch git *currently* has checked out
+// (worktree_branch in the DB is an EnterWorktree-time snapshot; falls back to
+// it when git can't answer — deleted dir, detached HEAD) plus the dev-server
+// preview status. Status reads have no allocation side effects
+// (getWorkspaceServer never reserves a port), so polling doesn't spin
+// anything up; the observed-port check shells out to lsof, but only for
+// sessions with a live process.
 const listWorktrees = (
   _params: object,
   url: URL,
 ): Promise<WorktreeSessionRow[]> =>
   Promise.all(
-    listWorktreeSessions({}, url).map(async (row) => ({
-      ...row,
-      branch:
-        (row.session.worktreePath != null && existsSync(row.session.worktreePath)
-          ? await getWorktreeBranch(row.session.worktreePath)
-          : null) ?? row.session.worktreeBranch,
-    })),
-  )
-
-// Dev-server status per worktree-bearing session, keyed by session id. A
-// read with no allocation side effects (getWorkspaceServer never reserves a
-// port), so polling this from the dashboard doesn't spin up anything — start
-// is an explicit action. Statuses resolve in parallel: the observed-port
-// check shells out to lsof, but only for sessions with a live process.
-const listWorktreeStatus = async (
-  _params: object,
-  url: URL,
-): Promise<Record<string, WorkspaceServerStatus>> => {
-  const out: Record<string, WorkspaceServerStatus> = {}
-  await Promise.all(
-    listWorktreeSessions({}, url).map(async ({ session }) => {
-      const status = await getWorkspaceServer(session.id)
+    listWorktreeSessions({}, url).map(async (row) => {
+      const { session } = row
+      const exists =
+        session.worktreePath != null && existsSync(session.worktreePath)
+      const [branch, status] = await Promise.all([
+        exists ? cachedWorktreeBranch(session.worktreePath!) : null,
+        getWorkspaceServer(session.id),
+      ])
       // Self-heal: a worktree dir deleted out from under a session makes its
       // preview meaningless — reclaim the server + port in the background;
       // the next poll reports it idle.
-      if (
-        session.worktreePath != null &&
-        !existsSync(session.worktreePath) &&
-        (status.running || status.port != null)
-      ) {
+      if (!exists && (status.running || status.port != null)) {
         void stopWorkspaceServer(session.id)
       }
-      out[session.id] = status
+      return { ...row, branch: branch ?? session.worktreeBranch, status }
     }),
   )
+
+// Back-compat projection of /api/worktrees for clients that still poll the
+// status map separately (a hosted SPA older than this server).
+const listWorktreeStatus = async (
+  params: object,
+  url: URL,
+): Promise<Record<string, WorkspaceServerStatus>> => {
+  const out: Record<string, WorkspaceServerStatus> = {}
+  for (const row of await listWorktrees(params, url)) {
+    out[row.session.id] = row.status
+  }
   return out
 }
 

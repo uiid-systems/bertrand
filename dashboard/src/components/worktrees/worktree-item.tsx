@@ -76,7 +76,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
     preview?.port != null &&
     preview.observedPort !== preview.port;
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["worktree-status"] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["worktrees"] });
   const start = useMutation({
     mutationFn: () => startWorktree(session.id),
     onSuccess: refresh,
@@ -91,7 +91,6 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
     onSuccess: () => {
       setConfirmOpen(false);
       qc.invalidateQueries({ queryKey: ["worktrees"] });
-      qc.invalidateQueries({ queryKey: ["worktree-status"] });
     },
   });
   const dirty =

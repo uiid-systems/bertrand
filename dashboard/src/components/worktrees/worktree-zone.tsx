@@ -10,7 +10,7 @@ import {
 } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
-import { worktreesQuery, worktreeStatusQuery } from "../../api/queries";
+import { worktreesQuery } from "../../api/queries";
 import { EDITORS, usePreferredEditor } from "../../lib/editor";
 
 import { WorktreeItem } from "./worktree-item";
@@ -32,7 +32,6 @@ export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
   const [open, setOpen] = useState(true);
   const [editor, setEditor] = usePreferredEditor();
   const { data: worktrees = [] } = useQuery(worktreesQuery);
-  const { data: statusById = {} } = useQuery(worktreeStatusQuery);
 
   const entry = worktrees.find((w) => w.session.id === sessionId);
   if (!entry) return null;
@@ -64,7 +63,7 @@ export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
       }
     >
       <Stack fullwidth>
-        <WorktreeItem entry={entry} preview={statusById[sessionId]} />
+        <WorktreeItem entry={entry} preview={entry.status} />
         <Separator />
       </Stack>
     </Collapsible>

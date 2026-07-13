@@ -8,7 +8,6 @@ import type {
   EngagementStats,
   ArchiveErrorReason,
   RemoveWorktreeReason,
-  WorkspaceServerStatus,
   WorktreeSessionRow,
 } from "./types"
 
@@ -84,18 +83,11 @@ export const sessionsQuery = (
     placeholderData: keepPreviousData,
   })
 
+/** Worktree rows arrive with their dev-server status resolved server-side —
+ * one poll covers the whole worktree UI. */
 export const worktreesQuery = queryOptions({
   queryKey: ["worktrees"],
   queryFn: () => fetchJson<WorktreeSessionRow[]>("/api/worktrees"),
-  refetchInterval: 2000,
-  placeholderData: keepPreviousData,
-})
-
-/** Dev-server status per worktree-bearing session, keyed by session id. */
-export const worktreeStatusQuery = queryOptions({
-  queryKey: ["worktree-status"],
-  queryFn: () =>
-    fetchJson<Record<string, WorkspaceServerStatus>>("/api/worktrees/status"),
   refetchInterval: 2000,
   placeholderData: keepPreviousData,
 })
