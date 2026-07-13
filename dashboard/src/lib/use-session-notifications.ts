@@ -1,10 +1,8 @@
 import { useEffect, useRef } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
 
-import { sessionsQuery } from "../api/queries"
-import { useSelectedProjects } from "../components/sidebar/selected-projects"
 import { useNotificationSetting, requestNotificationPermission } from "./use-notification-setting"
+import { useSessions } from "./use-sessions"
 
 /**
  * Browser notifications for "Claude needs you" moments. Purely client-side: it
@@ -25,20 +23,16 @@ const NOTIFY_STATUSES: Record<string, string> = {
 export function useSessionNotifications() {
   const navigate = useNavigate()
   const { enabled } = useNotificationSetting()
-  const { projects } = useSelectedProjects()
 
   // Notify globally: every known project, not just the ones currently shown in
-  // the sidebar filter. Gate on projects being loaded so we prime against the
-  // full all-projects set in one shot — priming against the active-project-only
-  // fallback first would make every other project's sessions look like fresh
-  // transitions the moment the real list arrives.
-  const allSlugs = projects.map((p) => p.slug)
-  const { data: sessions = [] } = useQuery({
-    ...sessionsQuery({ projects: allSlugs }),
-    enabled: allSlugs.length > 0,
-    // Keep polling even when the tab is backgrounded — otherwise React Query
-    // pauses the interval (default refetchIntervalInBackground: false) and we'd
-    // miss the very transitions the user stepped away to be notified about.
+  // the sidebar filter. The shared poll is gated on projects being loaded, so
+  // we prime against the full all-projects set in one shot — priming against a
+  // partial list would make every other project's sessions look like fresh
+  // transitions the moment the real list arrives. Background refetch stays on:
+  // React Query would otherwise pause the interval in a backgrounded tab and
+  // we'd miss the very transitions the user stepped away to be notified about.
+  const sessions = useSessions({
+    scope: "all",
     refetchIntervalInBackground: true,
   })
 

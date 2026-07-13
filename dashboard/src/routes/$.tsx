@@ -17,8 +17,7 @@ import {
   Timeline,
 } from "@uiid/design-system";
 
-import { eventsQuery, projectsQuery, sessionsQuery } from "../api/queries";
-import { useSelectedProjects } from "../components/sidebar/selected-projects";
+import { eventsQuery, projectsQuery } from "../api/queries";
 import { useArchiveAction } from "../api/use-archive-action";
 import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
@@ -36,6 +35,7 @@ import {
   type ConversationSegment,
 } from "../lib/timeline/segments";
 import { useMatchedSession } from "../lib/use-matched-session";
+import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { ConversationNav } from "../components/conversation-nav";
@@ -80,10 +80,7 @@ function buildBreadcrumbs(
 
 function SplatPage() {
   const { _splat = "" } = Route.useParams();
-  const { queryProjects } = useSelectedProjects();
-  const { data: visibleSessions = [] } = useQuery(
-    sessionsQuery({ projects: queryProjects }),
-  );
+  const visibleSessions = useSessions();
 
   // Resolve session-detail against the visible list, then a full fallback list
   // (see useMatchedSession), so an archived or filtered-out session opened by
