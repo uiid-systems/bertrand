@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.29.0](https://github.com/uiid-systems/bertrand/compare/v0.28.1...v0.29.0) (2026-07-13)
+
+
+### Features
+
+* **dashboard:** browser notifications when a session needs attention ([#177](https://github.com/uiid-systems/bertrand/issues/177)) ([da83f9a](https://github.com/uiid-systems/bertrand/commit/da83f9a9cc9b56f3251230359c79a352a79dd114))
+* **dashboard:** per-session worktree zone with deletion ([#179](https://github.com/uiid-systems/bertrand/issues/179)) ([0d6b345](https://github.com/uiid-systems/bertrand/commit/0d6b34571a56cc68291d1029ad204e28a1d3a84e))
+* **dashboard:** worktree list lives in the secondary sidebar ([#176](https://github.com/uiid-systems/bertrand/issues/176)) ([b55f349](https://github.com/uiid-systems/bertrand/commit/b55f3498504a1b23c2173490f0ebadc6f29cc4cc))
+* workspace live previews (Phase 1 — 1A+1B+1D) ([#152](https://github.com/uiid-systems/bertrand/issues/152)) ([938e1e5](https://github.com/uiid-systems/bertrand/commit/938e1e5c58adb6e38ead0afe5e3b69e433005e82))
+
+
+### Bug Fixes
+
+* workspace bulletproofing — lifecycle teardown, pid identity, atomic state, log hygiene ([#175](https://github.com/uiid-systems/bertrand/issues/175)) ([a26bb9b](https://github.com/uiid-systems/bertrand/commit/a26bb9bb37fd2a8e58e4eb65932e3426a569dacb))
+
+
+### Performance
+
+* **dashboard:** cut redundant polling, recompute, and re-renders ([#180](https://github.com/uiid-systems/bertrand/issues/180)) ([5a8bd0d](https://github.com/uiid-systems/bertrand/commit/5a8bd0df60567f8ff364c12f96ce24e653068c1d))
+
+
+### Refactoring
+
+* tinkering ([b674fd1](https://github.com/uiid-systems/bertrand/commit/b674fd1dbeacb1b88366e7b2a28faaef7bfeb1a2))
+* tinkering ([#181](https://github.com/uiid-systems/bertrand/issues/181)) ([eb30201](https://github.com/uiid-systems/bertrand/commit/eb30201519f68f66ac44be063e4ba1cb06c1e747))
+
 ## [0.28.1](https://github.com/uiid-systems/bertrand/compare/v0.28.0...v0.28.1) (2026-07-11)
 
 
