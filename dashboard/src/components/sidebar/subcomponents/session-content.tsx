@@ -3,7 +3,8 @@ import { Group, Text } from "@uiid/design-system";
 import { FilesIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
-import { allStatsQuery, sessionsQuery } from "../../../api/queries";
+import { allStatsQuery } from "../../../api/queries";
+import { useSessions } from "../../../lib/use-sessions";
 import { useSelectedProjects } from "../selected-projects";
 import { isLive } from "../sidebar.utils";
 
@@ -13,9 +14,7 @@ type SessionContentProps = {
 
 export const SessionContent = ({ session: s }: SessionContentProps) => {
   const { queryProjects } = useSelectedProjects();
-  const { data: sessions = [] } = useQuery(
-    sessionsQuery({ projects: queryProjects }),
-  );
+  const sessions = useSessions();
   const hasLiveSession = sessions.some(isLive);
   const { data: allStats } = useQuery(
     allStatsQuery({ hasLiveSession, projects: queryProjects }),

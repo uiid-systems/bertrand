@@ -15,9 +15,9 @@ import {
   getSession,
   countLiveSessions,
 } from "@/db/queries/sessions"
-import { getEventsBySession, getEventsByType } from "@/db/queries/events"
+import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
-import { computeSessionStats } from "@/lib/timing"
+import { computeSessionStats, computeAndPersist } from "@/lib/timing"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -49,10 +49,39 @@ const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
+/**
+ * Live stats are recomputed from a full event walk (timings + diff parse over
+ * every meta blob), and the dashboard polls them every 2s per live session.
+ * Events are append-only, so max(event.id) is a complete change token — cache
+ * the last result per session and only recompute when the log actually grew.
+ * Session ids are globally unique nanoids, so one map is safe across project
+ * DBs. Unbounded but tiny: one row per session ever polled this process.
+ */
+const liveStatsCache = new Map<string, { maxId: number; row: SessionStatsRow }>()
+
 function liveStats(sessionId: string, db?: Db): SessionStatsRow {
-  return {
+  const maxId = getMaxEventId(sessionId, db)
+  const cached = liveStatsCache.get(sessionId)
+  if (cached && cached.maxId === maxId) return cached.row
+  const row: SessionStatsRow = {
     sessionId,
     ...computeSessionStats(sessionId, db),
+    updatedAt: new Date().toISOString(),
+  }
+  liveStatsCache.set(sessionId, { maxId, row })
+  return row
+}
+
+/**
+ * Fallback for a non-live session missing its materialized session_stats row
+ * (sessions ended before stats persistence existed, or by a crash). Computing
+ * is unavoidable once, but persisting the result means it's once — not on
+ * every 2s poll forever.
+ */
+function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
+  return {
+    sessionId,
+    ...computeAndPersist(sessionId, db),
     updatedAt: new Date().toISOString(),
   }
 }
@@ -105,7 +134,12 @@ const listEvents = (
   const db = resolveDb(url)
   const eventType = url.searchParams.get("type")
   if (eventType) return getEventsByType(sessionId!, eventType, db)
-  return getEventsBySession(sessionId!, db)
+  // `?sinceId=N` returns only rows with id > N — the dashboard's live poll
+  // passes the max id it has seen so idle ticks cost ~0 bytes instead of the
+  // full timeline. Invalid/absent values fall back to the full list.
+  const sinceParam = Number(url.searchParams.get("sinceId"))
+  const sinceId = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : undefined
+  return getEventsBySession(sessionId!, db, { sinceId })
 }
 
 const listAllStats = (
@@ -125,7 +159,7 @@ const listAllStats = (
         continue
       }
       result[session.id] =
-        getSessionStats(session.id, db) ?? liveStats(session.id, db)
+        getSessionStats(session.id, db) ?? backfilledStats(session.id, db)
     }
   }
   return result
@@ -142,7 +176,7 @@ const getStatsBySession = (
         session.status === "waiting" ||
         session.status === "blocked"
   if (isLive) return liveStats(sessionId!, db)
-  return getSessionStats(sessionId!, db) ?? liveStats(sessionId!, db)
+  return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
 }
 
 const getEngagement = (
@@ -182,51 +216,64 @@ const listWorktreeSessions = (
     )
     .filter(({ session }) => session.worktreePath != null)
 
-// /api/worktrees — each row enriched with the branch git *currently* has
-// checked out. worktree_branch in the DB is a snapshot from EnterWorktree
-// time; a worktree that switched branches mid-life would otherwise display
-// its entry-time branch forever. Falls back to the recorded value when git
-// can't answer (deleted dir, detached HEAD).
+/**
+ * Current checked-out branch per worktree, cached briefly. The lookup is a
+ * git subprocess per worktree and sits on the dashboard's 2s poll; branch
+ * switches are rare enough that a short TTL trades a few seconds of staleness
+ * for not forking git 30× a minute per worktree.
+ */
+const BRANCH_TTL_MS = 15_000
+const branchCache = new Map<string, { at: number; branch: string | null }>()
+
+async function cachedWorktreeBranch(worktreePath: string): Promise<string | null> {
+  const cached = branchCache.get(worktreePath)
+  if (cached && Date.now() - cached.at < BRANCH_TTL_MS) return cached.branch
+  const branch = await getWorktreeBranch(worktreePath)
+  branchCache.set(worktreePath, { at: Date.now(), branch })
+  return branch
+}
+
+// /api/worktrees — one scan produces everything the dashboard's worktree UI
+// needs: each row enriched with the branch git *currently* has checked out
+// (worktree_branch in the DB is an EnterWorktree-time snapshot; falls back to
+// it when git can't answer — deleted dir, detached HEAD) plus the dev-server
+// preview status. Status reads have no allocation side effects
+// (getWorkspaceServer never reserves a port), so polling doesn't spin
+// anything up; the observed-port check shells out to lsof, but only for
+// sessions with a live process.
 const listWorktrees = (
   _params: object,
   url: URL,
 ): Promise<WorktreeSessionRow[]> =>
   Promise.all(
-    listWorktreeSessions({}, url).map(async (row) => ({
-      ...row,
-      branch:
-        (row.session.worktreePath != null && existsSync(row.session.worktreePath)
-          ? await getWorktreeBranch(row.session.worktreePath)
-          : null) ?? row.session.worktreeBranch,
-    })),
-  )
-
-// Dev-server status per worktree-bearing session, keyed by session id. A
-// read with no allocation side effects (getWorkspaceServer never reserves a
-// port), so polling this from the dashboard doesn't spin up anything — start
-// is an explicit action. Statuses resolve in parallel: the observed-port
-// check shells out to lsof, but only for sessions with a live process.
-const listWorktreeStatus = async (
-  _params: object,
-  url: URL,
-): Promise<Record<string, WorkspaceServerStatus>> => {
-  const out: Record<string, WorkspaceServerStatus> = {}
-  await Promise.all(
-    listWorktreeSessions({}, url).map(async ({ session }) => {
-      const status = await getWorkspaceServer(session.id)
+    listWorktreeSessions({}, url).map(async (row) => {
+      const { session } = row
+      const exists =
+        session.worktreePath != null && existsSync(session.worktreePath)
+      const [branch, status] = await Promise.all([
+        exists ? cachedWorktreeBranch(session.worktreePath!) : null,
+        getWorkspaceServer(session.id),
+      ])
       // Self-heal: a worktree dir deleted out from under a session makes its
       // preview meaningless — reclaim the server + port in the background;
       // the next poll reports it idle.
-      if (
-        session.worktreePath != null &&
-        !existsSync(session.worktreePath) &&
-        (status.running || status.port != null)
-      ) {
+      if (!exists && (status.running || status.port != null)) {
         void stopWorkspaceServer(session.id)
       }
-      out[session.id] = status
+      return { ...row, branch: branch ?? session.worktreeBranch, status }
     }),
   )
+
+// Back-compat projection of /api/worktrees for clients that still poll the
+// status map separately (a hosted SPA older than this server).
+const listWorktreeStatus = async (
+  params: object,
+  url: URL,
+): Promise<Record<string, WorkspaceServerStatus>> => {
+  const out: Record<string, WorkspaceServerStatus> = {}
+  for (const row of await listWorktrees(params, url)) {
+    out[row.session.id] = row.status
+  }
   return out
 }
 

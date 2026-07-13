@@ -1,4 +1,6 @@
 import type { sessions, events, sessionStats } from "./db/schema";
+// Type-only — erased at build; keeps this barrel free of runtime imports.
+import type { WorkspaceServerStatus } from "./lib/workspace/server";
 
 export type SessionRow = typeof sessions.$inferSelect;
 export type SessionStatus = SessionRow["status"];
@@ -28,6 +30,12 @@ export type SessionWithCategory = {
  */
 export type WorktreeSessionRow = SessionWithCategory & {
   branch: string | null;
+  /**
+   * Dev-server preview state for this worktree, resolved in the same
+   * /api/worktrees scan — one poll serves the whole worktree UI instead of a
+   * separate /status request re-running the session scan.
+   */
+  status: WorkspaceServerStatus;
 };
 
 export type EngagementStats = {

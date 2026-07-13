@@ -76,7 +76,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
     preview?.port != null &&
     preview.observedPort !== preview.port;
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["worktree-status"] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["worktrees"] });
   const start = useMutation({
     mutationFn: () => startWorktree(session.id),
     onSuccess: refresh,
@@ -91,7 +91,6 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
     onSuccess: () => {
       setConfirmOpen(false);
       qc.invalidateQueries({ queryKey: ["worktrees"] });
-      qc.invalidateQueries({ queryKey: ["worktree-status"] });
     },
   });
   const dirty =
@@ -110,7 +109,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   const error = (start.error ?? stop.error) as Error | null;
 
   return (
-    <Stack data-slot="worktree-item" gap={1} py={2} px={2} bb={1} fullwidth>
+    <Stack data-slot="worktree-item" gap={1} fullwidth>
       <Group ay="center" gap={2} fullwidth>
         <Status color={listening ? "green" : running ? "yellow" : color} />
         <Text

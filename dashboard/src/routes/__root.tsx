@@ -3,7 +3,6 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 
 import {
   Stack,
@@ -12,11 +11,10 @@ import {
   ResizableHandle,
 } from "@uiid/design-system";
 
-import { sessionsQuery } from "../api/queries";
 import { Sidebar } from "../components/sidebar";
-import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import { TopBar } from "../components/topbar";
 import { useSessionNotifications } from "../lib/use-session-notifications";
+import { useSessions } from "../lib/use-sessions";
 
 import "../globals.css";
 
@@ -44,10 +42,7 @@ function RootLayout() {
 }
 
 function AppShell() {
-  const { queryProjects } = useSelectedProjects();
-  const { data: sessions = [] } = useQuery(
-    sessionsQuery({ projects: queryProjects }),
-  );
+  const sessions = useSessions();
 
   // Fire browser notifications when any session (across all projects) crosses
   // into waiting/blocked. Self-contained — runs its own global query.
