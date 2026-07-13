@@ -4,7 +4,6 @@ import {
   Group,
   Input,
   Kbd,
-  Stack,
   Text,
   ToggleButton,
   Separator,
@@ -26,6 +25,8 @@ import {
 export type SidebarProps = {
   WrapperProps?: SidebarWrapperProps;
 };
+
+const GAP = 2;
 
 export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
@@ -64,36 +65,32 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const isEmpty = live.length === 0 && projects.length === 0;
 
   return (
-    <SidebarWrapper {...WrapperProps}>
-      {/* Header controls carry their own horizontal inset now that the
-          sidebar container is full-bleed and section triggers span edge-to-edge. */}
-      <Stack ax="stretch" gap={2}>
-        <ProjectSelector />
-        <Group ay="center" gap={2} fullwidth>
-          <Input
-            ref={inputRef}
-            placeholder="Search for a session"
-            before={<SearchIcon />}
-            after={<Kbd hotkey={["meta", "k"]} />}
-            size="small"
-            fullwidth
-            style={{ flex: 1, minWidth: 0 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <ToggleButton
-            size="small"
-            variant="subtle"
-            tooltip={includeArchived ? "Hide archived" : "Show archived"}
-            pressed={includeArchived}
-            onPressedChange={setIncludeArchived}
-            icon={{
-              unpressed: <EyeOffIcon />,
-              pressed: <EyeIcon />,
-            }}
-          />
-        </Group>
-      </Stack>
+    <SidebarWrapper {...WrapperProps} gap={GAP} p={2}>
+      <ProjectSelector gap={GAP} />
+      <Group ay="center" gap={GAP} fullwidth>
+        <Input
+          ref={inputRef}
+          placeholder="Search for a session"
+          before={<SearchIcon />}
+          after={<Kbd hotkey={["meta", "k"]} />}
+          size="small"
+          fullwidth
+          style={{ flex: 1, minWidth: 0 }}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <ToggleButton
+          size="small"
+          variant="subtle"
+          tooltip={includeArchived ? "Hide archived" : "Show archived"}
+          pressed={includeArchived}
+          onPressedChange={setIncludeArchived}
+          icon={{
+            unpressed: <EyeOffIcon />,
+            pressed: <EyeIcon />,
+          }}
+        />
+      </Group>
 
       <Separator />
 

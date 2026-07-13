@@ -17,26 +17,15 @@ function WorktreesPage() {
 
   return (
     <Stack gap={6} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
-      <Stack gap={2}>
-        <Group gap={2} ay="center">
-          <Text size={3} weight="bold">
-            Worktrees
-          </Text>
-          {worktrees.length > 0 && (
-            <Badge color="blue">{worktrees.length}</Badge>
-          )}
-        </Group>
-        <Text size={1} shade="muted">
-          Sessions working in an isolated git worktree. Start a preview to run
-          its dev server and open the live URL — no cd required.
+      <Group gap={2} ay="center">
+        <Text size={3} weight="bold">
+          Worktrees
         </Text>
-      </Stack>
+        {worktrees.length > 0 && <Badge color="blue">{worktrees.length}</Badge>}
+      </Group>
 
       {worktrees.length === 0 ? (
-        <Text size={1} shade="muted">
-          No active worktrees. A session lands here once it enters one for
-          git-bound work.
-        </Text>
+        <Text shade="halftone">No active worktrees</Text>
       ) : (
         <Stack gap={4} ax="stretch" fullwidth style={{ maxWidth: 720 }}>
           {worktrees.map((entry) => (

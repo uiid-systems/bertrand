@@ -11,7 +11,6 @@ import {
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import { worktreesQuery } from "../../api/queries";
-import { EDITORS, usePreferredEditor } from "../../lib/editor";
 
 import { WorktreeItem } from "./worktree-item";
 
@@ -30,7 +29,6 @@ export type WorktreeZoneProps = {
  */
 export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
   const [open, setOpen] = useState(true);
-  const [editor, setEditor] = usePreferredEditor();
   const { data: worktrees = [] } = useQuery(worktreesQuery);
 
   const entry = worktrees.find((w) => w.session.id === sessionId);
