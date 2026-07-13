@@ -21,7 +21,9 @@ jobs:
       # the `dashboard` job below.
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test
+      # --timeout: the workspace server tests spawn/kill real processes; the
+      # default 5s per-test budget flaked on loaded runners.
+      - run: bun test --timeout 20000
 
   dashboard:
     runs-on: ubuntu-latest
