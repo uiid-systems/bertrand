@@ -2,7 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Badge, Group, Stack, Text } from "@uiid/design-system";
 
-import { worktreesQuery, worktreeStatusQuery } from "../api/queries";
+import { worktreesQuery } from "../api/queries";
 import { WorktreeItem } from "../components/worktrees";
 import { formatRelativeTime } from "../lib/format";
 
@@ -14,7 +14,6 @@ import { formatRelativeTime } from "../lib/format";
  */
 function WorktreesPage() {
   const { data: worktrees = [] } = useQuery(worktreesQuery);
-  const { data: statusById = {} } = useQuery(worktreeStatusQuery);
 
   return (
     <Stack gap={6} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
@@ -50,7 +49,7 @@ function WorktreesPage() {
                   · {formatRelativeTime(entry.session.updatedAt)}
                 </Text>
               </Group>
-              <WorktreeItem entry={entry} preview={statusById[entry.session.id]} />
+              <WorktreeItem entry={entry} preview={entry.status} />
             </Stack>
           ))}
         </Stack>
