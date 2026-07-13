@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Button, Collapsible, Group, Stack, Text } from "@uiid/design-system";
+import {
+  Collapsible,
+  Group,
+  Separator,
+  Stack,
+  Text,
+} from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import { worktreesQuery, worktreeStatusQuery } from "../../api/queries";
@@ -43,8 +49,6 @@ export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
           className="sidebar-zone-trigger"
           ay="center"
           gap={2}
-          px={4}
-          py={2}
           fullwidth
           style={{ cursor: "pointer" }}
         >
@@ -59,26 +63,9 @@ export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
         </Group>
       }
     >
-      <Stack ax="stretch" gap={1} fullwidth px={4} py={2}>
-        <Group ay="center" gap={2} pb={1}>
-          <Text size={-1} shade="muted">
-            Open in
-          </Text>
-          <Group gap={1} ay="center">
-            {EDITORS.map((e) => (
-              <Button
-                key={e.id}
-                size="xsmall"
-                variant={editor === e.id ? "inverted" : "subtle"}
-                aria-pressed={editor === e.id}
-                onClick={() => setEditor(e.id)}
-              >
-                {e.label}
-              </Button>
-            ))}
-          </Group>
-        </Group>
+      <Stack fullwidth>
         <WorktreeItem entry={entry} preview={statusById[sessionId]} />
+        <Separator />
       </Stack>
     </Collapsible>
   );

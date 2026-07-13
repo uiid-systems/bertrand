@@ -73,7 +73,7 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
           ))}
         </List>
       </Collapsible>
-      <Separator py={0} />
+      <Separator />
     </>
   );
 };

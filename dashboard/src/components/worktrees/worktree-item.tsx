@@ -110,7 +110,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   const error = (start.error ?? stop.error) as Error | null;
 
   return (
-    <Stack data-slot="worktree-item" gap={1} py={2} px={2} bb={1} fullwidth>
+    <Stack data-slot="worktree-item" gap={1} fullwidth>
       <Group ay="center" gap={2} fullwidth>
         <Status color={listening ? "green" : running ? "yellow" : color} />
         <Text
