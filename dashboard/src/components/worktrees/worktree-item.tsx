@@ -294,16 +294,20 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
           {dirty &&
             (discarded.data ? (
               discarded.data.files.length > 0 && (
-                <Stack
+                <Group
                   gap={1}
                   fullwidth
                   maxh={180}
-                  style={{ overflowY: "auto" }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) auto",
+                    overflowY: "auto",
+                  }}
                 >
                   {discarded.data.files.map((file) => (
                     <ChangedFileRow key={file.path} file={file} />
                   ))}
-                </Stack>
+                </Group>
               )
             ) : (
               <Text size={-1} shade="muted">

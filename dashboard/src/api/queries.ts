@@ -10,6 +10,7 @@ import type {
   RemoveWorktreeReason,
   WorktreeSessionRow,
   WorktreeChangedFiles,
+  ChangedFile,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -237,6 +238,27 @@ export const statsQuery = (sessionId: string, isLive = false, project?: string) 
       ),
     enabled: !!sessionId,
     refetchInterval: isLive ? 2000 : false,
+    placeholderData: keepPreviousData,
+  })
+
+/**
+ * Files a session changed, derived from its timeline (not git). Covers every
+ * session — worktree or not — and its counts match the primary sidebar's
+ * file-count/+- totals, since both come from the same `tool.applied` events.
+ */
+export const changedFilesQuery = (
+  sessionId: string,
+  isLive = false,
+  project?: string,
+) =>
+  queryOptions({
+    queryKey: ["changed-files", sessionId, project ?? null],
+    queryFn: () =>
+      fetchJson<ChangedFile[]>(
+        `/api/stats/${sessionId}/files${projectParam(project)}`,
+      ),
+    enabled: !!sessionId,
+    refetchInterval: isLive ? 5000 : false,
     placeholderData: keepPreviousData,
   })
 

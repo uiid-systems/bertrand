@@ -65,7 +65,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const isEmpty = live.length === 0 && projects.length === 0;
 
   return (
-    <SidebarWrapper {...WrapperProps} gap={GAP} p={2}>
+    <SidebarWrapper {...WrapperProps}>
       <ProjectSelector gap={GAP} />
       <Group ay="center" gap={GAP} fullwidth>
         <Input

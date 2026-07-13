@@ -7,8 +7,10 @@ export const SidebarWrapper = ({ children, ...props }: SidebarWrapperProps) => (
     data-slot="sidebar"
     render={<nav />}
     ax="stretch"
-    fullwidth
+    gap={2}
+    p={2}
     pb={64}
+    fullwidth
     {...props}
   >
     {children}

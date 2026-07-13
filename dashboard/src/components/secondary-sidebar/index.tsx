@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { Card, Stack, Tabs, Text, type TabProps } from "@uiid/design-system";
+import {
+  Card,
+  Stack,
+  Separator,
+  Tabs,
+  Text,
+  type TabProps,
+} from "@uiid/design-system";
 import {
   ArrowLeftRightIcon,
   ClockIcon,
@@ -21,7 +28,8 @@ import {
   SidebarWrapper,
   type SidebarWrapperProps,
 } from "../sidebar/subcomponents/sidebar-wrapper";
-import { ChangedFilesZone, WorktreeZone } from "../worktrees";
+import { WorktreeZone } from "../worktrees";
+import { ChangedFilesZone } from "./changed-files-zone";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
@@ -49,7 +57,12 @@ export const SecondarySidebar = ({
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
       <WorktreeZone sessionId={sessionId} />
-      <ChangedFilesZone sessionId={sessionId} />
+      <ChangedFilesZone
+        sessionId={sessionId}
+        isLive={isLive}
+        projectSlug={projectSlug}
+      />
+      <Separator />
       {/* {stats && <SessionStats stats={stats} engagement={engagement} />} */}
     </SidebarWrapper>
   );
