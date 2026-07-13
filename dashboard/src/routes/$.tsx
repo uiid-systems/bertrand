@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, memo, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -146,7 +146,15 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   const { data: rawEvents = [] } = useQuery(
     eventsQuery(sessionId, isLive, projectSlug),
   );
-  const segments = useMemo(() => segmentConversations(rawEvents), [rawEvents]);
+  // Threading the previous result through keeps finished conversations
+  // identity-stable across live appends, so the memoized segment views below
+  // only re-render the conversation that actually changed.
+  const prevSegments = useRef<ConversationSegment[]>([]);
+  const segments = useMemo(() => {
+    const next = segmentConversations(rawEvents, prevSegments.current);
+    prevSegments.current = next;
+    return next;
+  }, [rawEvents]);
 
   // Deep-link support: once segments render, honour a #conversation-… hash so
   // a shared link scrolls to the right chapter (native fragment scrolling
@@ -231,8 +239,12 @@ SessionDetail.displayName = "SessionDetail";
  * a header carries the ordinal, event count, relative start, and the first user
  * prompt as a subtitle. The header's `id` is the deep-link anchor the
  * conversation dropdown (and future docs rail) scrolls to.
+ *
+ * Memoized against the segment's identity (stable for unchanged conversations,
+ * see segmentConversations) so a live append rebuilds only the segment that
+ * grew instead of every Timeline in the session.
  */
-function ConversationSegmentView({
+const ConversationSegmentView = memo(function ConversationSegmentView({
   segment,
   showHeader,
 }: {
@@ -285,7 +297,7 @@ function ConversationSegmentView({
       )}
     </Stack>
   );
-}
+});
 ConversationSegmentView.displayName = "ConversationSegmentView";
 
 /** Per-event icon rendered inside the timeline marker on the rail. */

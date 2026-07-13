@@ -83,4 +83,30 @@ describe("segmentConversations", () => {
   test("empty input yields no segments", () => {
     expect(segmentConversations([])).toEqual([]);
   });
+
+  test("unchanged segments keep their identity across recomputes", () => {
+    const first = ev("c-1", "claude.started");
+    const second = ev("c-1", "user.prompt", { prompt: "goal" });
+    const events = [first, second];
+
+    const prev = segmentConversations(events);
+    // Live append into a NEW conversation: rows for c-1 keep their references.
+    const appended = [...events, ev("c-2", "claude.started")];
+    const next = segmentConversations(appended, prev);
+
+    expect(next).toHaveLength(2);
+    expect(next[0]).toBe(prev[0]); // finished conversation reused wholesale
+    expect(next[1].conversationId).toBe("c-2");
+  });
+
+  test("a segment that gained rows is rebuilt, not reused", () => {
+    const events = [ev("c-1", "claude.started")];
+    const prev = segmentConversations(events);
+    const next = segmentConversations(
+      [...events, ev("c-1", "user.prompt", { prompt: "hi" })],
+      prev,
+    );
+    expect(next[0]).not.toBe(prev[0]);
+    expect(next[0].title).toBe("hi");
+  });
 });
