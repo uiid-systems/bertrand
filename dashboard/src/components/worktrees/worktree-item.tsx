@@ -297,7 +297,8 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
                 <Stack
                   gap={1}
                   fullwidth
-                  style={{ maxHeight: 180, overflowY: "auto" }}
+                  maxh={180}
+                  style={{ overflowY: "auto" }}
                 >
                   {discarded.data.files.map((file) => (
                     <ChangedFileRow key={file.path} file={file} />
