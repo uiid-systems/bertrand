@@ -164,14 +164,53 @@ function projectParam(project: string | undefined): string {
   return `?${new URLSearchParams({ project }).toString()}`
 }
 
+/**
+ * Server ordering is (createdAt, id) — transcript ingestion can backdate a
+ * new row's createdAt, so incremental rows can't just be appended; the merged
+ * list must be re-sorted to match what a full fetch would return.
+ */
+function byTimelineOrder(a: EventRow, b: EventRow): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1
+  return a.id - b.id
+}
+
 export const eventsQuery = (sessionId: string, isLive = false, project?: string) =>
   queryOptions({
     queryKey: ["events", sessionId, project ?? null],
-    queryFn: () =>
-      fetchJson<EventRow[]>(`/api/events/${sessionId}${projectParam(project)}`),
+    // Incremental poll: events are append-only, so after the first full fetch
+    // each tick asks only for rows past the max id already in the cache.
+    // While the session is idle this returns an empty array and we hand back
+    // the previous reference untouched — no re-parse, no structural-share
+    // walk, no re-render.
+    queryFn: async ({ client, queryKey }) => {
+      const prev = client.getQueryData<EventRow[]>(queryKey)
+      const params = new URLSearchParams()
+      if (project) params.set("project", project)
+      if (prev && prev.length > 0) {
+        const sinceId = prev.reduce((max, e) => Math.max(max, e.id), 0)
+        params.set("sinceId", String(sinceId))
+      }
+      const qs = params.toString()
+      const fresh = await fetchJson<EventRow[]>(
+        `/api/events/${sessionId}${qs ? `?${qs}` : ""}`,
+      )
+      if (!prev || prev.length === 0) return fresh
+      if (fresh.length === 0) return prev
+      // Drop ids we already hold — guards against a server that ignores
+      // sinceId (version skew between a hosted SPA and an older local server)
+      // returning the full list again.
+      const seen = new Set(prev.map((e) => e.id))
+      const added = fresh.filter((e) => !seen.has(e.id))
+      if (added.length === 0) return prev
+      return [...prev, ...added].sort(byTimelineOrder)
+    },
     enabled: !!sessionId,
     refetchInterval: isLive ? 1000 : false,
     placeholderData: keepPreviousData,
+    // The queryFn already reuses the previous array when nothing changed;
+    // skipping the default deep-compare avoids walking every meta blob on
+    // every appended tick.
+    structuralSharing: false,
   })
 
 export const statsQuery = (sessionId: string, isLive = false, project?: string) =>

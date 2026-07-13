@@ -105,7 +105,12 @@ const listEvents = (
   const db = resolveDb(url)
   const eventType = url.searchParams.get("type")
   if (eventType) return getEventsByType(sessionId!, eventType, db)
-  return getEventsBySession(sessionId!, db)
+  // `?sinceId=N` returns only rows with id > N — the dashboard's live poll
+  // passes the max id it has seen so idle ticks cost ~0 bytes instead of the
+  // full timeline. Invalid/absent values fall back to the full list.
+  const sinceParam = Number(url.searchParams.get("sinceId"))
+  const sinceId = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : undefined
+  return getEventsBySession(sessionId!, db, { sinceId })
 }
 
 const listAllStats = (
