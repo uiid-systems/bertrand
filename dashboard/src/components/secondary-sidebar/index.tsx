@@ -21,7 +21,7 @@ import {
   SidebarWrapper,
   type SidebarWrapperProps,
 } from "../sidebar/subcomponents/sidebar-wrapper";
-import { WorktreeZone } from "../worktrees";
+import { ChangedFilesZone, WorktreeZone } from "../worktrees";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
@@ -49,6 +49,7 @@ export const SecondarySidebar = ({
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
       <WorktreeZone sessionId={sessionId} />
+      <ChangedFilesZone sessionId={sessionId} />
       {/* {stats && <SessionStats stats={stats} engagement={engagement} />} */}
     </SidebarWrapper>
   );

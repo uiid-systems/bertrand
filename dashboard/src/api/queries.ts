@@ -9,6 +9,7 @@ import type {
   ArchiveErrorReason,
   RemoveWorktreeReason,
   WorktreeSessionRow,
+  WorktreeChangedFiles,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -91,6 +92,28 @@ export const worktreesQuery = queryOptions({
   refetchInterval: 2000,
   placeholderData: keepPreviousData,
 })
+
+/**
+ * Changed files for one session's worktree. Slower poll than the worktree
+ * list — the server forks git per (cache-missed) request, and the answer only
+ * shifts as edits land. Callers gate `enabled` on the worktree existing.
+ *
+ * Default scope is the whole branch diff (vs the merge base with main);
+ * `scope: "uncommitted"` narrows to what a force-removal would discard.
+ */
+export const worktreeFilesQuery = (
+  sessionId: string,
+  scope: "branch" | "uncommitted" = "branch",
+) =>
+  queryOptions({
+    queryKey: ["worktree-files", sessionId, scope],
+    queryFn: () =>
+      fetchJson<WorktreeChangedFiles>(
+        `/api/worktrees/${sessionId}/files${scope === "uncommitted" ? "?scope=uncommitted" : ""}`,
+      ),
+    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
+  })
 
 async function postWorktreeAction(id: string, action: "start" | "stop"): Promise<void> {
   const res = await fetch(apiUrl(`/api/worktrees/${id}/${action}`), { method: "POST" })

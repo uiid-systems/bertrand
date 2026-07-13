@@ -9,6 +9,8 @@ export type {
   ArchiveReason,
   UnarchiveReason,
   ArchiveErrorReason,
+  ChangedFile,
+  WorktreeChangedFiles,
 } from "@/types"
 
 // Type-only — erased at build, so this never pulls the workspace runtime

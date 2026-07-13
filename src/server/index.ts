@@ -1,7 +1,12 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
-import { getMainWorktree, getWorktreeBranch } from "@/lib/git"
+import {
+  getMainWorktree,
+  getWorktreeBranch,
+  getWorktreeChangedFiles,
+  type WorktreeChangedFiles,
+} from "@/lib/git"
 import {
   startWorkspaceServer,
   stopWorkspaceServer,
@@ -295,12 +300,53 @@ const getWorktreeLogs = (
   return { logs: readWorkspaceLog(session.id, n) }
 }
 
+/**
+ * Changed files for a session's worktree, cached briefly like branches: the
+ * lookup forks a few git subprocesses and sits on the secondary sidebar's
+ * poll, and diffs don't change faster than the TTL matters.
+ */
+const FILES_TTL_MS = 3_000
+const filesCache = new Map<string, { at: number; result: WorktreeChangedFiles }>()
+
+async function cachedWorktreeFiles(
+  worktreePath: string,
+  uncommittedOnly: boolean,
+): Promise<WorktreeChangedFiles> {
+  const key = `${worktreePath}#${uncommittedOnly ? "uncommitted" : "branch"}`
+  const cached = filesCache.get(key)
+  if (cached && Date.now() - cached.at < FILES_TTL_MS) return cached.result
+  const result = await getWorktreeChangedFiles(worktreePath, { uncommittedOnly })
+  filesCache.set(key, { at: Date.now(), result })
+  return result
+}
+
+// /api/worktrees/:sessionId/files — what the session's worktree changed
+// relative to its merge base with the main branch, or `?scope=uncommitted`
+// for only what a force-removal would discard. A missing/deleted worktree
+// answers "nothing changed" rather than erroring: the sidebar keeps polling
+// while a worktree is torn down, and an error there is noise, not signal.
+const getWorktreeFiles = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): Response | Promise<WorktreeChangedFiles> => {
+  const session = getSession(sessionId!, resolveDb(url))
+  if (!session) {
+    return Response.json({ error: "Session not found" }, { status: 404 })
+  }
+  if (!session.worktreePath || !existsSync(session.worktreePath)) {
+    return Promise.resolve({ base: null, files: [] })
+  }
+  const uncommittedOnly = url.searchParams.get("scope") === "uncommitted"
+  return cachedWorktreeFiles(session.worktreePath, uncommittedOnly)
+}
+
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
   [/^\/api\/worktrees$/, listWorktrees],
   [/^\/api\/worktrees\/status$/, listWorktreeStatus],
   [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
+  [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/files$/, getWorktreeFiles],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
