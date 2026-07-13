@@ -27,9 +27,10 @@ export function upsertSessionStats(
     linesAdded: number;
     linesRemoved: number;
     filesTouched: number;
-  }
+  },
+  db: Db = getDb(),
 ) {
-  return getDb()
+  return db
     .insert(sessionStats)
     .values({
       sessionId,

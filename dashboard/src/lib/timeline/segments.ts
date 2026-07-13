@@ -27,6 +27,13 @@ export type ConversationSegment = {
   events: EventRow[]
   /** Count of rendered items — the "N events" in the header. */
   eventCount: number
+  /**
+   * Untransformed source rows. Kept so the next recompute can prove the
+   * segment unchanged (same row references — the events cache preserves
+   * identity for rows it already held) and return the prior segment object,
+   * keeping identity stable for React.memo on the segment view.
+   */
+  raw: EventRow[]
 }
 
 const TITLE_MAX = 80
@@ -56,6 +63,14 @@ function firstPrompt(events: EventRow[]): string | null {
   return null
 }
 
+/** Same rows in the same order, by reference — append-only data can't mutate
+ * a row in place, so reference equality over the run proves it unchanged. */
+function sameRaw(a: EventRow[], b: EventRow[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 /**
  * Group session events into per-conversation segments.
  *
@@ -67,9 +82,15 @@ function firstPrompt(events: EventRow[]): string | null {
  *
  * Transforms (tool-call consolidation, Q&A pairing) run *per segment* so a run
  * of tool calls can never be merged across a conversation boundary.
+ *
+ * Pass the previous result as `prev` to keep unchanged segments identity-
+ * stable: a live append only rebuilds (and re-renders) the conversation it
+ * touched — every finished conversation reuses its prior object and skips
+ * applyTransforms entirely.
  */
 export function segmentConversations(
   rawEvents: EventRow[],
+  prev?: ConversationSegment[],
 ): ConversationSegment[] {
   type Bucket = { conversationId: string; raw: EventRow[] }
   const buckets: Bucket[] = []
@@ -85,6 +106,14 @@ export function segmentConversations(
   }
 
   return buckets.map((bucket, i) => {
+    const prior = prev?.[i]
+    if (
+      prior &&
+      prior.conversationId === bucket.conversationId &&
+      sameRaw(prior.raw, bucket.raw)
+    ) {
+      return prior
+    }
     const events = applyTransforms(bucket.raw)
     return {
       conversationId: bucket.conversationId,
@@ -94,6 +123,7 @@ export function segmentConversations(
       startedAt: bucket.raw[0]?.createdAt ?? "",
       events,
       eventCount: events.length,
+      raw: bucket.raw,
     }
   })
 }

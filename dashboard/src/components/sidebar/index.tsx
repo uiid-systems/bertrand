@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 
 import {
   Group,
@@ -11,9 +10,8 @@ import {
 } from "@uiid/design-system";
 import { EyeIcon, EyeOffIcon, SearchIcon } from "@uiid/icons";
 
-import { sessionsQuery } from "../../api/queries";
+import { useSessions } from "../../lib/use-sessions";
 
-import { useSelectedProjects } from "./selected-projects";
 import { ProjectSelector } from "./subcomponents/project-selector";
 import { buildSidebarLayout } from "./sidebar.utils";
 
@@ -35,10 +33,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [includeArchived, setIncludeArchived] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { queryProjects } = useSelectedProjects();
-  const { data: sessions = [] } = useQuery(
-    sessionsQuery({ includeArchived, projects: queryProjects }),
-  );
+  const sessions = useSessions({ includeArchived });
 
   const trimmedQuery = query.trim();
 
@@ -97,7 +92,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
         />
       </Group>
 
-      <Separator py={0} />
+      <Separator />
 
       {isEmpty ? (
         <Text size={-1} shade="muted" px={4} py={2}>

@@ -228,6 +228,21 @@ function verifyPidIdentity(pid: number, startedAt: number | null): Promise<boole
   });
 }
 
+/**
+ * A claim recorded moments ago is trusted without probing the OS. PID
+ * recycling needs a reboot or a full pid-space wraparound — neither happens
+ * within a minute of us writing the claim — and for claims this fresh the
+ * etime check is vacuous anyway (its ±120s tolerance always passes). Probing
+ * would be all downside: `ps` can transiently fail under fork pressure, and a
+ * just-spawned detached child may not have applied setsid yet (Linux does the
+ * child-side setup after fork), so a live fresh pid can flunk the
+ * group-leader check. A false negative is not harmless — callers drop the
+ * state file on it, permanently orphaning a live server.
+ */
+function isFreshClaim(startedAt: number | null): boolean {
+  return startedAt != null && Date.now() - startedAt < 60_000;
+}
+
 function killGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pid, signal);
@@ -349,7 +364,8 @@ export async function getWorkspaceServer(
   const running =
     pid != null &&
     isAlive(pid) &&
-    (await verifyPidIdentity(pid, state!.startedAt));
+    (isFreshClaim(state!.startedAt) ||
+      (await verifyPidIdentity(pid, state!.startedAt)));
   if (pid != null && !running) removePid(sessionId); // clear stale
   const port = getPort(sessionId);
 
@@ -482,7 +498,10 @@ export async function stopWorkspaceServer(sessionId: string): Promise<void> {
   // pid > 0 also excludes a STARTING_PID claim: kill(-(-1)) / kill(-1) have
   // catastrophic wildcard meanings to the OS, so they must never reach it.
   if (state && state.pid > 0 && isAlive(state.pid)) {
-    if (await verifyPidIdentity(state.pid, state.startedAt)) {
+    if (
+      isFreshClaim(state.startedAt) ||
+      (await verifyPidIdentity(state.pid, state.startedAt))
+    ) {
       killGroup(state.pid, "SIGTERM");
       const dead = await waitForDeath(state.pid, deps.termGraceMs);
       if (!dead) {
@@ -540,6 +559,19 @@ export async function teardownWorkspace(input: {
     });
     child.unref();
     closeSync(logFd);
+    // Wait (bounded) for the script to finish: worktree deletion removes the
+    // directory right after teardown resolves, and an in-flight script would
+    // lose its cwd mid-run. Archive callers `void` this promise, so the wait
+    // costs them nothing; the timeout keeps a hung script from wedging anyone.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 30_000);
+      const done = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      child.once("exit", done);
+      child.once("error", done);
+    });
   } catch {
     // best-effort: a broken archive script must not break archiving
   }

@@ -41,15 +41,21 @@ export async function createWorktree(
   await $`git worktree add -b ${branch} ${path} ${baseBranch}`;
 }
 
-/** Remove a worktree */
+/**
+ * Remove a worktree. Pass `cwd` (typically the repo's main checkout) whenever
+ * the calling process isn't guaranteed to be inside the owning repo — the
+ * dashboard server runs from wherever `bertrand serve` was launched, and git
+ * refuses to remove the worktree the process is standing in.
+ */
 export async function removeWorktree(
   path: string,
-  force = false
+  opts: { force?: boolean; cwd?: string } = {}
 ): Promise<void> {
-  if (force) {
-    await $`git worktree remove --force ${path}`;
+  const cwd = opts.cwd ?? process.cwd();
+  if (opts.force) {
+    await $`git -C ${cwd} worktree remove --force ${path}`.quiet();
   } else {
-    await $`git worktree remove ${path}`;
+    await $`git -C ${cwd} worktree remove ${path}`.quiet();
   }
 }
 
