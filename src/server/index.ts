@@ -310,16 +310,19 @@ const filesCache = new Map<string, { at: number; result: WorktreeChangedFiles }>
 
 async function cachedWorktreeFiles(
   worktreePath: string,
+  uncommittedOnly: boolean,
 ): Promise<WorktreeChangedFiles> {
-  const cached = filesCache.get(worktreePath)
+  const key = `${worktreePath}#${uncommittedOnly ? "uncommitted" : "branch"}`
+  const cached = filesCache.get(key)
   if (cached && Date.now() - cached.at < FILES_TTL_MS) return cached.result
-  const result = await getWorktreeChangedFiles(worktreePath)
-  filesCache.set(worktreePath, { at: Date.now(), result })
+  const result = await getWorktreeChangedFiles(worktreePath, { uncommittedOnly })
+  filesCache.set(key, { at: Date.now(), result })
   return result
 }
 
 // /api/worktrees/:sessionId/files — what the session's worktree changed
-// relative to its merge base with the main branch. A missing/deleted worktree
+// relative to its merge base with the main branch, or `?scope=uncommitted`
+// for only what a force-removal would discard. A missing/deleted worktree
 // answers "nothing changed" rather than erroring: the sidebar keeps polling
 // while a worktree is torn down, and an error there is noise, not signal.
 const getWorktreeFiles = (
@@ -333,7 +336,8 @@ const getWorktreeFiles = (
   if (!session.worktreePath || !existsSync(session.worktreePath)) {
     return Promise.resolve({ base: null, files: [] })
   }
-  return cachedWorktreeFiles(session.worktreePath)
+  const uncommittedOnly = url.searchParams.get("scope") === "uncommitted"
+  return cachedWorktreeFiles(session.worktreePath, uncommittedOnly)
 }
 
 const routes: [RegExp, RouteHandler][] = [

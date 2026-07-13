@@ -24,6 +24,7 @@ import {
   stopWorktree,
   deleteWorktree,
   fetchWorktreeLogs,
+  worktreeFilesQuery,
   WorktreeDeleteError,
 } from "../../api/queries";
 import type {
@@ -31,6 +32,7 @@ import type {
   WorkspaceServerStatus,
 } from "../../api/types";
 import { statusColor } from "../../lib/format";
+import { ChangedFileRow } from "./changed-file-row";
 import {
   editorFileUri,
   editorLabel,
@@ -95,6 +97,14 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   });
   const dirty =
     del.error instanceof WorktreeDeleteError && del.error.reason === "dirty";
+
+  // Only fetched once the server has refused a delete for being dirty — the
+  // modal then shows exactly what "Force delete" would discard.
+  const discarded = useQuery({
+    ...worktreeFilesQuery(session.id, "uncommitted"),
+    enabled: dirty && confirmOpen,
+    refetchInterval: false,
+  });
 
   // Only poll logs while the panel is open; keep refreshing them while the
   // server runs so a starting/installing worktree shows progress live.
@@ -281,6 +291,24 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
           <Text size={-1} family="mono" style={{ wordBreak: "break-all" }}>
             {session.worktreePath}
           </Text>
+          {dirty &&
+            (discarded.data ? (
+              discarded.data.files.length > 0 && (
+                <Stack
+                  gap={1}
+                  fullwidth
+                  style={{ maxHeight: 180, overflowY: "auto" }}
+                >
+                  {discarded.data.files.map((file) => (
+                    <ChangedFileRow key={file.path} file={file} />
+                  ))}
+                </Stack>
+              )
+            ) : (
+              <Text size={-1} shade="muted">
+                Listing uncommitted changes…
+              </Text>
+            ))}
           {del.error && !dirty && (
             <Text size={-1} shade="muted">
               ⚠ {del.error.message}

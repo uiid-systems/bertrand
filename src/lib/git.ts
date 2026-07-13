@@ -144,20 +144,28 @@ export function parseNameStatus(out: string): Map<string, ChangedFile["status"]>
  * a rename reads as delete + add — no `old => new` path parsing. Falls back
  * to uncommitted-only (vs HEAD) when no base is resolvable, and to an empty
  * list when git itself fails (deleted dir, not a repo).
+ *
+ * `uncommittedOnly` skips the merge base and diffs against HEAD: exactly what
+ * a force-removal of the worktree would discard (commits survive on the
+ * branch). Untracked files are included either way — `worktree remove
+ * --force` deletes those too.
  */
 export async function getWorktreeChangedFiles(
   cwd: string,
+  opts: { uncommittedOnly?: boolean } = {},
 ): Promise<WorktreeChangedFiles> {
   let base: string | null = null;
-  try {
-    const mainPath = await getMainWorktree(cwd);
-    const mainBranch = mainPath === cwd ? null : await getWorktreeBranch(mainPath);
-    if (mainBranch) {
-      const mb = (await $`git -C ${cwd} merge-base HEAD ${mainBranch}`.text()).trim();
-      base = mb || null;
+  if (!opts.uncommittedOnly) {
+    try {
+      const mainPath = await getMainWorktree(cwd);
+      const mainBranch = mainPath === cwd ? null : await getWorktreeBranch(mainPath);
+      if (mainBranch) {
+        const mb = (await $`git -C ${cwd} merge-base HEAD ${mainBranch}`.text()).trim();
+        base = mb || null;
+      }
+    } catch {
+      base = null;
     }
-  } catch {
-    base = null;
   }
 
   try {

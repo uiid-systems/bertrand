@@ -97,12 +97,20 @@ export const worktreesQuery = queryOptions({
  * Changed files for one session's worktree. Slower poll than the worktree
  * list — the server forks git per (cache-missed) request, and the answer only
  * shifts as edits land. Callers gate `enabled` on the worktree existing.
+ *
+ * Default scope is the whole branch diff (vs the merge base with main);
+ * `scope: "uncommitted"` narrows to what a force-removal would discard.
  */
-export const worktreeFilesQuery = (sessionId: string) =>
+export const worktreeFilesQuery = (
+  sessionId: string,
+  scope: "branch" | "uncommitted" = "branch",
+) =>
   queryOptions({
-    queryKey: ["worktree-files", sessionId],
+    queryKey: ["worktree-files", sessionId, scope],
     queryFn: () =>
-      fetchJson<WorktreeChangedFiles>(`/api/worktrees/${sessionId}/files`),
+      fetchJson<WorktreeChangedFiles>(
+        `/api/worktrees/${sessionId}/files${scope === "uncommitted" ? "?scope=uncommitted" : ""}`,
+      ),
     refetchInterval: 5000,
     placeholderData: keepPreviousData,
   })
