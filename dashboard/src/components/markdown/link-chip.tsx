@@ -40,6 +40,7 @@ export function LinkChip({
     display: "inline-flex",
     alignItems: "center",
     gap: "0.25rem",
+    maxWidth: "min(44ch, 100%)",
     padding: "1px 6px 1px 5px",
     border: `1px solid ${t.border}`,
     borderRadius: "var(--globals-border-radius)",
@@ -52,7 +53,17 @@ export function LinkChip({
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" style={style}>
       {icon}
-      <Text size={-1} family="mono" style={{ color: "inherit" }}>
+      <Text
+        size={-1}
+        family="mono"
+        style={{
+          color: "inherit",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
         {label}
       </Text>
     </a>

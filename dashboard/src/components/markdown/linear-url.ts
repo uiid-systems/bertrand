@@ -7,7 +7,7 @@
  */
 
 export type LinearRef =
-  | { kind: "issue"; workspace: string; identifier: string }
+  | { kind: "issue"; workspace: string; identifier: string; title?: string }
   | { kind: "project"; workspace: string; name: string };
 
 export function parseLinearUrl(href: string): LinearRef | null {
@@ -24,34 +24,45 @@ export function parseLinearUrl(href: string): LinearRef | null {
   if (host !== "linear.app" && host !== "www.linear.app") return null;
 
   const parts = url.pathname.split("/").filter(Boolean);
-  const [workspace, section, id] = parts;
+  const [workspace, section, id, slug] = parts;
   if (!workspace || !section || !id) return null;
 
   // /<workspace>/issue/<TEAM-123>[/<slug>]
   if (section === "issue") {
-    return { kind: "issue", workspace, identifier: id };
+    return {
+      kind: "issue",
+      workspace,
+      identifier: id.toUpperCase(),
+      title: slug ? humanizeSlug(slug) : undefined,
+    };
   }
   // /<workspace>/project/<kebab-name>-<id>
   if (section === "project") {
-    return { kind: "project", workspace, name: humanizeProjectSlug(id) };
+    return { kind: "project", workspace, name: humanizeSlug(stripTrailingId(id)) };
   }
 
   return null;
 }
 
-// Linear project slugs are `<kebab-name>-<hex id>`. Drop the trailing id and
-// restore spaces for a readable label.
-function humanizeProjectSlug(slug: string): string {
-  const withoutId = slug.replace(/-[0-9a-f]{8,}$/i, "");
-  const words = (withoutId || slug).replace(/-/g, " ").trim();
-  return words || slug;
+// Linear project slugs are `<kebab-name>-<hex id>`. Drop the trailing id.
+function stripTrailingId(slug: string): string {
+  return slug.replace(/-[0-9a-f]{8,}$/i, "") || slug;
 }
 
-/** Compact chip label: issue identifier (`UI-177`) or humanized project name. */
+// Kebab slug -> readable title, first letter capitalized.
+function humanizeSlug(slug: string): string {
+  const words = slug.replace(/-/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : slug;
+}
+
+/**
+ * Compact chip label. Issues lead with the identifier (`UI-177`) and append
+ * the title when the URL carries a slug (`UI-177 · Create pattern…`).
+ */
 export function linearRefLabel(ref: LinearRef): string {
   switch (ref.kind) {
     case "issue":
-      return ref.identifier.toUpperCase();
+      return ref.title ? `${ref.identifier} · ${ref.title}` : ref.identifier;
     case "project":
       return ref.name;
   }
