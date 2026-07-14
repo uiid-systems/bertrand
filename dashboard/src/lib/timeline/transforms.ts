@@ -334,12 +334,76 @@ export const decorateToolApplied: TimelineTransform = (events) =>
     return { ...e, summary: TOOL_APPLIED_TITLES[tool] ?? `${tool} applied` }
   })
 
+/**
+ * The events that make up one agent turn: the agent's prose replies and the
+ * tool work it does between two human touch-points. Everything else
+ * (user.prompt, session.answered/waiting, claude.started/ended) is a boundary
+ * that breaks a run.
+ */
+const AGENT_TURN_EVENTS = new Set([
+  "assistant.message",
+  "tool.work",
+  "tool.applied",
+])
+
+/**
+ * Fold each run of consecutive agent events into a single `agent.turn` card so
+ * the timeline reads as an even back-and-forth: one human card, one "Agent's
+ * response" card, repeat. The run's members are preserved verbatim in
+ * `meta.parts` (already summarized/consolidated by the transforms above) and
+ * rendered in order inside the one card, so the sequence reads exactly as it
+ * did when each was its own card — just without the per-part rail markers and
+ * time badges that made a busy turn explode into dozens of rows.
+ *
+ * Runs of length 1 are left untouched: a lone reply or tool call is already a
+ * single card and gains nothing from being wrapped.
+ *
+ * Runs cannot cross a conversation boundary because transforms run per segment.
+ */
+export const consolidateAgentTurns: TimelineTransform = (events) => {
+  const result: EventRow[] = []
+  let i = 0
+
+  while (i < events.length) {
+    const ev = events[i]
+
+    if (!AGENT_TURN_EVENTS.has(ev.event)) {
+      result.push(ev)
+      i++
+      continue
+    }
+
+    const batch: EventRow[] = []
+    while (i < events.length && AGENT_TURN_EVENTS.has(events[i].event)) {
+      batch.push(events[i])
+      i++
+    }
+
+    if (batch.length === 1) {
+      result.push(batch[0])
+      continue
+    }
+
+    // Keep the first member's id/createdAt so the card's anchor is stable and
+    // its time badge marks when the turn began.
+    result.push({
+      ...batch[0],
+      event: "agent.turn",
+      summary: null,
+      meta: { parts: batch },
+    })
+  }
+
+  return result
+}
+
 const transforms: TimelineTransform[] = [
   filterUnknown,
   consolidateInteractions,
   consolidatePermissions,
   consolidateToolApplied,
   decorateToolApplied,
+  consolidateAgentTurns,
 ]
 
 export function applyTransforms(events: EventRow[]): EventRow[] {
