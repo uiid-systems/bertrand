@@ -122,6 +122,19 @@ An empty heading below this line:
 
 ##
 
+## GitHub links (URL-parser POC)
+
+Bare GitHub URLs render as entity chips; explicit \`[text](url)\` links stay plain.
+
+- PR: https://github.com/uiid-systems/bertrand/pull/187
+- Issue: https://github.com/uiid-systems/bertrand/issues/133
+- Commit: https://github.com/uiid-systems/bertrand/commit/31ae4fdac1b2c3d4e5f60718293a4b5c6d7e8f90
+- Repo: https://github.com/uiid-systems/bertrand
+- User/org: https://github.com/uiid-systems
+- Deep link (degrades to repo): https://github.com/uiid-systems/bertrand/blob/main/README.md
+- Explicit label stays plain: [the PR](https://github.com/uiid-systems/bertrand/pull/187)
+- Non-GitHub bare URL stays plain: https://example.com
+
 End of fixture.
 `;
 

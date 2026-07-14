@@ -27,6 +27,9 @@ import type {
 } from "@uiid/design-system";
 import type { Components } from "react-markdown";
 
+import { GithubLinkChip } from "./github-link-chip";
+import { parseGithubUrl } from "./github-url";
+
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
 
 const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
@@ -174,11 +177,20 @@ export const defaultComponents: Components = {
       {children}
     </Text>
   ),
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    // A "bare URL" (remark autolinks it → link text equals the href) that
+    // points at a GitHub entity renders as a compact chip. Explicit
+    // `[text](url)` links keep the author's text and stay plain.
+    const isBare = !!href && extractText(children) === href;
+    if (isBare && parseGithubUrl(href)) {
+      return <GithubLinkChip href={href} />;
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
   ul: ({ children }) => (
     <List
       marker={isTaskList(children) ? "none" : "disc"}
