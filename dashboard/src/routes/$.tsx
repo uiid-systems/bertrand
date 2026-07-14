@@ -31,6 +31,7 @@ import {
 } from "../lib/format";
 import { categoryOf } from "../lib/timeline/categories";
 import {
+  eventAnchorId,
   segmentConversations,
   type ConversationSegment,
 } from "../lib/timeline/segments";
@@ -38,7 +39,6 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { SecondarySidebar } from "../components/secondary-sidebar";
-import { ConversationNav } from "../components/conversation-nav";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
@@ -177,21 +177,12 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
       {/* Breadcrumb bar spans above both the timeline and the secondary
           sidebar; the horizontal split lives beneath it so the crumbs get the
           full width to breathe. */}
-      <Group
-        ay="center"
-        ax="space-between"
-        px={4}
-        py={2}
-        gap={4}
-        bb={1}
-        fullwidth
-      >
+      <Group ay="center" ax="space-between" p={2} gap={4} bb={1} fullwidth>
         <Group ay="center" gap={2}>
           <Status color={statusDotColor} pulse={isLive} />
           <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         </Group>
         <Group ay="center" gap={2}>
-          <ConversationNav segments={segments} />
           <CopyResumeButton
             session={match.session}
             categoryPath={match.categoryPath}
@@ -203,9 +194,9 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
         <Resizable direction="horizontal">
           <ResizablePanel>
             <Stack
-              p={8}
-              gap={8}
+              id="timeline-scroll"
               ax="stretch"
+              p={4}
               fullwidth
               fullheight
               style={{ overflowY: "auto" }}
@@ -220,7 +211,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             </Stack>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize={420} minSize={360} maxSize={640}>
+          <ResizablePanel defaultSize={560} minSize={360} maxSize={640}>
             <SecondarySidebar
               sessionId={sessionId}
               isLive={isLive}
@@ -237,8 +228,10 @@ SessionDetail.displayName = "SessionDetail";
 /**
  * One conversation's timeline. When the session has more than one conversation,
  * a header carries the ordinal, event count, relative start, and the first user
- * prompt as a subtitle. The header's `id` is the deep-link anchor the
- * conversation dropdown (and future docs rail) scrolls to.
+ * prompt as a subtitle. The segment container's `id` is the deep-link anchor the
+ * sidebar's Timeline table-of-contents (and a shared #hash link) scroll to — it
+ * lives on the container (not the header) so single-conversation sessions, which
+ * render no header, still expose an anchor to jump to.
  *
  * Memoized against the segment's identity (stable for unchanged conversations,
  * see segmentConversations) so a live append rebuilds only the segment that
@@ -252,9 +245,16 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
   readonly showHeader: boolean;
 }) {
   return (
-    <Stack ax="stretch" fullwidth gap={4} pb={52}>
+    <Stack
+      id={segment.anchorId}
+      ax="stretch"
+      fullwidth
+      gap={4}
+      pb={52}
+      style={{ scrollMarginTop: 16 }}
+    >
       {showHeader && (
-        <Stack id={segment.anchorId} gap={1} style={{ scrollMarginTop: 16 }}>
+        <Stack gap={1}>
           <Group ay="baseline" gap={2}>
             <Text weight="semibold">Conversation {segment.ordinal}</Text>
             <Text size={1} shade="muted">
@@ -275,6 +275,10 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
           gap={6}
           ContentProps={{ maxw: 960, pt: 0, pb: 6 }}
           items={segment.events.map((e) => ({
+            // Anchor every card so the sidebar table-of-contents can scroll to
+            // it; the margin keeps the target off the container's top edge.
+            id: eventAnchorId(e),
+            style: { scrollMarginTop: 16 },
             color: eventColor(e.event),
             marker: <EventMarker event={e} />,
             content: <EventContent event={e} />,
@@ -327,6 +331,7 @@ function ArchiveToggle({
       aria-label={action.label}
     >
       <Icon />
+      {action.label} session
     </Button>
   );
 }

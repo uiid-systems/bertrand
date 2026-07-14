@@ -7,7 +7,7 @@ export const TopBarWrapper = ({ children, ...props }: TopBarWrapperProps) => (
     data-slot="top-bar-wrapper"
     fullwidth
     ay="center"
-    p={4}
+    p={2}
     gap={4}
     bb={1}
     style={{

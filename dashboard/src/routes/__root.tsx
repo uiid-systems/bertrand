@@ -13,8 +13,6 @@ import {
 
 import { Sidebar } from "../components/sidebar";
 import { TopBar } from "../components/topbar";
-import { useSessionNotifications } from "../lib/use-session-notifications";
-import { useSessions } from "../lib/use-sessions";
 
 import "../globals.css";
 
@@ -42,18 +40,9 @@ function RootLayout() {
 }
 
 function AppShell() {
-  const sessions = useSessions();
-
-  // Fire browser notifications when any session (across all projects) crosses
-  // into waiting/blocked. Self-contained — runs its own global query.
-  useSessionNotifications();
-
-  // The secondary sidebar lives inside the session route (see routes/$.tsx),
-  // nested beside <main> beneath a shared breadcrumb bar. Here the shell only
-  // owns the primary sidebar / main split.
   return (
     <Stack fullwidth style={{ position: "fixed", height: "100dvh" }}>
-      <TopBar sessionCount={sessions.length} />
+      <TopBar />
       <Resizable direction="horizontal">
         <ResizablePanel defaultSize={360} minSize={320} maxSize={540}>
           <Sidebar />

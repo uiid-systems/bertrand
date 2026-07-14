@@ -1,45 +1,25 @@
-import { Activity } from "react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Button, Group, Text } from "@uiid/design-system";
-import {
-  ChartGanttIcon,
-  FileDiffIcon,
-  CaseSensitiveIcon,
-  GitBranchIcon,
-} from "@uiid/icons";
+import { Button, Group, Text } from "@uiid/design-system";
+import { FileDiffIcon, CaseSensitiveIcon } from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
 import { NotificationToggle } from "../notification-toggle";
 
-type TopBarProps = {
-  sessionCount?: number;
-};
-
-export const TopBar = ({ sessionCount }: TopBarProps) => {
+export const TopBar = () => {
   return (
     <TopBarWrapper>
-      <Text size={2} weight="bold">
+      <Text size={2} weight="bold" mr={4}>
         bertrand
       </Text>
-
-      <Activity mode={sessionCount ? "visible" : "hidden"}>
-        <Badge color="blue">{sessionCount} session(s)</Badge>
-      </Activity>
+      <Text render={<Link to="/">Home</Link>} size={-1} weight="medium" />
+      <Text
+        render={<Link to="/worktrees">Worktrees</Link>}
+        size={-1}
+        weight="medium"
+      />
 
       <Group gap={3} ay="center" ml="auto">
         <Group gap={2} ay="center">
-          <DevButton
-            to="/"
-            tooltip="Session timeline"
-            icon={<ChartGanttIcon />}
-          />
-
-          <DevButton
-            to="/worktrees"
-            tooltip="Worktrees"
-            icon={<GitBranchIcon />}
-          />
-
           <DevButton
             to="/dev/markdown"
             tooltip="Markdown viewer"

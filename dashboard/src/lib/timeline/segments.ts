@@ -50,6 +50,16 @@ function anchorFor(conversationId: string): string {
   return `conversation-${suffix}`
 }
 
+/**
+ * Stable DOM anchor for a single timeline card, e.g. `event-1234`. Shared by
+ * the timeline (which stamps it on each item's `<li>`) and the sidebar's
+ * table-of-contents (which scrolls to it). The row keeps its DB id through
+ * every transform, so the anchor is stable and globally unique.
+ */
+export function eventAnchorId(event: EventRow): string {
+  return `event-${event.id}`
+}
+
 /** First user prompt in a conversation, used as the segment's subtitle. */
 function firstPrompt(events: EventRow[]): string | null {
   for (const ev of events) {
