@@ -10,6 +10,12 @@
   text-decoration: underline;
 }
 
+/* Timeline table-of-contents rows: underline the title on hover so the row
+   reads as a jump link, matching the sidebar zone triggers above. */
+.timeline-toc-item:hover .timeline-toc-title {
+  text-decoration: underline;
+}
+
 html,
 body {
   margin: 0;

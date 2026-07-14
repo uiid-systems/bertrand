@@ -1,6 +1,5 @@
-import { Activity } from "react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Button, Group, Text } from "@uiid/design-system";
+import { Button, Group, Text } from "@uiid/design-system";
 import {
   ChartGanttIcon,
   FileDiffIcon,
@@ -21,10 +20,6 @@ export const TopBar = ({ sessionCount }: TopBarProps) => {
       <Text size={2} weight="bold">
         bertrand
       </Text>
-
-      <Activity mode={sessionCount ? "visible" : "hidden"}>
-        <Badge color="blue">{sessionCount} session(s)</Badge>
-      </Activity>
 
       <Group gap={3} ay="center" ml="auto">
         <Group gap={2} ay="center">
