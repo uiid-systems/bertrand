@@ -135,6 +135,13 @@ Bare GitHub URLs render as entity chips; explicit \`[text](url)\` links stay pla
 - Explicit label stays plain: [the PR](https://github.com/uiid-systems/bertrand/pull/187)
 - Non-GitHub bare URL stays plain: https://example.com
 
+## Linear links (purple chips)
+
+- Issue: https://linear.app/tabs/issue/UI-177/create-pattern-for-agentic-guides
+- Issue (short): https://linear.app/tabs/issue/UI-49
+- Project: https://linear.app/tabs/project/next-16-rollout-9f8a7b6c5d4e
+- Marketing page stays plain: https://linear.app/pricing
+
 End of fixture.
 `;
 

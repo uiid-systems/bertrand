@@ -29,6 +29,8 @@ import type { Components } from "react-markdown";
 
 import { GithubLinkChip } from "./github-link-chip";
 import { parseGithubUrl } from "./github-url";
+import { LinearLinkChip } from "./linear-link-chip";
+import { parseLinearUrl } from "./linear-url";
 
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
 
@@ -182,8 +184,9 @@ export const defaultComponents: Components = {
     // points at a GitHub entity renders as a compact chip. Explicit
     // `[text](url)` links keep the author's text and stay plain.
     const isBare = !!href && extractText(children) === href;
-    if (isBare && parseGithubUrl(href)) {
-      return <GithubLinkChip href={href} />;
+    if (isBare) {
+      if (parseGithubUrl(href)) return <GithubLinkChip href={href} />;
+      if (parseLinearUrl(href)) return <LinearLinkChip href={href} />;
     }
     return (
       <a href={href} target="_blank" rel="noopener noreferrer">
