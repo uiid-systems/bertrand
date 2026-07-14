@@ -586,7 +586,12 @@ function reapOrphanedWorkspaceState(): void {
 }
 
 export function startServer(port = PORT) {
-  reapOrphanedWorkspaceState()
+  // A worktree preview can boot this same server as its API sidecar (the
+  // `api` workspace script; BERTRAND_WORKSPACE is set in that env). Global
+  // sweeps are the shared server's boot duty — a sidecar running branch code
+  // must not reap other sessions' servers or rewrite the port registry based
+  // on the branch's view of the world.
+  if (!process.env.BERTRAND_WORKSPACE) reapOrphanedWorkspaceState()
   const server = Bun.serve({
     port,
     // Loopback only. The API has no auth, answers with CORS *, and now

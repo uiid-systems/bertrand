@@ -243,6 +243,14 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
         </Text>
       )}
 
+      {listening && preview?.api && !preview.api.listening && (
+        <Text size={-1} shade="muted">
+          ⚠ API sidecar isn't up on :{preview.api.port} yet — the UI is served
+          but /api requests will fail until it binds. Check the logs if this
+          persists.
+        </Text>
+      )}
+
       {showLogs && (
         <pre
           style={{

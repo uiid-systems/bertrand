@@ -14,6 +14,8 @@ export interface WorkspaceEnvInput {
   root: string;
   /** The stable preview URL, exported so the app/logs can print it. */
   previewUrl: string;
+  /** Port allocated to the API sidecar, when the workspace has an `api` script. */
+  apiPort?: number;
 }
 
 /**
@@ -29,6 +31,11 @@ export interface WorkspaceEnvInput {
  * servers honor it, so an auto-detected `dev` script binds the deterministic
  * port with no user config. Apps that ignore `PORT` (e.g. Vite) should
  * reference `$BERTRAND_PORT` in a committed `run` override instead.
+ *
+ * A workspace with an `api` sidecar additionally gets `BERTRAND_API_PORT`
+ * (the sidecar's allocated slot) and `BERTRAND_API_TARGET` (the origin a
+ * UI's `/api` proxy should forward to). Both commands see the same map —
+ * the sidecar's own `PORT` remap happens in the launch script, not here.
  */
 export function workspaceEnv(input: WorkspaceEnvInput): Record<string, string> {
   return {
@@ -37,6 +44,12 @@ export function workspaceEnv(input: WorkspaceEnvInput): Record<string, string> {
     BERTRAND_ROOT: input.root,
     BERTRAND_PREVIEW_URL: input.previewUrl,
     PORT: String(input.port),
+    ...(input.apiPort != null
+      ? {
+          BERTRAND_API_PORT: String(input.apiPort),
+          BERTRAND_API_TARGET: localhostPreviewUrl(input.apiPort),
+        }
+      : {}),
   };
 }
 

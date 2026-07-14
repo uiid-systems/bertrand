@@ -71,6 +71,38 @@
     proxy hits the live session server on `:5200` — preview UI changes
     against real data, without touching the running server the way
     `dashboard/dev.ts` deliberately does.
+- **2026-07-14** — **Full-stack previews: API sidecar**
+  ([#183](https://github.com/uiid-systems/bertrand/issues/183)). Discovered
+  dogfooding #182: the preview rendered the branch's SPA, but its new `/api`
+  route 404'd because the vite proxy was hard-coded to the shared main-branch
+  server on `:5200`. A branch that touches UI *and* API couldn't be previewed
+  end-to-end. Now:
+  - *New `api` script verb* (override-only — an API server has no
+    auto-detectable shape). When committed, the workspace layer allocates a
+    **second port** (registry key `<sessionId>:api`, pruned/released with the
+    session) and boots the sidecar in the **same process group** as `run`,
+    after `setup` — one install, one group to signal, one interleaved log.
+    The sidecar's `PORT` is remapped to `$BERTRAND_API_PORT` in the launch
+    script; when `run` exits, the script group-kills itself so the sidecar
+    can't outlive its leader as an unreachable orphan.
+  - *Env contract grows two vars* (only when a sidecar exists):
+    `BERTRAND_API_PORT` and `BERTRAND_API_TARGET` (the origin a UI's `/api`
+    proxy should forward to). The dashboard's vite proxy target is now
+    `BERTRAND_API_TARGET ?? http://localhost:5200`, so UI-only previews and
+    `bun dev` behave exactly as before.
+  - *Observed-state treatment for the sidecar:* status reports
+    `api: { port, listening }`, where `listening` means observed on the
+    assigned port specifically — the proxy target is pinned there, so a
+    sidecar bound anywhere else is unreachable and honestly reads as down.
+    The sidecar's port is excluded from the UI's observed-port candidates, so
+    the preview URL keeps pointing at the UI even while it's still booting.
+    `bertrand open` and the worktrees panel surface a UI-up-but-API-down note.
+  - *Sidecar `bertrand serve` skips the boot-time orphan reap*
+    (`BERTRAND_WORKSPACE` set ⇒ no global sweep) — reaping is the shared
+    server's job, and a sidecar runs branch code against shared state.
+  - *Known constraint:* the sidecar reads/writes the same `~/.bertrand` DBs as
+    the shared server. Fine for reads (the dogfood case); concurrent writes
+    deserve a think before previews mutate anything heavily (#183).
 - **Next / deferred** — Phase 2 (the branded-HTTPS endgame: privileged `:443`
   helper, local-CA TLS, `*.local.bertrand.sh`, `/etc/hosts`, reverse proxy) is
   **not yet designed**. One thing worth remembering when we pick it up: a single
@@ -194,8 +226,10 @@ Conductor's genuinely good idea is a small, declarative lifecycle — not its GU
 - Plus env conventions: a per-workspace **port block** (`CONDUCTOR_PORT`..`+9`) and a
   `CONDUCTOR_WORKSPACE_NAME` for naming per-workspace resources.
 
-We adopt the same three-verb lifecycle and inject equivalent env into both the setup and
-run commands:
+We adopt the same three-verb lifecycle — plus a bertrand-specific fourth verb, `api`,
+which boots the branch's API server alongside `run` for full-stack previews
+(override-only; see the 2026-07-14 progress entry) — and inject equivalent env into
+both the setup and run commands:
 
 - `BERTRAND_PORT` (a single port per workspace — the allocator reserves exactly one
   slot, so we deliberately do *not* export a `+0..+9` block until allocation can
@@ -204,6 +238,9 @@ run commands:
 - `BERTRAND_WORKSPACE` (the session/worktree slug, for naming DB files, data dirs, etc.)
 - `BERTRAND_ROOT` (the main checkout path, for symlinking shared files)
 - `BERTRAND_PREVIEW_URL` (the stable URL, exported so the app/logs can print it)
+- `BERTRAND_API_PORT` / `BERTRAND_API_TARGET` (only when an `api` sidecar is
+  committed — its allocated slot, and the origin a UI's `/api` proxy should
+  forward to)
 
 **Where this config lives.** The global `~/.bertrand/config.json` (`BertrandConfig`) is
 per-machine and wrong for this — the dev command is a property of the *project* and

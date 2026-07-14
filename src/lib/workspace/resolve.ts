@@ -21,6 +21,9 @@ import type { WorkspaceRunConfig } from "./types";
  * defaults to the package manager's install command (nothing to archive by
  * default). This is the zero-config frontend path: a lockfile + a `dev` script
  * is enough to install and run with no committed config at all.
+ *
+ * `api` is override-only: an API sidecar has no auto-detectable shape, so a
+ * workspace only gets one when the repo commits the command.
  */
 export function resolveWorkspace(dir: string): WorkspaceRunConfig | null {
   const override = readRepoWorkspaceConfig(dir);
@@ -45,7 +48,7 @@ export function resolveWorkspace(dir: string): WorkspaceRunConfig | null {
   const setup = override?.setup ?? (pm ? installCommand(pm) : undefined);
 
   return {
-    scripts: { run, setup, archive: override?.archive },
+    scripts: { run, setup, api: override?.api, archive: override?.archive },
     packageManager: pm,
     source,
   };

@@ -97,4 +97,19 @@ describe("resolveWorkspace", () => {
     });
     expect(resolveWorkspace(dir)?.scripts.run).toBe("make serve");
   });
+
+  test("api sidecar is override-only: never auto-detected, passed through when committed", () => {
+    const detected = fixture({ "package.json": pkg(), "bun.lock": "" });
+    expect(resolveWorkspace(detected)?.scripts.api).toBeUndefined();
+
+    const overridden = fixture({
+      "package.json": pkg({
+        bertrand: { run: "vite", api: "bun run src/index.ts serve" },
+      }),
+      "bun.lock": "",
+    });
+    expect(resolveWorkspace(overridden)?.scripts.api).toBe(
+      "bun run src/index.ts serve",
+    );
+  });
 });

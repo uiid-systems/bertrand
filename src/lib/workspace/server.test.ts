@@ -46,6 +46,20 @@ const listener = (portExpr = "Number(process.env.PORT)"): WorkspaceRunConfig => 
   source: "detected",
 });
 
+/** A shell command that LISTENs on $PORT — the sidecar launch remaps PORT to
+ * the api slot, so the same command serves as either verb. */
+const serveCmd = (body = "'ok'") =>
+  `bun -e "Bun.serve({ port: Number(process.env.PORT), fetch: () => new Response(${body}) }); setTimeout(() => {}, 30000)"`;
+
+/** A config with an `api` sidecar. Both commands honor PORT. */
+const withApi = (
+  overrides: Partial<WorkspaceRunConfig["scripts"]> = {},
+): WorkspaceRunConfig => ({
+  scripts: { run: serveCmd("'ui'"), api: serveCmd("'api'"), ...overrides },
+  packageManager: "bun",
+  source: "override",
+});
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -423,6 +437,7 @@ describe("getWorkspaceServer", () => {
     expect(status.listening).toBe(false);
     expect(status.observedPort).toBeNull();
     expect(status.url).toBeNull();
+    expect(status.api).toBeNull();
   });
 
   test("a running process that binds nothing is not 'listening'", async () => {
@@ -462,5 +477,97 @@ describe("getWorkspaceServer", () => {
     expect(status.observedPort).toBe(started.port! + 7);
     // the URL must always be true: it follows the observed port
     expect(status.url).toBe(`http://localhost:${started.port! + 7}`);
+  });
+});
+
+async function isPortResponding(port: number): Promise<boolean> {
+  try {
+    await fetch(`http://localhost:${port}/`, {
+      signal: AbortSignal.timeout(300),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("api sidecar", () => {
+  beforeEach(() => {
+    _resetServerDeps();
+    _resetPortDeps();
+  });
+
+  test("boots on a second allocated port and gets the observed-state treatment", async () => {
+    const { worktree } = freshDirs(() => withApi());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+
+    expect(status.api).not.toBeNull();
+    expect(status.api!.port).not.toBe(status.port);
+    expect(status.api!.listening).toBe(false); // fresh spawn — observed later
+
+    await waitFor(async () => {
+      const s = await getWorkspaceServer("sess-1");
+      return s.listening && (s.api?.listening ?? false);
+    });
+    const live = await getWorkspaceServer("sess-1");
+    expect(live.listening).toBe(true);
+    expect(live.api).toEqual({ port: status.api!.port, listening: true });
+    // the UI's observed port is never confused with the sidecar's
+    expect(live.observedPort).toBe(status.port);
+    expect(live.url).toBe(`http://localhost:${status.port}`);
+  });
+
+  test("the preview URL never follows the sidecar's port", async () => {
+    // UI never binds (installing forever); only the sidecar listens.
+    const { worktree } = freshDirs(() => withApi({ run: "sleep 30" }));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+
+    await waitFor(
+      async () => (await getWorkspaceServer("sess-1")).api?.listening === true,
+    );
+    const s = await getWorkspaceServer("sess-1");
+    expect(s.api?.listening).toBe(true);
+    expect(s.listening).toBe(false); // the UI is not up …
+    expect(s.observedPort).toBeNull(); // … and the API's port isn't misattributed
+    expect(s.url).toBe(`http://localhost:${s.port}`); // falls back to assigned
+  });
+
+  test("stop releases the sidecar port along with the base port", async () => {
+    const { worktree } = freshDirs(() => withApi());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+
+    await stopWorkspaceServer("sess-1");
+    const after = await getWorkspaceServer("sess-1");
+    expect(after.port).toBeNull();
+    expect(after.api).toBeNull();
+  });
+
+  test("run exiting takes the sidecar down with it (no orphaned API server)", async () => {
+    const { worktree } = freshDirs(() => withApi({ run: "sleep 1" }));
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    const apiPort = status.api!.port;
+
+    // the sidecar comes up while `run` is still alive …
+    await waitFor(async () => isPortResponding(apiPort));
+    expect(await isPortResponding(apiPort)).toBe(true);
+
+    // … and when `run` exits, the launch script's group-kill sweeps it too
+    await waitFor(async () => !(await isPortResponding(apiPort)));
+    expect(await isPortResponding(apiPort)).toBe(false);
+    await expectDead(status.pid!);
+  });
+
+  test("a workspace without an api script reports api: null throughout", async () => {
+    const { worktree } = freshDirs(() => listener());
+    const status = (await startWorkspaceServer(input(worktree)))!;
+    cleanupPids.push(status.pid!);
+    expect(status.api).toBeNull();
+
+    await waitFor(async () => (await getWorkspaceServer("sess-1")).listening);
+    expect((await getWorkspaceServer("sess-1")).api).toBeNull();
   });
 });
