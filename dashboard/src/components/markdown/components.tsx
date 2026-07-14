@@ -180,11 +180,12 @@ export const defaultComponents: Components = {
     </Text>
   ),
   a: ({ children, href }) => {
-    // A "bare URL" (remark autolinks it → link text equals the href) that
-    // points at a GitHub entity renders as a compact chip. Explicit
-    // `[text](url)` links keep the author's text and stay plain.
-    const isBare = !!href && extractText(children) === href;
-    if (isBare) {
+    // Recognized GitHub/Linear entity URLs always render as a chip — whether
+    // written bare (`https://…`) or as an explicit `[text](url)` link — so the
+    // entity (PR #187, ticket UID + title) is always surfaced. Real content
+    // mostly uses explicit links, so gating on "bare only" hid the chips.
+    // Non-entity links keep the author's text and stay plain.
+    if (href) {
       if (parseGithubUrl(href)) return <GithubLinkChip href={href} />;
       if (parseLinearUrl(href)) return <LinearLinkChip href={href} />;
     }
