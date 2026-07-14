@@ -56,14 +56,16 @@ function humanizeSlug(slug: string): string {
 }
 
 /**
- * Compact chip label. Issues lead with the identifier (`UI-177`) and append
- * the title when the URL carries a slug (`UI-177 · Create pattern…`).
+ * Compact chip label, written so the leading token signals the entity type:
+ * issues lead with the identifier (`UI-177`, obviously a ticket) and append
+ * the title from the slug; projects lead with a `Project ·` prefix so they
+ * are never mistaken for a ticket.
  */
 export function linearRefLabel(ref: LinearRef): string {
   switch (ref.kind) {
     case "issue":
       return ref.title ? `${ref.identifier} · ${ref.title}` : ref.identifier;
     case "project":
-      return ref.name;
+      return `Project · ${ref.name}`;
   }
 }
