@@ -2,13 +2,6 @@ import { Group, Text } from "@uiid/design-system";
 
 import type { ChangedFile } from "../../api/types";
 
-const truncate = {
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-} as const;
-
-/** Git-style status letter; `?` mirrors `git status`'s untracked marker. */
 const STATUS_LETTER: Record<ChangedFile["status"], string> = {
   added: "A",
   modified: "M",
@@ -16,12 +9,13 @@ const STATUS_LETTER: Record<ChangedFile["status"], string> = {
   untracked: "?",
 };
 
-const STATUS_COLOR: Record<ChangedFile["status"], "green" | "yellow" | "red"> = {
-  added: "green",
-  untracked: "green",
-  modified: "yellow",
-  deleted: "red",
-};
+const STATUS_COLOR: Record<ChangedFile["status"], "green" | "yellow" | "red"> =
+  {
+    added: "green",
+    untracked: "green",
+    modified: "yellow",
+    deleted: "red",
+  };
 
 /**
  * One changed file, shared by the sidebar's "Files changed" zone and the
@@ -34,23 +28,38 @@ export const ChangedFileRow = ({ file }: { file: ChangedFile }) => {
   const name = file.path.slice(slash + 1);
 
   return (
-    <Group data-slot="changed-file" ay="center" gap={2} fullwidth>
-      {/* Directory muted, filename full-strength — the filename is the
-          signal; truncation eats from the whole path's tail as one block. */}
-      <Text
-        size={-1}
-        family="mono"
-        title={file.path}
-        style={{ ...truncate, flex: "1 1 auto", minWidth: 0 }}
-      >
+    // A subgrid row: the parent list defines the two column tracks
+    // (`minmax(0, 1fr) auto`) and every row adopts them via `subgrid`, so the
+    // counts column sizes to the widest counts across ALL rows — a clean
+    // tabular line the path truncates against, instead of the boundary drifting
+    // with each row's path/counts length.
+    <Group
+      data-slot="changed-file-row"
+      ay="center"
+      gap={4}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "subgrid",
+        gridColumn: "1 / -1",
+      }}
+    >
+      <Group ay="center" title={file.path} minw={0}>
         {dir && (
-          <Text size={-1} family="mono" shade="muted" render={<span />}>
+          <Text
+            size={-1}
+            family="mono"
+            shade="muted"
+            truncate
+            style={{ minWidth: 0 }}
+          >
             {dir}
           </Text>
         )}
-        {name}
-      </Text>
-      <Group gap={1} ay="center" style={{ flexShrink: 0 }}>
+        <Text size={-1} family="mono" style={{ flexShrink: 0 }}>
+          {name}
+        </Text>
+      </Group>
+      <Group gap={2} ay="center" ax="end">
         {file.added != null && file.added > 0 && (
           <Text size={-1} family="mono" color="green">
             +{file.added}

@@ -5,6 +5,7 @@ import {
   getMainWorktree,
   getWorktreeBranch,
   getWorktreeChangedFiles,
+  type ChangedFile,
   type WorktreeChangedFiles,
 } from "@/lib/git"
 import {
@@ -23,6 +24,7 @@ import {
 import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats, computeAndPersist } from "@/lib/timing"
+import { computeChangedFiles } from "@/lib/diff_stats"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -182,6 +184,21 @@ const getStatsBySession = (
         session.status === "blocked"
   if (isLive) return liveStats(sessionId!, db)
   return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
+}
+
+// /api/stats/:sessionId/files — the individual files a session changed, with
+// per-file line counts, derived from its timeline (not git). Mirrors the
+// primary sidebar's file-count/+- totals and covers every session whether or
+// not a worktree exists. A missing session answers "nothing changed" so the
+// sidebar can poll quietly.
+const getChangedFilesBySession = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): ChangedFile[] => {
+  const db = resolveDb(url)
+  const session = getSession(sessionId!, db)
+  if (!session) return []
+  return computeChangedFiles(sessionId!, db)
 }
 
 const getEngagement = (
@@ -349,6 +366,7 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/files$/, getWorktreeFiles],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
+  [/^\/api\/stats\/(?<sessionId>[^/]+)\/files$/, getChangedFilesBySession],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
   [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
   [/^\/api\/projects$/, listAllProjects],

@@ -34,6 +34,7 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
           marker="none"
           ax="stretch"
           gap={1}
+          px={2}
           fullwidth
         >
           {sessions.map((s) => (
