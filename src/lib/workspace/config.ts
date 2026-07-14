@@ -41,7 +41,7 @@ function pick(raw: unknown): RepoWorkspaceConfig | null {
   if (typeof raw !== "object" || raw === null) return null;
   const src = raw as Record<string, unknown>;
   const out: RepoWorkspaceConfig = {};
-  for (const key of ["setup", "run", "archive", "devCommand"] as const) {
+  for (const key of ["setup", "run", "api", "archive", "devCommand"] as const) {
     if (typeof src[key] === "string") out[key] = src[key] as string;
   }
   return Object.keys(out).length > 0 ? out : null;

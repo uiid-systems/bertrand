@@ -94,6 +94,16 @@ export function allocatePort(sessionId: string): number {
   );
 }
 
+/**
+ * Registry key for a session's API-sidecar port. The registry maps arbitrary
+ * string keys to ports, so the second per-session slot is just a derived key;
+ * session ids are nanoids (no `:`), so the suffix can't collide with a real
+ * id, and `prunePorts` treats the key as owned by the session.
+ */
+export function apiPortKey(sessionId: string): string {
+  return `${sessionId}:api`;
+}
+
 /** The session's allocated port, or null if it has none. */
 export function getPort(sessionId: string): number | null {
   return read()[sessionId] ?? null;
@@ -116,9 +126,11 @@ export function prunePorts(activeSessionIds: Iterable<string>): void {
   const keep = new Set(activeSessionIds);
   const reg = read();
   let changed = false;
-  for (const sessionId of Object.keys(reg)) {
-    if (!keep.has(sessionId)) {
-      delete reg[sessionId];
+  for (const key of Object.keys(reg)) {
+    // A `<sessionId>:api` sidecar slot lives and dies with its session.
+    const owner = key.split(":")[0]!;
+    if (!keep.has(owner)) {
+      delete reg[key];
       changed = true;
     }
   }

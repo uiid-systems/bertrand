@@ -18,11 +18,16 @@ export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
  *   (install deps, symlink `.env`). Optional: absent means "nothing to do".
  * - `run` launches the dev server. Required — a workspace with no `run` is
  *   not previewable, which is why `resolveWorkspace` returns null in that case.
+ * - `api` boots the branch's API server alongside `run`, on a second
+ *   allocated port (`$BERTRAND_API_PORT`), for branches whose UI preview
+ *   needs the branch's API too. Optional and override-only — there is no
+ *   auto-detected shape for "this repo's API server".
  * - `archive` tears the workspace down. Optional.
  */
 export interface WorkspaceScripts {
   setup?: string;
   run: string;
+  api?: string;
   archive?: string;
 }
 
@@ -50,6 +55,7 @@ export interface WorkspaceRunConfig {
 export interface RepoWorkspaceConfig {
   setup?: string;
   run?: string;
+  api?: string;
   archive?: string;
   devCommand?: string;
 }

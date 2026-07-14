@@ -131,6 +131,13 @@ register("open", async (args) => {
         `passes $BERTRAND_PORT to pin it.`,
     );
   }
+  if (final.api && !final.api.listening) {
+    console.log(
+      `Note: the API sidecar isn't listening on :${final.api.port} yet — ` +
+        `the UI is up, but /api requests will fail until it binds. ` +
+        `Logs: ${logFile}`,
+    );
+  }
   console.log(`Preview: ${final.url}`);
   openInBrowser(final.url!);
 });

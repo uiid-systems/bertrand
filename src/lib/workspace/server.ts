@@ -16,7 +16,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
-import { allocatePort, getPort, prunePorts, releasePort } from "./port";
+import { allocatePort, apiPortKey, getPort, prunePorts, releasePort } from "./port";
 import { localhostPreviewUrl, workspaceEnv } from "./env";
 import { resolveWorkspace } from "./resolve";
 import type { WorkspaceRunConfig } from "./types";
@@ -52,6 +52,14 @@ export interface WorkspaceServerStatus {
    * get) while starting. Null when no port is allocated.
    */
   url: string | null;
+  /**
+   * API sidecar state, or null when the workspace has none (no `api` script
+   * — the common, UI-only case). `listening` means observed on the assigned
+   * port specifically: the UI's `/api` proxy target is pinned to that port
+   * (`BERTRAND_API_TARGET`), so a sidecar bound anywhere else is unreachable
+   * and honestly reads as down.
+   */
+  api: { port: number; listening: boolean } | null;
   logFile: string;
 }
 
@@ -347,6 +355,7 @@ export async function getWorkspaceServer(
       state.startedAt != null && Date.now() - state.startedAt < 60_000;
     if (!fresh) removePid(sessionId);
     const claimPort = getPort(sessionId);
+    const claimApiPort = getPort(apiPortKey(sessionId));
     return {
       running: false,
       pid: null,
@@ -354,6 +363,7 @@ export async function getWorkspaceServer(
       observedPort: null,
       listening: false,
       url: claimPort != null ? localhostPreviewUrl(claimPort) : null,
+      api: claimApiPort != null ? { port: claimApiPort, listening: false } : null,
       logFile: logFile(sessionId),
     };
   }
@@ -368,16 +378,26 @@ export async function getWorkspaceServer(
       (await verifyPidIdentity(pid, state!.startedAt)));
   if (pid != null && !running) removePid(sessionId); // clear stale
   const port = getPort(sessionId);
+  // An allocated sidecar slot means the last start had an `api` script — the
+  // registry is the durable record, so status needs no config resolution.
+  const apiPort = getPort(apiPortKey(sessionId));
 
   const observed = running ? await listeningPorts(pid!) : [];
+  // The sidecar runs in the same process group, so its listener shows up in
+  // `observed` too. Its port is ours by allocation — attribute it to the
+  // sidecar and exclude it from the UI candidates, so a still-booting UI
+  // never reports the API's port as its own (the preview URL must always
+  // point at the UI).
+  const uiObserved =
+    apiPort == null ? observed : observed.filter((p) => p !== apiPort);
   // Prefer the allocated port when the group holds several (e.g. an HMR
   // socket next to the app); otherwise the lowest bound port is the app.
   const observedPort =
-    observed.length === 0
+    uiObserved.length === 0
       ? null
-      : port != null && observed.includes(port)
+      : port != null && uiObserved.includes(port)
         ? port
-        : observed[0]!;
+        : uiObserved[0]!;
   const listening = observedPort != null;
 
   const urlPort = observedPort ?? port;
@@ -388,6 +408,10 @@ export async function getWorkspaceServer(
     observedPort,
     listening,
     url: urlPort != null ? localhostPreviewUrl(urlPort) : null,
+    api:
+      apiPort != null
+        ? { port: apiPort, listening: observed.includes(apiPort) }
+        : null,
     logFile: logFile(sessionId),
   };
 }
@@ -428,13 +452,29 @@ export async function startWorkspaceServer(
   closeSync(lockFd);
 
   const port = allocatePort(sessionId);
+  const apiPort =
+    config.scripts.api != null ? allocatePort(apiPortKey(sessionId)) : null;
   const url = localhostPreviewUrl(port);
-  const env = workspaceEnv({ port, slug, root, previewUrl: url });
+  const env = workspaceEnv({
+    port,
+    slug,
+    root,
+    previewUrl: url,
+    ...(apiPort != null ? { apiPort } : {}),
+  });
 
   // setup && run, so a fresh worktree installs before the dev server starts.
-  const command = config.scripts.setup
-    ? `${config.scripts.setup} && ${config.scripts.run}`
+  // An `api` sidecar boots in the same process group after setup (one
+  // install, one group to signal, one interleaved log), with PORT remapped
+  // to its own slot. When `run` exits, the trailing group-kill takes the
+  // sidecar down too — otherwise it would outlive the group leader as an
+  // orphan that the stop path can no longer reach.
+  const launch = config.scripts.api
+    ? `{ ( export PORT="$BERTRAND_API_PORT"; ${config.scripts.api} ) & ${config.scripts.run}; }; kill -TERM 0`
     : config.scripts.run;
+  const command = config.scripts.setup
+    ? `${config.scripts.setup} && ${launch}`
+    : launch;
 
   rotateLog(sessionId);
   const logFd = openSync(logFile(sessionId), "a");
@@ -477,6 +517,7 @@ export async function startWorkspaceServer(
     observedPort: null,
     listening: false,
     url,
+    api: apiPort != null ? { port: apiPort, listening: false } : null,
     logFile: logFile(sessionId),
   };
 }
@@ -512,6 +553,7 @@ export async function stopWorkspaceServer(sessionId: string): Promise<void> {
   }
   removePid(sessionId);
   releasePort(sessionId);
+  releasePort(apiPortKey(sessionId));
 }
 
 /**
@@ -527,7 +569,9 @@ export async function teardownWorkspace(input: {
   slug?: string;
 }): Promise<void> {
   const { sessionId, worktreePath, slug } = input;
-  const port = getPort(sessionId); // read before stop releases it
+  // read before stop releases them
+  const port = getPort(sessionId);
+  const apiPort = getPort(apiPortKey(sessionId));
   await stopWorkspaceServer(sessionId);
 
   if (!worktreePath || !existsSync(worktreePath)) return;
@@ -539,6 +583,7 @@ export async function teardownWorkspace(input: {
   // env it likely names (`docker compose -p $BERTRAND_WORKSPACE down`).
   const env: Record<string, string> = {};
   if (port != null) env.BERTRAND_PORT = String(port);
+  if (apiPort != null) env.BERTRAND_API_PORT = String(apiPort);
   if (slug) env.BERTRAND_WORKSPACE = slug;
   try {
     mkdirSync(deps.dir, { recursive: true });

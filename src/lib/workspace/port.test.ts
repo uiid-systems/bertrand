@@ -4,6 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   allocatePort,
+  apiPortKey,
   getPort,
   releasePort,
   prunePorts,
@@ -107,5 +108,29 @@ describe("prunePorts", () => {
     expect(getPort("keep")).not.toBeNull();
     expect(getPort("drop-1")).toBeNull();
     expect(getPort("drop-2")).toBeNull();
+  });
+
+  test("an api-sidecar slot lives and dies with its session", () => {
+    allocatePort("keep");
+    allocatePort(apiPortKey("keep"));
+    allocatePort("drop");
+    allocatePort(apiPortKey("drop"));
+    prunePorts(["keep"]);
+    expect(getPort(apiPortKey("keep"))).not.toBeNull();
+    expect(getPort("drop")).toBeNull();
+    expect(getPort(apiPortKey("drop"))).toBeNull();
+  });
+});
+
+describe("apiPortKey", () => {
+  beforeEach(() => freshRegistry());
+
+  test("reserves a slot distinct from the session's base port", () => {
+    const base = allocatePort("sess-a");
+    const api = allocatePort(apiPortKey("sess-a"));
+    expect(api).not.toBe(base);
+    // both are idempotent and independently retrievable
+    expect(getPort("sess-a")).toBe(base);
+    expect(getPort(apiPortKey("sess-a"))).toBe(api);
   });
 });

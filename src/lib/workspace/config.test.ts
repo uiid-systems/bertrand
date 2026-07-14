@@ -65,4 +65,16 @@ describe("readRepoWorkspaceConfig", () => {
     const dir = fixture({ ".bertrand/config.json": "{ broken" });
     expect(readRepoWorkspaceConfig(dir)).toBeNull();
   });
+
+  test("reads the api sidecar command", () => {
+    const dir = fixture({
+      "package.json": JSON.stringify({
+        bertrand: { run: "vite", api: "bun run src/index.ts serve" },
+      }),
+    });
+    expect(readRepoWorkspaceConfig(dir)).toEqual({
+      run: "vite",
+      api: "bun run src/index.ts serve",
+    });
+  });
 });

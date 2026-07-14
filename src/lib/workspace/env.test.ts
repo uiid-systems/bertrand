@@ -25,6 +25,20 @@ describe("workspaceEnv", () => {
     expect(env.BERTRAND_PORT_1).toBeUndefined();
     expect(env.BERTRAND_PORT_9).toBeUndefined();
   });
+
+  test("omits the API vars when no sidecar port is allocated", () => {
+    const env = workspaceEnv(base);
+    expect(env.BERTRAND_API_PORT).toBeUndefined();
+    expect(env.BERTRAND_API_TARGET).toBeUndefined();
+  });
+
+  test("exports the sidecar port and proxy target when given one", () => {
+    const env = workspaceEnv({ ...base, apiPort: 4301 });
+    expect(env.BERTRAND_API_PORT).toBe("4301");
+    expect(env.BERTRAND_API_TARGET).toBe("http://localhost:4301");
+    // PORT stays the UI port — the sidecar's remap happens in the launch script
+    expect(env.PORT).toBe("4300");
+  });
 });
 
 describe("localhostPreviewUrl", () => {

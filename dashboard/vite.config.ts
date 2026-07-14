@@ -8,7 +8,10 @@ export default defineConfig({
     port: 5199,
     proxy: {
       "/api": {
-        target: "http://localhost:5200",
+        // Worktree previews boot the branch's API sidecar on its own port and
+        // point the SPA at it via BERTRAND_API_TARGET; without one, the proxy
+        // hits the shared session server on :5200.
+        target: process.env.BERTRAND_API_TARGET ?? "http://localhost:5200",
         changeOrigin: true,
       },
     },
