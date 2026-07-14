@@ -22,7 +22,6 @@ import { useArchiveAction } from "../api/use-archive-action";
 import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
   eventColor,
-  eventIcon,
   eventTitle,
   formatRelativeTime,
   formatTimestamp,
@@ -31,6 +30,7 @@ import {
   summarizeAgentTurn,
 } from "../lib/format";
 import { categoryOf } from "../lib/timeline/categories";
+import { iconOf } from "../lib/timeline/icons";
 import {
   eventAnchorId,
   segmentConversations,
@@ -324,7 +324,7 @@ ConversationSegmentView.displayName = "ConversationSegmentView";
 
 /** Per-event icon rendered inside the timeline marker on the rail. */
 function EventMarker({ event }: { readonly event: EventRow }) {
-  const Icon = eventIcon(event.event);
+  const Icon = iconOf(event.event);
   return <Icon size={12} />;
 }
 EventMarker.displayName = "EventMarker";

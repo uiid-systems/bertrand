@@ -1,6 +1,5 @@
 import type { EventRow, SessionRow } from "../api/types";
 import { colorOf, labelOf } from "./timeline/categories";
-import { iconOf } from "./timeline/icons";
 
 type SessionStatus = SessionRow["status"];
 
@@ -71,7 +70,10 @@ export const eventColor = colorOf;
 
 export const eventLabel = labelOf;
 
-export const eventIcon = iconOf;
+// NB: no `eventIcon` re-export here. `iconOf` pulls in `@uiid/icons`, a UI
+// package absent from the root `bun test` environment; keeping it out of this
+// module lets the pure formatters (and their tests) import from here freely.
+// UI code imports `iconOf` directly from `./timeline/icons`.
 
 type AppliedEdit = { oldStr?: string; newStr?: string };
 type AppliedPermission = {
