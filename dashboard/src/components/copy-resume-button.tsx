@@ -34,6 +34,7 @@ export const CopyResumeButton = ({
       variant={variant}
       shape={shape}
       pressed={copied}
+      style={{ textWrap: "nowrap" }}
       onPressedChange={(next) => {
         if (!next) return;
         void navigator.clipboard.writeText(sessionPath);
@@ -43,6 +44,10 @@ export const CopyResumeButton = ({
       icon={{
         unpressed: <Copy />,
         pressed: <Check color="green" />,
+      }}
+      text={{
+        pressed: "Copied!",
+        unpressed: "Copy path",
       }}
       onClick={(e) => {
         e.preventDefault();

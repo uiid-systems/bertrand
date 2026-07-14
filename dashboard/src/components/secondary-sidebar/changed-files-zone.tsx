@@ -51,7 +51,10 @@ export const ChangedFilesZone = ({
         px={2}
         gap={1}
         fullwidth
-        style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto" }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+        }}
       >
         {files.map((file) => (
           <ChangedFileRow key={file.path} file={file} />

@@ -36,14 +36,14 @@ export const ChangedFileRow = ({ file }: { file: ChangedFile }) => {
     <Group
       data-slot="changed-file-row"
       ay="center"
-      gap={4}
+      gap={2}
       style={{
         display: "grid",
         gridTemplateColumns: "subgrid",
         gridColumn: "1 / -1",
       }}
     >
-      <Group ay="center" title={file.path} minw={0}>
+      <Group ay="center" title={file.path} minw={0} pr={2}>
         {dir && (
           <Text
             size={-1}
@@ -59,21 +59,36 @@ export const ChangedFileRow = ({ file }: { file: ChangedFile }) => {
           {name}
         </Text>
       </Group>
-      <Group gap={2} ay="center" ax="end">
-        {file.added != null && file.added > 0 && (
-          <Text size={-1} family="mono" color="green">
-            +{file.added}
-          </Text>
-        )}
-        {file.removed != null && file.removed > 0 && (
-          <Text size={-1} family="mono" color="red">
-            -{file.removed}
-          </Text>
-        )}
-        <Text size={-1} family="mono" color={STATUS_COLOR[file.status]}>
-          {STATUS_LETTER[file.status]}
+      {/* <Group gap={2} ay="center" ax="end"> */}
+      {file.added != null && file.added > 0 && (
+        <Text
+          size={-1}
+          family="mono"
+          color="green"
+          style={{ textAlign: "right" }}
+        >
+          +{file.added}
         </Text>
-      </Group>
+      )}
+      {file.removed != null && file.removed > 0 && (
+        <Text
+          size={-1}
+          family="mono"
+          color="red"
+          style={{ textAlign: "right" }}
+        >
+          -{file.removed}
+        </Text>
+      )}
+      <Text
+        size={-1}
+        family="mono"
+        color={STATUS_COLOR[file.status]}
+        style={{ textAlign: "right" }}
+      >
+        {STATUS_LETTER[file.status]}
+      </Text>
+      {/* </Group> */}
     </Group>
   );
 };

@@ -331,7 +331,7 @@ function ArchiveToggle({
       aria-label={action.label}
     >
       <Icon />
-      {action.label}
+      {action.label} session
     </Button>
   );
 }
