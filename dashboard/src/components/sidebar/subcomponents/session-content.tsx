@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Group, Text } from "@uiid/design-system";
-import { FilesIcon } from "@uiid/icons";
+import { FilesIcon, GitBranchIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
-import { allStatsQuery } from "../../../api/queries";
+import { allStatsQuery, worktreesQuery } from "../../../api/queries";
 import { useSessions } from "../../../lib/use-sessions";
 import { useSelectedProjects } from "../selected-projects";
 import { isLive } from "../sidebar.utils";
@@ -25,8 +25,16 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
   const filesTouched = stats?.filesTouched ?? 0;
   const hasDiff = linesAdded > 0 || linesRemoved > 0;
 
+  const { data: worktrees = [] } = useQuery(worktreesQuery);
+  const hasWorktree = worktrees.some((w) => w.session.id === s.session.id);
+
   return (
     <Group ay="center" gap={2} fullwidth>
+      {hasWorktree && (
+        <Group ay="center" fullheight>
+          <GitBranchIcon size={12} aria-label="Has a worktree" />
+        </Group>
+      )}
       {filesTouched > 0 && (
         <Group ay="start" gap={1}>
           <FilesIcon size={12} />
