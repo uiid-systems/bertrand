@@ -32,6 +32,7 @@ const EVENT_ICONS: Record<KnownEvent, Icon> = {
   "tool.applied": PencilIcon,
   "tool.used": TerminalIcon,
   "assistant.message": SparklesIcon,
+  "agent.turn": SparklesIcon,
 }
 
 const DEFAULT_ICON: Icon = CircleDotIcon

@@ -22,14 +22,15 @@ import { useArchiveAction } from "../api/use-archive-action";
 import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
   eventColor,
-  eventIcon,
   eventTitle,
   formatRelativeTime,
   formatTimestamp,
   isLiveStatus,
   statusColor,
+  summarizeAgentTurn,
 } from "../lib/format";
 import { categoryOf } from "../lib/timeline/categories";
+import { iconOf } from "../lib/timeline/icons";
 import {
   eventAnchorId,
   segmentConversations,
@@ -274,29 +275,46 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
           activeIndex={segment.events.length}
           gap={6}
           ContentProps={{ maxw: 960, pt: 0, pb: 6 }}
-          items={segment.events.map((e) => ({
-            // Anchor every card so the sidebar table-of-contents can scroll to
-            // it; the margin keeps the target off the container's top edge.
-            id: eventAnchorId(e),
-            style: { scrollMarginTop: 16 },
-            color: eventColor(e.event),
-            marker: <EventMarker event={e} />,
-            content: <EventContent event={e} />,
-            title: eventTitle(e),
-            TitleProps: { color: eventColor(e.event) },
-            time: (
+          items={segment.events.map((e) => {
+            // A consolidated agent turn hides its many work rows, so surface a
+            // compact readout (tool calls · reads · file diffs) beside the
+            // timestamp — parity with the folded detail without touching the
+            // title. Other cards keep the bare timestamp.
+            const turnSummary = summarizeAgentTurn(e);
+            const timestamp = (
               <Badge color={eventColor(e.event)} size="small">
                 <span style={{ whiteSpace: "nowrap" }}>
                   {formatTimestamp(e.createdAt)}
                 </span>
               </Badge>
-            ),
-            // Lifecycle rows are just an id/exit badge — no card surface.
-            CardProps:
-              categoryOf(e.event) === "lifecycle"
-                ? { variant: "ghost" as const }
-                : undefined,
-          }))}
+            );
+            return {
+              // Anchor every card so the sidebar table-of-contents can scroll to
+              // it; the margin keeps the target off the container's top edge.
+              id: eventAnchorId(e),
+              style: { scrollMarginTop: 16 },
+              color: eventColor(e.event),
+              marker: <EventMarker event={e} />,
+              content: <EventContent event={e} />,
+              title: eventTitle(e),
+              TitleProps: { color: eventColor(e.event) },
+              time: turnSummary ? (
+                <Group gap={2} ay="center">
+                  <Text size={-1} shade="muted" style={{ whiteSpace: "nowrap" }}>
+                    {turnSummary}
+                  </Text>
+                  {timestamp}
+                </Group>
+              ) : (
+                timestamp
+              ),
+              // Lifecycle rows are just an id/exit badge — no card surface.
+              CardProps:
+                categoryOf(e.event) === "lifecycle"
+                  ? { variant: "ghost" as const }
+                  : undefined,
+            };
+          })}
         />
       )}
     </Stack>
@@ -306,7 +324,7 @@ ConversationSegmentView.displayName = "ConversationSegmentView";
 
 /** Per-event icon rendered inside the timeline marker on the rail. */
 function EventMarker({ event }: { readonly event: EventRow }) {
-  const Icon = eventIcon(event.event);
+  const Icon = iconOf(event.event);
   return <Icon size={12} />;
 }
 EventMarker.displayName = "EventMarker";

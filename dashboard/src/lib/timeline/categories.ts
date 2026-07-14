@@ -51,6 +51,11 @@ export const EVENT_CATALOG = {
     color: "indigo",
     label: "Agent's response",
   },
+  "agent.turn": {
+    category: "assistant",
+    color: "indigo",
+    label: "Agent's response",
+  },
 } as const satisfies Record<string, EventInfo>;
 
 /** Every event kind with catalog metadata. Icons live in `./icons`, keyed by this union. */

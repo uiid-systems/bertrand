@@ -1,6 +1,5 @@
 import type { EventRow, SessionRow } from "../api/types";
 import { colorOf, labelOf } from "./timeline/categories";
-import { iconOf } from "./timeline/icons";
 
 type SessionStatus = SessionRow["status"];
 
@@ -71,7 +70,10 @@ export const eventColor = colorOf;
 
 export const eventLabel = labelOf;
 
-export const eventIcon = iconOf;
+// NB: no `eventIcon` re-export here. `iconOf` pulls in `@uiid/icons`, a UI
+// package absent from the root `bun test` environment; keeping it out of this
+// module lets the pure formatters (and their tests) import from here freely.
+// UI code imports `iconOf` directly from `./timeline/icons`.
 
 type AppliedEdit = { oldStr?: string; newStr?: string };
 type AppliedPermission = {
@@ -134,6 +136,73 @@ function summarizeApplied(meta: Record<string, unknown>): string | null {
   }
 
   return `edited ${filenames.size} files${counts}`;
+}
+
+type TurnPermission = {
+  tool?: string;
+  count?: number;
+  detail?: string;
+  oldStr?: string;
+  newStr?: string;
+  edits?: AppliedEdit[];
+};
+
+const READ_TOOLS = new Set(["Read", "NotebookRead"]);
+
+/**
+ * Compact activity readout for a consolidated `agent.turn` card, shown beside
+ * the timestamp: total tool calls, then the reads and file-diff breakdown the
+ * card would otherwise hide now that its many work rows are folded into one.
+ * Line counts mirror `summarizeApplied` (oldStr → removed, newStr → added) so
+ * the +/- here matches the sidebar's changed-files badges. Returns null for a
+ * non-turn card, or a turn that did no tool work (pure prose) — the caller then
+ * shows the bare timestamp.
+ */
+export function summarizeAgentTurn(event: EventRow): string | null {
+  if (event.event !== "agent.turn") return null;
+  const meta = event.meta as Record<string, unknown> | null;
+  const parts = (meta?.parts as EventRow[] | undefined) ?? [];
+
+  let toolCalls = 0;
+  let reads = 0;
+  const filesEdited = new Set<string>();
+  let linesAdded = 0;
+  let linesRemoved = 0;
+
+  for (const part of parts) {
+    if (part.event !== "tool.work" && part.event !== "tool.applied") continue;
+    const partMeta = part.meta as Record<string, unknown> | null;
+    const permissions = (partMeta?.permissions ?? []) as TurnPermission[];
+    for (const p of permissions) {
+      const count = p.count ?? 1;
+      toolCalls += count;
+      if (p.tool && READ_TOOLS.has(p.tool)) reads += count;
+
+      if (p.edits && p.edits.length > 0) {
+        if (p.detail) filesEdited.add(p.detail);
+        for (const e of p.edits) {
+          linesRemoved += lineCount(e.oldStr);
+          linesAdded += lineCount(e.newStr);
+        }
+      } else if (p.oldStr || p.newStr) {
+        if (p.detail) filesEdited.add(p.detail);
+        linesRemoved += lineCount(p.oldStr);
+        linesAdded += lineCount(p.newStr);
+      }
+    }
+  }
+
+  if (toolCalls === 0) return null;
+
+  const segments = [`${toolCalls} ${toolCalls === 1 ? "tool" : "tools"}`];
+  if (reads > 0) segments.push(`${reads} ${reads === 1 ? "read" : "reads"}`);
+  if (filesEdited.size > 0) {
+    const counts =
+      linesAdded || linesRemoved ? ` (+${linesAdded} -${linesRemoved})` : "";
+    const noun = filesEdited.size === 1 ? "file" : "files";
+    segments.push(`${filesEdited.size} ${noun}${counts}`);
+  }
+  return segments.join(" · ");
 }
 
 export function eventTitle(event: EventRow): string {
