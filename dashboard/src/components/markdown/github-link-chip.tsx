@@ -23,7 +23,7 @@ export function GithubLinkChip({ href }: { href: string }) {
     <LinkChip
       href={href}
       icon={<SiGithub size={12} />}
-      label={githubRefLabel(ref)}
+      lead={githubRefLabel(ref)}
       tone="green"
     />
   );

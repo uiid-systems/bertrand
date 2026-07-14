@@ -1,6 +1,6 @@
 import { SiLinear } from "@icons-pack/react-simple-icons";
 
-import { linearRefLabel, parseLinearUrl } from "./linear-url";
+import { linearChipParts, parseLinearUrl } from "./linear-url";
 import { LinkChip } from "./link-chip";
 
 /**
@@ -20,11 +20,13 @@ export function LinearLinkChip({ href }: { href: string }) {
     );
   }
 
+  const { lead, rest } = linearChipParts(ref);
   return (
     <LinkChip
       href={href}
       icon={<SiLinear size={12} />}
-      label={linearRefLabel(ref)}
+      lead={lead}
+      rest={rest}
       tone="purple"
     />
   );

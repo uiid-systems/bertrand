@@ -56,16 +56,19 @@ function humanizeSlug(slug: string): string {
 }
 
 /**
- * Compact chip label, written so the leading token signals the entity type:
- * issues lead with the identifier (`UI-177`, obviously a ticket) and append
- * the title from the slug; projects lead with a `Project ·` prefix so they
- * are never mistaken for a ticket.
+ * Chip label split into a bold `lead` and optional `rest`. The lead signals
+ * the entity type: issues lead with the identifier (`UI-177`, obviously a
+ * ticket) followed by the title; projects lead with `Project` so they are
+ * never mistaken for a ticket.
  */
-export function linearRefLabel(ref: LinearRef): string {
+export function linearChipParts(ref: LinearRef): {
+  lead: string;
+  rest?: string;
+} {
   switch (ref.kind) {
     case "issue":
-      return ref.title ? `${ref.identifier} · ${ref.title}` : ref.identifier;
+      return { lead: ref.identifier, rest: ref.title };
     case "project":
-      return `Project · ${ref.name}`;
+      return { lead: "Project", rest: ref.name };
   }
 }

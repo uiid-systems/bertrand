@@ -23,16 +23,21 @@ const TONES: Record<ChipTone, { surface: string; border: string; fg: string }> =
  * Inline entity pill shared by the GitHub and Linear URL chips. The tone sets
  * surface/border/foreground; the icon inherits `currentColor` and the label
  * is forced to inherit, so both track the tone's foreground in either theme.
+ *
+ * The label is split into a bold `lead` (the identifier / type) and an
+ * optional normal-weight `rest`, joined by `: ` — e.g. **UI-177**: Title.
  */
 export function LinkChip({
   href,
   icon,
-  label,
+  lead,
+  rest,
   tone,
 }: {
   href: string;
   icon: ReactNode;
-  label: string;
+  lead: string;
+  rest?: string;
   tone: ChipTone;
 }) {
   const t = TONES[tone];
@@ -64,7 +69,8 @@ export function LinkChip({
           whiteSpace: "nowrap",
         }}
       >
-        {label}
+        <span style={{ fontWeight: "bold" }}>{lead}</span>
+        {rest ? `: ${rest}` : null}
       </Text>
     </a>
   );
