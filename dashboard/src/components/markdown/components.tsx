@@ -27,6 +27,11 @@ import type {
 } from "@uiid/design-system";
 import type { Components } from "react-markdown";
 
+import { GithubLinkChip } from "./github-link-chip";
+import { parseGithubUrl } from "./github-url";
+import { LinearLinkChip } from "./linear-link-chip";
+import { parseLinearUrl } from "./linear-url";
+
 const BUNDLED_LANGUAGES = new Set(Object.keys(LANGUAGE_DISPLAY_NAMES));
 
 const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
@@ -174,11 +179,22 @@ export const defaultComponents: Components = {
       {children}
     </Text>
   ),
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    // Recognized GitHub/Linear entity URLs always render as a chip — whether
+    // written bare (`https://…`) or as an explicit `[text](url)` link — so the
+    // entity (PR #187, ticket UID + title) is always surfaced. Real content
+    // mostly uses explicit links, so gating on "bare only" hid the chips.
+    // Non-entity links keep the author's text and stay plain.
+    if (href) {
+      if (parseGithubUrl(href)) return <GithubLinkChip href={href} />;
+      if (parseLinearUrl(href)) return <LinearLinkChip href={href} />;
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
   ul: ({ children }) => (
     <List
       marker={isTaskList(children) ? "none" : "disc"}

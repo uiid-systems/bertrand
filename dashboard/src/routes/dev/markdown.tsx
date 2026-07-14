@@ -122,6 +122,27 @@ An empty heading below this line:
 
 ##
 
+## GitHub links (URL-parser POC)
+
+Bare GitHub URLs render as entity chips; explicit \`[text](url)\` links stay plain.
+
+- PR: https://github.com/uiid-systems/bertrand/pull/187
+- Issue: https://github.com/uiid-systems/bertrand/issues/133
+- Commit: https://github.com/uiid-systems/bertrand/commit/31ae4fdac1b2c3d4e5f60718293a4b5c6d7e8f90
+- Repo: https://github.com/uiid-systems/bertrand
+- User/org: https://github.com/uiid-systems
+- Deep link (degrades to repo): https://github.com/uiid-systems/bertrand/blob/main/README.md
+- Explicit link also chips: [ignore this text](https://github.com/uiid-systems/bertrand/pull/187)
+- Non-GitHub link stays plain: [example](https://example.com)
+
+## Linear links (purple chips)
+
+- Issue (bare): https://linear.app/tabs/issue/UI-177/create-pattern-for-agentic-guides
+- Issue (short): https://linear.app/tabs/issue/UI-49
+- Issue as explicit link: [Create pattern for agentic guides](https://linear.app/tabs/issue/UI-177/create-pattern-for-agentic-guides)
+- Project: https://linear.app/tabs/project/next-16-rollout-9f8a7b6c5d4e
+- Marketing page stays plain: https://linear.app/pricing
+
 End of fixture.
 `;
 

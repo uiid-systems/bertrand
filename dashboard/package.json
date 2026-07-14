@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@icons-pack/react-simple-icons": "^13.13.0",
     "@tanstack/react-query": "^5.99.2",
     "@tanstack/react-router": "^1.168.23",
     "@uiid/design-system": "^0.0.34",
