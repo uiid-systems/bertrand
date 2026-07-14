@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0](https://github.com/uiid-systems/bertrand/compare/v0.29.0...v0.30.0) (2026-07-14)
+
+
+### Features
+
+* **dashboard:** consolidate agent actions into one "Agent's response" card ([#188](https://github.com/uiid-systems/bertrand/issues/188)) ([c1a0e84](https://github.com/uiid-systems/bertrand/commit/c1a0e840fda6dc32636dd245e0cb5f1dbe753c0f))
+* **dashboard:** files-changed zone in the secondary sidebar ([#182](https://github.com/uiid-systems/bertrand/issues/182)) ([1ec1f54](https://github.com/uiid-systems/bertrand/commit/1ec1f5417b4796efbe77f48d15b077d363a6d9c0))
+* **dashboard:** timeline table-of-contents in the secondary sidebar ([#187](https://github.com/uiid-systems/bertrand/issues/187)) ([bb45092](https://github.com/uiid-systems/bertrand/commit/bb45092295d9f429ef20e39f2f5de53b8ba4a00c))
+* **dashboard:** timeline-driven changed-files list in secondary sidebar ([#186](https://github.com/uiid-systems/bertrand/issues/186)) ([7bd1c60](https://github.com/uiid-systems/bertrand/commit/7bd1c6093811559fc55017f9aac8d5ce2f03bb09))
+* **dashboard:** worktree icon on sidebar session cards ([#185](https://github.com/uiid-systems/bertrand/issues/185)) ([e038c0f](https://github.com/uiid-systems/bertrand/commit/e038c0f776bffad0a2f82f91ee7d018039825aac))
+* **markdown:** GitHub & Linear entity URL chips ([#189](https://github.com/uiid-systems/bertrand/issues/189)) ([8877519](https://github.com/uiid-systems/bertrand/commit/88775193bd572fcde3ea9863a482302ddd54bb2d))
+* **workspaces:** full-stack worktree previews with an API sidecar ([#190](https://github.com/uiid-systems/bertrand/issues/190)) ([5ec31f6](https://github.com/uiid-systems/bertrand/commit/5ec31f6279ff4b80a798e332cbeeba7383e43a2b))
+
 ## [0.29.0](https://github.com/uiid-systems/bertrand/compare/v0.28.1...v0.29.0) (2026-07-13)
 
 
