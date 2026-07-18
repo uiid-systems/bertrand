@@ -1,4 +1,5 @@
 import {
+  Box,
   Button,
   Group,
   Kbd,
@@ -31,14 +32,15 @@ export const ProjectSelector = ({ ...props }: GroupProps) => {
     <Group ay="center" gap={1} fullwidth {...props}>
       <SelectMultiple
         placeholder="Select projects"
-        items={items}
-        value={value}
         onValueChange={(next) => setSelected(next)}
         before={<FolderIcon />}
         after={<Kbd hotkey={["meta", "j"]} />}
-        size="small"
         disabled={!multiple}
+        items={items}
+        value={value}
+        size="small"
         fullwidth
+        TriggerProps={{ style: { minWidth: 0 } }}
       />
       {multiple && (
         <Button
