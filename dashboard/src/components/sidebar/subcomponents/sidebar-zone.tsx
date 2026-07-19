@@ -4,11 +4,17 @@ import {
   Collapsible,
   Group,
   Text,
+  ToggleButton,
   type CollapsiblePanelProps,
   type CollapsibleRootProps,
   type GroupProps,
 } from "@uiid/design-system";
-import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  Flashlight,
+  FlashlightOff,
+} from "@uiid/icons";
 
 export type SidebarZoneProps = React.PropsWithChildren<{
   title: string;
@@ -53,6 +59,10 @@ export const SidebarZone = ({
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
+  // Per-zone dimming. Default lit (on) so the zone looks unchanged until the
+  // reader deliberately turns its flashlight off.
+  const [lit, setLit] = useState(true);
+
   return (
     <Collapsible
       instant
@@ -60,6 +70,9 @@ export const SidebarZone = ({
       TriggerProps={{ nativeButton: false }}
       PanelProps={{
         ...PanelProps,
+        className: [PanelProps?.className, !lit && "sidebar-zone-dimmed"]
+          .filter(Boolean)
+          .join(" "),
         style: { width: "100%", ...PanelProps?.style },
       }}
       trigger={
@@ -81,7 +94,30 @@ export const SidebarZone = ({
             {title}
           </Text>
           {badge}
-          {actions ? <Group ml="auto">{actions}</Group> : null}
+          {/* Right cluster: any zone-specific actions plus the flashlight
+              dim toggle. Stop clicks here from reaching the collapsible
+              trigger, which would otherwise toggle the zone open/closed. */}
+          <Group
+            ml="auto"
+            gap={1}
+            ay="center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actions}
+            <ToggleButton
+              pressed={lit}
+              onPressedChange={setLit}
+              size="xsmall"
+              variant="ghost"
+              shape="square"
+              aria-label={lit ? "Dim this section" : "Brighten this section"}
+              tooltip={lit ? "Dim" : "Brighten"}
+              icon={{
+                pressed: <Flashlight size={13} />,
+                unpressed: <FlashlightOff size={13} />,
+              }}
+            />
+          </Group>
         </Group>
       }
     >

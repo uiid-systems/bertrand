@@ -16,6 +16,17 @@
   text-decoration: underline;
 }
 
+/* A zone dimmed via its flashlight toggle: knock back the panel with
+   `brightness` (not opacity, so it stays fully opaque and keeps its layering)
+   and restore full brightness on hover so it can be read without un-dimming. */
+.sidebar-zone-dimmed {
+  filter: brightness(0.35);
+  transition: filter 150ms ease;
+}
+.sidebar-zone-dimmed:hover {
+  filter: brightness(1);
+}
+
 html,
 body {
   margin: 0;
