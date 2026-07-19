@@ -12,9 +12,12 @@ import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 export type SidebarZoneProps = React.PropsWithChildren<{
   title: string;
-  /** Rendered after the title inside the trigger bar — pass `ml="auto"` on a
-   * Badge to pin it to the right edge, matching the existing zones. */
+  /** Rendered immediately after the title inside the trigger bar (e.g. a count
+   * Badge). */
   badge?: React.ReactNode;
+  /** Rendered pinned to the right edge of the trigger bar (e.g. page up/down
+   * buttons). */
+  actions?: React.ReactNode;
   /** Controlled open state (persisted zones). Omit both to let the zone manage
    * itself, open by default. */
   open?: boolean;
@@ -37,6 +40,7 @@ export type SidebarZoneProps = React.PropsWithChildren<{
 export const SidebarZone = ({
   title,
   badge,
+  actions,
   open: controlledOpen,
   onOpenChange,
   "data-slot": dataSlot,
@@ -77,6 +81,7 @@ export const SidebarZone = ({
             {title}
           </Text>
           {badge}
+          {actions ? <Group ml="auto">{actions}</Group> : null}
         </Group>
       }
     >

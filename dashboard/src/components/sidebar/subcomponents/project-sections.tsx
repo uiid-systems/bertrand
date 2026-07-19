@@ -36,9 +36,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
           key={group.key}
           title={group.category}
           badge={
-            <Badge color="neutral" ml="auto">
-              {group.sessions.length}
-            </Badge>
+            <Badge color="neutral">{group.sessions.length}</Badge>
           }
           open={!collapsed.includes(group.key)}
           onOpenChange={(next) => setOpen(group.key, next)}
