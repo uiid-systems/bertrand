@@ -34,6 +34,7 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
       {projects.map((group) => (
         <SidebarZone
           key={group.key}
+          zoneId={group.key}
           title={group.category}
           badge={
             <Badge color="neutral">{group.sessions.length}</Badge>

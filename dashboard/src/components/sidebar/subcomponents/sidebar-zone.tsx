@@ -16,6 +16,8 @@ import {
   FlashlightOff,
 } from "@uiid/icons";
 
+import { useZoneDim } from "../use-zone-dim";
+
 export type SidebarZoneProps = React.PropsWithChildren<{
   title: string;
   /** Rendered immediately after the title inside the trigger bar (e.g. a count
@@ -24,6 +26,9 @@ export type SidebarZoneProps = React.PropsWithChildren<{
   /** Rendered pinned to the right edge of the trigger bar (e.g. page up/down
    * buttons). */
   actions?: React.ReactNode;
+  /** Stable id for persisting this zone's dim state. Defaults to `title`;
+   * pass an explicit id when titles aren't unique (e.g. per-project zones). */
+  zoneId?: string;
   /** Controlled open state (persisted zones). Omit both to let the zone manage
    * itself, open by default. */
   open?: boolean;
@@ -47,6 +52,7 @@ export const SidebarZone = ({
   title,
   badge,
   actions,
+  zoneId,
   open: controlledOpen,
   onOpenChange,
   "data-slot": dataSlot,
@@ -59,9 +65,9 @@ export const SidebarZone = ({
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
-  // Per-zone dimming. Default lit (on) so the zone looks unchanged until the
-  // reader deliberately turns its flashlight off.
-  const [lit, setLit] = useState(true);
+  // Per-zone dimming, persisted across reloads. Default lit (on) so the zone
+  // looks unchanged until the reader deliberately turns its flashlight off.
+  const { lit, setLit } = useZoneDim(zoneId ?? title);
 
   return (
     <Collapsible
