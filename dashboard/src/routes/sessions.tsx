@@ -19,6 +19,7 @@ const LARGEST_LIMIT = 10;
 /** One flat row per session, values pre-rendered as nodes/primitives so the
  * shared Table renders them directly (it stringifies non-elements). */
 type SessionRow = {
+  project: React.ReactNode;
   session: React.ReactNode;
   status: React.ReactNode;
   interactions: number;
@@ -30,6 +31,7 @@ type SessionRow = {
 /** Recent leads with status; largest leads with the changes that rank it. */
 const RECENT_COLUMNS = [
   "status",
+  "project",
   "session",
   "interactions",
   "changes",
@@ -38,6 +40,7 @@ const RECENT_COLUMNS = [
 ];
 const LARGEST_COLUMNS = [
   "changes",
+  "project",
   "session",
   "status",
   "interactions",
@@ -144,9 +147,14 @@ function toRow(
   entry: SessionWithCategory,
   stat: SessionStatsRow | undefined,
 ): SessionRow {
-  const { session, categoryPath } = entry;
+  const { session, categoryPath, project } = entry;
 
   return {
+    project: project ? (
+      <Text weight="medium">{project.name}</Text>
+    ) : (
+      <Text shade="halftone">—</Text>
+    ),
     session: (
       <Text
         weight="medium"
