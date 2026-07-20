@@ -3,7 +3,6 @@ import { Button, Group, Text } from "@uiid/design-system";
 import { FileDiffIcon, CaseSensitiveIcon } from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
-import { NotificationToggle } from "../notification-toggle";
 
 export const TopBar = () => {
   return (
@@ -32,7 +31,6 @@ export const TopBar = () => {
             icon={<FileDiffIcon />}
           />
         </Group>
-        <NotificationToggle />
         <ThemeToggle />
       </Group>
     </TopBarWrapper>
