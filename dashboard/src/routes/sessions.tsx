@@ -4,9 +4,11 @@ import { Badge, Group, Stack, Table, Text } from "@uiid/design-system";
 
 import { allStatsQuery, sessionsQuery } from "../api/queries";
 import type { SessionStatsRow, SessionWithCategory } from "../api/types";
+import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import {
   formatDuration,
   formatRelativeTime,
+  isLiveStatus,
   statusColor,
   statusLabel,
 } from "../lib/format";
@@ -54,8 +56,14 @@ function totalChanged(stat: SessionStatsRow | undefined): number {
  * back to each session; no filtering or sorting controls yet, deliberately.
  */
 function SessionsPage() {
-  const { data: sessions = [] } = useQuery(sessionsQuery());
-  const { data: stats = {} } = useQuery(allStatsQuery());
+  const { queryProjects } = useSelectedProjects();
+  const { data: sessions = [] } = useQuery(
+    sessionsQuery({ projects: queryProjects }),
+  );
+  const hasLiveSession = sessions.some((s) => isLiveStatus(s.session.status));
+  const { data: stats = {} } = useQuery(
+    allStatsQuery({ hasLiveSession, projects: queryProjects }),
+  );
 
   const enriched = sessions.map((entry) => ({
     entry,
