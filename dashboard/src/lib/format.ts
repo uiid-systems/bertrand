@@ -149,16 +149,25 @@ type TurnPermission = {
 
 const READ_TOOLS = new Set(["Read", "NotebookRead"]);
 
+/** Folded activity of a consolidated agent turn: total tool calls, how many were
+ * reads, and the file/line-diff breakdown. `filesEdited` is a distinct-path
+ * count; line counts mirror `summarizeApplied` (oldStr → removed, newStr →
+ * added) so the +/- matches the sidebar's changed-files badges. */
+export type AgentTurnStats = {
+  toolCalls: number;
+  reads: number;
+  filesEdited: number;
+  linesAdded: number;
+  linesRemoved: number;
+};
+
 /**
- * Compact activity readout for a consolidated `agent.turn` card, shown beside
- * the timestamp: total tool calls, then the reads and file-diff breakdown the
- * card would otherwise hide now that its many work rows are folded into one.
- * Line counts mirror `summarizeApplied` (oldStr → removed, newStr → added) so
- * the +/- here matches the sidebar's changed-files badges. Returns null for a
- * non-turn card, or a turn that did no tool work (pure prose) — the caller then
- * shows the bare timestamp.
+ * Tally the tool work a consolidated `agent.turn` card folds away, so callers
+ * can surface it beside the timestamp. Returns null for a non-turn card, or a
+ * turn that did no tool work (pure prose) — the caller then shows the bare
+ * timestamp.
  */
-export function summarizeAgentTurn(event: EventRow): string | null {
+export function agentTurnStats(event: EventRow): AgentTurnStats | null {
   if (event.event !== "agent.turn") return null;
   const meta = event.meta as Record<string, unknown> | null;
   const parts = (meta?.parts as EventRow[] | undefined) ?? [];
@@ -194,13 +203,32 @@ export function summarizeAgentTurn(event: EventRow): string | null {
 
   if (toolCalls === 0) return null;
 
+  return {
+    toolCalls,
+    reads,
+    filesEdited: filesEdited.size,
+    linesAdded,
+    linesRemoved,
+  };
+}
+
+/**
+ * Plain-text form of {@link agentTurnStats} ("6 tools · 2 reads · 1 file (+40
+ * -7)"), for text-only contexts. The UI renders {@link AgentTurnSummary} — the
+ * badge/diff version — instead.
+ */
+export function summarizeAgentTurn(event: EventRow): string | null {
+  const stats = agentTurnStats(event);
+  if (!stats) return null;
+
+  const { toolCalls, reads, filesEdited, linesAdded, linesRemoved } = stats;
   const segments = [`${toolCalls} ${toolCalls === 1 ? "tool" : "tools"}`];
   if (reads > 0) segments.push(`${reads} ${reads === 1 ? "read" : "reads"}`);
-  if (filesEdited.size > 0) {
+  if (filesEdited > 0) {
     const counts =
       linesAdded || linesRemoved ? ` (+${linesAdded} -${linesRemoved})` : "";
-    const noun = filesEdited.size === 1 ? "file" : "files";
-    segments.push(`${filesEdited.size} ${noun}${counts}`);
+    const noun = filesEdited === 1 ? "file" : "files";
+    segments.push(`${filesEdited} ${noun}${counts}`);
   }
   return segments.join(" · ");
 }
@@ -222,6 +250,58 @@ export function eventTitle(event: EventRow): string {
       return summarizeApplied(meta) ?? label;
     default:
       return label;
+  }
+}
+
+/** Longest a derived TOC title runs before we hand off to CSS truncation. */
+const TOC_TITLE_MAX = 140;
+
+/** Collapse a block of prose to a single trimmed line, capped so we never hand
+ * the sidebar a giant string (it still `truncate`s to the column width). */
+function snippet(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  return clean.length > TOC_TITLE_MAX
+    ? clean.slice(0, TOC_TITLE_MAX - 1) + "…"
+    : clean;
+}
+
+/** First bit of the agent's prose in a consolidated turn, skipping pure tool
+ * work. Null when the whole turn was tool calls with no reply text. */
+function firstProseSnippet(event: EventRow): string | null {
+  const meta = event.meta as Record<string, unknown> | null;
+  const parts = (meta?.parts as EventRow[] | undefined) ?? [];
+  for (const part of parts) {
+    if (part.event !== "assistant.message") continue;
+    const partMeta = part.meta as Record<string, unknown> | null;
+    const s = snippet(partMeta?.text as string | undefined);
+    if (s) return s;
+  }
+  return null;
+}
+
+/**
+ * Title for the sidebar timeline table-of-contents. `eventTitle`'s generic
+ * "User prompted" / "Agent's response" labels read fine in the main timeline —
+ * the card body sits right below them — but the sidebar list has no body to lean
+ * on, so a column of identical labels tells no story. Here we derive the title
+ * from the event's own prose instead: the prompt text for a human turn, the
+ * agent's first reply for a response. Events that already carry a descriptive
+ * `eventTitle` (the question asked, the tool summary) defer to it unchanged.
+ */
+export function eventTocTitle(event: EventRow): string {
+  const meta = event.meta as Record<string, unknown> | null;
+
+  switch (event.event) {
+    case "user.prompt":
+      return snippet(meta?.prompt as string | undefined) ?? eventTitle(event);
+    case "assistant.message":
+      return snippet(meta?.text as string | undefined) ?? eventTitle(event);
+    case "agent.turn":
+      return firstProseSnippet(event) ?? eventTitle(event);
+    default:
+      return eventTitle(event);
   }
 }
 

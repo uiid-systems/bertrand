@@ -21,13 +21,13 @@ import { eventsQuery, projectsQuery } from "../api/queries";
 import { useArchiveAction } from "../api/use-archive-action";
 import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
 import {
+  agentTurnStats,
   eventColor,
   eventTitle,
   formatRelativeTime,
   formatTimestamp,
   isLiveStatus,
   statusColor,
-  summarizeAgentTurn,
 } from "../lib/format";
 import { categoryOf } from "../lib/timeline/categories";
 import { iconOf } from "../lib/timeline/icons";
@@ -39,6 +39,7 @@ import {
 import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
+import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
@@ -212,7 +213,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             </Stack>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize={560} minSize={360} maxSize={640}>
+          <ResizablePanel defaultSize={460} minSize={360} maxSize={640}>
             <SecondarySidebar
               sessionId={sessionId}
               isLive={isLive}
@@ -280,7 +281,7 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
             // compact readout (tool calls · reads · file diffs) beside the
             // timestamp — parity with the folded detail without touching the
             // title. Other cards keep the bare timestamp.
-            const turnSummary = summarizeAgentTurn(e);
+            const turnStats = agentTurnStats(e);
             const timestamp = (
               <Badge color={eventColor(e.event)} size="small">
                 <span style={{ whiteSpace: "nowrap" }}>
@@ -298,11 +299,9 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
               content: <EventContent event={e} />,
               title: eventTitle(e),
               TitleProps: { color: eventColor(e.event) },
-              time: turnSummary ? (
+              time: turnStats ? (
                 <Group gap={2} ay="center">
-                  <Text size={-1} shade="muted" style={{ whiteSpace: "nowrap" }}>
-                    {turnSummary}
-                  </Text>
+                  <AgentTurnSummary event={e} />
                   {timestamp}
                 </Group>
               ) : (
