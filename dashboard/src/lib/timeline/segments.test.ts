@@ -36,6 +36,33 @@ describe("segmentConversations", () => {
     expect(segs[1].conversationId).toBe("bbbbbbbb-2");
   });
 
+  test("vitals derive model, cwd basename, and branch from segment events", () => {
+    const segs = segmentConversations([
+      ev("cccccccc-1", "claude.started", { cwd: "/Users/me/www/bertrand/" }),
+      ev("cccccccc-1", "worktree.entered", { branch: "timeline/foo" }),
+      ev("cccccccc-1", "assistant.message", { model: "claude-opus-4-8" }),
+    ]);
+    expect(segs[0].vitals).toEqual({
+      model: "opus-4.8",
+      cwd: "bertrand",
+      branch: "timeline/foo",
+    });
+  });
+
+  test("vitals are null when the source events are absent", () => {
+    const segs = segmentConversations([ev("dddddddd-1", "claude.started")]);
+    expect(segs[0].vitals).toEqual({ model: null, cwd: null, branch: null });
+  });
+
+  test("vitals take the first assistant model and ignore later ones", () => {
+    const segs = segmentConversations([
+      ev("eeeeeeee-1", "claude.started", { cwd: "/tmp/proj" }),
+      ev("eeeeeeee-1", "assistant.message", { model: "claude-haiku-4-5-20251001" }),
+      ev("eeeeeeee-1", "assistant.message", { model: "claude-opus-4-8" }),
+    ]);
+    expect(segs[0].vitals.model).toBe("haiku-4.5");
+  });
+
   test("anchor is derived from the conversation id prefix", () => {
     const segs = segmentConversations([ev("abcdef12-3456", "claude.started")]);
     // single-segment inputs still produce a segment (header shown conditionally)

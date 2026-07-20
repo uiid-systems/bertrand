@@ -21,6 +21,14 @@ export type ConversationSegment = {
   anchorId: string
   /** First user prompt of the conversation, truncated — the chapter's subject. */
   title: string | null
+  /**
+   * Environment vitals for the session-started card, derived purely from the
+   * conversation's own events so they can never drift out of sync:
+   *   - `model`  — the Claude model that answered (first assistant.message)
+   *   - `cwd`    — working directory basename (claude.started meta)
+   *   - `branch` — git branch, when a worktree was entered
+   */
+  vitals: SegmentVitals
   /** Timestamp of the first event in the conversation. */
   startedAt: string
   /** Rendered timeline items (transformed per-segment). */
@@ -36,7 +44,70 @@ export type ConversationSegment = {
   raw: EventRow[]
 }
 
+export type SegmentVitals = {
+  /** Display model name, e.g. "opus-4.8". Null until Claude has replied. */
+  model: string | null
+  /** Working directory basename, e.g. "bertrand". Null on legacy rows. */
+  cwd: string | null
+  /** Git branch, when the conversation ran inside a worktree. */
+  branch: string | null
+}
+
 const TITLE_MAX = 80
+
+/**
+ * Normalize a raw model id into a compact display label:
+ *   "claude-opus-4-8"        → "opus-4.8"
+ *   "claude-haiku-4-5-20251001" → "haiku-4.5"
+ * Strips the vendor prefix and any trailing date stamp, then renders the
+ * remaining version digits with a dot. Unknown shapes pass through cleaned.
+ */
+function formatModel(raw: string): string {
+  let s = raw.replace(/^claude-/, "").replace(/-\d{8}$/, "")
+  // Fold the trailing "major-minor" version pair into "major.minor".
+  s = s.replace(/-(\d+)-(\d+)$/, "-$1.$2")
+  return s
+}
+
+/** Basename of a filesystem path, tolerant of trailing slashes. */
+function basename(path: string): string {
+  const trimmed = path.replace(/\/+$/, "")
+  const idx = trimmed.lastIndexOf("/")
+  return idx === -1 ? trimmed : trimmed.slice(idx + 1)
+}
+
+/**
+ * Derive the session-started card's vitals from the conversation's own rows.
+ * Every value is a plain read of stored event meta — nothing depends on
+ * out-of-band capture — so the card stays consistent by construction.
+ */
+function deriveVitals(events: EventRow[]): SegmentVitals {
+  let model: string | null = null
+  let cwd: string | null = null
+  let branch: string | null = null
+
+  for (const ev of events) {
+    const meta = ev.meta as Record<string, unknown> | null
+    if (ev.event === "claude.started" && typeof meta?.cwd === "string") {
+      cwd = basename(meta.cwd)
+    } else if (
+      ev.event === "worktree.entered" &&
+      typeof meta?.branch === "string" &&
+      meta.branch.trim()
+    ) {
+      branch = meta.branch
+    } else if (
+      !model &&
+      ev.event === "assistant.message" &&
+      typeof meta?.model === "string" &&
+      meta.model.trim()
+    ) {
+      model = formatModel(meta.model)
+    }
+  }
+
+  return { model, cwd, branch }
+}
 
 function truncate(s: string, max: number): string {
   const clean = s.replace(/\s+/g, " ").trim()
@@ -130,6 +201,7 @@ export function segmentConversations(
       ordinal: i + 1,
       anchorId: anchorFor(bucket.conversationId),
       title: firstPrompt(bucket.raw),
+      vitals: deriveVitals(bucket.raw),
       startedAt: bucket.raw[0]?.createdAt ?? "",
       events,
       eventCount: events.length,

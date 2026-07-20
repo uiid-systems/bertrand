@@ -40,6 +40,7 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
+import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
@@ -296,7 +297,12 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
               style: { scrollMarginTop: 16 },
               color: eventColor(e.event),
               marker: <EventMarker event={e} />,
-              content: <EventContent event={e} />,
+              content:
+                e.event === "claude.started" ? (
+                  <SessionStartedContent event={e} vitals={segment.vitals} />
+                ) : (
+                  <EventContent event={e} />
+                ),
               title: eventTitle(e),
               TitleProps: { color: eventColor(e.event) },
               time: turnStats ? (
