@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorktreesRouteImport } from './routes/worktrees'
+import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
@@ -18,6 +19,11 @@ import { Route as DevDiffRouteImport } from './routes/dev/diff'
 const WorktreesRoute = WorktreesRouteImport.update({
   id: '/worktrees',
   path: '/worktrees',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SessionsRoute = SessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SplatRoute = SplatRouteImport.update({
@@ -44,6 +50,7 @@ const DevDiffRoute = DevDiffRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/sessions': typeof SessionsRoute
   '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/sessions': typeof SessionsRoute
   '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
@@ -59,21 +67,36 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/sessions': typeof SessionsRoute
   '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$' | '/worktrees' | '/dev/diff' | '/dev/markdown'
+  fullPaths:
+    | '/'
+    | '/$'
+    | '/sessions'
+    | '/worktrees'
+    | '/dev/diff'
+    | '/dev/markdown'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/worktrees' | '/dev/diff' | '/dev/markdown'
-  id: '__root__' | '/' | '/$' | '/worktrees' | '/dev/diff' | '/dev/markdown'
+  to: '/' | '/$' | '/sessions' | '/worktrees' | '/dev/diff' | '/dev/markdown'
+  id:
+    | '__root__'
+    | '/'
+    | '/$'
+    | '/sessions'
+    | '/worktrees'
+    | '/dev/diff'
+    | '/dev/markdown'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
+  SessionsRoute: typeof SessionsRoute
   WorktreesRoute: typeof WorktreesRoute
   DevDiffRoute: typeof DevDiffRoute
   DevMarkdownRoute: typeof DevMarkdownRoute
@@ -86,6 +109,13 @@ declare module '@tanstack/react-router' {
       path: '/worktrees'
       fullPath: '/worktrees'
       preLoaderRoute: typeof WorktreesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sessions': {
+      id: '/sessions'
+      path: '/sessions'
+      fullPath: '/sessions'
+      preLoaderRoute: typeof SessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$': {
@@ -122,6 +152,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
+  SessionsRoute: SessionsRoute,
   WorktreesRoute: WorktreesRoute,
   DevDiffRoute: DevDiffRoute,
   DevMarkdownRoute: DevMarkdownRoute,
