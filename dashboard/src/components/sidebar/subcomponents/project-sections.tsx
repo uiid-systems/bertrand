@@ -34,11 +34,10 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
       {projects.map((group) => (
         <SidebarZone
           key={group.key}
+          zoneId={group.key}
           title={group.category}
           badge={
-            <Badge color="neutral" ml="auto">
-              {group.sessions.length}
-            </Badge>
+            <Badge color="neutral">{group.sessions.length}</Badge>
           }
           open={!collapsed.includes(group.key)}
           onOpenChange={(next) => setOpen(group.key, next)}

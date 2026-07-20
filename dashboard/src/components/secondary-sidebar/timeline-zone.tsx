@@ -78,34 +78,31 @@ export const TimelineZone = ({
     <SidebarZone
       data-slot="timeline-zone"
       title="Timeline"
-      badge={
-        <Group gap={2} ay="center" ml="auto">
-          {/* Stop clicks on the arrows from reaching the collapsible trigger,
-              which would otherwise toggle the zone. The count sits outside this
-              group so it reads as the trigger's badge, like the other zones. */}
-          <Group gap={1} ay="center" onClick={(e) => e.stopPropagation()}>
-            <Button
-              size="xsmall"
-              variant="ghost"
-              shape="square"
-              aria-label="Jump to top of timeline"
-              tooltip="Jump to top"
-              onClick={() => scrollTimeline("top")}
-            >
-              <ArrowUpToLineIcon size={13} />
-            </Button>
-            <Button
-              size="xsmall"
-              variant="ghost"
-              shape="square"
-              aria-label="Jump to bottom of timeline"
-              tooltip="Jump to bottom"
-              onClick={() => scrollTimeline("bottom")}
-            >
-              <ArrowDownToLineIcon size={13} />
-            </Button>
-          </Group>
-          <Badge color="neutral">{cardCount}</Badge>
+      badge={<Badge color="neutral">{cardCount}</Badge>}
+      actions={
+        // Stop clicks on the arrows from reaching the collapsible trigger,
+        // which would otherwise toggle the zone.
+        <Group gap={1} ay="center" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="xsmall"
+            variant="ghost"
+            shape="square"
+            aria-label="Jump to top of timeline"
+            tooltip="Jump to top"
+            onClick={() => scrollTimeline("top")}
+          >
+            <ArrowUpToLineIcon size={13} />
+          </Button>
+          <Button
+            size="xsmall"
+            variant="ghost"
+            shape="square"
+            aria-label="Jump to bottom of timeline"
+            tooltip="Jump to bottom"
+            onClick={() => scrollTimeline("bottom")}
+          >
+            <ArrowDownToLineIcon size={13} />
+          </Button>
         </Group>
       }
       PanelProps={{ style: { paddingBlock: 8 } }}

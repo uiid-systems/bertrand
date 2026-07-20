@@ -39,9 +39,7 @@ export const ChangedFilesZone = ({
       data-slot="changed-files-zone"
       title="Files changed"
       badge={
-        <Badge color="neutral" ml="auto">
-          {files.length}
-        </Badge>
+        <Badge color="neutral">{files.length}</Badge>
       }
       PanelProps={{ style: { paddingBlock: 8 } }}
     >
