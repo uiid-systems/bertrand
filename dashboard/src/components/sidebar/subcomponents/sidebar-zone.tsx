@@ -4,17 +4,31 @@ import {
   Collapsible,
   Group,
   Text,
+  ToggleButton,
   type CollapsiblePanelProps,
   type CollapsibleRootProps,
   type GroupProps,
 } from "@uiid/design-system";
-import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  Flashlight,
+  FlashlightOff,
+} from "@uiid/icons";
+
+import { useZoneDim } from "../use-zone-dim";
 
 export type SidebarZoneProps = React.PropsWithChildren<{
   title: string;
-  /** Rendered after the title inside the trigger bar — pass `ml="auto"` on a
-   * Badge to pin it to the right edge, matching the existing zones. */
+  /** Rendered immediately after the title inside the trigger bar (e.g. a count
+   * Badge). */
   badge?: React.ReactNode;
+  /** Rendered pinned to the right edge of the trigger bar (e.g. page up/down
+   * buttons). */
+  actions?: React.ReactNode;
+  /** Stable id for persisting this zone's dim state. Defaults to `title`;
+   * pass an explicit id when titles aren't unique (e.g. per-project zones). */
+  zoneId?: string;
   /** Controlled open state (persisted zones). Omit both to let the zone manage
    * itself, open by default. */
   open?: boolean;
@@ -37,6 +51,8 @@ export type SidebarZoneProps = React.PropsWithChildren<{
 export const SidebarZone = ({
   title,
   badge,
+  actions,
+  zoneId,
   open: controlledOpen,
   onOpenChange,
   "data-slot": dataSlot,
@@ -49,6 +65,10 @@ export const SidebarZone = ({
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
+  // Per-zone dimming, persisted across reloads. Default lit (on) so the zone
+  // looks unchanged until the reader deliberately turns its flashlight off.
+  const { lit, setLit } = useZoneDim(zoneId ?? title);
+
   return (
     <Collapsible
       instant
@@ -56,6 +76,9 @@ export const SidebarZone = ({
       TriggerProps={{ nativeButton: false }}
       PanelProps={{
         ...PanelProps,
+        className: [PanelProps?.className, !lit && "sidebar-zone-dimmed"]
+          .filter(Boolean)
+          .join(" "),
         style: { width: "100%", ...PanelProps?.style },
       }}
       trigger={
@@ -77,6 +100,30 @@ export const SidebarZone = ({
             {title}
           </Text>
           {badge}
+          {/* Right cluster: any zone-specific actions plus the flashlight
+              dim toggle. Stop clicks here from reaching the collapsible
+              trigger, which would otherwise toggle the zone open/closed. */}
+          <Group
+            ml="auto"
+            gap={1}
+            ay="center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actions}
+            <ToggleButton
+              pressed={lit}
+              onPressedChange={setLit}
+              size="xsmall"
+              variant="ghost"
+              shape="square"
+              aria-label={lit ? "Dim this section" : "Brighten this section"}
+              tooltip={lit ? "Dim" : "Brighten"}
+              icon={{
+                pressed: <Flashlight size={13} />,
+                unpressed: <FlashlightOff size={13} />,
+              }}
+            />
+          </Group>
         </Group>
       }
     >

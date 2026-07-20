@@ -23,9 +23,7 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
         data-slot="sidebar-live-zone"
         title="Needs you"
         badge={
-          <Badge color="blue" ml="auto">
-            {sessions.length}
-          </Badge>
+          <Badge color="blue">{sessions.length}</Badge>
         }
         PanelProps={{ style: { paddingBlock: 8 } }}
       >
