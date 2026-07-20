@@ -13,6 +13,11 @@ export const TopBar = () => {
       </Text>
       <Text render={<Link to="/">Home</Link>} size={-1} weight="medium" />
       <Text
+        render={<Link to="/sessions">Sessions</Link>}
+        size={-1}
+        weight="medium"
+      />
+      <Text
         render={<Link to="/worktrees">Worktrees</Link>}
         size={-1}
         weight="medium"
