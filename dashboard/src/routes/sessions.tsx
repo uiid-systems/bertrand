@@ -12,6 +12,7 @@ import {
 } from "../lib/format";
 
 const RECENT_LIMIT = 25;
+const LARGEST_LIMIT = 10;
 
 /** One flat row per session, values pre-rendered as nodes/primitives so the
  * shared Table renders them directly (it stringifies non-elements). */
@@ -24,7 +25,8 @@ type SessionRow = {
   updated: string;
 };
 
-const COLUMNS = [
+/** Recent leads with status; largest leads with the changes that rank it. */
+const RECENT_COLUMNS = [
   "status",
   "session",
   "interactions",
@@ -32,39 +34,96 @@ const COLUMNS = [
   "duration",
   "updated",
 ];
+const LARGEST_COLUMNS = [
+  "changes",
+  "session",
+  "status",
+  "interactions",
+  "duration",
+  "updated",
+];
+
+/** Total lines a session touched — how "large" it ranks. */
+function totalChanged(stat: SessionStatsRow | undefined): number {
+  return (stat?.linesAdded ?? 0) + (stat?.linesRemoved ?? 0);
+}
 
 /**
- * The most recently active sessions across the in-scope projects, as a plain
- * stats table — a lightweight overview to sit alongside Worktrees. Rows link
+ * A lightweight sessions overview to sit alongside Worktrees: the most
+ * recently active sessions, plus the largest by total lines changed. Rows link
  * back to each session; no filtering or sorting controls yet, deliberately.
  */
 function SessionsPage() {
   const { data: sessions = [] } = useQuery(sessionsQuery());
   const { data: stats = {} } = useQuery(allStatsQuery());
 
-  const recent = [...sessions]
-    .sort((a, b) => b.session.updatedAt.localeCompare(a.session.updatedAt))
-    .slice(0, RECENT_LIMIT);
+  const enriched = sessions.map((entry) => ({
+    entry,
+    stat: stats[entry.session.id],
+    row: toRow(entry, stats[entry.session.id]),
+  }));
 
-  const rows = recent.map((entry) => toRow(entry, stats[entry.session.id]));
+  const recent = [...enriched]
+    .sort((a, b) =>
+      b.entry.session.updatedAt.localeCompare(a.entry.session.updatedAt),
+    )
+    .slice(0, RECENT_LIMIT)
+    .map((e) => e.row);
+
+  const largest = [...enriched]
+    .filter((e) => totalChanged(e.stat) > 0)
+    .sort((a, b) => totalChanged(b.stat) - totalChanged(a.stat))
+    .slice(0, LARGEST_LIMIT)
+    .map((e) => e.row);
 
   return (
-    <Stack gap={6} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
+    <Stack gap={8} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
+      <TableSection
+        title="Recent sessions"
+        count={sessions.length}
+        columns={RECENT_COLUMNS}
+        rows={recent}
+        empty="No sessions yet"
+      />
+      <TableSection
+        title="Largest sessions"
+        count={largest.length}
+        columns={LARGEST_COLUMNS}
+        rows={largest}
+        empty="No changes recorded yet"
+      />
+    </Stack>
+  );
+}
+
+function TableSection({
+  title,
+  count,
+  columns,
+  rows,
+  empty,
+}: {
+  title: string;
+  count: number;
+  columns: string[];
+  rows: SessionRow[];
+  empty: string;
+}) {
+  return (
+    <Stack gap={4} ax="stretch" fullwidth>
       <Group gap={2} ay="center">
         <Text size={3} weight="bold">
-          Recent sessions
+          {title}
         </Text>
-        {sessions.length > 0 && (
-          <Badge color="blue">{sessions.length}</Badge>
-        )}
+        {count > 0 && <Badge color="blue">{count}</Badge>}
       </Group>
 
       {rows.length === 0 ? (
-        <Text shade="halftone">No sessions yet</Text>
+        <Text shade="halftone">{empty}</Text>
       ) : (
         <Table<SessionRow>
           items={rows}
-          columns={COLUMNS}
+          columns={columns}
           striped
           highlightOnHover
         />
