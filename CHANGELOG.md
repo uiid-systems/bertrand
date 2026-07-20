@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.31.0](https://github.com/uiid-systems/bertrand/compare/v0.30.0...v0.31.0) (2026-07-20)
+
+
+### Features
+
+* **contract:** strengthen AskUserQuestion and narration guidance ([#193](https://github.com/uiid-systems/bertrand/issues/193)) ([af289a7](https://github.com/uiid-systems/bertrand/commit/af289a7279d9e1bdb735048ede1eae47e9a0612b))
+* **dashboard:** add recent sessions table page ([#196](https://github.com/uiid-systems/bertrand/issues/196)) ([55200f5](https://github.com/uiid-systems/bertrand/commit/55200f501b0eca8500d89a2c8e6c6f1167a57594))
+* **dashboard:** remove browser notifications ([#195](https://github.com/uiid-systems/bertrand/issues/195)) ([8b985fd](https://github.com/uiid-systems/bertrand/commit/8b985fddc37bb5c046b9c28b69150c268f9338df))
+* **sidebar:** dim collapsible zones with a flashlight toggle ([#192](https://github.com/uiid-systems/bertrand/issues/192)) ([a4e2164](https://github.com/uiid-systems/bertrand/commit/a4e2164be1ef1618d8c08476aaaf9362b6355ef7))
+* **sidebar:** show category before session title in card ([#197](https://github.com/uiid-systems/bertrand/issues/197)) ([a316002](https://github.com/uiid-systems/bertrand/commit/a3160029bfc07ece8697c89e3bad93928798b780))
+* **timeline:** enrich session-started card with model and cwd/branch ([#198](https://github.com/uiid-systems/bertrand/issues/198)) ([47c79be](https://github.com/uiid-systems/bertrand/commit/47c79bec9b1b7acc472cee452c183439ba14de96))
+* **timeline:** semantic sidebar titles and badge turn summaries ([#194](https://github.com/uiid-systems/bertrand/issues/194)) ([c4627eb](https://github.com/uiid-systems/bertrand/commit/c4627eb03590fa9bdf25107ed7fa62dbd2145ff8))
+
+
+### Bug Fixes
+
+* dropdown width ([16c9ec9](https://github.com/uiid-systems/bertrand/commit/16c9ec9f493e5df12a7492014f0550d12a9e8f72))
+
 ## [0.30.0](https://github.com/uiid-systems/bertrand/compare/v0.29.0...v0.30.0) (2026-07-14)
 
 
