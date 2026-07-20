@@ -6,12 +6,8 @@ import { ArrowDownToLineIcon, ArrowUpToLineIcon } from "@uiid/icons";
 
 import { eventsQuery } from "../../api/queries";
 import type { EventRow } from "../../api/types";
-import {
-  eventColor,
-  eventTitle,
-  formatTimestamp,
-  summarizeAgentTurn,
-} from "../../lib/format";
+import { eventColor, eventTocTitle, formatTimestamp } from "../../lib/format";
+import { AgentTurnSummary } from "../timeline/agent_turn_summary";
 import {
   eventAnchorId,
   segmentConversations,
@@ -163,38 +159,30 @@ ConversationToc.displayName = "ConversationToc";
  * (tool calls · reads · file diffs) mirroring the main card's readout, so the
  * folded work is legible from the index too.
  */
-const TocRow = ({ event }: { event: EventRow }) => {
-  const turnSummary = summarizeAgentTurn(event);
-
-  return (
-    <Stack
-      className="timeline-toc-item"
-      gap={0}
-      fullwidth
-      ax="stretch"
-      style={{ cursor: "pointer" }}
-      onClick={() => jumpTo(eventAnchorId(event))}
-    >
-      <Group ay="center" gap={2} fullwidth>
-        <Text
-          className="timeline-toc-title"
-          size={-1}
-          color={eventColor(event.event)}
-          truncate
-          style={{ minWidth: 0, flexGrow: 1 }}
-        >
-          {eventTitle(event)}
-        </Text>
-        <Text size={-1} family="mono" shade="muted" style={{ flexShrink: 0 }}>
-          {formatTimestamp(event.createdAt)}
-        </Text>
-      </Group>
-      {turnSummary && (
-        <Text size={-1} family="mono" shade="muted" truncate>
-          {turnSummary}
-        </Text>
-      )}
-    </Stack>
-  );
-};
+const TocRow = ({ event }: { event: EventRow }) => (
+  <Stack
+    className="timeline-toc-item"
+    gap={0}
+    fullwidth
+    ax="stretch"
+    style={{ cursor: "pointer" }}
+    onClick={() => jumpTo(eventAnchorId(event))}
+  >
+    <Group ay="center" gap={2} fullwidth>
+      <Text
+        className="timeline-toc-title"
+        size={-1}
+        color={eventColor(event.event)}
+        truncate
+        style={{ minWidth: 0, flexGrow: 1 }}
+      >
+        {eventTocTitle(event)}
+      </Text>
+      <Text size={-1} family="mono" shade="muted" style={{ flexShrink: 0 }}>
+        {formatTimestamp(event.createdAt)}
+      </Text>
+    </Group>
+    <AgentTurnSummary event={event} />
+  </Stack>
+);
 TocRow.displayName = "TocRow";
