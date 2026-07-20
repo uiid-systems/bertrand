@@ -27,7 +27,7 @@ export const AgentTurnContent = ({ event }: AgentTurnContentProps) => {
   if (parts.length === 0) return <AssistantContent event={event} />;
 
   return (
-    <Stack data-slot="agent-turn-content" gap={5} fullwidth>
+    <Stack data-slot="agent-turn-content" gap={2} fullwidth>
       {parts.map((part) => (
         <AgentTurnPart key={part.id} part={part} />
       ))}
