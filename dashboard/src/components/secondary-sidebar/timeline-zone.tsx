@@ -1,12 +1,26 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Badge, Button, Group, Stack, Text } from "@uiid/design-system";
+import {
+  Badge,
+  Button,
+  Group,
+  Number,
+  Reveal,
+  Stack,
+  Text,
+  type TextProps,
+} from "@uiid/design-system";
 import { ArrowDownToLineIcon, ArrowUpToLineIcon } from "@uiid/icons";
 
 import { eventsQuery } from "../../api/queries";
 import type { EventRow } from "../../api/types";
 import { eventColor, eventTocTitle, formatTimestamp } from "../../lib/format";
+import {
+  isFreshKey,
+  useSettledKeys,
+  type SettledKeys,
+} from "../../lib/use-settled-keys";
 import { AgentTurnSummary } from "../timeline/agent_turn_summary";
 import {
   eventAnchorId,
@@ -64,6 +78,7 @@ export const TimelineZone = ({
     eventsQuery(sessionId, isLive, projectSlug),
   );
   const segments = useMemo(() => segmentConversations(rawEvents), [rawEvents]);
+  const settled = useSettledKeys(rawEvents, (e) => e.id);
 
   const cardCount = segments.reduce((n, s) => n + s.events.length, 0);
   if (cardCount === 0) return null;
@@ -74,7 +89,11 @@ export const TimelineZone = ({
     <SidebarZone
       data-slot="timeline-zone"
       title="Timeline"
-      badge={<Badge color="neutral">{cardCount}</Badge>}
+      badge={
+        <Badge color="neutral">
+          <Number size={-1} weight="bold" value={cardCount} />
+        </Badge>
+      }
       actions={
         // Stop clicks on the arrows from reaching the collapsible trigger,
         // which would otherwise toggle the zone.
@@ -106,7 +125,12 @@ export const TimelineZone = ({
       <Stack px={2} gap={grouped ? 3 : 1} fullwidth ax="stretch">
         {segments.map((seg) =>
           seg.events.length === 0 ? null : (
-            <ConversationToc key={seg.anchorId} segment={seg} grouped={grouped} />
+            <ConversationToc
+              key={seg.anchorId}
+              segment={seg}
+              grouped={grouped}
+              settled={settled}
+            />
           ),
         )}
       </Stack>
@@ -120,9 +144,11 @@ TimelineZone.displayName = "TimelineZone";
 const ConversationToc = ({
   segment,
   grouped,
+  settled,
 }: {
   segment: ConversationSegment;
   grouped: boolean;
+  settled: SettledKeys<EventRow["id"]>;
 }) => (
   <Stack gap={1} fullwidth ax="stretch">
     {grouped && (
@@ -146,7 +172,11 @@ const ConversationToc = ({
     )}
     <Stack gap={1} fullwidth ax="stretch" pl={grouped ? 3 : 0}>
       {segment.events.map((event) => (
-        <TocRow key={event.id} event={event} />
+        <TocRow
+          key={event.id}
+          event={event}
+          isNew={isFreshKey(settled, event.id)}
+        />
       ))}
     </Stack>
   </Stack>
@@ -159,7 +189,7 @@ ConversationToc.displayName = "ConversationToc";
  * (tool calls · reads · file diffs) mirroring the main card's readout, so the
  * folded work is legible from the index too.
  */
-const TocRow = ({ event }: { event: EventRow }) => (
+const TocRow = ({ event, isNew }: { event: EventRow; isNew: boolean }) => (
   <Stack
     className="timeline-toc-item"
     gap={0}
@@ -169,15 +199,7 @@ const TocRow = ({ event }: { event: EventRow }) => (
     onClick={() => jumpTo(eventAnchorId(event))}
   >
     <Group ay="center" gap={2} fullwidth>
-      <Text
-        className="timeline-toc-title"
-        size={-1}
-        color={eventColor(event.event)}
-        truncate
-        style={{ minWidth: 0, flexGrow: 1 }}
-      >
-        {eventTocTitle(event)}
-      </Text>
+      <TocTitle event={event} isNew={isNew} />
       <Text size={-1} family="mono" shade="muted" style={{ flexShrink: 0 }}>
         {formatTimestamp(event.createdAt)}
       </Text>
@@ -186,3 +208,32 @@ const TocRow = ({ event }: { event: EventRow }) => (
   </Stack>
 );
 TocRow.displayName = "TocRow";
+
+/**
+ * The row's label. A row that arrived while the session is live reveals in word
+ * by word; everything else renders as plain text. Both branches spread the same
+ * props object so the typography is provably identical — the animation is the
+ * only difference, and a revealed row settles into exactly the static one.
+ *
+ * `isNew` is fixed for the life of the row (the baseline set is a ref and the
+ * event id is stable), so this never swaps components mid-life and restarts the
+ * animation. Reveal itself animates per word on mount, which means a title that
+ * grows as a turn consolidates animates only its newly-added words.
+ */
+const TocTitle = ({ event, isNew }: { event: EventRow; isNew: boolean }) => {
+  const props: Omit<TextProps, "children"> = {
+    className: "timeline-toc-title",
+    size: -1,
+    color: eventColor(event.event),
+    truncate: true,
+    style: { minWidth: 0, flexGrow: 1 },
+  };
+  const title = eventTocTitle(event);
+
+  return isNew ? (
+    <Reveal {...props}>{title}</Reveal>
+  ) : (
+    <Text {...props}>{title}</Text>
+  );
+};
+TocTitle.displayName = "TocTitle";

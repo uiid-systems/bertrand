@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { Badge, Group } from "@uiid/design-system";
+import { Badge, Group, Number } from "@uiid/design-system";
 
 import { changedFilesQuery } from "../../api/queries";
+import { isFreshKey, useSettledKeys } from "../../lib/use-settled-keys";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
 import { ChangedFileRow } from "../worktrees/changed-file-row";
 
@@ -31,6 +32,7 @@ export const ChangedFilesZone = ({
   const { data: files = [] } = useQuery(
     changedFilesQuery(sessionId, isLive, projectSlug),
   );
+  const settled = useSettledKeys(files, (f) => f.path);
 
   if (files.length === 0) return null;
 
@@ -39,7 +41,9 @@ export const ChangedFilesZone = ({
       data-slot="changed-files-zone"
       title="Files changed"
       badge={
-        <Badge color="neutral">{files.length}</Badge>
+        <Badge color="neutral">
+          <Number size={-1} weight="bold" value={files.length} />
+        </Badge>
       }
       PanelProps={{ style: { paddingBlock: 8 } }}
     >
@@ -55,7 +59,11 @@ export const ChangedFilesZone = ({
         }}
       >
         {files.map((file) => (
-          <ChangedFileRow key={file.path} file={file} />
+          <ChangedFileRow
+            key={file.path}
+            file={file}
+            isNew={isFreshKey(settled, file.path)}
+          />
         ))}
       </Group>
     </SidebarZone>

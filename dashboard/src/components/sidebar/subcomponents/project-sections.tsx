@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import { Badge, List, Stack } from "@uiid/design-system";
+import { Badge, List, Number, Stack } from "@uiid/design-system";
 
 import type { SessionGroup } from "../sidebar.types";
 import { useCollapsedProjects } from "../use-collapsed-projects";
@@ -37,7 +37,9 @@ export const ProjectSections = ({ projects }: ProjectSectionsProps) => {
           zoneId={group.key}
           title={group.category}
           badge={
-            <Badge color="neutral">{group.sessions.length}</Badge>
+            <Badge color="neutral">
+              <Number size={-1} weight="bold" value={group.sessions.length} />
+            </Badge>
           }
           open={!collapsed.includes(group.key)}
           onOpenChange={(next) => setOpen(group.key, next)}
