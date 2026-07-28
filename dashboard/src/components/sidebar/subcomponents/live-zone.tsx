@@ -1,4 +1,4 @@
-import { Badge, List, Separator } from "@uiid/design-system";
+import { Badge, List, Number, Separator } from "@uiid/design-system";
 
 import type { SessionWithCategory } from "@/types";
 
@@ -23,7 +23,9 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
         data-slot="sidebar-live-zone"
         title="Needs you"
         badge={
-          <Badge color="blue">{sessions.length}</Badge>
+          <Badge color="blue">
+            <Number size={-1} weight="bold" value={sessions.length} />
+          </Badge>
         }
         PanelProps={{ style: { paddingBlock: 8 } }}
       >
