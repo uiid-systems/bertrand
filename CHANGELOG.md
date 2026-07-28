@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/uiid-systems/bertrand/compare/v0.31.0...v0.32.0) (2026-07-28)
+
+
+### Features
+
+* **dashboard:** animate live-updating counts and titles ([#199](https://github.com/uiid-systems/bertrand/issues/199)) ([6f64ce6](https://github.com/uiid-systems/bertrand/commit/6f64ce6f6e506d75e171ac9ad7fec5917449c0f7))
+
 ## [0.31.0](https://github.com/uiid-systems/bertrand/compare/v0.30.0...v0.31.0) (2026-07-20)
 
 
