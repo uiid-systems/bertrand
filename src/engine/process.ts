@@ -1,5 +1,6 @@
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { spawnPty, type PtyHandle } from "./pty";
+import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
 export interface ClaudeLaunchOpts {
   sessionId: string;
@@ -61,6 +62,7 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   return new Promise((resolve, reject) => {
     let pty: PtyHandle;
+    let relay: TerminalRelayClient | null = null;
     try {
       pty = spawnPty(["claude", ...args], {
         env,
@@ -68,6 +70,7 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
         rows: process.stdout.rows,
         onData: (chunk) => {
           process.stdout.write(chunk);
+          relay?.send(chunk);
         },
       });
     } catch (err) {
@@ -76,6 +79,14 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     }
 
     activePty = pty;
+
+    // A dashboard browser is a second consumer of the same PTY, symmetric
+    // with the local terminal below — both just call pty.write()/resize().
+    relay = connectTerminalRelay({
+      sessionId: opts.sessionId,
+      onInput: (chunk) => pty.write(chunk),
+      onResize: (cols, rows) => pty.resize(cols, rows),
+    });
 
     // Local terminal is one consumer of the PTY: raw stdin bytes forward
     // straight through, and resize follows the real terminal's dimensions.
@@ -105,6 +116,7 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
       if (process.stdout.isTTY) process.stdout.removeListener("resize", onResize);
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
+      relay?.close();
       activePty = null;
     };
 

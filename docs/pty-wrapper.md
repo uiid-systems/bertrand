@@ -1,6 +1,6 @@
 # Browser ↔ Terminal Control (PTY wrapper)
 
-**Status:** Design only, not started
+**Status:** v1 built and tested end-to-end; not yet wired to a real dashboard UI
 **Date:** 2026-08-04
 **Owner:** Adam
 
@@ -9,6 +9,23 @@
 - **2026-08-04** — Design written from a spike session (`spike/pty-wrapper`) surveying
   how other tools let a browser control a live CLI-agent session, and scoping the
   smallest version that fits bertrand's current architecture.
+- **2026-08-04 (later)** — **v1 built** (PTY swap in
+  [d7d45b3](https://github.com/uiid-systems/bertrand/commit/d7d45b3); relay layer
+  below in a follow-up commit): `src/engine/pty.ts` (the `spawnPty()` primitive over
+  Bun's native PTY), `launchClaude()` swapped from `stdio: "inherit"` to it, and the
+  websocket relay resolving the "different processes" open question below —
+  `src/server/terminal-relay.ts` (Bun pub/sub topics: `terminal:<id>:input`/`:output`,
+  no hand-rolled registry needed) plus `src/engine/terminal-relay-client.ts` (the CLI
+  process connects out to the already-running `bertrand serve` as a websocket client,
+  role `upstream`; a browser connects as role `browser`). Verified end-to-end in
+  `src/engine/pty-relay-integration.test.ts`: a real `Bun.serve` + `spawnPty` + both
+  relay sides, `cat` standing in for `claude` — local-terminal-equivalent input and
+  browser input both land on the same PTY and echo back out to the browser,
+  proving the interchangeability goal. Real interactive smoke test also done by hand
+  (`bun dev`, created a session, exited with Ctrl+C) confirming the raw-mode/SIGINT
+  behavior change noted in `src/engine/process.ts` is fine in practice.
+  **Not yet built:** the dashboard-side xterm.js component (a browser can connect to
+  the relay today, but nothing in the UI does) — that's the natural next increment.
 
 ## Goal
 
@@ -112,12 +129,14 @@ one `xterm.js` component to the dashboard wired to it. No new daemon, no new dep
   attached), or does v1 only mirror a session a real terminal already started? The fan
   in/out design above works either way, but it changes where `launchClaude()` gets
   called from.
-- Where does per-session PTY state live if the CLI process and the server process are
-  different processes (e.g. `bertrand` run in a terminal vs. `bertrand serve` running in
-  the background)? Today `launchClaude()` runs inside the CLI process itself; the
-  websocket consumer lives in the server process. Needs a decision on whether the CLI
-  process talks to the server (e.g. over the same websocket, as another consumer) or the
-  server becomes the sole spawner.
+- ~~Where does per-session PTY state live if the CLI process and the server process are
+  different processes?~~ **Resolved**: kept `launchClaude()` spawning the PTY in the CLI
+  process (no change to how sessions start) and had it connect *out* to the
+  already-running `bertrand serve` as an ordinary websocket client (role `upstream`),
+  symmetric with a browser client (role `browser`). The server just relays between
+  whoever's subscribed via Bun's pub/sub topics — no shared memory, no new registry.
+  This is the same shape conductor-oss/Orca use for remote access (an outbound-only
+  connection to a relay), just at localhost scope for now.
 
 ## References
 
