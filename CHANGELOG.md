@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/uiid-systems/bertrand/compare/v0.32.0...v0.33.0) (2026-08-04)
+
+
+### Features
+
+* **usage:** track token usage per conversation and surface it ([#201](https://github.com/uiid-systems/bertrand/issues/201)) ([d3b8c48](https://github.com/uiid-systems/bertrand/commit/d3b8c48a8f238eb1e2376124c99fb3c730616b38))
+
 ## [0.32.0](https://github.com/uiid-systems/bertrand/compare/v0.31.0...v0.32.0) (2026-07-28)
 
 
