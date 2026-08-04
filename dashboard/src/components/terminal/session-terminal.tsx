@@ -4,7 +4,6 @@ import { Badge, Button, Group, Stack, Text } from "@uiid/design-system";
 import { AArrowDownIcon, AArrowUpIcon } from "@uiid/icons";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { IDisposable } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import { wsUrl } from "../../api/base";
@@ -144,7 +143,6 @@ export const SessionTerminal = ({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
-  const inputRef = useRef<IDisposable | null>(null);
   const dimsRef = useRef<Dims | null>(null);
   const claimRef = useRef<Dims | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -296,6 +294,17 @@ export const SessionTerminal = ({
       ? setInterval(reportDiagnostics, 500)
       : null;
 
+    // Keystrokes are bound here, with the terminal that produces them, rather than
+    // in an effect of their own — a separate effect could miss a re-run and leave
+    // `onData` attached to a disposed terminal, which looks exactly like a
+    // terminal that ignores the keyboard. The socket is read through its ref at
+    // send time, so reconnects need no rebinding.
+    const encoder = new TextEncoder();
+    const input = term.onData((data) => {
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
+    });
+
     const observer = new ResizeObserver(scheduleFit);
     observer.observe(host);
     scheduleFit();
@@ -340,6 +349,7 @@ export const SessionTerminal = ({
       if (diagnosticsTimer) clearInterval(diagnosticsTimer);
       host.removeEventListener("wheel", countWheel, { capture: true });
       host.removeEventListener("pointerdown", onPointerDown);
+      input.dispose();
       observer.disconnect();
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
@@ -368,8 +378,22 @@ export const SessionTerminal = ({
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
 
+      /**
+       * Whether this socket is still the one the component is using.
+       *
+       * Close events are asynchronous, so a socket that has already been replaced
+       * can still deliver `close` afterwards. Without this check its handler would
+       * null out `socketRef` while it points at the *live* socket — which is
+       * exactly what happened: React's development double-mount opens A, closes it,
+       * opens B, and then A's late `close` wiped B. Output kept arriving, because
+       * B's own `onmessage` still ran, while every send silently dropped for want
+       * of a socket in the ref. The same race exists in production on any rapid
+       * reattach, so this guard is not a development-only concern.
+       */
+      const isCurrent = () => socketRef.current === socket;
+
       socket.onopen = () => {
-        if (disposed) return;
+        if (disposed || !isCurrent()) return;
         retry = 0;
         setStatus("attached");
         // Without focus, keystrokes never reach `onData` and the terminal looks
@@ -390,6 +414,8 @@ export const SessionTerminal = ({
       };
 
       socket.onmessage = (event) => {
+        // A superseded socket must not keep writing into the emulator.
+        if (!isCurrent()) return;
         if (typeof event.data === "string") {
           try {
             const frame = JSON.parse(event.data);
@@ -420,6 +446,8 @@ export const SessionTerminal = ({
       };
 
       socket.onclose = () => {
+        // Only disown the ref if it still points at *this* socket.
+        if (!isCurrent()) return;
         socketRef.current = null;
         claimRef.current = null;
         if (disposed) return;
@@ -456,24 +484,6 @@ export const SessionTerminal = ({
       claimRef.current = null;
     };
   }, [sessionId, scheduleFit, claimLater, repaintLater]);
-
-  // Keystrokes: bound once, reading the socket through a ref so reconnects
-  // don't need to rebind.
-  useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-    const encoder = new TextEncoder();
-    inputRef.current = term.onData((data) => {
-      const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(encoder.encode(data));
-      }
-    });
-    return () => {
-      inputRef.current?.dispose();
-      inputRef.current = null;
-    };
-  }, [sessionId]);
 
   // A font size change doesn't rescale a fixed grid — it changes how many cells
   // fit the same panel, so it re-derives the grid and re-claims, exactly like
