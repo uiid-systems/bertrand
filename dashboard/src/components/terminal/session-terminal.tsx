@@ -56,11 +56,36 @@ export interface SessionTerminalState {
   claim: Dims | null;
 }
 
+/**
+ * Observable facts about scrolling, for the dev harness. Scroll behavior depends
+ * on things that aren't visible from the outside — whether the program is on the
+ * alternate screen (where no scrollback exists), whether any scrollback has
+ * accumulated, and whether wheel events reach xterm's hook at all — so these are
+ * surfaced rather than guessed at.
+ */
+export interface TerminalDiagnostics {
+  bufferType: "normal" | "alternate";
+  /** Total buffer lines, including scrollback. Equal to `rows` means no history. */
+  bufferLength: number;
+  rows: number;
+  cols: number;
+  viewportScrollHeight: number;
+  viewportClientHeight: number;
+  /** Wheel events seen at the container (capture phase). */
+  hostWheelEvents: number;
+  /** Wheel events that actually reached xterm's hook. */
+  xtermWheelEvents: number;
+  lastWheelLines: number;
+  scrolledVia: "scrollLines" | "arrowKeys" | "none";
+}
+
 export type SessionTerminalProps = {
   /** Session whose PTY to attach to. Changing it reattaches and clears. */
   sessionId: string;
   /** Lets a host render its own status chrome instead of `toolbar`. */
   onStateChange?: (state: SessionTerminalState) => void;
+  /** Scroll internals, for the dev harness. Not used by the session view. */
+  onDiagnostics?: (diagnostics: TerminalDiagnostics) => void;
   /** Built-in status bar. Turn off when the host provides its own. */
   toolbar?: boolean;
 };
@@ -94,6 +119,7 @@ const REPAINT_DELAY_MS = 250;
 export const SessionTerminal = ({
   sessionId,
   onStateChange,
+  onDiagnostics,
   toolbar = true,
 }: SessionTerminalProps) => {
   const [status, setStatus] = useState<TerminalStatus>("connecting");
@@ -114,6 +140,17 @@ export const SessionTerminal = ({
   const repaintedForRef = useRef<Dims | null>(null);
   /** Sub-line wheel delta carried between events, so trackpads scroll smoothly. */
   const wheelRemainderRef = useRef(0);
+
+  // Held in a ref and read through one, so the terminal isn't recreated when the
+  // consumer passes a new callback identity.
+  const onDiagnosticsRef = useRef(onDiagnostics);
+  onDiagnosticsRef.current = onDiagnostics;
+  const diagnosticsRef = useRef({
+    hostWheelEvents: 0,
+    xtermWheelEvents: 0,
+    lastWheelLines: 0,
+    scrolledVia: "none" as TerminalDiagnostics["scrolledVia"],
+  });
 
   /**
    * Asks upstream to redraw once the geometry has settled.
@@ -226,6 +263,26 @@ export const SessionTerminal = ({
     termRef.current = term;
     fitRef.current = fit;
 
+    const reportDiagnostics = () => {
+      const report = onDiagnosticsRef.current;
+      if (!report) return;
+      const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
+      report({
+        bufferType: term.buffer.active.type,
+        bufferLength: term.buffer.active.length,
+        rows: term.rows,
+        cols: term.cols,
+        viewportScrollHeight: viewport?.scrollHeight ?? 0,
+        viewportClientHeight: viewport?.clientHeight ?? 0,
+        ...diagnosticsRef.current,
+      });
+    };
+    // Buffer length grows with output, not with events we control, so the harness
+    // needs a poll to show it live. Only runs when someone is watching.
+    const diagnosticsTimer = onDiagnosticsRef.current
+      ? setInterval(reportDiagnostics, 500)
+      : null;
+
     const observer = new ResizeObserver(scheduleFit);
     observer.observe(host);
     scheduleFit();
@@ -247,10 +304,11 @@ export const SessionTerminal = ({
      * the whole screen — so the wheel is forwarded as arrow keys and the program
      * scrolls itself, which is what a real terminal does.
      */
-    const onWheel = (event: WheelEvent) => {
+    const onWheel = (event: WheelEvent): boolean => {
       // ctrl+wheel is pinch-zoom, not scrolling — leave it to the browser.
-      if (event.ctrlKey) return;
+      if (event.ctrlKey) return true;
       event.preventDefault();
+      diagnosticsRef.current.xtermWheelEvents += 1;
 
       const cellHeight = host.clientHeight / Math.max(1, term.rows);
       const perLine =
@@ -263,24 +321,48 @@ export const SessionTerminal = ({
       // accumulating into smooth movement instead of being rounded away.
       wheelRemainderRef.current += event.deltaY / perLine;
       const lines = Math.trunc(wheelRemainderRef.current);
-      if (lines === 0) return;
+      if (lines === 0) return false;
       wheelRemainderRef.current -= lines;
+      diagnosticsRef.current.lastWheelLines = lines;
 
       if (term.buffer.active.type === "alternate") {
+        // No scrollback exists on the alternate screen — the program owns the
+        // whole screen, so it has to do the scrolling itself.
         const socket = socketRef.current;
-        if (socket?.readyState !== WebSocket.OPEN) return;
+        if (socket?.readyState !== WebSocket.OPEN) return false;
         const key = lines > 0 ? "\x1b[B" : "\x1b[A";
-        const count = Math.min(Math.abs(lines), 10);
-        socket.send(new TextEncoder().encode(key.repeat(count)));
-        return;
+        socket.send(
+          new TextEncoder().encode(key.repeat(Math.min(Math.abs(lines), 10))),
+        );
+        diagnosticsRef.current.scrolledVia = "arrowKeys";
+        reportDiagnostics();
+        return false;
       }
 
       term.scrollLines(lines);
+      diagnosticsRef.current.scrolledVia = "scrollLines";
+      reportDiagnostics();
+      // We handled it; xterm must not also act on the same event.
+      return false;
     };
-    host.addEventListener("wheel", onWheel, { passive: false });
+    // xterm's own wheel listener sits on `.xterm` and stops propagation when it
+    // handles an event, so a listener on this host would never see it. This hook
+    // runs *before* xterm's handling, which is the only reliable place to take
+    // over. The capture-phase listener below counts events independently, so a
+    // wheel that never reaches this hook is distinguishable from one that does.
+    term.attachCustomWheelEventHandler(onWheel);
+
+    const countWheel = () => {
+      diagnosticsRef.current.hostWheelEvents += 1;
+    };
+    host.addEventListener("wheel", countWheel, {
+      capture: true,
+      passive: true,
+    });
 
     return () => {
-      host.removeEventListener("wheel", onWheel);
+      if (diagnosticsTimer) clearInterval(diagnosticsTimer);
+      host.removeEventListener("wheel", countWheel, { capture: true });
       observer.disconnect();
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;

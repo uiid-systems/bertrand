@@ -4,6 +4,7 @@ export {
   TerminalToolbar,
   type SessionTerminalProps,
   type SessionTerminalState,
+  type TerminalDiagnostics,
   type TerminalStatus,
 } from "./session-terminal";
 export {

@@ -2,7 +2,10 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Button, Card, Group, Stack, Text } from "@uiid/design-system";
 
-import { SessionTerminal } from "../../components/terminal";
+import {
+  SessionTerminal,
+  type TerminalDiagnostics,
+} from "../../components/terminal";
 import { useAllSessions } from "../../lib/use-sessions";
 
 const LIVE_STATUSES = new Set(["active", "waiting", "blocked"]);
@@ -38,6 +41,9 @@ function TerminalDevPage() {
 
   const [sessionId, setSessionId] = useState("");
   const [frame, setFrame] = useState<FrameKey>("panel");
+  const [diagnostics, setDiagnostics] = useState<TerminalDiagnostics | null>(
+    null,
+  );
   const active = FRAMES[frame];
 
   return (
@@ -109,7 +115,11 @@ function TerminalDevPage() {
           >
             {/* Keyed on the frame so switching sizes also proves a cold mount
                 into that box works, not just a resize into it. */}
-            <SessionTerminal key={sessionId} sessionId={sessionId} />
+            <SessionTerminal
+              key={sessionId}
+              sessionId={sessionId}
+              onDiagnostics={setDiagnostics}
+            />
           </div>
         </Card>
       ) : (
@@ -117,9 +127,62 @@ function TerminalDevPage() {
           Pick a live session to attach.
         </Text>
       )}
+
+      {diagnostics && <ScrollDiagnostics diagnostics={diagnostics} />}
     </Stack>
   );
 }
+
+/**
+ * Why scrolling behaves the way it does, since none of it is visible from the
+ * outside: whether the program is on the alternate screen (no scrollback exists
+ * there at all), whether any scrollback has accumulated, and whether wheel events
+ * are reaching xterm's hook.
+ */
+const ScrollDiagnostics = ({
+  diagnostics: d,
+}: {
+  readonly diagnostics: TerminalDiagnostics;
+}) => {
+  const hasScrollback = d.bufferLength > d.rows;
+  const wheelReachesXterm = d.xtermWheelEvents > 0;
+
+  const verdict = !d.hostWheelEvents
+    ? "No wheel events at all — the pointer isn't over the terminal, or something upstream is swallowing them."
+    : !wheelReachesXterm
+      ? "Wheel reaches the container but not xterm's hook — something is stopping propagation before it."
+      : d.bufferType === "alternate"
+        ? "Alternate screen: there is no scrollback to scroll, so the wheel is forwarded to the program as arrow keys. If nothing moves, the program isn't scrolling on arrows."
+        : hasScrollback
+          ? "Normal buffer with scrollback, and the wheel is reaching scrollLines — this should be scrolling."
+          : "Normal buffer but no scrollback has accumulated yet, so there is nothing above the viewport to scroll to.";
+
+  return (
+    <Card>
+      <Stack gap={2} p={3}>
+        <Text size={2} weight="bold">
+          Scroll diagnostics
+        </Text>
+        <Text size={1} family="mono">
+          buffer: {d.bufferType} · {d.bufferLength} lines / {d.rows} rows ·{" "}
+          {hasScrollback ? `${d.bufferLength - d.rows} scrollback` : "no scrollback"}
+        </Text>
+        <Text size={1} family="mono">
+          grid: {d.cols}×{d.rows} · viewport: {d.viewportScrollHeight}px scroll /{" "}
+          {d.viewportClientHeight}px client
+        </Text>
+        <Text size={1} family="mono">
+          wheel: {d.hostWheelEvents} at container · {d.xtermWheelEvents} at xterm
+          · last {d.lastWheelLines} lines · via {d.scrolledVia}
+        </Text>
+        <Text size={1} shade="muted">
+          {verdict}
+        </Text>
+      </Stack>
+    </Card>
+  );
+};
+ScrollDiagnostics.displayName = "ScrollDiagnostics";
 
 export const Route = createFileRoute("/dev/terminal")({
   component: TerminalDevPage,
