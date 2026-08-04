@@ -101,6 +101,9 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
       let pendingUuid = cursor?.pendingUuid ?? null;
       let pendingTimestamp = cursor?.pendingTimestamp ?? null;
       let lastUuid = cursor?.lastUuid ?? null;
+      // On a reset the file is re-read from byte 0, so a carried-over id would
+      // be from the *old* file's tail — start clean.
+      let lastUsageId = didReset ? null : (cursor?.lastUsageId ?? null);
       let emitted = 0;
       let model = "";
 
@@ -149,13 +152,21 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
             // chatter is skipped just below. `model` stays *after* the skip —
             // a subagent may run a different one, and the conversation's model
             // is the main agent's.
+            //
+            // Claude Code writes one entry per content block, each repeating
+            // the same `message.usage`, so tokens are counted once per
+            // message.id or totals inflate ~2-3x. The id rides on the cursor
+            // because a message's blocks can straddle a tick boundary.
             const usage = message?.usage as Record<string, unknown> | undefined;
-            if (usage) {
+            const messageId =
+              typeof message?.id === "string" ? message.id : null;
+            if (usage && !(messageId !== null && messageId === lastUsageId)) {
               inputTokens += num(usage.input_tokens);
               outputTokens += num(usage.output_tokens);
               cacheCreationTokens += num(usage.cache_creation_input_tokens);
               cacheReadTokens += num(usage.cache_read_input_tokens);
             }
+            if (usage && messageId) lastUsageId = messageId;
 
             if (entry.isSidechain === true) continue; // subagent chatter
             if (typeof message?.model === "string") model = message.model;
@@ -234,6 +245,7 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
           transcriptPath,
           offset: newOffset,
           lastUuid,
+          lastUsageId,
           pendingThinkingBlocks: pendingBlocks,
           pendingThinkingBytes: pendingBytes,
           pendingUuid,
@@ -245,6 +257,7 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
           set: {
             offset: newOffset,
             lastUuid,
+            lastUsageId,
             pendingThinkingBlocks: pendingBlocks,
             pendingThinkingBytes: pendingBytes,
             pendingUuid,

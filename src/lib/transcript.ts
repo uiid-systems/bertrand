@@ -121,6 +121,13 @@ export function summarizeTranscript(
     lastTimestamp: null,
   };
 
+  // Claude Code writes one entry per content block of an assistant message,
+  // and every one carries a copy of that message's `usage`. Summing them all
+  // inflates totals ~2-3x, so usage is counted once per message.id. Repeats
+  // are always consecutive (blocks of a message are written in sequence), so
+  // remembering the previous id is enough — no growing set.
+  let lastUsageId: string | null = null;
+
   for (const line of text.split("\n")) {
     if (!line) continue;
 
@@ -151,15 +158,17 @@ export function summarizeTranscript(
       summary.model = message.model as string;
     }
 
-    // Usage
+    // Usage — once per message, not once per content-block entry.
     const usage = message.usage as Partial<AssistantUsage> | undefined;
-    if (usage) {
+    const messageId = typeof message.id === "string" ? message.id : null;
+    if (usage && !(messageId !== null && messageId === lastUsageId)) {
       summary.turnCount++;
       summary.totalInputTokens += usage.input_tokens ?? 0;
       summary.totalOutputTokens += usage.output_tokens ?? 0;
       summary.totalCacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
       summary.totalCacheReadTokens += usage.cache_read_input_tokens ?? 0;
     }
+    if (usage && messageId) lastUsageId = messageId;
 
     // Tool use counts
     const content = message.content as Array<Record<string, unknown>> | undefined;

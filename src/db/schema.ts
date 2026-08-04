@@ -157,6 +157,9 @@ export const ingestCursors = sqliteTable("ingest_cursors", {
   transcriptPath: text("transcript_path").primaryKey(),
   offset: integer("offset").notNull().default(0),
   lastUuid: text("last_uuid"),
+  // message.id of the last usage-bearing entry, so a message whose content
+  // blocks straddle a tick boundary is not billed twice (see ingest.ts).
+  lastUsageId: text("last_usage_id"),
   pendingThinkingBlocks: integer("pending_thinking_blocks")
     .notNull()
     .default(0),

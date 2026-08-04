@@ -379,6 +379,67 @@ describe("token usage", () => {
     expect(usage().output).toBe(20);
   });
 
+  /** Stamp a message.id, as real Claude Code output carries on every entry. */
+  function withId(entry: Record<string, unknown>, id: string) {
+    const message = entry.message as Record<string, unknown>;
+    return { ...entry, message: { ...message, id } };
+  }
+
+  // Claude Code writes one entry per content block of an assistant message,
+  // and each repeats that message's `usage` verbatim. Measured on real
+  // transcripts: 349 usage-bearing entries for 151 messages, inflating output
+  // tokens 2.8x. Usage must be billed once per message.
+  test("bills usage once per message.id, not once per content-block entry", () => {
+    const before = usage();
+    const counts = { input: 10, output: 100, cacheRead: 5000 };
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("block one"), counts), "msg_abc"),
+      withId(withUsage(assistantText("block two"), counts), "msg_abc"),
+      withId(withUsage(assistantText("block three"), counts), "msg_abc"),
+    ]);
+    ingest(path);
+
+    expect(delta(before)).toEqual({
+      input: 10,
+      output: 100,
+      cacheCreation: 0,
+      cacheRead: 5000,
+    });
+  });
+
+  test("distinct message ids each bill their own usage", () => {
+    const before = usage();
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("first"), { input: 3, output: 7 }), "msg_a"),
+      withId(withUsage(assistantText("second"), { input: 4, output: 9 }), "msg_b"),
+    ]);
+    ingest(path);
+
+    expect(delta(before)).toMatchObject({ input: 7, output: 16 });
+  });
+
+  // The reason the id is persisted on the cursor rather than kept in a local:
+  // a message's blocks can land either side of a tick boundary.
+  test("dedupes a message whose blocks straddle a tick boundary", () => {
+    const before = usage();
+    const counts = { input: 20, output: 200 };
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("block one"), counts), "msg_split"),
+    ]);
+    ingest(path);
+
+    appendFileSync(
+      path,
+      jsonl([withId(withUsage(assistantText("block two"), counts), "msg_split")]),
+    );
+    ingest(path);
+
+    expect(delta(before)).toMatchObject({ input: 20, output: 200 });
+  });
+
   test("entries without usage leave totals untouched", () => {
     const before = usage();
     const path = transcriptFile([userPrompt("go"), assistantText("no usage block")]);

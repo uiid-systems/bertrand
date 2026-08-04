@@ -1,0 +1,1 @@
+ALTER TABLE `ingest_cursors` ADD `last_usage_id` text;
