@@ -25,8 +25,9 @@ import type { Server, ServerWebSocket } from "bun";
  *   - `{t:"setsize",cols,rows}` — relay tells upstream the size browsers are
  *     asking for; `cols`/`rows` are `null` when no claim is outstanding, which
  *     means "go back to your own terminal's size".
- *   - `{t:"repaint"}` — relay asks upstream to force a full redraw, sent when
- *     a browser attaches partway through a session.
+ *   - `{t:"repaint"}` — force a full redraw upstream. The relay sends one when a
+ *     browser attaches partway through a session, and forwards one a browser
+ *     asks for after a resize it claimed.
  *
  * Geometry is negotiated rather than owned outright, but upstream stays the
  * single source of truth: a claim is only a *request*, and browsers learn the
@@ -296,7 +297,13 @@ export const terminalWebSocketHandlers = {
     if (frame.t === "unclaim") {
       if (!state.claims.delete(ws)) return;
       pushSize(state);
+      return;
     }
+
+    // A browser may also ask for a repaint outside of attaching — after a resize
+    // it has just claimed, so its view is guaranteed to be a clean frame at the
+    // new grid rather than xterm's reflow of the pre-resize one.
+    if (frame.t === "repaint") state.upstream?.send(message);
   },
 
   close(ws: ServerWebSocket<TerminalSocketData>) {

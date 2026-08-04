@@ -204,6 +204,27 @@ describe("terminal relay", () => {
     upstream.close();
   });
 
+  test("a browser can ask for a repaint after its own resize", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "repaint-1");
+    await waitOpen(upstream);
+
+    const browser = connectBrowser(port, "repaint-1");
+    await waitOpen(browser);
+    // Drain the repaint the relay sends on attach so this asserts the forwarded
+    // one, not that.
+    await settle();
+    const seen = collect(upstream);
+
+    browser.send(JSON.stringify({ t: "repaint" }));
+    await settle();
+
+    expect(seen.text.map((f) => JSON.parse(f))).toContainEqual({ t: "repaint" });
+
+    upstream.close();
+    browser.close();
+  });
+
   test("out-of-bounds claims are ignored", async () => {
     const port = startTestServer();
     const upstream = connectUpstream(port, "claim-4");

@@ -84,6 +84,13 @@ const RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
  */
 const CLAIM_DEBOUNCE_MS = 120;
 
+/**
+ * Grace period after the grid settles before asking for a redraw — long enough
+ * that a TUI repainting on its own gets there first and the request is a no-op
+ * rather than a second redraw on top of the first.
+ */
+const REPAINT_DELAY_MS = 250;
+
 export const SessionTerminal = ({
   sessionId,
   onStateChange,
@@ -103,6 +110,32 @@ export const SessionTerminal = ({
   const claimRef = useRef<Dims | null>(null);
   const frameRef = useRef<number | null>(null);
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repaintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repaintedForRef = useRef<Dims | null>(null);
+
+  /**
+   * Asks upstream to redraw once the geometry has settled.
+   *
+   * A PTY resize makes the TUI repaint on its own, but xterm reflows its existing
+   * buffer into the new grid first, so the visible frame is a re-wrapped version
+   * of the pre-resize one until that redraw lands. Requesting a repaint makes the
+   * clean frame guaranteed rather than dependent on the program's own timing.
+   *
+   * Guarded to one request per distinct geometry: upstream answers a repaint by
+   * resizing twice in quick succession, and repainting again for that would not
+   * terminate.
+   */
+  const repaintLater = useCallback((forDims: Dims) => {
+    if (sameDims(forDims, repaintedForRef.current)) return;
+    if (repaintTimerRef.current) clearTimeout(repaintTimerRef.current);
+    repaintTimerRef.current = setTimeout(() => {
+      repaintTimerRef.current = null;
+      const socket = socketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      repaintedForRef.current = forDims;
+      socket.send(JSON.stringify({ t: "repaint" }));
+    }, REPAINT_DELAY_MS);
+  }, []);
 
   /**
    * Sends the grid this box wants, once it has settled. Kept separate from the
@@ -279,9 +312,14 @@ export const SessionTerminal = ({
             ) {
               const next = { cols: frame.cols, rows: frame.rows };
               if (sameDims(next, dimsRef.current)) return;
+              const isFirst = dimsRef.current === null;
               dimsRef.current = next;
               setDims(next);
               scheduleFit();
+              // The relay already asks for a repaint when a browser attaches, so
+              // the first geometry needs no request — only later changes do.
+              if (isFirst) repaintedForRef.current = next;
+              else repaintLater(next);
             }
           } catch {
             // Ignore malformed control frames.
@@ -313,16 +351,19 @@ export const SessionTerminal = ({
     return () => {
       disposed = true;
       if (retryTimer) clearTimeout(retryTimer);
-      // A claim queued mid-drag must not land on the next session's socket.
+      // Work queued mid-drag must not land on the next session's socket.
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
       claimTimerRef.current = null;
+      if (repaintTimerRef.current) clearTimeout(repaintTimerRef.current);
+      repaintTimerRef.current = null;
+      repaintedForRef.current = null;
       // Closing implies unclaim server-side, so the PTY returns to the local
       // terminal's size on its own.
       socketRef.current?.close();
       socketRef.current = null;
       claimRef.current = null;
     };
-  }, [sessionId, scheduleFit, claimLater]);
+  }, [sessionId, scheduleFit, claimLater, repaintLater]);
 
   // Keystrokes: bound once, reading the socket through a ref so reconnects
   // don't need to rebind.
