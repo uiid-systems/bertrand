@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Badge, Group, Text } from "@uiid/design-system";
 
-import { statsQuery } from "../../api/queries";
+import { allStatsQuery, statsQuery } from "../../api/queries";
 import type { SessionStatsRow } from "../../api/types";
 import { formatTokens } from "../../lib/format";
+import { standingFor, usagePeers } from "../../lib/usage-standing";
+import { useSelectedProjects } from "../sidebar/selected-projects";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
 
 export type UsageZoneProps = {
@@ -51,6 +53,16 @@ export const UsageZone = ({
     enabled: !!sessionId,
   });
 
+  // Peers give the counters a scale to be read against. Deliberately the same
+  // selection the primary sidebar ranks against, not this session's project:
+  // the two badges sit on screen together, so a session that reads "heavy" in
+  // one must read heavy in the other. Already cached by the sessions list, so
+  // this is usually free.
+  const { queryProjects } = useSelectedProjects();
+  const { data: allStats } = useQuery(
+    allStatsQuery({ hasLiveSession: isLive, projects: queryProjects }),
+  );
+
   if (!stats) return null;
 
   const captured =
@@ -60,12 +72,14 @@ export const UsageZone = ({
     stats.cacheReadTokens;
   if (captured === 0) return null;
 
+  const standing = standingFor(stats.outputTokens, usagePeers(allStats));
+
   return (
     <SidebarZone
       data-slot="usage-zone"
       title="Token usage"
       badge={
-        <Badge color="neutral">
+        <Badge color={standing.color} title={standing.title}>
           <Text size={-1} weight="bold">
             {formatTokens(stats.outputTokens)}
           </Text>
@@ -89,7 +103,12 @@ export const UsageZone = ({
             <Text size={-1} shade="muted" title={hint}>
               {label}
             </Text>
-            <Text size={-1} family="mono">
+            <Text
+              size={-1}
+              family="mono"
+              title={`${(stats[key] as number).toLocaleString()} tokens — ${hint}`}
+              style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+            >
               {formatTokens(stats[key] as number)}
             </Text>
           </Fragment>
