@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "@/server/terminal-relay";
-import { spawnPty } from "./pty";
+import { smallestDims, spawnPty } from "./pty";
 import { connectTerminalRelay } from "./terminal-relay-client";
 
 /**
@@ -67,6 +67,7 @@ describe("PTY + relay integration", () => {
       sessionId,
       onInput: (chunk) => pty.write(chunk),
       onRepaint: () => {},
+      onSetSize: () => {},
     });
 
     // Local-terminal-equivalent write: cat echoes it back through the PTY,
@@ -116,6 +117,7 @@ describe("PTY + relay integration", () => {
       onRepaint: () => {
         repaints += 1;
       },
+      onSetSize: () => {},
     });
     relay.sendDims(190, 50);
 
@@ -144,6 +146,93 @@ describe("PTY + relay integration", () => {
       rows: 50,
     });
     expect(repaints).toBeGreaterThan(0);
+
+    relay.close();
+    browser.close();
+    pty.kill();
+    await pty.exited;
+  });
+
+  test("a browser can take PTY sizing over, is capped by the local terminal, and releases it", async () => {
+    server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      websocket: terminalWebSocketHandlers,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        const result = tryUpgradeTerminal(req, srv, url);
+        if (result !== false) return result;
+        return new Response("not found", { status: 404 });
+      },
+    });
+    prevPort = process.env.BERTRAND_PORT;
+    process.env.BERTRAND_PORT = String(server.port);
+
+    const sessionId = "takeover-session";
+    // Stands in for process.stdout's dimensions, which launchClaude() reads.
+    const local = { cols: 190, rows: 50 };
+    let claim: { cols: number; rows: number } | null = null;
+
+    let relay: ReturnType<typeof connectTerminalRelay>;
+    const pty = spawnPty(["cat"], {
+      onData: (chunk) => relay.send(chunk),
+    });
+
+    // Mirrors launchClaude()'s applyDims(), using the same smallestDims() the
+    // real code path uses so this exercises the actual policy, not a copy.
+    const applyDims = () => {
+      const { cols, rows } = smallestDims(local, claim);
+      pty.resize(cols, rows);
+      relay.sendDims(cols, rows);
+    };
+
+    relay = connectTerminalRelay({
+      sessionId,
+      onInput: (chunk) => pty.write(chunk),
+      onRepaint: () => {},
+      onSetSize: (dims) => {
+        claim = dims;
+        applyDims();
+      },
+    });
+    relay.sendDims(local.cols, local.rows);
+
+    const dims: Array<{ cols: number; rows: number }> = [];
+    const browser = new WebSocket(
+      `ws://127.0.0.1:${server.port}/ws/sessions/${sessionId}/terminal?role=browser`,
+    );
+    browser.binaryType = "arraybuffer";
+    browser.onmessage = (event) => {
+      if (typeof event.data !== "string") return;
+      const frame = JSON.parse(event.data);
+      if (frame?.t === "dims") dims.push({ cols: frame.cols, rows: frame.rows });
+    };
+    await waitOpen(browser);
+
+    const step = async (frame: unknown) => {
+      browser.send(JSON.stringify(frame));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    };
+
+    // Taking over: the PTY follows the browser's panel.
+    await step({ t: "claim", cols: 100, rows: 30 });
+    expect(dims.at(-1)).toEqual({ cols: 100, rows: 30 });
+
+    // A browser cannot force the PTY *bigger* than the local terminal — that
+    // would wrap output in the window the session is really attached to.
+    await step({ t: "claim", cols: 400, rows: 120 });
+    expect(dims.at(-1)).toEqual({ cols: 190, rows: 50 });
+
+    await step({ t: "claim", cols: 120, rows: 40 });
+    expect(dims.at(-1)).toEqual({ cols: 120, rows: 40 });
+
+    // Releasing hands sizing back to the local terminal.
+    await step({ t: "unclaim" });
+    expect(dims.at(-1)).toEqual({ cols: 190, rows: 50 });
+
+    // Out-of-bounds claims are ignored rather than resizing the PTY to nonsense.
+    await step({ t: "claim", cols: 2, rows: 1 });
+    expect(dims.at(-1)).toEqual({ cols: 190, rows: 50 });
 
     relay.close();
     browser.close();
