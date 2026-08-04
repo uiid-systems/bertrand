@@ -26,7 +26,14 @@ migrate(drizzle(sqlite), {
 const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
 const { createSession, getSession, getActiveSessions, getAllSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession } = await import("./queries/events.ts");
-const { createConversation, getConversationsBySession } = await import("./queries/conversations.ts");
+const {
+  createConversation,
+  getConversationsBySession,
+  setConversationUsage,
+  discardConversation,
+  getSessionUsage,
+} = await import("./queries/conversations.ts");
+const { computeSessionStats } = await import("../lib/timing");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
 const { upsertSessionStats, getSessionStats } = await import("./queries/stats.ts");
 
@@ -246,6 +253,10 @@ describe("stats", () => {
       linesAdded: 0,
       linesRemoved: 0,
       filesTouched: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
     });
 
     const stats = getSessionStats(session.id);
@@ -264,9 +275,83 @@ describe("stats", () => {
       linesAdded: 0,
       linesRemoved: 0,
       filesTouched: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
     });
 
     const updated = getSessionStats(session.id);
     expect(updated!.eventCount).toBe(50);
+  });
+});
+
+describe("token usage rollup", () => {
+  test("sums a session's conversations and excludes discarded ones", () => {
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "usage-rollup",
+      name: "usage-rollup",
+    });
+
+    const first = createConversation({ id: "conv-usage-1", sessionId: session.id });
+    const second = createConversation({ id: "conv-usage-2", sessionId: session.id });
+    const thrownAway = createConversation({ id: "conv-usage-3", sessionId: session.id });
+
+    setConversationUsage(first.id, {
+      model: "claude-opus-5",
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheCreationTokens: 2,
+      cacheReadTokens: 1000,
+    });
+    setConversationUsage(second.id, {
+      model: "claude-opus-5",
+      inputTokens: 7,
+      outputTokens: 3,
+      cacheCreationTokens: 1,
+      cacheReadTokens: 500,
+    });
+    // Discarded work still burned tokens, but it is excluded everywhere else
+    // in the session's derived data, so it must not inflate the rollup.
+    setConversationUsage(thrownAway.id, {
+      model: "claude-opus-5",
+      inputTokens: 999,
+      outputTokens: 999,
+      cacheCreationTokens: 999,
+      cacheReadTokens: 999,
+    });
+    discardConversation(thrownAway.id);
+
+    expect(getSessionUsage(session.id)).toEqual({
+      inputTokens: 17,
+      outputTokens: 8,
+      cacheCreationTokens: 3,
+      cacheReadTokens: 1500,
+    });
+
+    // ...and the rollup reaches the materialized stats payload.
+    const stats = computeSessionStats(session.id);
+    expect(stats.inputTokens).toBe(17);
+    expect(stats.outputTokens).toBe(8);
+    expect(stats.cacheCreationTokens).toBe(3);
+    expect(stats.cacheReadTokens).toBe(1500);
+  });
+
+  test("a session with no conversations rolls up to zero", () => {
+    const category = getCategoryByPath("uiid/bertrand")!;
+    const session = createSession({
+      categoryId: category.id,
+      slug: "usage-empty",
+      name: "usage-empty",
+    });
+
+    expect(getSessionUsage(session.id)).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
   });
 });

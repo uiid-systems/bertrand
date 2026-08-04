@@ -19,7 +19,7 @@ const testDb = drizzle(sqlite, { schema });
 
 const { createCategory } = await import("../queries/categories");
 const { createSession } = await import("../queries/sessions");
-const { createConversation } = await import("../queries/conversations");
+const { createConversation, getConversation } = await import("../queries/conversations");
 const { getEventsBySession } = await import("../queries/events");
 
 let sessionId: string;
@@ -257,5 +257,137 @@ describe("ingestTranscript", () => {
 
   test("missing file is a no-op", () => {
     expect(ingest(join(workDir, "nope.jsonl")).emitted).toBe(0);
+  });
+});
+
+describe("token usage", () => {
+  // The session and conversation are shared across the whole suite, so every
+  // assertion here is on the *delta* a single ingest produced.
+  function usage() {
+    const c = getConversation(conversationId)!;
+    return {
+      input: c.inputTokens,
+      output: c.outputTokens,
+      cacheCreation: c.cacheCreationTokens,
+      cacheRead: c.cacheReadTokens,
+      model: c.model,
+    };
+  }
+
+  function delta(before: ReturnType<typeof usage>) {
+    const after = usage();
+    return {
+      input: after.input - before.input,
+      output: after.output - before.output,
+      cacheCreation: after.cacheCreation - before.cacheCreation,
+      cacheRead: after.cacheRead - before.cacheRead,
+    };
+  }
+
+  function withUsage(
+    entry: Record<string, unknown>,
+    counts: {
+      input?: number;
+      output?: number;
+      cacheCreation?: number;
+      cacheRead?: number;
+    },
+  ) {
+    const message = entry.message as Record<string, unknown>;
+    return {
+      ...entry,
+      message: {
+        ...message,
+        usage: {
+          input_tokens: counts.input ?? 0,
+          output_tokens: counts.output ?? 0,
+          cache_creation_input_tokens: counts.cacheCreation ?? 0,
+          cache_read_input_tokens: counts.cacheRead ?? 0,
+        },
+      },
+    };
+  }
+
+  test("accumulates across ticks", () => {
+    const before = usage();
+    const path = transcriptFile([
+      userPrompt("go"),
+      withUsage(assistantText("first"), { input: 10, output: 5, cacheRead: 100 }),
+    ]);
+    ingest(path);
+
+    appendFileSync(
+      path,
+      jsonl([withUsage(assistantText("second"), { input: 7, output: 3, cacheCreation: 40 })]),
+    );
+    ingest(path);
+
+    expect(delta(before)).toEqual({
+      input: 17,
+      output: 8,
+      cacheCreation: 40,
+      cacheRead: 100,
+    });
+  });
+
+  test("counts sidechain (subagent) tokens but not their model", () => {
+    const before = usage();
+    const side = withUsage(
+      { ...assistantText("subagent chatter"), isSidechain: true },
+      { input: 500, output: 250 },
+    );
+    // A subagent may run a different model than the main agent.
+    (side.message as Record<string, unknown>).model = "claude-haiku-4-5-20251001";
+
+    const path = transcriptFile([
+      userPrompt("go"),
+      side,
+      withUsage(assistantText("main line"), { input: 1, output: 2 }),
+    ]);
+    const { emitted } = ingest(path);
+
+    // The subagent's chatter stays out of the timeline...
+    expect(emitted).toBe(1);
+    // ...but its tokens are still billed to this conversation.
+    expect(delta(before)).toEqual({
+      input: 501,
+      output: 252,
+      cacheCreation: 0,
+      cacheRead: 0,
+    });
+    expect(usage().model).toBe("claude-fable-5");
+  });
+
+  // Note: a reset *replaces* the shared conversation's totals, discarding what
+  // the tests above accumulated onto it — later tests here must assert on
+  // deltas, not absolutes. In production a conversation maps to exactly one
+  // transcript, so replacing is correct: the re-read covers the entire file.
+  test("cursor reset replaces totals instead of double-counting", () => {
+    const kept = withUsage(assistantText("kept"), { input: 60, output: 20 });
+    const dropped = withUsage(assistantText("dropped"), { input: 30, output: 10 });
+
+    const before = usage();
+    const path = transcriptFile([userPrompt("go"), kept, dropped]);
+    ingest(path);
+    expect(delta(before)).toMatchObject({ input: 90, output: 30 });
+
+    // Replace with a *shorter* file so the cursor points past EOF and the
+    // whole file is re-read. Totals must be replaced, not added to.
+    writeFileSync(path, jsonl([userPrompt("go"), kept]));
+    ingest(path);
+    expect(usage().input).toBe(60);
+    expect(usage().output).toBe(20);
+  });
+
+  test("entries without usage leave totals untouched", () => {
+    const before = usage();
+    const path = transcriptFile([userPrompt("go"), assistantText("no usage block")]);
+    ingest(path);
+    expect(delta(before)).toEqual({
+      input: 0,
+      output: 0,
+      cacheCreation: 0,
+      cacheRead: 0,
+    });
   });
 });

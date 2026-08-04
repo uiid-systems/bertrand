@@ -29,7 +29,7 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from "fs";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { events, ingestCursors } from "@/db/schema";
+import { conversations, events, ingestCursors } from "@/db/schema";
 import { contentBlocks } from "@/lib/transcript";
 import { emitAssistantMessage } from "./emit";
 
@@ -53,6 +53,11 @@ function summarize(text: string): string {
 function toSqliteTime(iso: unknown): string | undefined {
   if (typeof iso !== "string" || iso.length < 19) return undefined;
   return iso.replace("T", " ").slice(0, 19);
+}
+
+/** Usage counters are missing on some assistant entries and null on others. */
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /** uuids of already-recorded messages — consulted only after a cursor reset. */
@@ -84,8 +89,10 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
       // File replaced or truncated (rotation, compaction edge) — restart and
       // let uuid dedup absorb whatever was already recorded.
       let seen: Set<string> | null = null;
+      let didReset = false;
       if (offset > size) {
         offset = 0;
+        didReset = true;
         seen = loadSeenUuids(sessionId);
       }
 
@@ -96,6 +103,13 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
       let lastUuid = cursor?.lastUuid ?? null;
       let emitted = 0;
       let model = "";
+
+      // Tokens seen in this tick's slice of the file, folded into the
+      // conversation row below.
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheCreationTokens = 0;
+      let cacheReadTokens = 0;
 
       let newOffset = offset;
       if (size > offset) {
@@ -127,9 +141,23 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
             }
 
             if (entry.type !== "assistant") continue;
-            if (entry.isSidechain === true) continue; // subagent chatter
 
             const message = entry.message as Record<string, unknown> | undefined;
+
+            // Usage accrues for every assistant entry, sidechains included: a
+            // subagent's turns are billed to this conversation even though its
+            // chatter is skipped just below. `model` stays *after* the skip —
+            // a subagent may run a different one, and the conversation's model
+            // is the main agent's.
+            const usage = message?.usage as Record<string, unknown> | undefined;
+            if (usage) {
+              inputTokens += num(usage.input_tokens);
+              outputTokens += num(usage.output_tokens);
+              cacheCreationTokens += num(usage.cache_creation_input_tokens);
+              cacheReadTokens += num(usage.cache_read_input_tokens);
+            }
+
+            if (entry.isSidechain === true) continue; // subagent chatter
             if (typeof message?.model === "string") model = message.model;
 
             const uuid = typeof entry.uuid === "string" ? entry.uuid : null;
@@ -225,6 +253,36 @@ export function ingestTranscript(args: IngestArgs): { emitted: number } {
           },
         })
         .run();
+
+      // Attribute the tick's tokens to the conversation. Normally an
+      // increment; after a cursor reset the whole file was just re-read, so
+      // the totals are *replaced* — uuid dedup guards the events, not these
+      // counters, and adding again would double-count the file.
+      const hasUsage =
+        inputTokens > 0 ||
+        outputTokens > 0 ||
+        cacheCreationTokens > 0 ||
+        cacheReadTokens > 0;
+      if (conversationId && (hasUsage || model || didReset)) {
+        tx.update(conversations)
+          .set({
+            ...(model ? { model } : {}),
+            inputTokens: didReset
+              ? inputTokens
+              : sql`${conversations.inputTokens} + ${inputTokens}`,
+            outputTokens: didReset
+              ? outputTokens
+              : sql`${conversations.outputTokens} + ${outputTokens}`,
+            cacheCreationTokens: didReset
+              ? cacheCreationTokens
+              : sql`${conversations.cacheCreationTokens} + ${cacheCreationTokens}`,
+            cacheReadTokens: didReset
+              ? cacheReadTokens
+              : sql`${conversations.cacheReadTokens} + ${cacheReadTokens}`,
+          })
+          .where(eq(conversations.id, conversationId))
+          .run();
+      }
 
       return { emitted };
     },

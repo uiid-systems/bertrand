@@ -109,6 +109,14 @@ export const conversations = sqliteTable(
       .notNull()
       .default(false),
     eventCount: integer("event_count").notNull().default(0),
+    // Token usage, accumulated forward by transcript ingestion. Stored raw
+    // (never as a dollar figure) — prices change, so cost is derived at
+    // display time from `model` plus whatever rate card is current.
+    model: text("model"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheCreationTokens: integer("cache_creation_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
   },
   (t) => [index("conv_session").on(t.sessionId)]
 );
@@ -172,6 +180,13 @@ export const sessionStats = sqliteTable("session_stats", {
   userWaitS: integer("user_wait_s").notNull().default(0),
   activePct: integer("active_pct").notNull().default(0),
   durationS: integer("duration_s").notNull().default(0),
+  // Rolled up from the session's conversations. Kept as four separate
+  // counters, never a single total: cache reads run ~100x output volume but
+  // bill at a fraction of it, so any sum of these is meaningless.
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cacheCreationTokens: integer("cache_creation_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
   linesAdded: integer("lines_added").notNull().default(0),
   linesRemoved: integer("lines_removed").notNull().default(0),
   filesTouched: integer("files_touched").notNull().default(0),

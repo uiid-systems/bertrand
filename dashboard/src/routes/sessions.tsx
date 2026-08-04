@@ -1,6 +1,15 @@
+import { useMemo, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Group, Stack, Table, Text } from "@uiid/design-system";
+import {
+  Badge,
+  Group,
+  Stack,
+  Table,
+  Text,
+  Toggle,
+  ToggleGroup,
+} from "@uiid/design-system";
 
 import { allStatsQuery, sessionsQuery } from "../api/queries";
 import type { SessionStatsRow, SessionWithCategory } from "../api/types";
@@ -8,13 +17,14 @@ import { useSelectedProjects } from "../components/sidebar/selected-projects";
 import {
   formatDuration,
   formatRelativeTime,
+  formatTokens,
   isLiveStatus,
   statusColor,
   statusLabel,
 } from "../lib/format";
 
 const RECENT_LIMIT = 25;
-const LARGEST_LIMIT = 10;
+const RANKED_LIMIT = 10;
 
 /** One flat row per session, values pre-rendered as nodes/primitives so the
  * shared Table renders them directly (it stringifies non-elements). */
@@ -24,33 +34,81 @@ type SessionRow = {
   status: React.ReactNode;
   interactions: number;
   changes: React.ReactNode;
+  tokens: React.ReactNode;
   duration: string;
   updated: string;
 };
 
-/** Recent leads with status; largest leads with the changes that rank it. */
-const RECENT_COLUMNS = [
-  "status",
-  "project",
-  "session",
-  "interactions",
-  "changes",
-  "duration",
-  "updated",
-];
-const LARGEST_COLUMNS = [
-  "changes",
-  "project",
-  "session",
-  "status",
-  "interactions",
-  "duration",
-  "updated",
-];
+type Ranking = "recent" | "changes" | "tokens";
+
+/**
+ * The three ways to rank the same list. Each view leads with the column that
+ * ranks it, so the ordering is legible without a sort indicator — recent leads
+ * with status, the other two with the measure they sort on.
+ */
+const VIEWS: Record<
+  Ranking,
+  { label: string; title: string; columns: string[]; empty: string }
+> = {
+  recent: {
+    label: "Recent",
+    title: "Recent sessions",
+    columns: [
+      "status",
+      "project",
+      "session",
+      "interactions",
+      "changes",
+      "tokens",
+      "duration",
+      "updated",
+    ],
+    empty: "No sessions yet",
+  },
+  changes: {
+    label: "Most changed",
+    title: "Largest sessions",
+    columns: [
+      "changes",
+      "project",
+      "session",
+      "status",
+      "interactions",
+      "tokens",
+      "duration",
+      "updated",
+    ],
+    empty: "No changes recorded yet",
+  },
+  tokens: {
+    label: "Most tokens",
+    title: "Heaviest sessions",
+    columns: [
+      "tokens",
+      "project",
+      "session",
+      "status",
+      "interactions",
+      "changes",
+      "duration",
+      "updated",
+    ],
+    empty: "No token usage recorded yet",
+  },
+};
 
 /** Total lines a session touched — how "large" it ranks. */
 function totalChanged(stat: SessionStatsRow | undefined): number {
   return (stat?.linesAdded ?? 0) + (stat?.linesRemoved ?? 0);
+}
+
+/**
+ * Output tokens — how "heavy" it ranks. Output rather than a sum of all four
+ * counters: cache reads run ~100x output, so a total would rank sessions by
+ * roughly how long they ran instead of how much work they produced.
+ */
+function totalTokens(stat: SessionStatsRow | undefined): number {
+  return stat?.outputTokens ?? 0;
 }
 
 /**
@@ -68,73 +126,69 @@ function SessionsPage() {
     allStatsQuery({ hasLiveSession, projects: queryProjects }),
   );
 
-  const enriched = sessions.map((entry) => ({
-    entry,
-    stat: stats[entry.session.id],
-    row: toRow(entry, stats[entry.session.id]),
-  }));
+  const [ranking, setRanking] = useState<Ranking>("recent");
 
-  const recent = [...enriched]
-    .sort((a, b) =>
-      b.entry.session.updatedAt.localeCompare(a.entry.session.updatedAt),
-    )
-    .slice(0, RECENT_LIMIT)
-    .map((e) => e.row);
+  const rows = useMemo(() => {
+    const enriched = sessions.map((entry) => ({
+      entry,
+      stat: stats[entry.session.id],
+      row: toRow(entry, stats[entry.session.id]),
+    }));
 
-  const largest = [...enriched]
-    .filter((e) => totalChanged(e.stat) > 0)
-    .sort((a, b) => totalChanged(b.stat) - totalChanged(a.stat))
-    .slice(0, LARGEST_LIMIT)
-    .map((e) => e.row);
+    if (ranking === "recent") {
+      return enriched
+        .sort((a, b) =>
+          b.entry.session.updatedAt.localeCompare(a.entry.session.updatedAt),
+        )
+        .slice(0, RECENT_LIMIT)
+        .map((e) => e.row);
+    }
+
+    // Ranked views drop sessions with nothing to rank — a table of zeroes
+    // reads as data when it is really just absence.
+    const measure = ranking === "changes" ? totalChanged : totalTokens;
+    return enriched
+      .filter((e) => measure(e.stat) > 0)
+      .sort((a, b) => measure(b.stat) - measure(a.stat))
+      .slice(0, RANKED_LIMIT)
+      .map((e) => e.row);
+  }, [sessions, stats, ranking]);
+
+  const view = VIEWS[ranking];
 
   return (
-    <Stack gap={8} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
-      <TableSection
-        title="Recent sessions"
-        count={sessions.length}
-        columns={RECENT_COLUMNS}
-        rows={recent}
-        empty="No sessions yet"
-      />
-      <TableSection
-        title="Largest sessions"
-        count={largest.length}
-        columns={LARGEST_COLUMNS}
-        rows={largest}
-        empty="No changes recorded yet"
-      />
-    </Stack>
-  );
-}
-
-function TableSection({
-  title,
-  count,
-  columns,
-  rows,
-  empty,
-}: {
-  title: string;
-  count: number;
-  columns: string[];
-  rows: SessionRow[];
-  empty: string;
-}) {
-  return (
-    <Stack gap={4} ax="stretch" fullwidth>
+    <Stack gap={4} p={6} ax="stretch" fullwidth style={{ overflowY: "auto" }}>
       <Group gap={2} ay="center">
         <Text size={3} weight="bold">
-          {title}
+          {view.title}
         </Text>
-        {count > 0 && <Badge color="blue">{count}</Badge>}
+        {rows.length > 0 && <Badge color="blue">{rows.length}</Badge>}
+        <Group ml="auto">
+          <ToggleGroup
+            value={[ranking]}
+            onValueChange={(value) => {
+              const next = value[0] as Ranking | undefined;
+              // Base UI clears the value when the active toggle is pressed
+              // again; keep the current ranking rather than showing nothing.
+              if (next) setRanking(next);
+            }}
+            size="sm"
+          >
+            {(Object.keys(VIEWS) as Ranking[]).map((key) => (
+              <Toggle key={key} value={key} aria-label={VIEWS[key].title}>
+                {VIEWS[key].label}
+              </Toggle>
+            ))}
+          </ToggleGroup>
+        </Group>
       </Group>
 
       {rows.length === 0 ? (
-        <Text shade="halftone">{empty}</Text>
+        <Text shade="halftone">{view.empty}</Text>
       ) : (
         <Table<SessionRow>
           items={rows}
-          columns={columns}
+          columns={view.columns}
           striped
           highlightOnHover
         />
@@ -175,9 +229,27 @@ function toRow(
     ),
     interactions: stat?.interactionCount ?? 0,
     changes: <Changes stat={stat} />,
+    tokens: <Tokens stat={stat} />,
     duration: formatDuration(stat?.durationS ?? 0),
     updated: formatRelativeTime(session.updatedAt),
   };
+}
+
+/**
+ * Output tokens alone — the counter that tracks work produced. Input and the
+ * two cache counters are deliberately left to the per-session zone: cache
+ * reads run ~100x output and would dominate the column while ranking sessions
+ * by little more than how long they ran.
+ */
+function Tokens({ stat }: { stat: SessionStatsRow | undefined }) {
+  const output = stat?.outputTokens ?? 0;
+  if (output === 0) return <Text shade="halftone">—</Text>;
+
+  return (
+    <Text family="mono" title={`${output.toLocaleString()} output tokens`}>
+      {formatTokens(output)}
+    </Text>
+  );
 }
 
 function Changes({ stat }: { stat: SessionStatsRow | undefined }) {

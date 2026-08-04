@@ -27,6 +27,10 @@ export function upsertSessionStats(
     linesAdded: number;
     linesRemoved: number;
     filesTouched: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
   },
   db: Db = getDb(),
 ) {

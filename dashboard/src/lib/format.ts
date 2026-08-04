@@ -51,6 +51,18 @@ export function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+/**
+ * 15414331 → "15.4M". Token counts run into the millions — cache reads
+ * routinely dwarf every other counter — so raw digits are unreadable in a
+ * sidebar column.
+ */
+export function formatTokens(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
 export function formatRelativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
 
