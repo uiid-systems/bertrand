@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
-import { getActiveSessions } from "@/db/queries/sessions";
+import { countLiveSessionsAllProjects } from "@/db/queries/sessions";
 
 interface Deps {
   pidFile: string;
@@ -24,7 +24,10 @@ const defaultDeps: Deps = {
       return null;
     }
   },
-  getActiveCount: () => getActiveSessions().length,
+  // `bertrand serve` is one shared process across every project, so "is
+  // anything still live" must check all of them — not just whichever
+  // project the calling session's own process happens to be pinned to.
+  getActiveCount: () => countLiveSessionsAllProjects(),
 };
 
 let deps: Deps = defaultDeps;

@@ -4,6 +4,7 @@ import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
 import { getCategoryByPath } from "@/db/queries/categories";
 import { parseSessionName } from "@/lib/parse-session-name";
+import { listProjects } from "@/lib/projects/registry";
 import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
 
 export type { SessionStatus };
@@ -138,6 +139,22 @@ export function countLiveSessions(db: Db = getDb()): number {
     .where(inArray(sessions.status, LIVE_STATUSES))
     .get();
   return row?.n ?? 0;
+}
+
+/**
+ * Live-session count across every registered project, not just the calling
+ * process's own. `bertrand serve` is a single shared, cross-project resource
+ * (one PID file, one port — see server-lifecycle.ts), so its idle-shutdown
+ * check can't be answered from one project's DB alone: a session in project
+ * "foo" exiting must not tear down the server out from under a still-live
+ * session in project "bar". Mirrors the aggregation `/api/projects` already
+ * does per-project for the dashboard's live-project view.
+ */
+export function countLiveSessionsAllProjects(): number {
+  return listProjects().reduce(
+    (sum, p) => sum + countLiveSessions(getDbForProject(p.slug)),
+    0,
+  );
 }
 
 function selectSessions(
