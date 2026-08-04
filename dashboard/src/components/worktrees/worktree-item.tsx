@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
   Button,
+  Dialog,
   Group,
-  Modal,
   Stack,
   Status,
   type StatusProps,
@@ -268,7 +268,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
         </pre>
       )}
 
-      <Modal
+      <Dialog
         open={confirmOpen}
         onOpenChange={(open) => {
           setConfirmOpen(open);
@@ -286,7 +286,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
               Cancel
             </Button>
             <Button
-              variant="inverted"
+              color="red"
               loading={del.isPending}
               onClick={() => del.mutate(dirty)}
             >
@@ -331,7 +331,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
             </Text>
           )}
         </Stack>
-      </Modal>
+      </Dialog>
     </Stack>
   );
 };
