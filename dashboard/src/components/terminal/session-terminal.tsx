@@ -64,6 +64,11 @@ export interface SessionTerminalState {
  * surfaced rather than guessed at.
  */
 export interface TerminalDiagnostics {
+  /**
+   * On the alternate screen the program owns the whole display and there is no
+   * scrollback — scrolling is the program's to do, via mouse or key sequences,
+   * exactly as in a real terminal.
+   */
   bufferType: "normal" | "alternate";
   /** Total buffer lines, including scrollback. Equal to `rows` means no history. */
   bufferLength: number;
@@ -73,10 +78,8 @@ export interface TerminalDiagnostics {
   viewportClientHeight: number;
   /** Wheel events seen at the container (capture phase). */
   hostWheelEvents: number;
-  /** Wheel events that actually reached xterm's hook. */
+  /** Wheel events that reached xterm, which does the actual scrolling. */
   xtermWheelEvents: number;
-  lastWheelLines: number;
-  scrolledVia: "scrollLines" | "arrowKeys" | "none";
 }
 
 export type SessionTerminalProps = {
@@ -138,9 +141,6 @@ export const SessionTerminal = ({
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintedForRef = useRef<Dims | null>(null);
-  /** Sub-line wheel delta carried between events, so trackpads scroll smoothly. */
-  const wheelRemainderRef = useRef(0);
-
   // Held in a ref and read through one, so the terminal isn't recreated when the
   // consumer passes a new callback identity.
   const onDiagnosticsRef = useRef(onDiagnostics);
@@ -148,8 +148,6 @@ export const SessionTerminal = ({
   const diagnosticsRef = useRef({
     hostWheelEvents: 0,
     xtermWheelEvents: 0,
-    lastWheelLines: 0,
-    scrolledVia: "none" as TerminalDiagnostics["scrolledVia"],
   });
 
   /**
@@ -288,69 +286,26 @@ export const SessionTerminal = ({
     scheduleFit();
 
     /**
-     * Drives scrolling explicitly, rather than leaving it to native scrolling of
-     * xterm's viewport.
+     * Scrolling is xterm's job, not ours — this hook only counts events.
      *
-     * Making this container the scroller isn't an option: xterm only renders the
-     * visible window, so scrollback is reachable only through its own scroll
-     * model — a taller container just yields empty space. And relying on the
-     * native path is fragile in both directions. Without a handler the wheel
-     * chains to the nearest scrollable ancestor whenever the viewport has nowhere
-     * to go, and the *page* moves instead; with a handler that calls
-     * `preventDefault` on an ancestor, the bubble-phase cancel kills the
-     * viewport's own scroll too. Calling `scrollLines` leaves no ambiguity.
+     * Returning `false` here makes xterm `return` before it does any of its own
+     * wheel handling (CoreBrowserTerminal, both the mouse-reporting path and the
+     * viewport path), which is how an earlier attempt at "fixing" scrolling broke
+     * it outright. xterm already covers every case correctly:
      *
-     * On the alternate screen there is no scrollback at all — the program owns
-     * the whole screen — so the wheel is forwarded as arrow keys and the program
-     * scrolls itself, which is what a real terminal does.
+     *   - the program requested mouse events: the wheel becomes a mouse wheel
+     *     event sent to the program, which is how a full-screen TUI scrolls;
+     *   - alternate screen with no mouse reporting: xterm converts the wheel into
+     *     up/down sequences, explicitly so apps in the alt buffer still scroll;
+     *   - normal buffer with scrollback: it scrolls its own viewport.
+     *
+     * It cancels the event in each of those, so nothing chains to the page. There
+     * is no case left for us to handle, and intercepting can only take one away.
      */
-    const onWheel = (event: WheelEvent): boolean => {
-      // ctrl+wheel is pinch-zoom, not scrolling — leave it to the browser.
-      if (event.ctrlKey) return true;
-      event.preventDefault();
+    term.attachCustomWheelEventHandler(() => {
       diagnosticsRef.current.xtermWheelEvents += 1;
-
-      const cellHeight = host.clientHeight / Math.max(1, term.rows);
-      const perLine =
-        event.deltaMode === 1
-          ? 1
-          : event.deltaMode === 2
-            ? 1 / Math.max(1, term.rows)
-            : Math.max(1, cellHeight);
-      // Trackpads emit many sub-line deltas; carrying the remainder keeps them
-      // accumulating into smooth movement instead of being rounded away.
-      wheelRemainderRef.current += event.deltaY / perLine;
-      const lines = Math.trunc(wheelRemainderRef.current);
-      if (lines === 0) return false;
-      wheelRemainderRef.current -= lines;
-      diagnosticsRef.current.lastWheelLines = lines;
-
-      if (term.buffer.active.type === "alternate") {
-        // No scrollback exists on the alternate screen — the program owns the
-        // whole screen, so it has to do the scrolling itself.
-        const socket = socketRef.current;
-        if (socket?.readyState !== WebSocket.OPEN) return false;
-        const key = lines > 0 ? "\x1b[B" : "\x1b[A";
-        socket.send(
-          new TextEncoder().encode(key.repeat(Math.min(Math.abs(lines), 10))),
-        );
-        diagnosticsRef.current.scrolledVia = "arrowKeys";
-        reportDiagnostics();
-        return false;
-      }
-
-      term.scrollLines(lines);
-      diagnosticsRef.current.scrolledVia = "scrollLines";
-      reportDiagnostics();
-      // We handled it; xterm must not also act on the same event.
-      return false;
-    };
-    // xterm's own wheel listener sits on `.xterm` and stops propagation when it
-    // handles an event, so a listener on this host would never see it. This hook
-    // runs *before* xterm's handling, which is the only reliable place to take
-    // over. The capture-phase listener below counts events independently, so a
-    // wheel that never reaches this hook is distinguishable from one that does.
-    term.attachCustomWheelEventHandler(onWheel);
+      return true;
+    });
 
     const countWheel = () => {
       diagnosticsRef.current.hostWheelEvents += 1;

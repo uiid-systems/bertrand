@@ -150,11 +150,11 @@ const ScrollDiagnostics = ({
   const verdict = !d.hostWheelEvents
     ? "No wheel events at all — the pointer isn't over the terminal, or something upstream is swallowing them."
     : !wheelReachesXterm
-      ? "Wheel reaches the container but not xterm's hook — something is stopping propagation before it."
+      ? "Wheel reaches the container but not xterm — something is stopping propagation before it."
       : d.bufferType === "alternate"
-        ? "Alternate screen: there is no scrollback to scroll, so the wheel is forwarded to the program as arrow keys. If nothing moves, the program isn't scrolling on arrows."
+        ? "Alternate screen: no scrollback exists, so scrolling belongs to the program. xterm forwards the wheel to it (as mouse wheel events if it asked for them, otherwise as up/down sequences). If nothing moves, the program isn't acting on them — the same as it would behave in a real terminal."
         : hasScrollback
-          ? "Normal buffer with scrollback, and the wheel is reaching scrollLines — this should be scrolling."
+          ? "Normal buffer with scrollback, and the wheel is reaching xterm — this should be scrolling its viewport."
           : "Normal buffer but no scrollback has accumulated yet, so there is nothing above the viewport to scroll to.";
 
   return (
@@ -173,7 +173,6 @@ const ScrollDiagnostics = ({
         </Text>
         <Text size={1} family="mono">
           wheel: {d.hostWheelEvents} at container · {d.xtermWheelEvents} at xterm
-          · last {d.lastWheelLines} lines · via {d.scrolledVia}
         </Text>
         <Text size={1} shade="muted">
           {verdict}
