@@ -24,8 +24,52 @@
   proving the interchangeability goal. Real interactive smoke test also done by hand
   (`bun dev`, created a session, exited with Ctrl+C) confirming the raw-mode/SIGINT
   behavior change noted in `src/engine/process.ts` is fine in practice.
-  **Not yet built:** the dashboard-side xterm.js component (a browser can connect to
-  the relay today, but nothing in the UI does) — that's the natural next increment.
+  The dashboard side now exists too: `dashboard/src/routes/dev/terminal.tsx` renders a
+  live session's PTY with **xterm.js** (`@xterm/xterm`, the one new dependency this
+  design anticipated) and drives it from `term.onData`.
+
+  **Why an emulator, not a `<pre>`:** the first cut of that page dumped raw PTY bytes
+  into a `<pre>` and the result was unreadable, in a way worth recording because it
+  looks like data corruption and isn't. A TUI redraws in place, so (a) CSS treats `\r`
+  as a line break, turning every in-place spinner redraw into a new line, and (b) TUIs
+  advance the cursor with `ESC[nC` instead of writing literal spaces, and those
+  sequences are inert in HTML — so words ran together (`i'msendingyouthis…`). Bytes over
+  the relay were byte-perfect the whole time; only the rendering was wrong. A second
+  bug in the same page: its "send" button appended `\n`, but Enter on a raw-mode tty is
+  `\r` (0x0D) — Claude Code's composer treats `\n` as "insert a newline", so input
+  landed in the prompt and never submitted. `term.onData` emits tty-correct bytes and
+  removes that whole class of hand-rolled key translation.
+
+### Geometry: the local terminal owns it
+
+Input is symmetric (local terminal and browser both just `pty.write()`); **size is
+deliberately not**. Upstream reports its dimensions as a `{t:"dims",cols,rows}` control
+frame and browsers resize their emulator to match; the relay drops control frames sent
+by a browser. Letting a browser resize the PTY would reflow and visibly corrupt the
+terminal the session is actually attached to, and with several consumers attached
+last-writer-wins is unpredictable. (tmux's smallest-of-all-consumers rule is the more
+general answer if multiple *interactive* consumers ever need it; not needed while the
+local terminal is the one true attachment.)
+
+### Attach replay
+
+The relay keeps a bounded per-session ring buffer (256KB) of recent output, because it
+is otherwise stateless pub/sub — a browser attaching to an already-running session
+received nothing until the next byte and showed a blank screen. On attach the relay
+sends known geometry, replays the buffer, then publishes `{t:"repaint"}` upstream;
+`launchClaude()` answers it by resizing the PTY twice in quick succession, which reads
+as a real terminal resize and makes the TUI repaint a full clean frame over the
+replayed scrollback. The buffer is discarded when upstream disconnects, so a
+long-lived `bertrand serve` doesn't accumulate history for dead sessions.
+
+**Wire protocol summary** — binary frames are raw PTY bytes in both directions; text
+frames are JSON control frames:
+
+| Frame | Direction | Meaning |
+| --- | --- | --- |
+| `{t:"dims",cols,rows}` | upstream → relay → browsers | local terminal's geometry; browsers match it |
+| `{t:"repaint"}` | relay → upstream | a browser attached mid-session; redraw everything |
+| *(binary)* | either direction | raw PTY bytes |
 
 ## Goal
 

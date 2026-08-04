@@ -16,6 +16,7 @@
     "@tanstack/react-router": "^1.168.23",
     "@uiid/design-system": "0.1.0",
     "@uiid/icons": "0.0.36",
+    "@xterm/xterm": "^6.0.0",
     "diff": "^9.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
