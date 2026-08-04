@@ -1,6 +1,7 @@
 import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
+import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import {
   getMainWorktree,
   getWorktreeBranch,
@@ -598,8 +599,12 @@ export function startServer(port = PORT) {
     // includes state-changing endpoints that spawn processes and expose dev
     // logs — none of which should be reachable from the LAN.
     hostname: "127.0.0.1",
-    async fetch(req) {
+    websocket: terminalWebSocketHandlers,
+    async fetch(req, server) {
       const url = new URL(req.url)
+
+      const wsResult = tryUpgradeTerminal(req, server, url)
+      if (wsResult !== false) return wsResult
 
       // CORS for dev
       if (req.method === "OPTIONS") {

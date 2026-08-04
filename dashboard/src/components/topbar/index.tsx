@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Button, Group, Text } from "@uiid/design-system";
-import { FileDiffIcon, CaseSensitiveIcon } from "@uiid/icons";
+import { FileDiffIcon, CaseSensitiveIcon, TerminalIcon } from "@uiid/icons";
 import { TopBarWrapper } from "./topbar-wrapper";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -34,6 +34,12 @@ export const TopBar = () => {
             to="/dev/diff"
             tooltip="Diff viewer"
             icon={<FileDiffIcon />}
+          />
+
+          <DevButton
+            to="/dev/terminal"
+            tooltip="Terminal relay proof"
+            icon={<TerminalIcon />}
           />
         </Group>
         <ThemeToggle />

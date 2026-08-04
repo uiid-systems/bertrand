@@ -14,6 +14,10 @@ export default defineConfig({
         target: process.env.BERTRAND_API_TARGET ?? "http://localhost:5200",
         changeOrigin: true,
       },
+      "/ws": {
+        target: process.env.BERTRAND_API_TARGET ?? "http://localhost:5200",
+        ws: true,
+      },
     },
   },
 })
