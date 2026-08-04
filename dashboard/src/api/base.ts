@@ -45,3 +45,15 @@ export function setApiBase(value: string | null): void {
 export function apiUrl(path: string): string {
   return `${apiBase()}${path}`
 }
+
+/**
+ * Same resolution as `apiUrl`, but for `ws(s)://` — used by the terminal
+ * relay. Same-origin (the bundled-dashboard default) has no http(s) prefix to
+ * swap, so it derives ws(s) from `window.location` instead.
+ */
+export function wsUrl(path: string): string {
+  const base = apiBase()
+  if (base) return `${base.replace(/^http/, "ws")}${path}`
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  return `${protocol}//${window.location.host}${path}`
+}
