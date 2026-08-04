@@ -1,6 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, memo, useEffect, useMemo, useRef } from "react";
+import {
+  type ReactNode,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Maximize2Icon, Minimize2Icon } from "@uiid/icons";
 
 import {
   Badge,
@@ -42,6 +50,16 @@ import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
+import {
+  CONTENT_ZONE_HEADER_PX,
+  ContentZone,
+  useZoneCollapse,
+} from "../components/content-zone";
+import {
+  SessionTerminal,
+  TerminalFontSizeControls,
+  type SessionTerminalState,
+} from "../components/terminal";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
@@ -196,22 +214,17 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
       <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
         <Resizable direction="horizontal">
           <ResizablePanel>
-            <Stack
-              id="timeline-scroll"
-              ax="stretch"
-              p={4}
-              fullwidth
-              fullheight
-              style={{ overflowY: "auto" }}
-            >
-              {segments.map((segment) => (
-                <ConversationSegmentView
-                  key={segment.conversationId}
-                  segment={segment}
-                  showHeader={segments.length > 1}
-                />
-              ))}
-            </Stack>
+            {isLive ? (
+              <LiveSessionZones
+                sessionId={sessionId}
+                timeline={<TimelineBody segments={segments} />}
+              />
+            ) : (
+              // A finished session has no PTY to attach to, so it keeps the
+              // plain full-height timeline — zone chrome around a single zone
+              // would be noise.
+              <TimelineBody segments={segments} />
+            )}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize={460} minSize={360} maxSize={640}>
@@ -227,6 +240,201 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
   );
 }
 SessionDetail.displayName = "SessionDetail";
+
+const TimelineBody = ({
+  segments,
+}: {
+  readonly segments: ConversationSegment[];
+}) => (
+  <Stack
+    id="timeline-scroll"
+    ax="stretch"
+    p={4}
+    fullwidth
+    fullheight
+    style={{ overflowY: "auto" }}
+  >
+    {segments.map((segment) => (
+      <ConversationSegmentView
+        key={segment.conversationId}
+        segment={segment}
+        showHeader={segments.length > 1}
+      />
+    ))}
+  </Stack>
+);
+TimelineBody.displayName = "TimelineBody";
+
+/** The subset of a resizable panel's imperative API these zones drive. */
+type ZonePanelHandle = {
+  collapse: () => void;
+  expand: () => void;
+  isCollapsed: () => boolean;
+};
+
+/** Height the terminal zone opens at, when it has never been dragged. */
+const TERMINAL_ZONE_DEFAULT_PX = 380;
+
+/**
+ * A live session's main content area, split into two collapsible zones: the
+ * timeline and the session's terminal. Both are panels of one vertical split, so
+ * dragging the handle and clicking a zone's chevron end up in the same place —
+ * a collapsed zone shrinks to just its trigger bar.
+ *
+ * Collapse state is persisted (`useZoneCollapse`) but the terminal itself is
+ * scoped to this view: navigating to another session unmounts it, which detaches
+ * the websocket. That's deliberate — several sessions can be live at once, and a
+ * terminal that outlived its route would show a different session's PTY than the
+ * timeline beside it.
+ *
+ * "Maximize" is just collapsing the timeline zone, which keeps one mechanism
+ * instead of introducing a second sizing path. At least one zone is always open:
+ * collapsing either one expands the other.
+ */
+const LiveSessionZones = ({
+  sessionId,
+  timeline,
+}: {
+  readonly sessionId: string;
+  readonly timeline: ReactNode;
+}) => {
+  const { open: timelineOpen, setOpen: setTimelineOpen } =
+    useZoneCollapse("timeline");
+  const { open: terminalOpen, setOpen: setTerminalOpen } =
+    useZoneCollapse("terminal");
+
+  const timelinePanel = useRef<ZonePanelHandle | null>(null);
+  const terminalPanel = useRef<ZonePanelHandle | null>(null);
+
+  const [terminal, setTerminal] = useState<SessionTerminalState | null>(null);
+
+  // Chevron clicks change the persisted state; these effects push that onto the
+  // panels. Dragging a split closed travels the other way, via `onResize` below.
+  useEffect(() => {
+    const panel = timelinePanel.current;
+    if (!panel) return;
+    if (timelineOpen && panel.isCollapsed()) panel.expand();
+    else if (!timelineOpen && !panel.isCollapsed()) panel.collapse();
+  }, [timelineOpen]);
+
+  useEffect(() => {
+    const panel = terminalPanel.current;
+    if (!panel) return;
+    if (terminalOpen && panel.isCollapsed()) panel.expand();
+    else if (!terminalOpen && !panel.isCollapsed()) panel.collapse();
+  }, [terminalOpen]);
+
+  // Keep at least one zone open — two collapsed panels would just split the
+  // space between them and neither would look collapsed.
+  const openTimeline = (open: boolean) => {
+    setTimelineOpen(open);
+    if (!open) setTerminalOpen(true);
+  };
+  const openTerminal = (open: boolean) => {
+    setTerminalOpen(open);
+    if (!open) setTimelineOpen(true);
+  };
+
+  const maximized = !timelineOpen;
+
+  return (
+    <Resizable direction="vertical">
+      <ResizablePanel
+        collapsible
+        collapsedSize={CONTENT_ZONE_HEADER_PX}
+        minSize={120}
+        // Sized from persisted state so the first `onResize` agrees with it
+        // instead of reporting a default that would overwrite it.
+        defaultSize={timelineOpen ? undefined : CONTENT_ZONE_HEADER_PX}
+        panelRef={(handle) => {
+          timelinePanel.current = handle;
+        }}
+        onResize={(size) =>
+          setTimelineOpen(size.inPixels > CONTENT_ZONE_HEADER_PX + 4)
+        }
+      >
+        <ContentZone
+          data-slot="timeline-zone"
+          title="Timeline"
+          open={timelineOpen}
+          onOpenChange={openTimeline}
+        >
+          {timeline}
+        </ContentZone>
+      </ResizablePanel>
+
+      <ResizableHandle />
+
+      <ResizablePanel
+        collapsible
+        collapsedSize={CONTENT_ZONE_HEADER_PX}
+        minSize={140}
+        defaultSize={
+          terminalOpen ? TERMINAL_ZONE_DEFAULT_PX : CONTENT_ZONE_HEADER_PX
+        }
+        panelRef={(handle) => {
+          terminalPanel.current = handle;
+        }}
+        onResize={(size) =>
+          setTerminalOpen(size.inPixels > CONTENT_ZONE_HEADER_PX + 4)
+        }
+      >
+        <ContentZone
+          data-slot="terminal-zone"
+          title="Terminal"
+          open={terminalOpen}
+          onOpenChange={openTerminal}
+          badge={
+            terminal && terminalOpen ? (
+              <Group gap={2} ay="center">
+                <Badge
+                  color={terminal.status === "attached" ? "green" : "neutral"}
+                >
+                  {terminal.status}
+                </Badge>
+                {terminal.dims && (
+                  <Text size={0} shade="muted" family="mono">
+                    {terminal.dims.cols}×{terminal.dims.rows}
+                  </Text>
+                )}
+              </Group>
+            ) : null
+          }
+          actions={
+            terminalOpen ? (
+              <Group gap={1} ay="center">
+                <TerminalFontSizeControls />
+                <Button
+                  size="xsmall"
+                  variant="ghost"
+                  shape="square"
+                  onClick={() => openTimeline(maximized)}
+                  aria-label={
+                    maximized ? "Restore timeline" : "Maximize terminal"
+                  }
+                  tooltip={maximized ? "Restore timeline" : "Maximize terminal"}
+                >
+                  {maximized ? (
+                    <Minimize2Icon size={13} />
+                  ) : (
+                    <Maximize2Icon size={13} />
+                  )}
+                </Button>
+              </Group>
+            ) : null
+          }
+        >
+          <SessionTerminal
+            sessionId={sessionId}
+            onStateChange={setTerminal}
+            toolbar={false}
+          />
+        </ContentZone>
+      </ResizablePanel>
+    </Resizable>
+  );
+};
+LiveSessionZones.displayName = "LiveSessionZones";
 
 /**
  * One conversation's timeline. When the session has more than one conversation,
