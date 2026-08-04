@@ -80,6 +80,16 @@ export interface TerminalDiagnostics {
   hostWheelEvents: number;
   /** Wheel events that reached xterm, which does the actual scrolling. */
   xtermWheelEvents: number;
+  /**
+   * Socket state, because a closed one silently drops every keystroke: `onData`
+   * only sends while the socket is OPEN, so a dead socket looks exactly like a
+   * terminal that ignores typing.
+   */
+  socketState: "connecting" | "open" | "closing" | "closed" | "none";
+  /** Whether xterm holds focus — without it, keystrokes never reach `onData`. */
+  focused: boolean;
+  /** Reconnect attempts so far; climbing means the socket won't stay up. */
+  retries: number;
 }
 
 export type SessionTerminalProps = {
@@ -148,6 +158,7 @@ export const SessionTerminal = ({
   const diagnosticsRef = useRef({
     hostWheelEvents: 0,
     xtermWheelEvents: 0,
+    retries: 0,
   });
 
   /**
@@ -261,10 +272,12 @@ export const SessionTerminal = ({
     termRef.current = term;
     fitRef.current = fit;
 
+    const SOCKET_STATES = ["connecting", "open", "closing", "closed"] as const;
     const reportDiagnostics = () => {
       const report = onDiagnosticsRef.current;
       if (!report) return;
       const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
+      const socket = socketRef.current;
       report({
         bufferType: term.buffer.active.type,
         bufferLength: term.buffer.active.length,
@@ -272,6 +285,8 @@ export const SessionTerminal = ({
         cols: term.cols,
         viewportScrollHeight: viewport?.scrollHeight ?? 0,
         viewportClientHeight: viewport?.clientHeight ?? 0,
+        socketState: socket ? SOCKET_STATES[socket.readyState] ?? "closed" : "none",
+        focused: host.contains(document.activeElement),
         ...diagnosticsRef.current,
       });
     };
@@ -315,9 +330,16 @@ export const SessionTerminal = ({
       passive: true,
     });
 
+    // Backstop for focus: xterm focuses itself when its screen is clicked, but the
+    // click can land on padding or the letterboxed margin outside it, which would
+    // otherwise leave the terminal unfocused and silently ignoring keystrokes.
+    const onPointerDown = () => term.focus();
+    host.addEventListener("pointerdown", onPointerDown);
+
     return () => {
       if (diagnosticsTimer) clearInterval(diagnosticsTimer);
       host.removeEventListener("wheel", countWheel, { capture: true });
+      host.removeEventListener("pointerdown", onPointerDown);
       observer.disconnect();
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
@@ -350,6 +372,10 @@ export const SessionTerminal = ({
         if (disposed) return;
         retry = 0;
         setStatus("attached");
+        // Without focus, keystrokes never reach `onData` and the terminal looks
+        // attached but dead. Focusing on attach is what the original dev page did
+        // and dropping it in the extraction was a regression.
+        term.focus();
         // A claim does not survive a dropped socket, so re-assert it — and do it
         // now rather than on the debounce, so upstream is already resizing while
         // the attach replay arrives.
@@ -398,9 +424,13 @@ export const SessionTerminal = ({
         claimRef.current = null;
         if (disposed) return;
         setStatus("detached");
-        const delay = RETRY_DELAYS_MS[retry];
-        if (delay === undefined) return;
+        // Keep trying indefinitely at the capped backoff. Giving up left a
+        // terminal that looked attached but silently dropped every keystroke,
+        // with no way to recover short of navigating away.
+        const delay =
+          RETRY_DELAYS_MS[Math.min(retry, RETRY_DELAYS_MS.length - 1)]!;
         retry += 1;
+        diagnosticsRef.current.retries = retry;
         retryTimer = setTimeout(open, delay);
       };
     };

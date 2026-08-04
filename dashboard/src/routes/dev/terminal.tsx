@@ -147,6 +147,15 @@ const ScrollDiagnostics = ({
   const hasScrollback = d.bufferLength > d.rows;
   const wheelReachesXterm = d.xtermWheelEvents > 0;
 
+  // Typing comes first: onData only sends while the socket is OPEN and xterm has
+  // focus, so either being wrong looks like a terminal that ignores the keyboard.
+  const typingVerdict =
+    d.socketState !== "open"
+      ? `Typing can't work: the socket is "${d.socketState}"${d.retries > 0 ? ` after ${d.retries} reconnect attempts` : ""}. Keystrokes are dropped because there is nothing open to send them to.`
+      : !d.focused
+        ? "Socket is open but xterm doesn't have focus, so keystrokes go elsewhere. Click the terminal."
+        : "Socket is open and xterm has focus — typing should reach the PTY.";
+
   const verdict = !d.hostWheelEvents
     ? "No wheel events at all — the pointer isn't over the terminal, or something upstream is swallowing them."
     : !wheelReachesXterm
@@ -174,8 +183,15 @@ const ScrollDiagnostics = ({
         <Text size={1} family="mono">
           wheel: {d.hostWheelEvents} at container · {d.xtermWheelEvents} at xterm
         </Text>
+        <Text size={1} family="mono">
+          socket: {d.socketState} · focus: {d.focused ? "yes" : "no"} · retries:{" "}
+          {d.retries}
+        </Text>
         <Text size={1} shade="muted">
-          {verdict}
+          input — {typingVerdict}
+        </Text>
+        <Text size={1} shade="muted">
+          scroll — {verdict}
         </Text>
       </Stack>
     </Card>
