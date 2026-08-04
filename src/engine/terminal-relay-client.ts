@@ -5,16 +5,24 @@
  * attached to. See docs/pty-wrapper.md. Never blocks or throws — if the
  * server isn't reachable, the local terminal keeps working exactly as
  * before; the browser side just has nothing to attach to.
+ *
+ * This side owns the PTY geometry: it reports its dimensions via `sendDims`
+ * and browsers size their emulator to match. Browsers cannot resize the PTY,
+ * so there is no `onResize` — the only thing the relay asks of this side is a
+ * repaint when a browser attaches mid-session.
  */
 export interface TerminalRelayClient {
   send(chunk: Uint8Array): void;
+  /** Reports the local terminal's geometry so attaching browsers can match it. */
+  sendDims(cols: number, rows: number): void;
   close(): void;
 }
 
 export interface ConnectTerminalRelayOptions {
   sessionId: string;
   onInput: (chunk: Uint8Array) => void;
-  onResize: (cols: number, rows: number) => void;
+  /** A browser attached mid-session and needs the current screen redrawn. */
+  onRepaint: () => void;
 }
 
 export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): TerminalRelayClient {
@@ -22,6 +30,10 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
   const url = `ws://127.0.0.1:${port}/ws/sessions/${opts.sessionId}/terminal?role=upstream`;
 
   let socket: WebSocket | null;
+  // Geometry is known before the socket finishes connecting, so hold the most
+  // recent value and flush it on open rather than silently dropping it.
+  let pendingDims: { cols: number; rows: number } | null = null;
+
   try {
     socket = new WebSocket(url);
   } catch {
@@ -31,19 +43,21 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
   if (socket) {
     const ws = socket;
     ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      if (!pendingDims) return;
+      ws.send(JSON.stringify({ t: "dims", ...pendingDims }));
+      pendingDims = null;
+    };
     ws.onmessage = (event) => {
       if (typeof event.data === "string") {
         try {
-          const parsed = JSON.parse(event.data);
-          if (typeof parsed?.cols === "number" && typeof parsed?.rows === "number") {
-            opts.onResize(parsed.cols, parsed.rows);
-          }
+          if (JSON.parse(event.data)?.t === "repaint") opts.onRepaint();
         } catch {
           // Ignore malformed control frames rather than crashing the session.
         }
-      } else {
-        opts.onInput(new Uint8Array(event.data as ArrayBuffer));
+        return;
       }
+      opts.onInput(new Uint8Array(event.data as ArrayBuffer));
     };
     ws.onerror = () => {
       socket = null;
@@ -53,6 +67,13 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
   return {
     send(chunk) {
       if (socket?.readyState === WebSocket.OPEN) socket.send(chunk);
+    },
+    sendDims(cols, rows) {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: "dims", cols, rows }));
+      } else {
+        pendingDims = { cols, rows };
+      }
     },
     close() {
       socket?.close();

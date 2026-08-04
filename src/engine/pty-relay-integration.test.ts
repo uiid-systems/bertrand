@@ -66,7 +66,7 @@ describe("PTY + relay integration", () => {
     relay = connectTerminalRelay({
       sessionId,
       onInput: (chunk) => pty.write(chunk),
-      onResize: () => {},
+      onRepaint: () => {},
     });
 
     // Local-terminal-equivalent write: cat echoes it back through the PTY,
@@ -81,6 +81,69 @@ describe("PTY + relay integration", () => {
     browser.send(new TextEncoder().encode("from browser\n"));
     const echoed = await resultFromBrowser;
     expect(Buffer.from(echoed as ArrayBuffer).toString()).toContain("from browser");
+
+    relay.close();
+    browser.close();
+    pty.kill();
+    await pty.exited;
+  });
+
+  test("a browser attaching mid-session gets replayed output, reported geometry, and triggers a repaint", async () => {
+    server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      websocket: terminalWebSocketHandlers,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        const result = tryUpgradeTerminal(req, srv, url);
+        if (result !== false) return result;
+        return new Response("not found", { status: 404 });
+      },
+    });
+    prevPort = process.env.BERTRAND_PORT;
+    process.env.BERTRAND_PORT = String(server.port);
+
+    const sessionId = "late-attach-session";
+    let repaints = 0;
+
+    let relay: ReturnType<typeof connectTerminalRelay>;
+    const pty = spawnPty(["cat"], {
+      onData: (chunk) => relay.send(chunk),
+    });
+    relay = connectTerminalRelay({
+      sessionId,
+      onInput: (chunk) => pty.write(chunk),
+      onRepaint: () => {
+        repaints += 1;
+      },
+    });
+    relay.sendDims(190, 50);
+
+    // Output produced before any browser exists — the case that used to leave
+    // an attaching browser staring at a blank screen.
+    pty.write("printed before anyone attached\n");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const binary: string[] = [];
+    const text: string[] = [];
+    const browser = new WebSocket(
+      `ws://127.0.0.1:${server.port}/ws/sessions/${sessionId}/terminal?role=browser`,
+    );
+    browser.binaryType = "arraybuffer";
+    browser.onmessage = (event) => {
+      if (typeof event.data === "string") text.push(event.data);
+      else binary.push(Buffer.from(event.data as ArrayBuffer).toString());
+    };
+    await waitOpen(browser);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(binary.join("")).toContain("printed before anyone attached");
+    expect(text.map((frame) => JSON.parse(frame))).toContainEqual({
+      t: "dims",
+      cols: 190,
+      rows: 50,
+    });
+    expect(repaints).toBeGreaterThan(0);
 
     relay.close();
     browser.close();

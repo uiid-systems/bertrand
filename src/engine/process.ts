@@ -80,13 +80,39 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
     activePty = pty;
 
-    // A dashboard browser is a second consumer of the same PTY, symmetric
-    // with the local terminal below — both just call pty.write()/resize().
+    const currentDims = () => ({
+      cols: process.stdout.columns ?? 80,
+      rows: process.stdout.rows ?? 24,
+    });
+
+    // A dashboard browser is a second consumer of the same PTY, symmetric with
+    // the local terminal below for input — both just call pty.write(). Geometry
+    // is deliberately not symmetric: this terminal owns it, and browsers size
+    // their emulator to match, so a browser window can never reflow the PTY out
+    // from under the terminal the session is really attached to.
     relay = connectTerminalRelay({
       sessionId: opts.sessionId,
       onInput: (chunk) => pty.write(chunk),
-      onResize: (cols, rows) => pty.resize(cols, rows),
+      // A browser attaching mid-session missed the output that drew the current
+      // screen. Two resizes in quick succession read as a real terminal resize,
+      // which makes the TUI repaint its whole frame.
+      onRepaint: () => {
+        const { cols, rows } = currentDims();
+        try {
+          pty.resize(cols, Math.max(1, rows - 1));
+          setTimeout(() => {
+            try {
+              pty.resize(cols, rows);
+            } catch {
+              // Session exited between the two resizes — nothing to repaint.
+            }
+          }, 50);
+        } catch {
+          // Session already exited; a repaint request is moot.
+        }
+      },
     });
+    relay.sendDims(currentDims().cols, currentDims().rows);
 
     // Local terminal is one consumer of the PTY: raw stdin bytes forward
     // straight through, and resize follows the real terminal's dimensions.
@@ -99,6 +125,8 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     const onResize = () => {
       if (process.stdout.columns && process.stdout.rows) {
         pty.resize(process.stdout.columns, process.stdout.rows);
+        // Keep attached browsers in step with the terminal that owns the size.
+        relay?.sendDims(process.stdout.columns, process.stdout.rows);
       }
     };
     if (process.stdout.isTTY) process.stdout.on("resize", onResize);
