@@ -1,5 +1,5 @@
 import { eq, and, desc, sql } from "drizzle-orm";
-import { getDb } from "@/db/client";
+import { getDb, type Db } from "@/db/client";
 import { conversations } from "@/db/schema";
 
 export function createConversation(opts: {
@@ -48,6 +48,68 @@ export function discardConversation(id: string) {
   return getDb()
     .update(conversations)
     .set({ discarded: true })
+    .where(eq(conversations.id, id))
+    .returning()
+    .get();
+}
+
+export function getAllConversations() {
+  return getDb().select().from(conversations).all();
+}
+
+/**
+ * Token totals across a session's conversations. Discarded conversations are
+ * excluded, matching how they're left out of the session's timeline.
+ */
+export function getSessionUsage(sessionId: string, db: Db = getDb()) {
+  const zero = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  };
+  const row = db
+    .select({
+      inputTokens: sql<number>`coalesce(sum(${conversations.inputTokens}), 0)`,
+      outputTokens: sql<number>`coalesce(sum(${conversations.outputTokens}), 0)`,
+      cacheCreationTokens: sql<number>`coalesce(sum(${conversations.cacheCreationTokens}), 0)`,
+      cacheReadTokens: sql<number>`coalesce(sum(${conversations.cacheReadTokens}), 0)`,
+    })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.sessionId, sessionId),
+        eq(conversations.discarded, false)
+      )
+    )
+    .get();
+  return row ?? zero;
+}
+
+/**
+ * Overwrite a conversation's token totals. Backfill only — it re-reads the
+ * transcript from byte 0, so its numbers are authoritative for the whole
+ * file. The incremental path in db/events/ingest.ts increments instead.
+ */
+export function setConversationUsage(
+  id: string,
+  usage: {
+    model: string | null;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+  },
+) {
+  return getDb()
+    .update(conversations)
+    .set({
+      ...(usage.model ? { model: usage.model } : {}),
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+    })
     .where(eq(conversations.id, id))
     .returning()
     .get();

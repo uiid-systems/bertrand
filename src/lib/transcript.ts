@@ -8,7 +8,14 @@
  * without holding the full content in memory.
  */
 
-import { existsSync, readFileSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -68,13 +75,40 @@ export function claudeSessionExists(sessionId: string, cwd?: string): boolean {
 // -- Parsing --
 
 /**
- * Summarize a transcript file: total tokens, model, tool usage, turn count.
- * Streams line-by-line — no full-file buffering.
+ * Read the whole file, or only its first `maxBytes` truncated back to the
+ * last complete line. Usage backfill passes the ingest cursor's offset so it
+ * scores exactly the region incremental ingestion already consumed — the
+ * remainder is left for the cursor to pick up, so nothing is counted twice.
  */
-export function summarizeTranscript(filePath: string): TranscriptSummary | null {
+function readSlice(filePath: string, maxBytes?: number): string {
+  if (maxBytes === undefined) return readFileSync(filePath, "utf-8");
+
+  const length = Math.min(maxBytes, statSync(filePath).size);
+  if (length <= 0) return "";
+
+  const buf = Buffer.alloc(length);
+  const fd = openSync(filePath, "r");
+  try {
+    readSync(fd, buf, 0, length, 0);
+  } finally {
+    closeSync(fd);
+  }
+
+  const lastNewline = buf.lastIndexOf(0x0a);
+  return lastNewline >= 0 ? buf.subarray(0, lastNewline + 1).toString("utf-8") : "";
+}
+
+/**
+ * Summarize a transcript file: total tokens, model, tool usage, turn count.
+ * Pass `maxBytes` to summarize only a prefix of the file.
+ */
+export function summarizeTranscript(
+  filePath: string,
+  maxBytes?: number,
+): TranscriptSummary | null {
   if (!existsSync(filePath)) return null;
 
-  const text = readFileSync(filePath, "utf-8");
+  const text = readSlice(filePath, maxBytes);
   const summary: TranscriptSummary = {
     model: "",
     turnCount: 0,
@@ -86,6 +120,13 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
     firstTimestamp: null,
     lastTimestamp: null,
   };
+
+  // Claude Code writes one entry per content block of an assistant message,
+  // and every one carries a copy of that message's `usage`. Summing them all
+  // inflates totals ~2-3x, so usage is counted once per message.id. Repeats
+  // are always consecutive (blocks of a message are written in sequence), so
+  // remembering the previous id is enough — no growing set.
+  let lastUsageId: string | null = null;
 
   for (const line of text.split("\n")) {
     if (!line) continue;
@@ -109,18 +150,25 @@ export function summarizeTranscript(filePath: string): TranscriptSummary | null 
     const message = entry.message as Record<string, unknown> | undefined;
     if (!message) continue;
 
-    // Model — take the latest (could change mid-session with /fast toggle)
-    if (message.model) summary.model = message.model as string;
+    // Model — take the latest (could change mid-session with /fast toggle).
+    // Sidechain entries are excluded: a subagent may run a different model,
+    // and the conversation's model is the main agent's. Their *usage* still
+    // counts below, matching the incremental path in db/events/ingest.ts.
+    if (message.model && entry.isSidechain !== true) {
+      summary.model = message.model as string;
+    }
 
-    // Usage
+    // Usage — once per message, not once per content-block entry.
     const usage = message.usage as Partial<AssistantUsage> | undefined;
-    if (usage) {
+    const messageId = typeof message.id === "string" ? message.id : null;
+    if (usage && !(messageId !== null && messageId === lastUsageId)) {
       summary.turnCount++;
       summary.totalInputTokens += usage.input_tokens ?? 0;
       summary.totalOutputTokens += usage.output_tokens ?? 0;
       summary.totalCacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
       summary.totalCacheReadTokens += usage.cache_read_input_tokens ?? 0;
     }
+    if (usage && messageId) lastUsageId = messageId;
 
     // Tool use counts
     const content = message.content as Array<Record<string, unknown>> | undefined;

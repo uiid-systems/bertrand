@@ -19,7 +19,7 @@ const testDb = drizzle(sqlite, { schema });
 
 const { createCategory } = await import("../queries/categories");
 const { createSession } = await import("../queries/sessions");
-const { createConversation } = await import("../queries/conversations");
+const { createConversation, getConversation } = await import("../queries/conversations");
 const { getEventsBySession } = await import("../queries/events");
 
 let sessionId: string;
@@ -257,5 +257,198 @@ describe("ingestTranscript", () => {
 
   test("missing file is a no-op", () => {
     expect(ingest(join(workDir, "nope.jsonl")).emitted).toBe(0);
+  });
+});
+
+describe("token usage", () => {
+  // The session and conversation are shared across the whole suite, so every
+  // assertion here is on the *delta* a single ingest produced.
+  function usage() {
+    const c = getConversation(conversationId)!;
+    return {
+      input: c.inputTokens,
+      output: c.outputTokens,
+      cacheCreation: c.cacheCreationTokens,
+      cacheRead: c.cacheReadTokens,
+      model: c.model,
+    };
+  }
+
+  function delta(before: ReturnType<typeof usage>) {
+    const after = usage();
+    return {
+      input: after.input - before.input,
+      output: after.output - before.output,
+      cacheCreation: after.cacheCreation - before.cacheCreation,
+      cacheRead: after.cacheRead - before.cacheRead,
+    };
+  }
+
+  function withUsage(
+    entry: Record<string, unknown>,
+    counts: {
+      input?: number;
+      output?: number;
+      cacheCreation?: number;
+      cacheRead?: number;
+    },
+  ) {
+    const message = entry.message as Record<string, unknown>;
+    return {
+      ...entry,
+      message: {
+        ...message,
+        usage: {
+          input_tokens: counts.input ?? 0,
+          output_tokens: counts.output ?? 0,
+          cache_creation_input_tokens: counts.cacheCreation ?? 0,
+          cache_read_input_tokens: counts.cacheRead ?? 0,
+        },
+      },
+    };
+  }
+
+  test("accumulates across ticks", () => {
+    const before = usage();
+    const path = transcriptFile([
+      userPrompt("go"),
+      withUsage(assistantText("first"), { input: 10, output: 5, cacheRead: 100 }),
+    ]);
+    ingest(path);
+
+    appendFileSync(
+      path,
+      jsonl([withUsage(assistantText("second"), { input: 7, output: 3, cacheCreation: 40 })]),
+    );
+    ingest(path);
+
+    expect(delta(before)).toEqual({
+      input: 17,
+      output: 8,
+      cacheCreation: 40,
+      cacheRead: 100,
+    });
+  });
+
+  test("counts sidechain (subagent) tokens but not their model", () => {
+    const before = usage();
+    const side = withUsage(
+      { ...assistantText("subagent chatter"), isSidechain: true },
+      { input: 500, output: 250 },
+    );
+    // A subagent may run a different model than the main agent.
+    (side.message as Record<string, unknown>).model = "claude-haiku-4-5-20251001";
+
+    const path = transcriptFile([
+      userPrompt("go"),
+      side,
+      withUsage(assistantText("main line"), { input: 1, output: 2 }),
+    ]);
+    const { emitted } = ingest(path);
+
+    // The subagent's chatter stays out of the timeline...
+    expect(emitted).toBe(1);
+    // ...but its tokens are still billed to this conversation.
+    expect(delta(before)).toEqual({
+      input: 501,
+      output: 252,
+      cacheCreation: 0,
+      cacheRead: 0,
+    });
+    expect(usage().model).toBe("claude-fable-5");
+  });
+
+  // Note: a reset *replaces* the shared conversation's totals, discarding what
+  // the tests above accumulated onto it — later tests here must assert on
+  // deltas, not absolutes. In production a conversation maps to exactly one
+  // transcript, so replacing is correct: the re-read covers the entire file.
+  test("cursor reset replaces totals instead of double-counting", () => {
+    const kept = withUsage(assistantText("kept"), { input: 60, output: 20 });
+    const dropped = withUsage(assistantText("dropped"), { input: 30, output: 10 });
+
+    const before = usage();
+    const path = transcriptFile([userPrompt("go"), kept, dropped]);
+    ingest(path);
+    expect(delta(before)).toMatchObject({ input: 90, output: 30 });
+
+    // Replace with a *shorter* file so the cursor points past EOF and the
+    // whole file is re-read. Totals must be replaced, not added to.
+    writeFileSync(path, jsonl([userPrompt("go"), kept]));
+    ingest(path);
+    expect(usage().input).toBe(60);
+    expect(usage().output).toBe(20);
+  });
+
+  /** Stamp a message.id, as real Claude Code output carries on every entry. */
+  function withId(entry: Record<string, unknown>, id: string) {
+    const message = entry.message as Record<string, unknown>;
+    return { ...entry, message: { ...message, id } };
+  }
+
+  // Claude Code writes one entry per content block of an assistant message,
+  // and each repeats that message's `usage` verbatim. Measured on real
+  // transcripts: 349 usage-bearing entries for 151 messages, inflating output
+  // tokens 2.8x. Usage must be billed once per message.
+  test("bills usage once per message.id, not once per content-block entry", () => {
+    const before = usage();
+    const counts = { input: 10, output: 100, cacheRead: 5000 };
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("block one"), counts), "msg_abc"),
+      withId(withUsage(assistantText("block two"), counts), "msg_abc"),
+      withId(withUsage(assistantText("block three"), counts), "msg_abc"),
+    ]);
+    ingest(path);
+
+    expect(delta(before)).toEqual({
+      input: 10,
+      output: 100,
+      cacheCreation: 0,
+      cacheRead: 5000,
+    });
+  });
+
+  test("distinct message ids each bill their own usage", () => {
+    const before = usage();
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("first"), { input: 3, output: 7 }), "msg_a"),
+      withId(withUsage(assistantText("second"), { input: 4, output: 9 }), "msg_b"),
+    ]);
+    ingest(path);
+
+    expect(delta(before)).toMatchObject({ input: 7, output: 16 });
+  });
+
+  // The reason the id is persisted on the cursor rather than kept in a local:
+  // a message's blocks can land either side of a tick boundary.
+  test("dedupes a message whose blocks straddle a tick boundary", () => {
+    const before = usage();
+    const counts = { input: 20, output: 200 };
+    const path = transcriptFile([
+      userPrompt("go"),
+      withId(withUsage(assistantText("block one"), counts), "msg_split"),
+    ]);
+    ingest(path);
+
+    appendFileSync(
+      path,
+      jsonl([withId(withUsage(assistantText("block two"), counts), "msg_split")]),
+    );
+    ingest(path);
+
+    expect(delta(before)).toMatchObject({ input: 20, output: 200 });
+  });
+
+  test("entries without usage leave totals untouched", () => {
+    const before = usage();
+    const path = transcriptFile([userPrompt("go"), assistantText("no usage block")]);
+    ingest(path);
+    expect(delta(before)).toEqual({
+      input: 0,
+      output: 0,
+      cacheCreation: 0,
+      cacheRead: 0,
+    });
   });
 });

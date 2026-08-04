@@ -1,4 +1,5 @@
 import { getEventsBySession } from "@/db/queries/events";
+import { getSessionUsage } from "@/db/queries/conversations";
 import { upsertSessionStats } from "@/db/queries/stats";
 import { computeDiffStats } from "@/lib/diff_stats";
 import { getDb, type Db } from "@/db/client";
@@ -170,6 +171,10 @@ export interface SessionStatsData {
   linesAdded: number;
   linesRemoved: number;
   filesTouched: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
 }
 
 /** Walk events for a session and produce the full stats payload. */
@@ -188,6 +193,10 @@ export function computeSessionStats(
   ).length;
 
   const diff = computeDiffStats(sessionId, db);
+  // Tokens are accumulated onto conversations by transcript ingestion, not
+  // derived from events — this rolls them up so the materialized row carries
+  // them alongside the rest.
+  const usage = getSessionUsage(sessionId, db);
 
   return {
     eventCount: events.length,
@@ -200,6 +209,10 @@ export function computeSessionStats(
     linesAdded: diff.linesAdded,
     linesRemoved: diff.linesRemoved,
     filesTouched: diff.filesTouched,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheCreationTokens: usage.cacheCreationTokens,
+    cacheReadTokens: usage.cacheReadTokens,
   };
 }
 

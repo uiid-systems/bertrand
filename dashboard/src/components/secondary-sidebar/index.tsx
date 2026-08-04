@@ -31,6 +31,7 @@ import {
 import { WorktreeZone } from "../worktrees";
 import { ChangedFilesZone } from "./changed-files-zone";
 import { TimelineZone } from "./timeline-zone";
+import { UsageZone } from "./usage-zone";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
   sessionId: string;
@@ -55,10 +56,26 @@ export const SecondarySidebar = ({
     enabled: !!sessionId,
   });
 
+  // UsageZone hides itself when nothing was captured, so the separator has to
+  // be gated on the same condition or it dangles above nothing.
+  const hasUsage =
+    !!stats &&
+    stats.inputTokens +
+      stats.outputTokens +
+      stats.cacheCreationTokens +
+      stats.cacheReadTokens >
+      0;
+
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
       <WorktreeZone sessionId={sessionId} />
       <ChangedFilesZone
+        sessionId={sessionId}
+        isLive={isLive}
+        projectSlug={projectSlug}
+      />
+      {hasUsage && <Separator />}
+      <UsageZone
         sessionId={sessionId}
         isLive={isLive}
         projectSlug={projectSlug}

@@ -4,6 +4,7 @@ import { FilesIcon, GitBranchIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
 import { allStatsQuery, worktreesQuery } from "../../../api/queries";
+import { formatRelativeTime } from "../../../lib/format";
 import { useSessions } from "../../../lib/use-sessions";
 import { useSelectedProjects } from "../selected-projects";
 import { isLive } from "../sidebar.utils";
@@ -53,17 +54,14 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
           </Text>
         </Group>
       )}
-      {s.session.rating !== null && s.session.rating !== undefined && (
-        <Text
-          color="yellow"
-          aria-label={`Rated ${s.session.rating} of 5 stars`}
-          ml="auto"
-        >
-          {[1, 2, 3, 4, 5]
-            .map((n) => (n <= s.session.rating! ? "★" : "☆"))
-            .join("")}
-        </Text>
-      )}
+      <Text
+        size={-1}
+        shade="muted"
+        ml="auto"
+        style={{ whiteSpace: "nowrap" }}
+      >
+        {formatRelativeTime(s.session.updatedAt)}
+      </Text>
     </Group>
   );
 };

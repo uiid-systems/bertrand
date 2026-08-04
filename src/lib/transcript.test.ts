@@ -6,6 +6,7 @@ import {
   claudeTranscriptPath,
   claudeSessionExists,
   getLatestAssistantTurn,
+  summarizeTranscript,
 } from "./transcript";
 
 // -- JSONL builders --
@@ -217,5 +218,70 @@ describe("claudeSessionExists", () => {
     writeFileSync(path, "");
     created.push(join(homedir(), ".claude", "projects", cwd.replace(/\//g, "-")));
     expect(claudeSessionExists("test-uuid", cwd)).toBe(true);
+  });
+});
+
+describe("summarizeTranscript", () => {
+  function withUsage(
+    entry: Record<string, unknown>,
+    counts: { input?: number; output?: number; cacheRead?: number },
+    id?: string,
+  ) {
+    const message = entry.message as Record<string, unknown>;
+    return {
+      ...entry,
+      message: {
+        ...message,
+        ...(id ? { id } : {}),
+        usage: {
+          input_tokens: counts.input ?? 0,
+          output_tokens: counts.output ?? 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: counts.cacheRead ?? 0,
+        },
+      },
+    };
+  }
+
+  // Claude Code repeats a message's `usage` on every content-block entry it
+  // writes. Summing them all inflated real totals ~2.8x, so both the token
+  // counts and turnCount are per-message, not per-entry.
+  test("counts a message's usage once across its content-block entries", () => {
+    const counts = { input: 10, output: 100, cacheRead: 5000 };
+    const path = writeTranscript([
+      userPrompt("go"),
+      withUsage(assistantThinking("sig"), counts, "msg_abc"),
+      withUsage(assistantText("narration"), counts, "msg_abc"),
+      withUsage(assistantToolUse("Read"), counts, "msg_abc"),
+    ]);
+
+    const summary = summarizeTranscript(path)!;
+    expect(summary.totalInputTokens).toBe(10);
+    expect(summary.totalOutputTokens).toBe(100);
+    expect(summary.totalCacheReadTokens).toBe(5000);
+    expect(summary.turnCount).toBe(1);
+  });
+
+  test("counts distinct messages separately", () => {
+    const path = writeTranscript([
+      userPrompt("go"),
+      withUsage(assistantText("one"), { input: 3, output: 7 }, "msg_a"),
+      withUsage(assistantText("two"), { input: 4, output: 9 }, "msg_b"),
+    ]);
+
+    const summary = summarizeTranscript(path)!;
+    expect(summary.totalInputTokens).toBe(7);
+    expect(summary.totalOutputTokens).toBe(16);
+    expect(summary.turnCount).toBe(2);
+  });
+
+  test("entries without a message id each count (no id, no dedupe)", () => {
+    const path = writeTranscript([
+      userPrompt("go"),
+      withUsage(assistantText("one"), { input: 5 }),
+      withUsage(assistantText("two"), { input: 5 }),
+    ]);
+
+    expect(summarizeTranscript(path)!.totalInputTokens).toBe(10);
   });
 });
