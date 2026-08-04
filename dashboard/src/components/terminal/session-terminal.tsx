@@ -112,6 +112,8 @@ export const SessionTerminal = ({
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintedForRef = useRef<Dims | null>(null);
+  /** Sub-line wheel delta carried between events, so trackpads scroll smoothly. */
+  const wheelRemainderRef = useRef(0);
 
   /**
    * Asks upstream to redraw once the geometry has settled.
@@ -229,28 +231,51 @@ export const SessionTerminal = ({
     scheduleFit();
 
     /**
-     * Keeps the trackpad in the terminal.
+     * Drives scrolling explicitly, rather than leaving it to native scrolling of
+     * xterm's viewport.
      *
-     * xterm scrolls its own viewport, but only consumes the wheel when it has
-     * somewhere to go — with no scrollback, or on the alternate screen (where
-     * there is none by definition), the event chains to the nearest scrollable
-     * ancestor and the *page* moves instead. That reads as "scrolling is broken".
-     * Cancelling the default in exactly that case leaves xterm's own scrolling
-     * untouched and stops the leak; `overscroll-behavior: contain` in globals.css
-     * covers the other half, when the viewport scrolls and hits its end.
+     * Making this container the scroller isn't an option: xterm only renders the
+     * visible window, so scrollback is reachable only through its own scroll
+     * model — a taller container just yields empty space. And relying on the
+     * native path is fragile in both directions. Without a handler the wheel
+     * chains to the nearest scrollable ancestor whenever the viewport has nowhere
+     * to go, and the *page* moves instead; with a handler that calls
+     * `preventDefault` on an ancestor, the bubble-phase cancel kills the
+     * viewport's own scroll too. Calling `scrollLines` leaves no ambiguity.
+     *
+     * On the alternate screen there is no scrollback at all — the program owns
+     * the whole screen — so the wheel is forwarded as arrow keys and the program
+     * scrolls itself, which is what a real terminal does.
      */
     const onWheel = (event: WheelEvent) => {
       // ctrl+wheel is pinch-zoom, not scrolling — leave it to the browser.
       if (event.ctrlKey) return;
-      const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
-      if (!viewport) return;
-      const room = viewport.scrollHeight - viewport.clientHeight;
-      const canScrollUp = viewport.scrollTop > 0;
-      const canScrollDown = viewport.scrollTop < room - 1;
-      const goingUp = event.deltaY < 0;
-      if (room <= 0 || (goingUp && !canScrollUp) || (!goingUp && !canScrollDown)) {
-        event.preventDefault();
+      event.preventDefault();
+
+      const cellHeight = host.clientHeight / Math.max(1, term.rows);
+      const perLine =
+        event.deltaMode === 1
+          ? 1
+          : event.deltaMode === 2
+            ? 1 / Math.max(1, term.rows)
+            : Math.max(1, cellHeight);
+      // Trackpads emit many sub-line deltas; carrying the remainder keeps them
+      // accumulating into smooth movement instead of being rounded away.
+      wheelRemainderRef.current += event.deltaY / perLine;
+      const lines = Math.trunc(wheelRemainderRef.current);
+      if (lines === 0) return;
+      wheelRemainderRef.current -= lines;
+
+      if (term.buffer.active.type === "alternate") {
+        const socket = socketRef.current;
+        if (socket?.readyState !== WebSocket.OPEN) return;
+        const key = lines > 0 ? "\x1b[B" : "\x1b[A";
+        const count = Math.min(Math.abs(lines), 10);
+        socket.send(new TextEncoder().encode(key.repeat(count)));
+        return;
       }
+
+      term.scrollLines(lines);
     };
     host.addEventListener("wheel", onWheel, { passive: false });
 

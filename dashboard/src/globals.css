@@ -29,12 +29,34 @@
   filter: brightness(1);
 }
 
-/* Terminal scrollback shouldn't chain into the page when it reaches an end —
-   the wheel belongs to the terminal while the pointer is over it. The
-   no-scrollback case (and the alternate screen, which has none) is handled in
-   session-terminal.tsx, since a non-scrolling element can't contain anything. */
+/* The wheel belongs to the terminal while the pointer is over it — scrolling is
+   driven explicitly in session-terminal.tsx (xterm only renders the visible
+   window, so scrollback isn't reachable by making a container scroll), and this
+   stops any residual chaining into the page. */
 .xterm-viewport {
   overscroll-behavior: contain;
+}
+
+/* Give the terminal a visible scrollbar. xterm's viewport is `overflow-y:
+   scroll`, but macOS overlay scrollbars leave it invisible until it moves, so
+   there's no affordance to drag and no signal that scrollback exists at all. */
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(230, 230, 230, 0.28);
+  border-radius: 5px;
+  /* Inset the thumb from the track edge without a border-box change. */
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(230, 230, 230, 0.45);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 
 html,
