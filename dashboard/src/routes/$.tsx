@@ -191,9 +191,6 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
 
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>
-      {/* Breadcrumb bar spans above both the timeline and the secondary
-          sidebar; the horizontal split lives beneath it so the crumbs get the
-          full width to breathe. */}
       <Group ay="center" ax="space-between" p={2} gap={4} bb={1} fullwidth>
         <Group ay="center" gap={2}>
           <Status color={statusDotColor} pulse={isLive} />
@@ -524,7 +521,6 @@ function ArchiveToggle({
       aria-label={action.label}
     >
       <Icon />
-      {action.label} session
     </Button>
   );
 }

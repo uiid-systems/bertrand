@@ -27,32 +27,28 @@ export const CopyResumeButton = ({
 
   const sessionPath = `${categoryPath}/${session.slug}`;
 
+  function handlePressedChange(next: boolean) {
+    if (!next) return;
+    void navigator.clipboard.writeText(sessionPath);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleClick(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   return (
     <ToggleButton
       tooltip={copied ? "Copied!" : "Copy session path"}
+      icon={{ unpressed: <Copy />, pressed: <Check /> }}
+      onPressedChange={handlePressedChange}
+      onClick={handleClick}
       size={size}
       variant={variant}
       shape={shape}
       pressed={copied}
-      style={{ textWrap: "nowrap" }}
-      onPressedChange={(next) => {
-        if (!next) return;
-        void navigator.clipboard.writeText(sessionPath);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }}
-      icon={{
-        unpressed: <Copy />,
-        pressed: <Check color="green" />,
-      }}
-      text={{
-        pressed: "Copied!",
-        unpressed: "Copy path",
-      }}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
       {...rest}
     />
   );
