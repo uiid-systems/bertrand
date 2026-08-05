@@ -15,6 +15,7 @@ import {
   type Dims,
 } from "./geometry";
 import { useTerminalFontSize } from "./use-terminal-font-size";
+import { useSizingAuthority } from "./use-sizing-authority";
 
 /**
  * A live session's PTY, rendered wherever it is placed.
@@ -37,6 +38,11 @@ import { useTerminalFontSize } from "./use-terminal-font-size";
  * terminal per axis and reports what took effect. The emulator renders that
  * reported geometry, so a box wider than the local terminal shows unused margin
  * instead of a grid the local terminal would have to wrap.
+ *
+ * Which of the two gets to be the smaller one is not fixed: the claim is held
+ * only while this page is being read, and handed back when the reader looks
+ * away, so the terminal window they switched to gets its own full width. See
+ * ./use-sizing-authority.ts.
  *
  * **Lifetime.** The socket is tied to this component, so unmounting detaches
  * (which also releases the claim, returning the PTY to the local terminal's
@@ -89,6 +95,13 @@ export interface TerminalDiagnostics {
   focused: boolean;
   /** Reconnect attempts so far; climbing means the socket won't stay up. */
   retries: number;
+  /**
+   * Whether this view is currently sizing the PTY. It claims the grid while the
+   * page is being read and releases it when the reader looks away, so the
+   * released state is by design invisible in the session view — which is exactly
+   * why it's worth surfacing here.
+   */
+  sizingAuthority: "claimed" | "released";
 }
 
 export type SessionTerminalProps = {
@@ -206,6 +219,53 @@ export const SessionTerminal = ({
   }, []);
 
   /**
+   * Claims the grid this box currently wants, right now rather than on the
+   * debounce. Used where waiting would mean rendering replayed output at the
+   * wrong grid (attach) or leaving the reader looking at the local terminal's
+   * geometry (regaining focus).
+   */
+  const claimNow = useCallback(() => {
+    const fit = fitRef.current;
+    const host = hostRef.current;
+    if (!fit || !host) return;
+    if (host.clientWidth < 8 || host.clientHeight < 8) return;
+    const proposed = proposeDims(fit);
+    if (proposed) claimLater(proposed, true);
+  }, [claimLater]);
+
+  /**
+   * Gives the PTY back to the local terminal, so it can use its whole window
+   * instead of the smaller of the two. Also drops a claim still waiting on the
+   * debounce, which would otherwise re-take the PTY moments after handing it
+   * over.
+   *
+   * Sent whenever a claim is outstanding, without first checking whether it is
+   * the binding one. Upstream recomputes `min(local, claim)` and resizes to the
+   * result, and `TIOCSWINSZ` only raises `SIGWINCH` when the size actually
+   * changes — so releasing a claim that wasn't binding anyway costs nothing,
+   * whereas skipping it would leave a stale claim behind to cap the terminal if
+   * its window is grown while we're away.
+   */
+  const releaseClaim = useCallback(() => {
+    if (claimTimerRef.current) {
+      clearTimeout(claimTimerRef.current);
+      claimTimerRef.current = null;
+    }
+    if (!claimRef.current) return;
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    claimRef.current = null;
+    setClaim(null);
+    socket.send(JSON.stringify({ t: "unclaim" }));
+  }, []);
+
+  // Hands the PTY to whichever surface is being read; see ./use-sizing-authority.
+  const { held: hasAuthorityRef } = useSizingAuthority({
+    claim: claimNow,
+    release: releaseClaim,
+  });
+
+  /**
    * Claims the grid this box wants and renders the grid upstream reports.
    *
    * Those are deliberately two different things. The emulator's grid must always
@@ -225,8 +285,11 @@ export const SessionTerminal = ({
     const host = hostRef.current;
     if (!term || !fit || !host) return;
 
-    // A collapsed or not-yet-laid-out box has no grid to derive.
-    if (host.clientWidth >= 8 && host.clientHeight >= 8) {
+    // A collapsed or not-yet-laid-out box has no grid to derive. Nor does an
+    // unread one have any business asking for one: releasing the claim makes
+    // upstream report the local terminal's grid, which arrives here as a resize —
+    // so without this gate the release would immediately re-claim and undo itself.
+    if (hasAuthorityRef.current && host.clientWidth >= 8 && host.clientHeight >= 8) {
       const proposed = proposeDims(fit);
       if (proposed && !sameDims(proposed, claimRef.current)) claimLater(proposed);
     }
@@ -285,6 +348,7 @@ export const SessionTerminal = ({
         viewportClientHeight: viewport?.clientHeight ?? 0,
         socketState: socket ? SOCKET_STATES[socket.readyState] ?? "closed" : "none",
         focused: host.contains(document.activeElement),
+        sizingAuthority: hasAuthorityRef.current ? "claimed" : "released",
         ...diagnosticsRef.current,
       });
     };
@@ -402,14 +466,10 @@ export const SessionTerminal = ({
         term.focus();
         // A claim does not survive a dropped socket, so re-assert it — and do it
         // now rather than on the debounce, so upstream is already resizing while
-        // the attach replay arrives.
+        // the attach replay arrives. A view attaching while nobody is reading it
+        // stays out of the way instead, and claims when it's next looked at.
         claimRef.current = null;
-        const fit = fitRef.current;
-        const host = hostRef.current;
-        if (fit && host && host.clientWidth >= 8 && host.clientHeight >= 8) {
-          const proposed = proposeDims(fit);
-          if (proposed) claimLater(proposed, true);
-        }
+        if (hasAuthorityRef.current) claimNow();
         scheduleFit();
       };
 
@@ -483,7 +543,7 @@ export const SessionTerminal = ({
       socketRef.current = null;
       claimRef.current = null;
     };
-  }, [sessionId, scheduleFit, claimLater, repaintLater]);
+  }, [sessionId, scheduleFit, claimNow, repaintLater]);
 
   // A font size change doesn't rescale a fixed grid — it changes how many cells
   // fit the same panel, so it re-derives the grid and re-claims, exactly like

@@ -57,6 +57,19 @@
   so a terminal that outlived its route would show a different session's PTY than the
   timeline beside it.
 
+- **2026-08-04 (later again)** — **the zones stopped being a split, and sizing authority
+  started following the reader.** The main area's two zones are now flex items in one
+  full-height column rather than panels of a vertical `Resizable`: collapse state lived
+  both in `useZoneCollapse` and in the panel group's internal sizing, and the effects
+  syncing them fought `onResize`, so a collapsed zone often failed to hand its space
+  over. Sizing a zone from `open` alone removed the second source of truth (and the
+  drag). The timeline also stopped unmounting when collapsed — it renders every prompt
+  and reply through `Markdown`, so rebuilding it was O(events) parses and a visible stall
+  on expand; it now hides behind `display: none` (`keepMounted`), while the terminal
+  keeps unmounting because that is what detaches its PTY. Separately, a claim is no
+  longer held for the whole time a panel is attached — see *Sizing authority follows the
+  reader* below.
+
 ### Geometry: negotiated, smallest attached view wins
 
 **Superseded 2026-08-04.** The first cut made the local terminal the sole owner of
@@ -90,11 +103,47 @@ the answer — which is what keeps the two sides honest. Taking the minimum per 
 means no attached view is ever sent a frame it has to truncate: the larger view gets
 unused margin, which is harmless, and a browser can never force the PTY *wider* than
 the local terminal's window (which would wrap output in the terminal the session is
-really attached to). The cost, accepted deliberately: the local terminal reflows to the
-smaller grid while a dashboard panel is attached, and springs back when it detaches.
+really attached to). The cost: the local terminal reflows to the smaller grid while a
+dashboard panel holds a claim — which is why a claim is no longer held for as long as the
+panel is attached (below).
 
 A browser's `{t:"dims"}` frame is still ignored — reporting the PTY's real size remains
 upstream's job, so a browser cannot spoof it, only ask.
+
+### Sizing authority follows the reader
+
+Smallest-attached-client is the right rule and still leaves a real problem: a dashboard
+panel and a terminal window are rarely the same size, so one of them is always rendering
+into unused margin, and which one changes as windows move. Neither fixed answer is
+acceptable — always claiming caps a wide terminal window to a narrow panel, and never
+claiming leaves the panel displaying a grid far too big for it (fitting a fullscreen
+230×60 grid into a ~980×400 panel needs a ~7px font, below the readable floor).
+
+So the claim is held only while the dashboard page is actually being read — visible *and*
+focused — and handed back when the reader looks away
+(`dashboard/src/components/terminal/use-sizing-authority.ts`). Switch to the terminal and
+it gets its whole window back; switch to the dashboard and the panel fits exactly.
+
+What makes this cheap is that **the released state is never seen**: nobody is reading a
+page they have switched away from, so an oversized grid only has to be corrected before
+it becomes visible again, which regaining focus does immediately rather than on the
+claim debounce. No font scaling or horizontal scrolling is needed to present a grid that
+doesn't fit, because it is only ever too big while unwatched.
+
+Two details that are easy to get wrong:
+
+- The resize path must be **gated** on holding authority. Releasing makes upstream report
+  the local terminal's grid, which arrives at the browser as a resize — so an ungated
+  resize handler re-claims and undoes the release immediately.
+- Releasing is sent whenever a claim is outstanding, without checking whether it is
+  currently the binding one. `applyDims()` resizes to `min(local, claim)` and `TIOCSWINSZ`
+  only raises `SIGWINCH` when the size actually changes, so releasing a non-binding claim
+  costs nothing — while skipping it would leave a stale claim behind to cap the terminal
+  if its window is grown while nobody is watching the dashboard.
+
+Handing back is delayed (400ms) so that passing over the dashboard doesn't resize the PTY
+twice; taking authority is immediate, because that transition is the one someone is
+looking at.
 
 ### Attach replay
 

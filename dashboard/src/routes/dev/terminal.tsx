@@ -187,6 +187,12 @@ const ScrollDiagnostics = ({
           socket: {d.socketState} · focus: {d.focused ? "yes" : "no"} · retries:{" "}
           {d.retries}
         </Text>
+        {/* Only ever "released" while this page is unread, so it can't be
+            observed by watching it — switch away and back, or read it in a
+            visible-but-unfocused window, where the poll keeps updating. */}
+        <Text size={1} family="mono">
+          sizing: {d.sizingAuthority}
+        </Text>
         <Text size={1} shade="muted">
           input — {typingVerdict}
         </Text>
