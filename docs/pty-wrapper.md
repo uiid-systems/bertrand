@@ -250,6 +250,8 @@ one `xterm.js` component to the dashboard wired to it. No new daemon, no new dep
 
 ### Dashboard-owned sessions (designed, not built)
 
+Tracked in [issue #207](https://github.com/uiid-systems/bertrand/issues/207).
+
 Every geometry compromise in this document exists for one reason: **two viewers**. The
 minimum is taken because a frame has to be displayable in both, the authority handover
 exists because they're rarely the same size, and the residual dead margin is unfixable
