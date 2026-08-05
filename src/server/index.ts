@@ -2,6 +2,7 @@ import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
+import { spawnDashboardSession, stopDashboardSession } from "@/engine/dashboard-session"
 import {
   getMainWorktree,
   getWorktreeBranch,
@@ -424,6 +425,44 @@ async function handleSwitchProject(req: Request): Promise<Response> {
   return Response.json({ ok: true, slug })
 }
 
+/**
+ * Spawn a session whose PTY this server owns (issue #207). Unlike a
+ * CLI-started session there is no terminal involved at all — the caller
+ * supplies the cwd, and the browser that attaches becomes the sole sizing
+ * authority.
+ */
+async function handleSpawnDashboardSession(req: Request): Promise<Response> {
+  let body: { categoryPath?: unknown; slug?: unknown; name?: unknown; cwd?: unknown }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const { categoryPath, slug, cwd } = body
+  if (typeof categoryPath !== "string" || !categoryPath) {
+    return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
+  }
+  if (typeof slug !== "string" || !slug) {
+    return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
+  }
+  if (typeof cwd !== "string" || !cwd.startsWith("/") || !existsSync(cwd)) {
+    return Response.json({ error: "cwd must be an existing absolute path" }, { status: 400 })
+  }
+
+  try {
+    const result = spawnDashboardSession({
+      categoryPath,
+      slug,
+      name: typeof body.name === "string" ? body.name : undefined,
+      cwd,
+    })
+    return Response.json(result)
+  } catch (err) {
+    return Response.json({ error: (err as Error).message }, { status: 500 })
+  }
+}
+
 async function handleOpen(req: Request): Promise<Response> {
   let body: { path?: unknown }
   try {
@@ -623,6 +662,25 @@ export function startServer(port = PORT) {
         const r = await handleOpen(req)
         r.headers.set("Access-Control-Allow-Origin", "*")
         return r
+      }
+
+      // Dashboard-owned sessions (issue #207): the server spawns the PTY, so
+      // the browser is the only viewer and the sole sizing authority.
+      if (req.method === "POST" && url.pathname === "/api/sessions/spawn") {
+        const r = await handleSpawnDashboardSession(req)
+        r.headers.set("Access-Control-Allow-Origin", "*")
+        return r
+      }
+
+      if (req.method === "POST") {
+        const stopSessionMatch = /^\/api\/sessions\/([^/]+)\/stop$/.exec(url.pathname)
+        if (stopSessionMatch) {
+          const stopped = stopDashboardSession(stopSessionMatch[1]!)
+          return Response.json(
+            { stopped },
+            { status: stopped ? 200 : 404, headers: { "Access-Control-Allow-Origin": "*" } },
+          )
+        }
       }
 
       // Switch the active project in-process (see handler).
