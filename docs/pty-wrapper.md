@@ -57,6 +57,19 @@
   so a terminal that outlived its route would show a different session's PTY than the
   timeline beside it.
 
+- **2026-08-04 (later again)** — **the zones stopped being a split, and sizing authority
+  started following the reader.** The main area's two zones are now flex items in one
+  full-height column rather than panels of a vertical `Resizable`: collapse state lived
+  both in `useZoneCollapse` and in the panel group's internal sizing, and the effects
+  syncing them fought `onResize`, so a collapsed zone often failed to hand its space
+  over. Sizing a zone from `open` alone removed the second source of truth (and the
+  drag). The timeline also stopped unmounting when collapsed — it renders every prompt
+  and reply through `Markdown`, so rebuilding it was O(events) parses and a visible stall
+  on expand; it now hides behind `display: none` (`keepMounted`), while the terminal
+  keeps unmounting because that is what detaches its PTY. Separately, a claim is no
+  longer held for the whole time a panel is attached — see *Sizing authority follows the
+  reader* below.
+
 ### Geometry: negotiated, smallest attached view wins
 
 **Superseded 2026-08-04.** The first cut made the local terminal the sole owner of
@@ -90,11 +103,47 @@ the answer — which is what keeps the two sides honest. Taking the minimum per 
 means no attached view is ever sent a frame it has to truncate: the larger view gets
 unused margin, which is harmless, and a browser can never force the PTY *wider* than
 the local terminal's window (which would wrap output in the terminal the session is
-really attached to). The cost, accepted deliberately: the local terminal reflows to the
-smaller grid while a dashboard panel is attached, and springs back when it detaches.
+really attached to). The cost: the local terminal reflows to the smaller grid while a
+dashboard panel holds a claim — which is why a claim is no longer held for as long as the
+panel is attached (below).
 
 A browser's `{t:"dims"}` frame is still ignored — reporting the PTY's real size remains
 upstream's job, so a browser cannot spoof it, only ask.
+
+### Sizing authority follows the reader
+
+Smallest-attached-client is the right rule and still leaves a real problem: a dashboard
+panel and a terminal window are rarely the same size, so one of them is always rendering
+into unused margin, and which one changes as windows move. Neither fixed answer is
+acceptable — always claiming caps a wide terminal window to a narrow panel, and never
+claiming leaves the panel displaying a grid far too big for it (fitting a fullscreen
+230×60 grid into a ~980×400 panel needs a ~7px font, below the readable floor).
+
+So the claim is held only while the dashboard page is actually being read — visible *and*
+focused — and handed back when the reader looks away
+(`dashboard/src/components/terminal/use-sizing-authority.ts`). Switch to the terminal and
+it gets its whole window back; switch to the dashboard and the panel fits exactly.
+
+What makes this cheap is that **the released state is never seen**: nobody is reading a
+page they have switched away from, so an oversized grid only has to be corrected before
+it becomes visible again, which regaining focus does immediately rather than on the
+claim debounce. No font scaling or horizontal scrolling is needed to present a grid that
+doesn't fit, because it is only ever too big while unwatched.
+
+Two details that are easy to get wrong:
+
+- The resize path must be **gated** on holding authority. Releasing makes upstream report
+  the local terminal's grid, which arrives at the browser as a resize — so an ungated
+  resize handler re-claims and undoes the release immediately.
+- Releasing is sent whenever a claim is outstanding, without checking whether it is
+  currently the binding one. `applyDims()` resizes to `min(local, claim)` and `TIOCSWINSZ`
+  only raises `SIGWINCH` when the size actually changes, so releasing a non-binding claim
+  costs nothing — while skipping it would leave a stale claim behind to cap the terminal
+  if its window is grown while nobody is watching the dashboard.
+
+Handing back is delayed (400ms) so that passing over the dashboard doesn't resize the PTY
+twice; taking authority is immediate, because that transition is the one someone is
+looking at.
 
 ### Attach replay
 
@@ -199,6 +248,55 @@ Add one websocket route to the existing server (e.g. per-session terminal stream
 one `xterm.js` component to the dashboard wired to it. No new daemon, no new deps beyond
 `xterm` in `dashboard/package.json`.
 
+### Dashboard-owned sessions (designed, not built)
+
+Tracked in [issue #207](https://github.com/uiid-systems/bertrand/issues/207).
+
+Every geometry compromise in this document exists for one reason: **two viewers**. The
+minimum is taken because a frame has to be displayable in both, the authority handover
+exists because they're rarely the same size, and the residual dead margin is unfixable
+because the PTY can never be wider than the local terminal's window without wrapping
+output in the terminal the session is really attached to.
+
+A session *created from the dashboard* has one viewer. There is no local terminal to take
+a minimum against, so the browser's claim is the only input and the grid is exactly the
+panel's — always, at any size, with no margin, no handover, and no font scaling. The
+sizing problem doesn't get solved so much as it stops existing.
+
+This is deliberately **not** a replacement for the shared model. Both live on the same
+relay, and the only thing that differs is who owns the PTY:
+
+| | PTY spawned by | `local` dims | Geometry |
+| --- | --- | --- | --- |
+| CLI-started (today) | the `bertrand` CLI process | the real tty | `min(local, claim)`, authority follows the reader |
+| Dashboard-created | `bertrand serve` | none | the claim, outright |
+
+Most of the machinery already exists and is untouched by this: the relay and its
+`upstream`/`browser` roles, attach replay, input fan-in, `dims` reporting. Hooks fire
+from `claude`'s own settings regardless of who spawned it (and `BERTRAND_CLAUDE_ID` is
+already passed through the environment), so the timeline populates identically — a
+dashboard-created session is a normal session in every view. `src/lib/workspace/` already
+supplies the cwd and the lazy worktree.
+
+What is actually new:
+
+- **A spawn path in the server.** `spawnPty` called from `bertrand serve` rather than from
+  `launchClaude()`. The dims policy gains the mirror of the case it already handles:
+  `smallestDims` returns `local` when the claim is null, and needs to return the claim
+  when there is no local terminal. Before any browser has claimed, the conventional 80×24
+  stands in.
+- **Server-owned lifetime.** Today a session ends when its terminal does. A
+  server-spawned PTY outlives every viewer, so it needs explicit teardown, orphan reaping,
+  and PID identity that survives reuse. This is a solved shape in this codebase, not a new
+  one — the workspace preview registry (PR #175) already does PID-identity via `etime`, an
+  atomic registry, a start lock, SIGKILL escalation, and orphan reaping. Follow it.
+- **Credentials for a daemon-spawned `claude`.** Same user, same config, but nothing
+  interactive can be assumed on first run.
+
+Multiple browser tabs on one dashboard-created session still negotiate `min()` across
+their claims — which is correct, and unlike the terminal case it's fixable by closing a
+tab.
+
 ## Explicitly deferred
 
 - **Reconnect / scrollback-restore snapshot** — replaying output after a dropped
@@ -217,10 +315,10 @@ one `xterm.js` component to the dashboard wired to it. No new daemon, no new dep
 
 ## Open questions
 
-- Should a session be startable *headlessly* (server-spawned, no local terminal ever
-  attached), or does v1 only mirror a session a real terminal already started? The fan
-  in/out design above works either way, but it changes where `launchClaude()` gets
-  called from.
+- ~~Should a session be startable *headlessly* (server-spawned, no local terminal ever
+  attached), or does v1 only mirror a session a real terminal already started?~~
+  **Answered: both, and the geometry work is what makes it worth doing** (not yet built —
+  see *Dashboard-owned sessions* below).
 - ~~Where does per-session PTY state live if the CLI process and the server process are
   different processes?~~ **Resolved**: kept `launchClaude()` spawning the PTY in the CLI
   process (no change to how sessions start) and had it connect *out* to the
