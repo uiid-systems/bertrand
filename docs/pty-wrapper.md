@@ -248,6 +248,53 @@ Add one websocket route to the existing server (e.g. per-session terminal stream
 one `xterm.js` component to the dashboard wired to it. No new daemon, no new deps beyond
 `xterm` in `dashboard/package.json`.
 
+### Dashboard-owned sessions (designed, not built)
+
+Every geometry compromise in this document exists for one reason: **two viewers**. The
+minimum is taken because a frame has to be displayable in both, the authority handover
+exists because they're rarely the same size, and the residual dead margin is unfixable
+because the PTY can never be wider than the local terminal's window without wrapping
+output in the terminal the session is really attached to.
+
+A session *created from the dashboard* has one viewer. There is no local terminal to take
+a minimum against, so the browser's claim is the only input and the grid is exactly the
+panel's — always, at any size, with no margin, no handover, and no font scaling. The
+sizing problem doesn't get solved so much as it stops existing.
+
+This is deliberately **not** a replacement for the shared model. Both live on the same
+relay, and the only thing that differs is who owns the PTY:
+
+| | PTY spawned by | `local` dims | Geometry |
+| --- | --- | --- | --- |
+| CLI-started (today) | the `bertrand` CLI process | the real tty | `min(local, claim)`, authority follows the reader |
+| Dashboard-created | `bertrand serve` | none | the claim, outright |
+
+Most of the machinery already exists and is untouched by this: the relay and its
+`upstream`/`browser` roles, attach replay, input fan-in, `dims` reporting. Hooks fire
+from `claude`'s own settings regardless of who spawned it (and `BERTRAND_CLAUDE_ID` is
+already passed through the environment), so the timeline populates identically — a
+dashboard-created session is a normal session in every view. `src/lib/workspace/` already
+supplies the cwd and the lazy worktree.
+
+What is actually new:
+
+- **A spawn path in the server.** `spawnPty` called from `bertrand serve` rather than from
+  `launchClaude()`. The dims policy gains the mirror of the case it already handles:
+  `smallestDims` returns `local` when the claim is null, and needs to return the claim
+  when there is no local terminal. Before any browser has claimed, the conventional 80×24
+  stands in.
+- **Server-owned lifetime.** Today a session ends when its terminal does. A
+  server-spawned PTY outlives every viewer, so it needs explicit teardown, orphan reaping,
+  and PID identity that survives reuse. This is a solved shape in this codebase, not a new
+  one — the workspace preview registry (PR #175) already does PID-identity via `etime`, an
+  atomic registry, a start lock, SIGKILL escalation, and orphan reaping. Follow it.
+- **Credentials for a daemon-spawned `claude`.** Same user, same config, but nothing
+  interactive can be assumed on first run.
+
+Multiple browser tabs on one dashboard-created session still negotiate `min()` across
+their claims — which is correct, and unlike the terminal case it's fixable by closing a
+tab.
+
 ## Explicitly deferred
 
 - **Reconnect / scrollback-restore snapshot** — replaying output after a dropped
@@ -266,10 +313,10 @@ one `xterm.js` component to the dashboard wired to it. No new daemon, no new dep
 
 ## Open questions
 
-- Should a session be startable *headlessly* (server-spawned, no local terminal ever
-  attached), or does v1 only mirror a session a real terminal already started? The fan
-  in/out design above works either way, but it changes where `launchClaude()` gets
-  called from.
+- ~~Should a session be startable *headlessly* (server-spawned, no local terminal ever
+  attached), or does v1 only mirror a session a real terminal already started?~~
+  **Answered: both, and the geometry work is what makes it worth doing** (not yet built —
+  see *Dashboard-owned sessions* below).
 - ~~Where does per-session PTY state live if the CLI process and the server process are
   different processes?~~ **Resolved**: kept `launchClaude()` spawning the PTY in the CLI
   process (no change to how sessions start) and had it connect *out* to the
