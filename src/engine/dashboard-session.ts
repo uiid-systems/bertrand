@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
-import { createSession, updateSession, getSession } from "@/db/queries/sessions";
-import { createConversation, endConversation, getConversation } from "@/db/queries/conversations";
-import { emitClaudeEnded, emitClaudeStarted } from "@/db/events/emit";
+import { createSession, updateSession } from "@/db/queries/sessions";
+import { createConversation } from "@/db/queries/conversations";
+import { emitClaudeStarted } from "@/db/events/emit";
 import { getOrCreateCategoryPath } from "@/db/queries/categories";
+import { finalizeSessionRow } from "./finalize";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
@@ -207,24 +208,9 @@ function finalize(sessionId: string, conversationId: string, exitCode: number): 
   entry?.relay?.close();
   sessions.delete(sessionId);
 
-  if (!getSession(sessionId)) return;
-
-  const conversationExists = !!getConversation(conversationId);
-  if (conversationExists) endConversation(conversationId);
-
-  emitClaudeEnded({
-    sessionId,
-    conversationId: conversationExists ? conversationId : undefined,
-    exitCode,
-  });
-
-  updateSession(sessionId, {
-    status: "paused",
-    pid: null,
-    endedAt: new Date().toISOString(),
-  });
-
-  // Deliberately does NOT call stopServerIfIdle(): this runs inside the server
-  // process, so it would SIGTERM the very server hosting other sessions and
-  // any attached browser.
+  // Shared with the CLI path so summaries, timing, marker pruning and sync push
+  // can't silently diverge. stopServerWhenIdle is false because this runs
+  // inside the server: stopping it would kill the process executing this line,
+  // along with every other dashboard-owned session and any attached browser.
+  finalizeSessionRow(sessionId, conversationId, exitCode, { stopServerWhenIdle: false });
 }
