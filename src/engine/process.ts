@@ -1,5 +1,5 @@
 import { resolveActiveProject } from "@/lib/projects/resolve";
-import { spawnPty, type PtyHandle } from "./pty";
+import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
 export interface ClaudeLaunchOpts {
@@ -80,19 +80,46 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
     activePty = pty;
 
-    const currentDims = () => ({
+    const localDims = () => ({
       cols: process.stdout.columns ?? 80,
       rows: process.stdout.rows ?? 24,
     });
 
+    /**
+     * Geometry a dashboard browser has taken over, or null when none has. Held
+     * here rather than in the relay so the PTY's size is always decided in one
+     * place, by the process that owns it.
+     */
+    let browserClaim: PtyDims | null = null;
+
+    /** The size to actually give the PTY — see smallestDims(). */
+    const currentDims = () => smallestDims(localDims(), browserClaim);
+
+    /** Resizes the PTY and tells attached browsers what actually took effect. */
+    const applyDims = () => {
+      const { cols, rows } = currentDims();
+      if (cols < 1 || rows < 1) return;
+      try {
+        pty.resize(cols, rows);
+      } catch {
+        // Session already exited; there is nothing left to resize.
+        return;
+      }
+      relay?.sendDims(cols, rows);
+    };
+
     // A dashboard browser is a second consumer of the same PTY, symmetric with
     // the local terminal below for input — both just call pty.write(). Geometry
-    // is deliberately not symmetric: this terminal owns it, and browsers size
-    // their emulator to match, so a browser window can never reflow the PTY out
-    // from under the terminal the session is really attached to.
+    // is negotiated rather than owned: this side stays the authority on what the
+    // PTY's size actually is (and reports it via sendDims), but a browser can
+    // ask to take sizing over so the terminal fits the panel it is rendered in.
     relay = connectTerminalRelay({
       sessionId: opts.sessionId,
       onInput: (chunk) => pty.write(chunk),
+      onSetSize: (dims) => {
+        browserClaim = dims;
+        applyDims();
+      },
       // A browser attaching mid-session missed the output that drew the current
       // screen. Two resizes in quick succession read as a real terminal resize,
       // which makes the TUI repaint its whole frame.
@@ -112,7 +139,8 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
         }
       },
     });
-    relay.sendDims(currentDims().cols, currentDims().rows);
+    const initialDims = currentDims();
+    relay.sendDims(initialDims.cols, initialDims.rows);
 
     // Local terminal is one consumer of the PTY: raw stdin bytes forward
     // straight through, and resize follows the real terminal's dimensions.
@@ -122,12 +150,10 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     process.stdin.resume();
     if (stdinIsTty) process.stdin.setRawMode(true);
 
+    // Resizing the local terminal re-derives the effective size (a browser may
+    // still be claiming a smaller one) and tells attached browsers the result.
     const onResize = () => {
-      if (process.stdout.columns && process.stdout.rows) {
-        pty.resize(process.stdout.columns, process.stdout.rows);
-        // Keep attached browsers in step with the terminal that owns the size.
-        relay?.sendDims(process.stdout.columns, process.stdout.rows);
-      }
+      if (process.stdout.columns && process.stdout.rows) applyDims();
     };
     if (process.stdout.isTTY) process.stdout.on("resize", onResize);
 

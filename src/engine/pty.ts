@@ -13,6 +13,26 @@ export interface PtyHandle {
   kill(signal?: NodeJS.Signals | number): void;
 }
 
+export interface PtyDims {
+  cols: number;
+  rows: number;
+}
+
+/**
+ * The size to give a PTY that several views are attached to: the smallest of
+ * them per axis. This is tmux's smallest-attached-client rule — the larger view
+ * gets unused margin, which is harmless, whereas the smaller one would be sent
+ * a frame it has to truncate. `claim` is null when no dashboard browser has
+ * taken sizing over, in which case the local terminal's size stands unchanged.
+ */
+export function smallestDims(local: PtyDims, claim: PtyDims | null): PtyDims {
+  if (!claim) return local;
+  return {
+    cols: Math.min(local.cols, claim.cols),
+    rows: Math.min(local.rows, claim.rows),
+  };
+}
+
 export interface SpawnPtyOptions {
   cwd?: string;
   env?: Record<string, string>;

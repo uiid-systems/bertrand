@@ -1,6 +1,6 @@
 # Browser ↔ Terminal Control (PTY wrapper)
 
-**Status:** v1 built and tested end-to-end; not yet wired to a real dashboard UI
+**Status:** v1 built and tested end-to-end; wired into the dashboard's session view
 **Date:** 2026-08-04
 **Owner:** Adam
 
@@ -40,16 +40,61 @@
   landed in the prompt and never submitted. `term.onData` emits tty-correct bytes and
   removes that whole class of hand-rolled key translation.
 
-### Geometry: the local terminal owns it
+- **2026-08-04 (later still)** — **geometry reworked and the terminal given a real home
+  in the dashboard.** Sizing the emulator to the local terminal's grid made the dev page
+  unusable in a browser, so geometry became negotiated (see the superseded section
+  below) and the terminal became a portable, container-driven component:
+  `dashboard/src/components/terminal/` (`SessionTerminal` + `geometry.ts`), fixed font
+  size, ResizeObserver on its own box, claim debounced by 120ms. It is embedded in the
+  session view via a new collapsible main-area zone shell
+  (`dashboard/src/components/content-zone/`, the counterpart to `SidebarZone`): a
+  vertical split of Timeline over Terminal, both collapsible to their trigger bar, with
+  "maximize" implemented as collapsing the timeline. Collapse state is persisted
+  (`useZoneCollapse`) because expanding the terminal attaches to a live PTY.
+  `routes/dev/terminal.tsx` is now a harness over the same component with a frame picker
+  (panel / drawer / sidebar / mobile / tall) to check it reflows into any box.
+  Deliberately *not* persisted across navigation: several sessions can be live at once,
+  so a terminal that outlived its route would show a different session's PTY than the
+  timeline beside it.
 
-Input is symmetric (local terminal and browser both just `pty.write()`); **size is
-deliberately not**. Upstream reports its dimensions as a `{t:"dims",cols,rows}` control
-frame and browsers resize their emulator to match; the relay drops control frames sent
-by a browser. Letting a browser resize the PTY would reflow and visibly corrupt the
-terminal the session is actually attached to, and with several consumers attached
-last-writer-wins is unpredictable. (tmux's smallest-of-all-consumers rule is the more
-general answer if multiple *interactive* consumers ever need it; not needed while the
-local terminal is the one true attachment.)
+### Geometry: negotiated, smallest attached view wins
+
+**Superseded 2026-08-04.** The first cut made the local terminal the sole owner of
+geometry: upstream reported `{t:"dims"}` and browsers sized their emulator to match,
+with browser control frames dropped. That is unusable in a dashboard panel. The PTY's
+grid comes from a *different window*, so the emulator can never be the size of its
+container — and the invariant every working xterm embed depends on (parent is an
+explicitly-sized box, `cols`/`rows` match that box, `.xterm-viewport` is the only
+scroller) is unreachable. What you get instead is `.xterm-screen` sized to
+`cols × cellWidth` overflowing the absolutely-positioned viewport that was supposed to
+clip it, nested inside three other scroll containers.
+
+Scaling the font to letterbox the PTY's grid into the panel was tried and rejected:
+it holds the geometry constant but doesn't behave like a terminal. **A terminal's font
+size is fixed; resizing the window changes how many rows and columns fit, and the
+attached program reflows.** Reflowing means resizing the PTY, so the browser has to be
+able to drive geometry.
+
+So geometry is negotiated with tmux's smallest-attached-client rule:
+
+- A browser renders at a **fixed** font size and sends the grid its panel fits as
+  `{t:"claim",cols,rows}` (debounced, so dragging a panel resizes the PTY once at the
+  end rather than once per column).
+- The relay tracks one claim per browser and forwards the smallest across all of them,
+  per axis, as `{t:"setsize"}`. Disconnecting implies unclaim.
+- `launchClaude()` applies `smallestDims(localTerminal, claim)` (`src/engine/pty.ts`)
+  and reports what actually took effect as `{t:"dims"}`.
+
+Upstream therefore stays the single source of truth — a claim is a request, `dims` is
+the answer — which is what keeps the two sides honest. Taking the minimum per axis
+means no attached view is ever sent a frame it has to truncate: the larger view gets
+unused margin, which is harmless, and a browser can never force the PTY *wider* than
+the local terminal's window (which would wrap output in the terminal the session is
+really attached to). The cost, accepted deliberately: the local terminal reflows to the
+smaller grid while a dashboard panel is attached, and springs back when it detaches.
+
+A browser's `{t:"dims"}` frame is still ignored — reporting the PTY's real size remains
+upstream's job, so a browser cannot spoof it, only ask.
 
 ### Attach replay
 
@@ -67,7 +112,10 @@ frames are JSON control frames:
 
 | Frame | Direction | Meaning |
 | --- | --- | --- |
-| `{t:"dims",cols,rows}` | upstream → relay → browsers | local terminal's geometry; browsers match it |
+| `{t:"dims",cols,rows}` | upstream → relay → browsers | geometry actually applied to the PTY; browsers render it |
+| `{t:"claim",cols,rows}` | browser → relay | grid this browser's panel fits; out-of-bounds claims are dropped |
+| `{t:"unclaim"}` | browser → relay | drop this browser's claim (also implied by disconnecting) |
+| `{t:"setsize",cols,rows}` | relay → upstream | smallest claim across browsers; `null`/`null` means "use your own size" |
 | `{t:"repaint"}` | relay → upstream | a browser attached mid-session; redraw everything |
 | *(binary)* | either direction | raw PTY bytes |
 

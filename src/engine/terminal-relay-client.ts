@@ -6,14 +6,18 @@
  * server isn't reachable, the local terminal keeps working exactly as
  * before; the browser side just has nothing to attach to.
  *
- * This side owns the PTY geometry: it reports its dimensions via `sendDims`
- * and browsers size their emulator to match. Browsers cannot resize the PTY,
- * so there is no `onResize` — the only thing the relay asks of this side is a
- * repaint when a browser attaches mid-session.
+ * This side remains the authority on PTY geometry: it reports the size it
+ * actually applied via `sendDims`, and browsers size their emulator to match.
+ * A browser renders at a fixed font size, so the grid it can display is a
+ * function of its panel; it sends that as a claim, which the relay aggregates
+ * and forwards here as `onSetSize`. That is a *request*, and this side decides
+ * what to do with it (see src/engine/process.ts, which takes the smaller of the
+ * claim and the local terminal so neither view is asked to display more than it
+ * can show).
  */
 export interface TerminalRelayClient {
   send(chunk: Uint8Array): void;
-  /** Reports the local terminal's geometry so attaching browsers can match it. */
+  /** Reports the geometry actually applied to the PTY so browsers can match it. */
   sendDims(cols: number, rows: number): void;
   close(): void;
 }
@@ -23,6 +27,11 @@ export interface ConnectTerminalRelayOptions {
   onInput: (chunk: Uint8Array) => void;
   /** A browser attached mid-session and needs the current screen redrawn. */
   onRepaint: () => void;
+  /**
+   * Browsers want the PTY at this size, or null when no browser is claiming one
+   * and the local terminal's own size should apply again.
+   */
+  onSetSize: (dims: { cols: number; rows: number } | null) => void;
 }
 
 export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): TerminalRelayClient {
@@ -51,7 +60,15 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
     ws.onmessage = (event) => {
       if (typeof event.data === "string") {
         try {
-          if (JSON.parse(event.data)?.t === "repaint") opts.onRepaint();
+          const frame = JSON.parse(event.data);
+          if (frame?.t === "repaint") opts.onRepaint();
+          else if (frame?.t === "setsize") {
+            opts.onSetSize(
+              typeof frame.cols === "number" && typeof frame.rows === "number"
+                ? { cols: frame.cols, rows: frame.rows }
+                : null,
+            );
+          }
         } catch {
           // Ignore malformed control frames rather than crashing the session.
         }

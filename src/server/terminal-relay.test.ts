@@ -99,7 +99,7 @@ describe("terminal relay", () => {
     browser.close();
   });
 
-  test("a browser cannot resize the PTY — the local terminal owns geometry", async () => {
+  test("a browser cannot report the PTY's size — only upstream may", async () => {
     const port = startTestServer();
     const upstream = connectUpstream(port, "sess-3");
     await waitOpen(upstream);
@@ -108,8 +108,10 @@ describe("terminal relay", () => {
     const browser = connectBrowser(port, "sess-3");
     await waitOpen(browser);
 
-    // A browser asking for a resize must be ignored: honouring it would reflow
-    // the terminal the session is actually attached to.
+    // Reporting the PTY's real geometry is upstream's job. A browser that wants
+    // a different size has to `claim` one, which is negotiated and reversible —
+    // a bare `dims` frame from a browser must not be forwarded as if the PTY had
+    // actually changed size.
     browser.send(JSON.stringify({ t: "dims", cols: 100, rows: 40 }));
     browser.send(JSON.stringify({ cols: 100, rows: 40 }));
     await settle();
@@ -118,6 +120,159 @@ describe("terminal relay", () => {
     expect(seen.binary).toEqual([]);
 
     upstream.close();
+    browser.close();
+  });
+
+  test("a browser claim is forwarded upstream as a setsize request", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "claim-1");
+    await waitOpen(upstream);
+    const seen = collect(upstream);
+
+    const browser = connectBrowser(port, "claim-1");
+    await waitOpen(browser);
+    browser.send(JSON.stringify({ t: "claim", cols: 120, rows: 40 }));
+    await settle();
+
+    expect(seen.text.map((f) => JSON.parse(f))).toContainEqual({
+      t: "setsize",
+      cols: 120,
+      rows: 40,
+    });
+
+    upstream.close();
+    browser.close();
+  });
+
+  test("the smallest claim across browsers wins, per axis", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "claim-2");
+    await waitOpen(upstream);
+    const seen = collect(upstream);
+
+    const wide = connectBrowser(port, "claim-2");
+    const tall = connectBrowser(port, "claim-2");
+    await Promise.all([waitOpen(wide), waitOpen(tall)]);
+
+    // Neither browser's pair wins outright: the result takes the smaller of
+    // each axis so both can display the frame in full.
+    wide.send(JSON.stringify({ t: "claim", cols: 200, rows: 30 }));
+    await settle();
+    tall.send(JSON.stringify({ t: "claim", cols: 90, rows: 60 }));
+    await settle();
+
+    const setsizes = seen.text
+      .map((f) => JSON.parse(f))
+      .filter((f) => f.t === "setsize");
+    expect(setsizes.at(-1)).toEqual({ t: "setsize", cols: 90, rows: 30 });
+
+    upstream.close();
+    wide.close();
+    tall.close();
+  });
+
+  test("unclaiming and disconnecting both release the claim", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "claim-3");
+    await waitOpen(upstream);
+    const seen = collect(upstream);
+
+    const browser = connectBrowser(port, "claim-3");
+    await waitOpen(browser);
+    browser.send(JSON.stringify({ t: "claim", cols: 100, rows: 30 }));
+    await settle();
+    browser.send(JSON.stringify({ t: "unclaim" }));
+    await settle();
+
+    const afterUnclaim = seen.text
+      .map((f) => JSON.parse(f))
+      .filter((f) => f.t === "setsize");
+    // Nulls mean "no browser is claiming — use your own terminal's size".
+    expect(afterUnclaim.at(-1)).toEqual({ t: "setsize", cols: null, rows: null });
+
+    // A closed tab must not keep the PTY pinned to a window nobody is viewing.
+    browser.send(JSON.stringify({ t: "claim", cols: 100, rows: 30 }));
+    await settle();
+    browser.close();
+    await settle();
+
+    const afterClose = seen.text
+      .map((f) => JSON.parse(f))
+      .filter((f) => f.t === "setsize");
+    expect(afterClose.at(-1)).toEqual({ t: "setsize", cols: null, rows: null });
+
+    upstream.close();
+  });
+
+  test("a browser can ask for a repaint after its own resize", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "repaint-1");
+    await waitOpen(upstream);
+
+    const browser = connectBrowser(port, "repaint-1");
+    await waitOpen(browser);
+    // Drain the repaint the relay sends on attach so this asserts the forwarded
+    // one, not that.
+    await settle();
+    const seen = collect(upstream);
+
+    browser.send(JSON.stringify({ t: "repaint" }));
+    await settle();
+
+    expect(seen.text.map((f) => JSON.parse(f))).toContainEqual({ t: "repaint" });
+
+    upstream.close();
+    browser.close();
+  });
+
+  test("out-of-bounds claims are ignored", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "claim-4");
+    await waitOpen(upstream);
+    const seen = collect(upstream);
+
+    const browser = connectBrowser(port, "claim-4");
+    await waitOpen(browser);
+
+    // A malformed or hostile claim shouldn't be able to wedge a real PTY.
+    browser.send(JSON.stringify({ t: "claim", cols: 1, rows: 1 }));
+    browser.send(JSON.stringify({ t: "claim", cols: 99999, rows: 99999 }));
+    browser.send(JSON.stringify({ t: "claim", cols: 80.5, rows: 24 }));
+    await settle();
+
+    expect(seen.text.some((f) => f.includes("setsize"))).toBe(false);
+
+    upstream.close();
+    browser.close();
+  });
+
+  test("upstream reconnecting is told about outstanding claims", async () => {
+    const port = startTestServer();
+    const upstream = connectUpstream(port, "claim-5");
+    await waitOpen(upstream);
+
+    const browser = connectBrowser(port, "claim-5");
+    await waitOpen(browser);
+    browser.send(JSON.stringify({ t: "claim", cols: 110, rows: 35 }));
+    await settle();
+
+    // Server-side state survives the process that owned the PTY reconnecting,
+    // so a browser that took sizing over doesn't silently lose it.
+    upstream.close();
+    await settle();
+
+    const revived = connectUpstream(port, "claim-5");
+    const seen = collect(revived);
+    await waitOpen(revived);
+    await settle();
+
+    expect(seen.text.map((f) => JSON.parse(f))).toContainEqual({
+      t: "setsize",
+      cols: 110,
+      rows: 35,
+    });
+
+    revived.close();
     browser.close();
   });
 
