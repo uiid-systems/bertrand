@@ -19,6 +19,15 @@ export interface TerminalRelayClient {
   send(chunk: Uint8Array): void;
   /** Reports the geometry actually applied to the PTY so browsers can match it. */
   sendDims(cols: number, rows: number): void;
+  /**
+   * Resolves once the connection has settled — either open, or known to be
+   * unreachable. Output bytes handed to `send` before that are dropped rather
+   * than queued (a browser that hasn't attached must never block the terminal),
+   * so anything that needs its first bytes to actually arrive should await this.
+   * Never rejects: the relay is best-effort, and a caller awaiting it must not
+   * be taken down by the server being absent.
+   */
+  readonly ready: Promise<void>;
   close(): void;
 }
 
@@ -43,16 +52,24 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
   // recent value and flush it on open rather than silently dropping it.
   let pendingDims: { cols: number; rows: number } | null = null;
 
+  let settle: () => void;
+  const ready = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+
   try {
     socket = new WebSocket(url);
   } catch {
     socket = null;
   }
 
+  if (!socket) settle!();
+
   if (socket) {
     const ws = socket;
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
+      settle();
       if (!pendingDims) return;
       ws.send(JSON.stringify({ t: "dims", ...pendingDims }));
       pendingDims = null;
@@ -78,10 +95,12 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
     };
     ws.onerror = () => {
       socket = null;
+      settle();
     };
   }
 
   return {
+    ready,
     send(chunk) {
       if (socket?.readyState === WebSocket.OPEN) socket.send(chunk);
     },
