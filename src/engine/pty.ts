@@ -19,13 +19,26 @@ export interface PtyDims {
 }
 
 /**
+ * The conventional terminal grid, used before any viewer has reported a size.
+ */
+export const DEFAULT_DIMS: PtyDims = { cols: 80, rows: 24 };
+
+/**
  * The size to give a PTY that several views are attached to: the smallest of
  * them per axis. This is tmux's smallest-attached-client rule — the larger view
  * gets unused margin, which is harmless, whereas the smaller one would be sent
- * a frame it has to truncate. `claim` is null when no dashboard browser has
- * taken sizing over, in which case the local terminal's size stands unchanged.
+ * a frame it has to truncate.
+ *
+ * Either input can be absent, and the two cases are mirrors of each other:
+ * `claim` is null when no dashboard browser has taken sizing over, so the local
+ * terminal's size stands unchanged; `local` is null for a dashboard-owned
+ * session, where the server spawned the PTY and there is no terminal to take a
+ * minimum against — the browser's claim is then the only input, and the grid is
+ * exactly the panel's with no margin and no handover. With neither, nothing has
+ * reported a size yet and the conventional 80×24 stands in.
  */
-export function smallestDims(local: PtyDims, claim: PtyDims | null): PtyDims {
+export function smallestDims(local: PtyDims | null, claim: PtyDims | null): PtyDims {
+  if (!local) return claim ?? DEFAULT_DIMS;
   if (!claim) return local;
   return {
     cols: Math.min(local.cols, claim.cols),
@@ -46,8 +59,8 @@ export function spawnPty(cmd: string[], opts: SpawnPtyOptions): PtyHandle {
     cwd: opts.cwd,
     env: opts.env,
     terminal: {
-      cols: opts.cols ?? 80,
-      rows: opts.rows ?? 24,
+      cols: opts.cols ?? DEFAULT_DIMS.cols,
+      rows: opts.rows ?? DEFAULT_DIMS.rows,
       data: (_terminal, data) => opts.onData(data),
     },
   });

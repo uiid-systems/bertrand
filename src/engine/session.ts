@@ -5,15 +5,8 @@ import {
   getSession,
   getSessionByCategorySlug,
 } from "@/db/queries/sessions";
-import {
-  createConversation,
-  endConversation,
-  getConversation,
-} from "@/db/queries/conversations";
-import {
-  emitClaudeEnded,
-  emitClaudeStarted,
-} from "@/db/events/emit";
+import { createConversation } from "@/db/queries/conversations";
+import { emitClaudeStarted } from "@/db/events/emit";
 import { getOrCreateCategoryPath, getCategory, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
@@ -23,15 +16,10 @@ import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { launchClaude, isClaudeRunning } from "./process";
-import { computeAndPersist } from "@/lib/timing";
-import { storeSessionSummary } from "@/lib/summary";
-import { ensureServerStarted, stopServerIfIdle } from "@/lib/server-lifecycle";
-import { triggerBackgroundPush } from "@/sync/trigger";
+import { finalizeSessionRow } from "./finalize";
+import { ensureServerStarted } from "@/lib/server-lifecycle";
 import { claudeSessionExists } from "@/lib/transcript";
-import {
-  pruneSessionMarkers,
-  pruneStaleContractMarkers,
-} from "@/hooks/runtime";
+import { pruneStaleContractMarkers } from "@/hooks/runtime";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -248,45 +236,18 @@ export async function resume(opts: ResumeOpts): Promise<string> {
 }
 
 /**
- * Run end-of-Claude cleanup defensively. If the session or conversation row
- * was deleted while Claude was running (parallel bertrand instance, manual
- * delete, etc.), skip the writes that would violate FK constraints rather
- * than crashing the post-Claude TUI flow.
+ * Run end-of-Claude cleanup for a CLI-hosted session. The shared work lives in
+ * finalizeSessionRow so the server-hosted path (dashboard-session.ts) cannot
+ * drift from it; only the liveSession bookkeeping below is specific to owning
+ * a session in this process.
  */
 function finalizeSession(
   sessionId: string,
   conversationId: string,
   exitCode: number
 ): void {
-  if (!getSession(sessionId)) return;
-
-  const conversationExists = !!getConversation(conversationId);
-  const safeConversationId = conversationExists ? conversationId : undefined;
-
-  if (conversationExists) {
-    endConversation(conversationId);
-  }
-
-  emitClaudeEnded({
-    sessionId,
-    conversationId: safeConversationId,
-    exitCode,
-  });
-
-  updateSession(sessionId, {
-    status: "paused",
-    pid: null,
-    endedAt: new Date().toISOString(),
-  });
-  storeSessionSummary(sessionId);
-
   if (liveSession?.sessionId === sessionId) liveSession = null;
 
-  pruneSessionMarkers(sessionId, safeConversationId);
-
-  computeAndPersist(sessionId);
-  stopServerIfIdle();
-
-  // Sync push on session end. Detached fire-and-forget — won't block exit.
-  triggerBackgroundPush();
+  // A CLI process owns no other session, so it may stop an idle server.
+  finalizeSessionRow(sessionId, conversationId, exitCode, { stopServerWhenIdle: true });
 }

@@ -32,6 +32,15 @@ function waitMessage(ws: WebSocket): Promise<string | ArrayBuffer> {
   });
 }
 
+/**
+ * The relay client drops output bytes whenever its socket isn't OPEN yet
+ * (terminal-relay-client.ts) — deliberately, so a browser that hasn't attached
+ * can never block the local terminal. That makes "write, then sleep" racy:
+ * anything echoed before the upstream socket finishes connecting is discarded
+ * rather than delivered late, so no sleep can recover it. Both tests below
+ * therefore await `relay.ready` before writing to the PTY.
+ */
+
 describe("PTY + relay integration", () => {
   test("a browser sees PTY output and can drive input, round-tripped through cat", async () => {
     server = Bun.serve({
@@ -72,8 +81,9 @@ describe("PTY + relay integration", () => {
 
     // Local-terminal-equivalent write: cat echoes it back through the PTY,
     // out through the relay, to the browser.
+    await relay.ready;
     pty.write("from local terminal\n");
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await new Promise((resolve) => setTimeout(resolve, 250));
     expect(browserChunks.join("")).toContain("from local terminal");
 
     // Browser-equivalent write: same PTY, same echo, proving local and
@@ -120,6 +130,7 @@ describe("PTY + relay integration", () => {
       onSetSize: () => {},
     });
     relay.sendDims(190, 50);
+    await relay.ready;
 
     // Output produced before any browser exists — the case that used to leave
     // an attaching browser staring at a blank screen.

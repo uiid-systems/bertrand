@@ -275,8 +275,13 @@ Most of the machinery already exists and is untouched by this: the relay and its
 `upstream`/`browser` roles, attach replay, input fan-in, `dims` reporting. Hooks fire
 from `claude`'s own settings regardless of who spawned it (and `BERTRAND_CLAUDE_ID` is
 already passed through the environment), so the timeline populates identically — a
-dashboard-created session is a normal session in every view. `src/lib/workspace/` already
-supplies the cwd and the lazy worktree.
+dashboard-created session is a normal session in every view.
+
+The session's cwd, however, is not simply supplied by `src/lib/workspace/`:
+`resolveWorkspace(dir)` resolves *preview-server* run config for a directory, while the
+cwd itself comes from `session.worktreePath` — a DB column `src/` only ever reads. There
+is no worktree *creation* path in the codebase, so a dashboard-created session that needs
+a fresh worktree does not have one waiting for it.
 
 What is actually new:
 
@@ -284,14 +289,31 @@ What is actually new:
   `launchClaude()`. The dims policy gains the mirror of the case it already handles:
   `smallestDims` returns `local` when the claim is null, and needs to return the claim
   when there is no local terminal. Before any browser has claimed, the conventional 80×24
-  stands in.
+  stands in. Both cwd and env must be passed explicitly — `emitClaudeStarted({ cwd:
+  process.cwd() })` inside serve would otherwise record the server's inherited cwd, which
+  has nothing to do with the session.
+- **Per-session state that is currently process-global.** The state that makes a session a
+  session lives above `launchClaude()`, in `src/engine/session.ts`, and all of it assumes
+  one session per process: `activePty` and `isClaudeRunning()` (`src/engine/process.ts`),
+  `liveSession`, and the exit handlers that finalize *the* live session. A server hosting
+  N sessions needs each of these keyed by session ID. This is a refactor of `session.ts`,
+  not a new spawn path bolted beside it.
 - **Server-owned lifetime.** Today a session ends when its terminal does. A
   server-spawned PTY outlives every viewer, so it needs explicit teardown, orphan reaping,
   and PID identity that survives reuse. This is a solved shape in this codebase, not a new
   one — the workspace preview registry (PR #175) already does PID-identity via `etime`, an
-  atomic registry, a start lock, SIGKILL escalation, and orphan reaping. Follow it.
-- **Credentials for a daemon-spawned `claude`.** Same user, same config, but nothing
-  interactive can be assumed on first run.
+  atomic registry, a start lock, SIGKILL escalation, and orphan reaping. Follow it. Two
+  specifics it has to cover: `session.pid` can no longer be the spawner's PID
+  (`recoverStaleSessions` pauses sessions whose PID is dead — point it at the serve daemon
+  and crashed sessions look alive forever, while restarting serve mass-pauses all of
+  them), and `stopServerIfIdle()` becomes a self-SIGTERM when `finalizeSession` runs
+  inside serve.
+- **Credentials for a daemon-spawned `claude`.** Resolved by spike (see issue #207): a
+  detached, no-tty, `stdio:"ignore"` `claude` authenticates against the macOS login
+  keychain without prompting. The one requirement is `USER` in the environment — without
+  it the process cannot resolve the keychain and reports `Not logged in · Please run
+  /login`, which misreads as expired auth. The spawn path must construct an explicit env
+  rather than inherit one, and fail loudly on a missing `USER`.
 
 Multiple browser tabs on one dashboard-created session still negotiate `min()` across
 their claims — which is correct, and unlike the terminal case it's fixable by closing a

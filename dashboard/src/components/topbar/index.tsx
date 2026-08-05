@@ -10,7 +10,6 @@ export const TopBar = () => {
       <Text size={2} weight="bold" mr={4}>
         bertrand
       </Text>
-      <Text render={<Link to="/">Home</Link>} size={-1} weight="medium" />
       <Text
         render={<Link to="/sessions">Sessions</Link>}
         size={-1}
