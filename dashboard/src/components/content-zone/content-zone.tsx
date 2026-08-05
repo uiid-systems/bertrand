@@ -1,12 +1,7 @@
 import { Group, Stack, Text, type GroupProps } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
-/**
- * Height of a zone's trigger bar. The main area's zones collapse by shrinking
- * their resizable panel down to exactly this, so the bar stays visible (and
- * clickable) instead of disappearing — which is why the number has to be shared
- * with the panel's `collapsedSize`.
- */
+/** Height of a zone's trigger bar — the full height of a collapsed zone. */
 export const CONTENT_ZONE_HEADER_PX = 34;
 
 export type ContentZoneProps = React.PropsWithChildren<{
@@ -17,6 +12,20 @@ export type ContentZoneProps = React.PropsWithChildren<{
   actions?: React.ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * `flex` shorthand for the zone's slot in its parent column. The default is
+   * what a column of zones wants: absorb the leftover space while open, shrink
+   * to just the trigger bar while collapsed. Pass a value to cap an open zone's
+   * share when it has an open sibling.
+   */
+  flex?: string;
+  /**
+   * Keep the body mounted while collapsed, hidden with `display: none`, instead
+   * of unmounting it. Set this when mounting the body is expensive enough to be
+   * felt — the timeline re-parses markdown for every event it holds, so
+   * rebuilding it on each expand costs a visible pause on a long session.
+   */
+  keepMounted?: boolean;
   "data-slot"?: string;
   TriggerGroupProps?: GroupProps;
 }>;
@@ -30,13 +39,15 @@ export type ContentZoneProps = React.PropsWithChildren<{
  *   - the body **flexes** to fill the space rather than sizing to its content,
  *     because what goes in it (a terminal, a scrolling timeline) needs a real
  *     height to lay itself out against;
- *   - open state is **controlled by the caller**, because these zones collapse
- *     by shrinking a `ResizablePanel` — dragging the split closed and clicking
- *     the chevron have to end up in the same state.
+ *   - the zone is itself a **flex item**, sized by `flex` rather than by its
+ *     content, so a column of these divides the height between them: collapsing
+ *     one hands its space to whatever is still open, with no measuring or
+ *     imperative resizing involved.
  *
- * Children are only rendered while open, so a collapsed zone holds no live
- * resources (a collapsed terminal detaches from its session rather than sitting
- * on an idle websocket).
+ * By default children are only rendered while open, so a collapsed zone holds no
+ * live resources — a collapsed terminal detaches from its session rather than
+ * sitting on an idle websocket. Bodies that are expensive to build rather than
+ * expensive to keep should opt into `keepMounted` instead.
  */
 export const ContentZone = ({
   title,
@@ -44,16 +55,25 @@ export const ContentZone = ({
   actions,
   open,
   onOpenChange,
+  flex,
+  keepMounted,
   "data-slot": dataSlot,
   TriggerGroupProps,
   children,
 }: ContentZoneProps) => (
   <Stack
     data-slot={dataSlot}
+    data-open={open ? "" : undefined}
     ax="stretch"
     fullwidth
-    fullheight
-    style={{ minHeight: 0, overflow: "hidden" }}
+    style={{
+      // `1 1 0` rather than `1 1 auto` so an open zone's size comes from the
+      // column, not from how tall its content happens to be — a timeline of 200
+      // events must not push the terminal off the bottom.
+      flex: flex ?? (open ? "1 1 0" : "0 0 auto"),
+      minHeight: 0,
+      overflow: "hidden",
+    }}
   >
     <Group
       className="content-zone-trigger"
@@ -82,8 +102,18 @@ export const ContentZone = ({
       </Group>
     </Group>
 
-    {open && (
-      <Stack ax="stretch" fullwidth style={{ flex: 1, minHeight: 0 }}>
+    {(open || keepMounted) && (
+      <Stack
+        ax="stretch"
+        fullwidth
+        style={{
+          flex: 1,
+          minHeight: 0,
+          // A kept-mounted body is taken out of layout rather than unmounted, so
+          // reopening the zone costs a repaint instead of a full rebuild.
+          display: open ? undefined : "none",
+        }}
+      >
         {children}
       </Stack>
     )}
