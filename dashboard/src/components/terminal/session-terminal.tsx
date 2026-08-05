@@ -278,10 +278,27 @@ export const SessionTerminal = ({
     socket.send(JSON.stringify({ t: "unclaim" }));
   }, []);
 
+  /**
+   * Whether the next geometry change is one this view asked for by taking or
+   * giving back authority — in which case it needs no repaint request. A real
+   * resize makes the TUI repaint on its own; the request exists for when it
+   * might not, and upstream answers one by resizing twice, which is visible as a
+   * one-row flinch. Not worth paying on every focus change.
+   */
+  const fromHandoverRef = useRef(false);
+
   // Hands the PTY to whichever surface is being read; see ./use-sizing-authority.
+  const claimForAuthority = useCallback(() => {
+    fromHandoverRef.current = true;
+    claimNow();
+  }, [claimNow]);
+  const releaseForAuthority = useCallback(() => {
+    fromHandoverRef.current = true;
+    releaseClaim();
+  }, [releaseClaim]);
   const { held: hasAuthorityRef } = useSizingAuthority({
-    claim: claimNow,
-    release: releaseClaim,
+    claim: claimForAuthority,
+    release: releaseForAuthority,
   });
 
   /**
@@ -509,14 +526,20 @@ export const SessionTerminal = ({
               typeof frame.rows === "number"
             ) {
               const next = { cols: frame.cols, rows: frame.rows };
+              // Consumed whether or not the geometry actually moved, so a
+              // handover that changed nothing can't suppress a later repaint.
+              const fromHandover = fromHandoverRef.current;
+              fromHandoverRef.current = false;
               if (sameDims(next, dimsRef.current)) return;
               const isFirst = dimsRef.current === null;
               dimsRef.current = next;
               setDims(next);
               scheduleFit();
               // The relay already asks for a repaint when a browser attaches, so
-              // the first geometry needs no request — only later changes do.
-              if (isFirst) repaintedForRef.current = next;
+              // the first geometry needs no request — only later changes do, and
+              // not the ones this view caused by taking authority back, which
+              // would flinch a row on every focus change.
+              if (isFirst || fromHandover) repaintedForRef.current = next;
               else repaintLater(next);
             }
           } catch {
