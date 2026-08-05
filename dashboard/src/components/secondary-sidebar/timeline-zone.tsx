@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -28,6 +28,7 @@ import {
   type ConversationSegment,
 } from "../../lib/timeline/segments";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
+import { useZoneCollapse } from "../content-zone";
 
 export type TimelineZoneProps = {
   /** The session the sidebar belongs to — its timeline is the one we index. */
@@ -49,6 +50,17 @@ function scrollTimeline(to: "top" | "bottom") {
   el.scrollTo({ top: to === "top" ? 0 : el.scrollHeight });
 }
 
+/**
+ * Whether the timeline currently occupies space. Its zone collapses by hiding
+ * the body with `display: none`, which leaves every card in the DOM but gives it
+ * no layout box — so `getElementById` still finds an anchor while scrolling to it
+ * silently does nothing. Zero client rects is the tell.
+ */
+function timelineIsLaidOut() {
+  const el = document.getElementById(SCROLL_ID);
+  return !!el && el.getClientRects().length > 0;
+}
+
 /** Scroll to an anchor; fall back to the top if it isn't mounted. Instant, not
  * smooth — smooth-scrolling inside the nested timeline container is unreliable. */
 function jumpTo(anchorId: string) {
@@ -68,6 +80,9 @@ function jumpTo(anchorId: string) {
  * show a count) jump to the top/bottom of the timeline. Reads the same
  * `segmentConversations` selector the timeline renders from — the events query
  * is shared through the react-query cache, so this adds no fetch.
+ *
+ * Any of those jumps will expand the main timeline zone first if the reader has
+ * it collapsed, so a row never looks inert.
  */
 export const TimelineZone = ({
   sessionId,
@@ -79,6 +94,37 @@ export const TimelineZone = ({
   );
   const segments = useMemo(() => segmentConversations(rawEvents), [rawEvents]);
   const settled = useSettledKeys(rawEvents, (e) => e.id);
+
+  // Same module-level store the main area's timeline zone reads, so this can
+  // reopen it: an index whose rows do nothing because the thing they index is
+  // collapsed is worse than useless.
+  const { setOpen: setTimelineOpen } = useZoneCollapse("timeline");
+  const [pendingScroll, setPendingScroll] = useState<(() => void) | null>(null);
+
+  // Expanding is a state change, so the timeline has no layout box to scroll
+  // within until that has been committed and laid out — one frame's grace.
+  useEffect(() => {
+    if (!pendingScroll) return;
+    const frame = requestAnimationFrame(() => {
+      pendingScroll();
+      setPendingScroll(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingScroll]);
+
+  const scrollTimelineTo = useCallback(
+    (scroll: () => void) => {
+      if (timelineIsLaidOut()) return scroll();
+      setTimelineOpen(true);
+      setPendingScroll(() => scroll);
+    },
+    [setTimelineOpen],
+  );
+
+  const jump = useCallback(
+    (anchorId: string) => scrollTimelineTo(() => jumpTo(anchorId)),
+    [scrollTimelineTo],
+  );
 
   const cardCount = segments.reduce((n, s) => n + s.events.length, 0);
   if (cardCount === 0) return null;
@@ -104,7 +150,7 @@ export const TimelineZone = ({
             shape="square"
             aria-label="Jump to top of timeline"
             tooltip="Jump to top"
-            onClick={() => scrollTimeline("top")}
+            onClick={() => scrollTimelineTo(() => scrollTimeline("top"))}
           >
             <ArrowUpToLineIcon size={13} />
           </Button>
@@ -114,7 +160,7 @@ export const TimelineZone = ({
             shape="square"
             aria-label="Jump to bottom of timeline"
             tooltip="Jump to bottom"
-            onClick={() => scrollTimeline("bottom")}
+            onClick={() => scrollTimelineTo(() => scrollTimeline("bottom"))}
           >
             <ArrowDownToLineIcon size={13} />
           </Button>
@@ -130,6 +176,7 @@ export const TimelineZone = ({
               segment={seg}
               grouped={grouped}
               settled={settled}
+              onJump={jump}
             />
           ),
         )}
@@ -145,10 +192,13 @@ const ConversationToc = ({
   segment,
   grouped,
   settled,
+  onJump,
 }: {
   segment: ConversationSegment;
   grouped: boolean;
   settled: SettledKeys<EventRow["id"]>;
+  /** Scrolls the main timeline to an anchor, expanding its zone if collapsed. */
+  onJump: (anchorId: string) => void;
 }) => (
   <Stack gap={1} fullwidth ax="stretch">
     {grouped && (
@@ -158,14 +208,9 @@ const ConversationToc = ({
         gap={2}
         fullwidth
         style={{ cursor: "pointer" }}
-        onClick={() => jumpTo(segment.anchorId)}
+        onClick={() => onJump(segment.anchorId)}
       >
-        <Text
-          className="timeline-toc-title"
-          size={-1}
-          weight="bold"
-          truncate
-        >
+        <Text className="timeline-toc-title" size={-1} weight="bold" truncate>
           {segment.title ?? `Conversation ${segment.ordinal}`}
         </Text>
       </Group>
@@ -176,6 +221,7 @@ const ConversationToc = ({
           key={event.id}
           event={event}
           isNew={isFreshKey(settled, event.id)}
+          onJump={onJump}
         />
       ))}
     </Stack>
@@ -189,14 +235,22 @@ ConversationToc.displayName = "ConversationToc";
  * (tool calls · reads · file diffs) mirroring the main card's readout, so the
  * folded work is legible from the index too.
  */
-const TocRow = ({ event, isNew }: { event: EventRow; isNew: boolean }) => (
+const TocRow = ({
+  event,
+  isNew,
+  onJump,
+}: {
+  event: EventRow;
+  isNew: boolean;
+  onJump: (anchorId: string) => void;
+}) => (
   <Stack
     className="timeline-toc-item"
     gap={0}
     fullwidth
     ax="stretch"
     style={{ cursor: "pointer" }}
-    onClick={() => jumpTo(eventAnchorId(event))}
+    onClick={() => onJump(eventAnchorId(event))}
   >
     <Group ay="center" gap={2} fullwidth>
       <TocTitle event={event} isNew={isNew} />
