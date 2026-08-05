@@ -29,7 +29,15 @@ function RootLayout() {
         style={{ position: "fixed", inset: 0, height: "100dvh" }}
       >
         <TopBar />
-        <Stack fullwidth style={{ flex: 1, overflow: "auto" }}>
+        {/* Reserve the scrollbar's space whether or not it's showing. A dev page
+            that measures its own boxes (the terminal harness derives a character
+            grid from one) must not have their width depend on how tall the page
+            happens to be — otherwise content crossing the scroll threshold
+            narrows the box, which changes the content, which uncrosses it. */}
+        <Stack
+          fullwidth
+          style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable" }}
+        >
           <Outlet />
         </Stack>
       </Stack>

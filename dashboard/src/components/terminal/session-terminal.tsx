@@ -102,6 +102,23 @@ export interface TerminalDiagnostics {
    * why it's worth surfacing here.
    */
   sizingAuthority: "claimed" | "released";
+  /**
+   * The box the grid is measured from, and what that measurement currently
+   * proposes. Together with `claimsSent` these separate the three ways a grid can
+   * end up oscillating, which look identical from the outside:
+   *
+   *   - `box*` moving on its own → layout feedback, the container's width or
+   *     height depending on something the terminal itself changes (a scrollbar
+   *     appearing, a sibling growing);
+   *   - `box*` steady but `claimsSent` climbing → the fit path re-asking for a
+   *     grid it already has;
+   *   - both steady but the reported grid moving → churn upstream, not here.
+   */
+  boxWidth: number;
+  boxHeight: number;
+  proposed: Dims | null;
+  /** Claims actually put on the wire, so a re-asking loop is visible as a rate. */
+  claimsSent: number;
 }
 
 export type SessionTerminalProps = {
@@ -170,6 +187,7 @@ export const SessionTerminal = ({
     hostWheelEvents: 0,
     xtermWheelEvents: 0,
     retries: 0,
+    claimsSent: 0,
   });
 
   /**
@@ -210,6 +228,7 @@ export const SessionTerminal = ({
       if (socket?.readyState !== WebSocket.OPEN) return;
       claimRef.current = next;
       setClaim(next);
+      diagnosticsRef.current.claimsSent += 1;
       socket.send(JSON.stringify({ t: "claim", ...next }));
     };
     // On attach there is nothing to debounce and every millisecond of waiting is
@@ -349,6 +368,11 @@ export const SessionTerminal = ({
         socketState: socket ? SOCKET_STATES[socket.readyState] ?? "closed" : "none",
         focused: host.contains(document.activeElement),
         sizingAuthority: hasAuthorityRef.current ? "claimed" : "released",
+        boxWidth: host.clientWidth,
+        boxHeight: host.clientHeight,
+        // Measured here rather than remembered from the last fit, so this shows
+        // what the box would ask for right now even if no fit has run.
+        proposed: fitRef.current ? proposeDims(fitRef.current) : null,
         ...diagnosticsRef.current,
       });
     };

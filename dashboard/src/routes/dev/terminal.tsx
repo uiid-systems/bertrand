@@ -46,8 +46,16 @@ function TerminalDevPage() {
   );
   const active = FRAMES[frame];
 
+  // The scrollbar gutter is reserved for the same reason as the dev shell's
+  // scroller in __root.tsx: the frame below is sized in percent, so its width
+  // must not depend on whether this page is currently tall enough to scroll.
   return (
-    <Stack gap={4} p={6} fullwidth style={{ overflow: "auto" }}>
+    <Stack
+      gap={4}
+      p={6}
+      fullwidth
+      style={{ overflow: "auto", scrollbarGutter: "stable" }}
+    >
       <Stack gap={2}>
         <Text size={3} weight="bold">
           Terminal relay
@@ -187,11 +195,18 @@ const ScrollDiagnostics = ({
           socket: {d.socketState} · focus: {d.focused ? "yes" : "no"} · retries:{" "}
           {d.retries}
         </Text>
-        {/* Only ever "released" while this page is unread, so it can't be
-            observed by watching it — switch away and back, or read it in a
-            visible-but-unfocused window, where the poll keeps updating. */}
+        {/* Sizing, on one line: authority ("released" only ever happens while
+            this page is unread, so switch away and back — or watch it in a
+            visible-but-unfocused window, where the poll keeps updating), the box
+            the grid is measured from, what it proposes, and how many claims have
+            gone out. A grid that won't settle shows up here as one of these
+            moving: the box (layout feedback), the claim count (the fit path
+            re-asking), or neither (churn upstream). */}
         <Text size={1} family="mono">
-          sizing: {d.sizingAuthority}
+          sizing: {d.sizingAuthority} · box: {d.boxWidth}×{d.boxHeight}px ·
+          proposes:{" "}
+          {d.proposed ? `${d.proposed.cols}×${d.proposed.rows}` : "—"} · claims
+          sent: {d.claimsSent}
         </Text>
         <Text size={1} shade="muted">
           input — {typingVerdict}
