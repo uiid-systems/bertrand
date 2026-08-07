@@ -28,6 +28,11 @@ import type { Server, ServerWebSocket } from "bun";
  *   - `{t:"repaint"}` — force a full redraw upstream. The relay sends one when a
  *     browser attaches partway through a session, and forwards one a browser
  *     asks for after a resize it claimed.
+ *   - `{t:"ended",exitCode}` — upstream reports that the session's process has
+ *     exited. Browsers stay connected when upstream disconnects, so without
+ *     this an ended session is indistinguishable from a quiet one: the terminal
+ *     keeps its last frame, still looks attached, and swallows every keystroke.
+ *     Only upstream may send it, for the same reason it alone may send `dims`.
  *
  * Geometry is negotiated rather than owned outright, but upstream stays the
  * single source of truth: a claim is only a *request*, and browsers learn the
@@ -57,7 +62,8 @@ export type TerminalControlFrame =
   | { t: "claim"; cols: number; rows: number }
   | { t: "unclaim" }
   | { t: "setsize"; cols: number | null; rows: number | null }
-  | { t: "repaint" };
+  | { t: "repaint" }
+  | { t: "ended"; exitCode: number };
 
 /**
  * How much recent PTY output to replay to an attaching browser. Enough to
@@ -196,6 +202,14 @@ function parseControlFrame(raw: string): TerminalControlFrame | null {
     }
     if (parsed?.t === "unclaim") return { t: "unclaim" };
     if (parsed?.t === "repaint") return { t: "repaint" };
+    if (parsed?.t === "ended") {
+      // A missing/garbled code still means "ended" — the fact of the exit is
+      // what stops a browser waiting forever; the number is only for display.
+      return {
+        t: "ended",
+        exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : 0,
+      };
+    }
     return null;
   } catch {
     // Ignore malformed control frames rather than tearing down the relay.
@@ -260,7 +274,16 @@ export const terminalWebSocketHandlers = {
     if (role === "upstream") {
       if (typeof message === "string") {
         const frame = parseControlFrame(message);
-        if (!frame || frame.t !== "dims") return;
+        if (!frame) return;
+        // Forwarded verbatim so browsers can stop waiting on a session whose
+        // process is gone. Nothing is remembered: a browser that attaches
+        // afterwards has no live socket to have missed this on, and reads the
+        // ended state from the session row instead.
+        if (frame.t === "ended") {
+          ws.publish(outputTopic(sessionId), message);
+          return;
+        }
+        if (frame.t !== "dims") return;
         const state = stateFor(sessionId);
         state.cols = frame.cols;
         state.rows = frame.rows;

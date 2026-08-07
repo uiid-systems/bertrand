@@ -35,6 +35,13 @@ export interface TerminalRelayClient {
   /** Reports the geometry actually applied to the PTY so browsers can match it. */
   sendDims(cols: number, rows: number): void;
   /**
+   * Tells attached browsers the session's process has exited, so they can show
+   * an ended state instead of a terminal that looks live. Send it *before*
+   * `close()` — browsers keep their sockets when upstream disconnects, so this
+   * is the only notice they get.
+   */
+  sendEnded(exitCode: number): void;
+  /**
    * Resolves once the connection has settled — either open, or unreachable for
    * long enough that a caller shouldn't keep waiting on it. Output bytes handed
    * to `send` before that are dropped rather than queued (a browser that hasn't
@@ -179,6 +186,14 @@ export function connectTerminalRelay(opts: ConnectTerminalRelayOptions): Termina
       lastDims = { cols, rows };
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "dims", cols, rows }));
+      }
+    },
+    sendEnded(exitCode) {
+      // Best-effort and deliberately not queued for a reconnect: if the socket
+      // is down at exit there is no session left to reattach to, and a browser
+      // in that situation learns from the session row instead.
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: "ended", exitCode }));
       }
     },
     close() {
