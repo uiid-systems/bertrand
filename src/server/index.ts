@@ -2,7 +2,11 @@ import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
-import { spawnDashboardSession, stopDashboardSession } from "@/engine/dashboard-session"
+import {
+  DashboardSessionLimitError,
+  spawnDashboardSession,
+  stopDashboardSession,
+} from "@/engine/dashboard-session"
 import { recoverStaleSessions } from "@/engine/recovery"
 import {
   getMainWorktree,
@@ -460,6 +464,12 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     })
     return Response.json(result)
   } catch (err) {
+    // At capacity is a client-visible condition with a retry story, not a
+    // server fault — 503 so a UI can say "too many sessions" rather than
+    // surfacing an opaque 500.
+    if (err instanceof DashboardSessionLimitError) {
+      return Response.json({ error: err.message, limit: err.limit }, { status: 503 })
+    }
     return Response.json({ error: (err as Error).message }, { status: 500 })
   }
 }
