@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/uiid-systems/bertrand/compare/v0.35.0...v0.35.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **dashboard:** let stale service workers die instead of serving a mangled UI ([#221](https://github.com/uiid-systems/bertrand/issues/221)) ([d20d0f2](https://github.com/uiid-systems/bertrand/commit/d20d0f2554c9ab3d4a463d3c3ba5f6445ce07c50))
+
 ## [0.35.0](https://github.com/uiid-systems/bertrand/compare/v0.34.0...v0.35.0) (2026-08-07)
 
 
