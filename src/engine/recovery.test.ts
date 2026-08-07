@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { randomUUID } from "crypto";
 import { mkdtempSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -26,6 +27,9 @@ migrate(drizzle(sqlite), {
 const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession, updateSession } = await import(
   "@/db/queries/sessions"
+);
+const { createConversation, getConversation } = await import(
+  "@/db/queries/conversations"
 );
 const { recoverStaleSessions } = await import("./recovery");
 
@@ -53,6 +57,29 @@ describe("recoverStaleSessions", () => {
     expect(row.status).toBe("paused");
     expect(row.pid).toBeNull();
     expect(row.pidStartedAt).toBeNull();
+  });
+
+  test("runs the same bookkeeping as a clean exit", async () => {
+    // Recovery routes through finalizeSessionRow, so a crashed session gets
+    // an end time like any other. Before #209 it was paused without one,
+    // which left its duration stats wrong forever.
+    const id = makeSession({ pid: DEAD_PID, pidStartedAt: Date.now() });
+    await recoverStaleSessions();
+    expect(getSession(id)!.endedAt).toBeTruthy();
+  });
+
+  test("ends the session's most recent conversation", async () => {
+    const id = makeSession({ pid: DEAD_PID, pidStartedAt: Date.now() });
+    const convId = randomUUID();
+    createConversation({ id: convId, sessionId: id });
+    await recoverStaleSessions();
+    expect(getConversation(convId)!.endedAt).toBeTruthy();
+  });
+
+  test("finalizes a session that has no conversation rows", async () => {
+    const id = makeSession({ pid: DEAD_PID, pidStartedAt: Date.now() });
+    await recoverStaleSessions();
+    expect(getSession(id)!.status).toBe("paused");
   });
 
   test("leaves a genuinely live session alone", async () => {
