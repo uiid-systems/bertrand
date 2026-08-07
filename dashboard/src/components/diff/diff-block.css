@@ -46,28 +46,14 @@
     ) !important;
   }
 
-  /* Diff lines tint the gutter to match the line bg. */
-  .bertrand-diff-block .shiki .line.diff.add .diff-num {
-    background-color: light-dark(
-      color-mix(in oklch, var(--color-green-500) 18%, transparent),
-      color-mix(in oklch, var(--color-green-500) 22%, transparent)
-    ) !important;
-  }
-
-  .bertrand-diff-block .shiki .line.diff.remove .diff-num {
-    background-color: light-dark(
-      color-mix(in oklch, var(--color-red-500) 18%, transparent),
-      color-mix(in oklch, var(--color-red-500) 22%, transparent)
-    ) !important;
-  }
-
-  /* Blank cells (the absent number on an add/remove line) keep the neutral
-   * gutter bg so the diff tint only marks the present column. */
-  .bertrand-diff-block .shiki .line .diff-num.diff-num-blank {
-    background-color: light-dark(
-      color-mix(in oklch, var(--globals-foreground) 4%, transparent),
-      color-mix(in oklch, var(--globals-foreground) 6%, transparent)
-    ) !important;
+  /* Diff lines tint the whole gutter, including the cell whose number is
+   * absent, so the tint reads as one band across the row. The hue is not named
+   * here — the line transformer stamps a `.palette-<hue>` class on each diff
+   * row and this reads the slots it publishes. `--palette-tint-hover` is one
+   * step up from the row's own `--palette-tint`, which is what separates the
+   * gutter from the code. */
+  .bertrand-diff-block .shiki .line.diff .diff-num {
+    background-color: var(--palette-tint-hover) !important;
   }
 
   .bertrand-diff-block .shiki .line .diff-num-old {
@@ -93,43 +79,26 @@
     border-inline: 1px solid var(--globals-border-color);
   }
 
-  .bertrand-diff-block .shiki .line.diff.add .diff-marker {
-    color: var(--color-green-500-foreground);
-    border-inline-color: light-dark(
-      color-mix(in oklch, var(--color-green-500) 18%, transparent),
-      color-mix(in oklch, var(--color-green-500) 22%, transparent)
-    );
+  /* The `!important` on `color` is load-bearing, not stylistic: the DS ships
+   * `.shiki-theme .shiki span { color: ... !important }` into this same layer,
+   * and within one layer an `!important` declaration beats a normal one at any
+   * specificity. Unflagged, this never reaches the marker and it renders in the
+   * default code foreground. `border-inline-color` has no such competitor. */
+  .bertrand-diff-block .shiki .line.diff .diff-marker {
+    color: var(--palette-on-tint) !important;
+    border-inline-color: var(--palette-tint-border);
   }
 
-  .bertrand-diff-block .shiki .line.diff.remove .diff-marker {
-    color: var(--color-red-500-foreground);
-    border-inline-color: light-dark(
-      color-mix(in oklch, var(--color-red-500) 18%, transparent),
-      color-mix(in oklch, var(--color-red-500) 22%, transparent)
-    );
+  .bertrand-diff-block .shiki .line.diff {
+    background-color: var(--palette-tint) !important;
   }
 
-  .bertrand-diff-block .shiki .line.diff.add {
-    background-color: var(--color-green-500-surface) !important;
-  }
-
-  .bertrand-diff-block .shiki .line.diff.remove {
-    background-color: var(--color-red-500-surface) !important;
-  }
-
-  .bertrand-diff-block .shiki .line .diff-word.add {
-    background-color: light-dark(
-      color-mix(in oklch, var(--color-green-500) 55%, transparent),
-      color-mix(in oklch, var(--color-green-500) 60%, transparent)
-    ) !important;
-    border-radius: 2px;
-  }
-
-  .bertrand-diff-block .shiki .line .diff-word.remove {
-    background-color: light-dark(
-      color-mix(in oklch, var(--color-red-500) 55%, transparent),
-      color-mix(in oklch, var(--color-red-500) 60%, transparent)
-    ) !important;
+  /* Intra-line word highlight. `--palette-tint-border` is the strongest slot in
+   * the tint family, so it reads as a band against the row's `--palette-tint`
+   * without going solid — `--palette-fill` would need its own text colour to
+   * stay legible, and shiki owns the token colours here. */
+  .bertrand-diff-block .shiki .line .diff-word {
+    background-color: var(--palette-tint-border) !important;
     border-radius: 2px;
   }
 
