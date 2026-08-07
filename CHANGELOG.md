@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.34.0](https://github.com/uiid-systems/bertrand/compare/v0.33.0...v0.34.0) (2026-08-05)
+
+
+### Features
+
+* **dashboard:** give the PTY to whichever surface is being read ([#206](https://github.com/uiid-systems/bertrand/issues/206)) ([d7111ff](https://github.com/uiid-systems/bertrand/commit/d7111ff4687ffc0bd72d6e3ff231b447b6c2a9c3))
+* **server:** run a bertrand session entirely in the dashboard ([#208](https://github.com/uiid-systems/bertrand/issues/208)) ([271e4a1](https://github.com/uiid-systems/bertrand/commit/271e4a1d925d7c138abf401e45891e3e81369f1a))
+
+
+### Bug Fixes
+
+* **dashboard:** bump design-system to 0.1.0 for Number component ([20f3d8d](https://github.com/uiid-systems/bertrand/commit/20f3d8df6d3fccef754186595293c1dbee239249))
+
 ## [0.33.0](https://github.com/uiid-systems/bertrand/compare/v0.32.0...v0.33.0) (2026-08-04)
 
 
