@@ -56,10 +56,10 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   lineHeight: 1.5,
   padding: 12,
   minHeight: 280,
-  border: "1px solid var(--color-border)",
+  border: "1px solid var(--globals-border-color)",
   borderRadius: 4,
-  background: "var(--color-surface)",
-  color: "var(--color-text)",
+  background: "var(--shade-surface)",
+  color: "var(--shade-foreground)",
   resize: "vertical",
 };
 
@@ -96,10 +96,10 @@ function DiffDevPage() {
             style={{
               fontSize: 12,
               padding: "4px 8px",
-              border: "1px solid var(--color-border)",
+              border: "1px solid var(--globals-border-color)",
               borderRadius: 4,
-              background: "var(--color-surface)",
-              color: "var(--color-text)",
+              background: "var(--shade-surface)",
+              color: "var(--shade-foreground)",
             }}
           >
             {LANGUAGES.map(([value, label]) => (

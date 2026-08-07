@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { CodeBlock, getHighlighter, loadLanguage } from "@uiid/design-system";
+import {
+  CodeBlock,
+  getHighlighter,
+  loadLanguage,
+  paletteColorStyles,
+} from "@uiid/design-system";
 import type { BundledLanguage } from "@uiid/design-system";
 import { diffLines, diffWordsWithSpace } from "diff";
 
@@ -31,6 +36,15 @@ type DiffBlockProps = {
 };
 
 type LineKind = "context" | "add" | "remove" | "separator";
+
+// The hue a diff row is tinted with rides on a `.palette-<hue>` class rather
+// than being named in diff-block.css, so the viewer cannot drift from any
+// other component tinted the same hue. It has to sit on the row itself: one
+// diff shows green and red at once, so a shared ancestor could carry only one.
+const DIFF_HUE: Record<"add" | "remove", string> = {
+  add: paletteColorStyles.green,
+  remove: paletteColorStyles.red,
+};
 
 type Decoration = {
   start: { line: number; character: number };
@@ -295,7 +309,7 @@ export function DiffBlock({
               const kind = lineKinds[idx];
               const nums = lineNums[idx]!;
               if (kind === "add" || kind === "remove") {
-                addClass(node, `diff ${kind}`);
+                addClass(node, `diff ${kind} ${DIFF_HUE[kind]}`);
               } else if (kind === "separator") {
                 addClass(node, "diff-separator");
                 // Separator rows: no +/- marker, no line numbers. The row
@@ -316,20 +330,19 @@ export function DiffBlock({
                 kind === "add" ? "+" : kind === "remove" ? "-" : " ";
               // GitHub-style two-column gutter: old# on the left, new# on the
               // right. Add lines blank the old col, remove lines blank the new
-              // col, context shows both. Blank cells get .diff-num-blank so
-              // CSS can render them with the neutral gutter bg, not the line
-              // tint.
-              const oldCls =
-                "diff-num diff-num-old" +
-                (nums.old == null ? " diff-num-blank" : "");
-              const newCls =
-                "diff-num diff-num-new" +
-                (nums.new == null ? " diff-num-blank" : "");
-              // Empty number cells get nbsp (same trick as the empty marker)
-              // so the inline-block renders with its background.
+              // col, context shows both. A blank cell needs no class of its
+              // own — it carries the row's gutter tint like any other cell.
+              // Empty cells get nbsp (same trick as the empty marker) so the
+              // inline-block still renders with its background.
               const prepend = [
-                gutterSpan(oldCls, nums.old != null ? String(nums.old) : " "),
-                gutterSpan(newCls, nums.new != null ? String(nums.new) : " "),
+                gutterSpan(
+                  "diff-num diff-num-old",
+                  nums.old != null ? String(nums.old) : " ",
+                ),
+                gutterSpan(
+                  "diff-num diff-num-new",
+                  nums.new != null ? String(nums.new) : " ",
+                ),
                 gutterSpan(markerCls, markerText),
               ];
               node.children.unshift(...prepend);
