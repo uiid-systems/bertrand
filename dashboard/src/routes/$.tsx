@@ -190,6 +190,24 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
     return null;
   }, [rawEvents]);
 
+  // Conversations the exit panel can resume into, newest first. Derived from
+  // the segments the timeline already built rather than a new endpoint.
+  // `segmentConversations` groups legacy null conversation_ids under the
+  // sentinel "unknown", which is not an id the server could resolve — those
+  // rows are droppable here because resuming into one is not a thing.
+  const resumable = useMemo(
+    () =>
+      segments
+        .filter((s) => s.conversationId !== "unknown")
+        .map((s) => ({
+          conversationId: s.conversationId,
+          ordinal: s.ordinal,
+          title: s.title,
+        }))
+        .reverse(),
+    [segments],
+  );
+
   // Deep-link support: once segments render, honour a #conversation-… hash so
   // a shared link scrolls to the right chapter (native fragment scrolling
   // misses because the anchors mount after this async data resolves).
@@ -236,6 +254,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
                     categoryPath={match.categoryPath}
                     exitCode={exitCode}
                     conversationCount={segments.length}
+                    conversations={resumable}
                     project={projectSlug}
                   />
                 )

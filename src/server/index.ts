@@ -5,6 +5,7 @@ import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import {
   DashboardSessionLimitError,
   spawnDashboardSession,
+  resumeDashboardSession,
   stopDashboardSession,
 } from "@/engine/dashboard-session"
 import { recoverStaleSessions } from "@/engine/recovery"
@@ -482,6 +483,91 @@ async function handleSwitchProject(req: Request): Promise<Response> {
 }
 
 /**
+ * Every way a resume can be refused, and what the browser should be told.
+ *
+ * Each carries a message the user can act on. "At capacity" especially: it is
+ * a real, temporary, self-inflicted condition with an obvious remedy, and
+ * surfacing it as an opaque 500 would leave someone staring at a dead button
+ * with no idea that stopping another session fixes it.
+ */
+const RESUME_ERROR: Record<string, { status: number; message: string }> = {
+  "not-found": { status: 404, message: "Session not found" },
+  "conversation-not-found": {
+    status: 404,
+    message: "That conversation does not belong to this session",
+  },
+  "already-running": {
+    status: 409,
+    message: "This session is already running — attach to it instead",
+  },
+  "no-cwd": {
+    status: 409,
+    message:
+      "Cannot tell which directory this session ran in, or it no longer exists. " +
+      "Resume it from the CLI in the right directory.",
+  },
+}
+
+/**
+ * Resume a session under the server's ownership (#214). Body may carry a
+ * `conversationId` to continue; omitted starts a new conversation under the
+ * same session, matching the TUI resume picker's "+ New conversation".
+ */
+async function handleResumeSession(id: string, req: Request): Promise<Response> {
+  // An empty body is legitimate here — it means "new conversation" — so a
+  // failed parse is not an error the way it is for rating.
+  let body: { conversationId?: unknown } = {}
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    body = {}
+  }
+
+  const { conversationId } = body
+  if (conversationId !== undefined && typeof conversationId !== "string") {
+    return Response.json(
+      { error: "conversationId must be a string when provided" },
+      { status: 400 },
+    )
+  }
+
+  const result = resumeDashboardSession({ sessionId: id, conversationId })
+  if (result.ok) {
+    return Response.json({
+      sessionId: result.sessionId,
+      claudeId: result.claudeId,
+      pid: result.pid,
+    })
+  }
+
+  if (result.reason === "at-capacity") {
+    return Response.json(
+      {
+        // Phrased against the limit rather than a live count: they are equal
+        // whenever this fires, and naming the limit still reads correctly if
+        // the cap is configured to 0.
+        error:
+          `Already at the limit of ${result.limit} concurrent dashboard ` +
+          `sessions. Stop one before resuming this session, or raise ` +
+          `BERTRAND_MAX_DASHBOARD_SESSIONS.`,
+        reason: result.reason,
+        limit: result.limit,
+      },
+      { status: 503 },
+    )
+  }
+
+  const meta = RESUME_ERROR[result.reason] ?? {
+    status: 400,
+    message: "Could not resume this session",
+  }
+  return Response.json(
+    { error: meta.message, reason: result.reason },
+    { status: meta.status },
+  )
+}
+
+/**
  * Spawn a session whose PTY this server owns (issue #207). Unlike a
  * CLI-started session there is no terminal involved at all — the caller
  * supplies the cwd, and the browser that attaches becomes the sole sizing
@@ -826,6 +912,12 @@ export function startServer(port = PORT) {
         const rateMatch = /^\/api\/sessions\/([^/]+)\/rating$/.exec(url.pathname)
         if (rateMatch) {
           const r = await handleRateSession(rateMatch[1]!, url, req)
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
+        const resumeMatch = /^\/api\/sessions\/([^/]+)\/resume$/.exec(url.pathname)
+        if (resumeMatch) {
+          const r = await handleResumeSession(resumeMatch[1]!, req)
           r.headers.set("Access-Control-Allow-Origin", "*")
           return r
         }

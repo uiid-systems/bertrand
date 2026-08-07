@@ -101,6 +101,28 @@ export const discardSession = (id: string, project?: string): Promise<{ ok: true
     `/api/sessions/${id}/discard${projectParam(project)}`,
   )
 
+export type ResumeSessionResult = {
+  sessionId: string
+  claudeId: string
+  pid: number
+}
+
+/**
+ * Resume a session under the server's ownership. Omitting `conversationId`
+ * starts a new conversation under the same session.
+ *
+ * Not project-scoped: resuming spawns a process the server has to own, and the
+ * server only ever spawns into its own active project.
+ */
+export const resumeSession = (
+  id: string,
+  conversationId?: string,
+): Promise<ResumeSessionResult> =>
+  postSessionActionJson<ResumeSessionResult>(`/api/sessions/${id}/resume`, {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(conversationId ? { conversationId } : {}),
+  })
+
 /**
  * Serialize a projects filter into a query string. `undefined` omits the param
  * entirely (server falls back to the active project); an array — including an

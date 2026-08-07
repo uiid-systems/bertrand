@@ -1,8 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToastManager } from "@uiid/design-system";
-import { rateSession, discardSession, SessionActionError } from "./queries";
+import {
+  rateSession,
+  discardSession,
+  resumeSession,
+  SessionActionError,
+} from "./queries";
 import type { SessionRow } from "./types";
 
+/**
+ * Reasons worth rewording for the browser. Anything absent here falls through
+ * to the server's own message, which is deliberate: `at-capacity`,
+ * `already-running` and `no-cwd` all arrive carrying a sentence that names the
+ * remedy, and replacing them with a generic string would throw that away.
+ */
 const REASON_MESSAGE: Record<string, string> = {
   "not-found": "Session not found",
   "out-of-range": "Rating must be between 1 and 5",
@@ -89,5 +100,20 @@ export function useSessionExitActions(
       }),
   });
 
-  return { rate, discard, describeError };
+  const resume = useMutation({
+    // `undefined` means "start a new conversation under this session".
+    mutationFn: (conversationId?: string) =>
+      resumeSession(session.id, conversationId),
+    onSuccess: () => {
+      // The session is live again. The route polls every 2s and swaps this
+      // panel for the terminal when it notices; invalidating makes that
+      // immediate rather than leaving the user looking at a stale exit panel.
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["events", session.id] });
+    },
+    // No toast: the failure is rendered inline in the panel, next to the button
+    // that caused it, where the remedy ("stop another session") is actionable.
+  });
+
+  return { rate, discard, resume, describeError };
 }

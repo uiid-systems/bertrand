@@ -104,11 +104,20 @@ export function getEdgeEventOfType(
   eventType: string,
   edge: "first" | "last",
 ): EventRow | undefined {
+  // `id` breaks ties in the same direction as the timestamp. `created_at` has
+  // one-second granularity, so two events of the same type inside one second
+  // are routinely tied — and an ascending tiebreak under a descending sort
+  // would return the *earliest* of them for edge "last", which is the opposite
+  // of what was asked for.
   return getDb()
     .select()
     .from(events)
     .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
-    .orderBy(edge === "first" ? events.createdAt : desc(events.createdAt), events.id)
+    .orderBy(
+      ...(edge === "first"
+        ? [events.createdAt, events.id]
+        : [desc(events.createdAt), desc(events.id)]),
+    )
     .limit(1)
     .get() as EventRow | undefined;
 }
