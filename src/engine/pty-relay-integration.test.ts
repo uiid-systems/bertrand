@@ -164,6 +164,82 @@ describe("PTY + relay integration", () => {
     await pty.exited;
   });
 
+  test("upstream connects to a server that only starts after the session did", async () => {
+    // Reserve a port and release it, so the relay client has a definite place
+    // to fail against before anything is listening there. This is the cold
+    // start: `ensureServerStarted` spawns a detached `bertrand serve` and the
+    // session connects before that process has bound its port. A client that
+    // gives up on the first refusal leaves the dashboard terminal blank for the
+    // entire life of an otherwise healthy session.
+    const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("ok") });
+    const port = probe.port;
+    probe.stop(true);
+
+    prevPort = process.env.BERTRAND_PORT;
+    process.env.BERTRAND_PORT = String(port);
+
+    const sessionId = "cold-start-session";
+
+    let relay: ReturnType<typeof connectTerminalRelay>;
+    const pty = spawnPty(["cat"], {
+      onData: (chunk) => relay.send(chunk),
+    });
+    relay = connectTerminalRelay({
+      sessionId,
+      onInput: (chunk) => pty.write(chunk),
+      onRepaint: () => {},
+      onSetSize: () => {},
+    });
+    // Geometry reported while unreachable: the relay never received it, so a
+    // reconnect has to re-report rather than assume the server still knows.
+    relay.sendDims(120, 40);
+
+    // Long enough to be refused several times over.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    server = Bun.serve({
+      port,
+      hostname: "127.0.0.1",
+      websocket: terminalWebSocketHandlers,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        const result = tryUpgradeTerminal(req, srv, url);
+        if (result !== false) return result;
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const binary: string[] = [];
+    const text: string[] = [];
+    const browser = new WebSocket(
+      `ws://127.0.0.1:${port}/ws/sessions/${sessionId}/terminal?role=browser`,
+    );
+    browser.binaryType = "arraybuffer";
+    browser.onmessage = (event) => {
+      if (typeof event.data === "string") text.push(event.data);
+      else binary.push(Buffer.from(event.data as ArrayBuffer).toString());
+    };
+    await waitOpen(browser);
+
+    // Clear of the backoff the client has escalated to by now.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    pty.write("printed after the server came up\n");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(binary.join("")).toContain("printed after the server came up");
+    expect(text.map((frame) => JSON.parse(frame))).toContainEqual({
+      t: "dims",
+      cols: 120,
+      rows: 40,
+    });
+
+    relay.close();
+    browser.close();
+    pty.kill();
+    await pty.exited;
+  });
+
   test("a browser can take PTY sizing over, is capped by the local terminal, and releases it", async () => {
     server = Bun.serve({
       port: 0,

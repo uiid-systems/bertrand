@@ -9,6 +9,12 @@ interface Deps {
   port: number;
   resolveBin: () => string | null;
   getActiveCount: () => number;
+  /**
+   * How long to wait for a freshly spawned server to start accepting
+   * connections. A cold Bun process binds well inside this; the cap only exists
+   * so a server that fails to start can't hang a session launch indefinitely.
+   */
+  readyTimeoutMs: number;
 }
 
 const defaultDeps: Deps = {
@@ -28,6 +34,7 @@ const defaultDeps: Deps = {
   // anything still live" must check all of them — not just whichever
   // project the calling session's own process happens to be pinned to.
   getActiveCount: () => countLiveSessionsAllProjects(),
+  readyTimeoutMs: 5_000,
 };
 
 let deps: Deps = defaultDeps;
@@ -71,6 +78,21 @@ async function isPortListening(port: number): Promise<boolean> {
   }
 }
 
+/**
+ * Polls until the port accepts a request or the deadline passes. Resolves
+ * either way: the caller's next step is best-effort, so a server that never
+ * comes up must not turn into a thrown error at session launch.
+ */
+async function waitForPortListening(port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  // `isPortListening` carries its own 500ms timeout, so the loop is paced by
+  // the probe itself and this delay only applies to fast refusals.
+  while (Date.now() < deadline) {
+    if (await isPortListening(port)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 function removePidFile(): void {
   try {
     unlinkSync(deps.pidFile);
@@ -105,6 +127,13 @@ export async function ensureServerStarted(): Promise<void> {
   });
   child.unref();
   if (child.pid) writeFileSync(deps.pidFile, String(child.pid));
+
+  // Callers launch a session within milliseconds of this returning, and that
+  // session immediately connects to the server's terminal relay. Returning as
+  // soon as the process is spawned handed them a port nothing was listening on
+  // yet, so wait until it actually accepts. The relay client retries anyway —
+  // this makes the common case deterministic rather than merely recoverable.
+  await waitForPortListening(deps.port, deps.readyTimeoutMs);
 }
 
 /**
