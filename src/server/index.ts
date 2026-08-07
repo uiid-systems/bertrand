@@ -39,6 +39,12 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
+import {
+  rateSession,
+  discardSession,
+  type RateResult,
+  type DiscardResult,
+} from "@/lib/session-actions"
 import { removeSessionWorktree } from "@/lib/worktree-remove"
 import {
   listProjects,
@@ -391,6 +397,51 @@ function archiveResponse(result: ArchiveResult | UnarchiveResult): Response {
   if (result.ok) return Response.json(result.session)
   const meta = ARCHIVE_ERROR[result.reason] ?? { status: 400, message: "Operation failed" }
   return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
+}
+
+const SESSION_ACTION_ERROR: Record<string, { status: number; message: string }> = {
+  "not-found": { status: 404, message: "Session not found" },
+  "out-of-range": { status: 400, message: "Rating must be an integer 1-5, or null to clear" },
+  active: { status: 409, message: "Stop the session before discarding it" },
+}
+
+function sessionActionResponse(
+  result: RateResult | DiscardResult,
+  body: unknown = { ok: true },
+): Response {
+  if (result.ok) return Response.json(body)
+  const meta = SESSION_ACTION_ERROR[result.reason] ?? {
+    status: 400,
+    message: "Operation failed",
+  }
+  return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
+}
+
+/**
+ * Set or clear a session's 1-5 rating — the dashboard's equivalent of the TUI
+ * exit screen's number keys (#214). `rating: null` clears it.
+ */
+async function handleRateSession(id: string, url: URL, req: Request): Promise<Response> {
+  let body: { rating?: unknown }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const { rating } = body
+  // Only a number or an explicit null are meaningful. Anything else — including
+  // a missing key — is rejected rather than silently read as "clear", which
+  // would turn a malformed request into data loss.
+  if (rating !== null && typeof rating !== "number") {
+    return Response.json(
+      { error: "rating must be a number 1-5, or null to clear", reason: "out-of-range" },
+      { status: 400 },
+    )
+  }
+
+  const result = rateSession(id, rating, resolveDb(url))
+  return sessionActionResponse(result, result.ok ? result.session : undefined)
 }
 
 /**
@@ -767,6 +818,22 @@ export function startServer(port = PORT) {
         const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
         if (unarchiveMatch) {
           const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!, resolveDb(url)))
+          response.headers.set("Access-Control-Allow-Origin", "*")
+          return response
+        }
+        // End-of-session actions the TUI exit screen has always had and the
+        // dashboard did not (#214). Archive above is shared with it as-is.
+        const rateMatch = /^\/api\/sessions\/([^/]+)\/rating$/.exec(url.pathname)
+        if (rateMatch) {
+          const r = await handleRateSession(rateMatch[1]!, url, req)
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
+        }
+        const discardMatch = /^\/api\/sessions\/([^/]+)\/discard$/.exec(url.pathname)
+        if (discardMatch) {
+          const response = sessionActionResponse(
+            discardSession(discardMatch[1]!, resolveDb(url)),
+          )
           response.headers.set("Access-Control-Allow-Origin", "*")
           return response
         }

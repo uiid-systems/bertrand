@@ -250,8 +250,12 @@ export function setSessionSummary(id: string, summary: string) {
     .get();
 }
 
-export function setSessionRating(id: string, rating: number | null) {
-  return getDb()
+export function setSessionRating(
+  id: string,
+  rating: number | null,
+  db: Db = getDb(),
+) {
+  return db
     .update(sessions)
     .set({ rating, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
@@ -277,8 +281,17 @@ export function moveSession(id: string, categoryId: string) {
     .get();
 }
 
-export function deleteSession(id: string) {
-  return getDb()
+/**
+ * Permanently remove a session row. Every child table (events, conversations,
+ * stats, label joins) declares `onDelete: "cascade"` and `PRAGMA foreign_keys`
+ * is ON, so this takes the session's entire history with it.
+ *
+ * Unguarded by design — callers decide whether deletion is allowed. Reach for
+ * `discardSession` (src/lib/session-actions.ts) unless you have already
+ * established the session is not live.
+ */
+export function deleteSession(id: string, db: Db = getDb()) {
+  return db
     .delete(sessions)
     .where(eq(sessions.id, id))
     .run();
