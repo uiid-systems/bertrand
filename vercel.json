@@ -5,14 +5,6 @@
   "outputDirectory": "dashboard/dist",
   "headers": [
     {
-      "source": "/sw.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
-    },
-    {
-      "source": "/manifest.webmanifest",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
-    },
-    {
       "source": "/assets/(.*)",
       "headers": [
         {
@@ -22,5 +14,10 @@
       ]
     }
   ],
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/((?!sw\\.js$|manifest\\.webmanifest$).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
