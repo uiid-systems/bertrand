@@ -7,7 +7,7 @@ import {
 } from "@/db/queries/sessions";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
-import { getOrCreateCategoryPath, getCategory, getCategoryByPath } from "@/db/queries/categories";
+import { getOrCreateCategoryPath, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
   getOrCreateLabelByName,
@@ -18,7 +18,7 @@ import { helpText } from "@/cli/help";
 import { launchClaude, isClaudeRunning } from "./process";
 import { finalizeSessionRow } from "./finalize";
 import { ensureServerStarted } from "@/lib/server-lifecycle";
-import { claudeSessionExists } from "@/lib/transcript";
+import { planResume } from "./resume-plan";
 import { pruneStaleContractMarkers } from "@/hooks/runtime";
 
 // Tracks the session currently owned by this bertrand process. Set when
@@ -194,21 +194,23 @@ export async function launch(opts: LaunchOpts): Promise<string> {
 export async function resume(opts: ResumeOpts): Promise<string> {
   pruneStaleContractMarkers();
 
-  const session = getSession(opts.sessionId);
-  if (!session) throw new Error(`Session not found: ${opts.sessionId}`);
-
-  const category = getCategory(session.categoryId);
-  const sessionName = category ? `${category.path}/${session.slug}` : session.name;
-
-  // `claude --resume <id>` only works when Claude has a transcript JSONL
-  // at the current CWD. Two cases break it: (1) the resume picker's
-  // "+ New conversation" mints a UUID Claude has never seen, (2) the
-  // bertrand session existed but the user exited Claude before any
-  // message was persisted. Both manifest as "No conversation found with
-  // session ID: <uuid>" and drop straight to the exit screen. Fall back
-  // to `--session-id` — Claude treats it as a fresh session under the
-  // same UUID, so bertrand events keep their conversation_id linkage.
-  const isFreshClaudeSession = !claudeSessionExists(opts.conversationId);
+  // Shared with the server-hosted path so the two can't drift on which
+  // conversation to attach to or whether Claude has ever seen it. A CLI process
+  // runs in the session's own directory, so `process.cwd()` is the right place
+  // to look for the transcript here.
+  const planned = planResume({
+    sessionId: opts.sessionId,
+    conversationId: opts.conversationId,
+    cwd: process.cwd(),
+  });
+  if (!planned.ok) {
+    throw new Error(
+      planned.reason === "not-found"
+        ? `Session not found: ${opts.sessionId}`
+        : `Conversation ${opts.conversationId} does not belong to session ${opts.sessionId}`,
+    );
+  }
+  const { session, sessionName, contract, resumeExisting } = planned.plan;
 
   updateSession(session.id, {
     status: "active",
@@ -219,7 +221,7 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  if (isFreshClaudeSession) {
+  if (!resumeExisting) {
     emitClaudeStarted({
       sessionId: session.id,
       conversationId: opts.conversationId,
@@ -227,17 +229,13 @@ export async function resume(opts: ResumeOpts): Promise<string> {
     });
   }
 
-  // Build contract
-  const siblingContext = buildSiblingContext(session.id);
-  const contract = buildContract(sessionName, helpText({ agent: true }), siblingContext);
-
   const exitCode = await launchClaude({
     sessionId: session.id,
     claudeId: opts.conversationId,
     sessionName,
     sessionSlug: session.slug,
     contract,
-    resume: !isFreshClaudeSession,
+    resume: resumeExisting,
   });
 
   finalizeSession(session.id, opts.conversationId, exitCode);

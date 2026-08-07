@@ -8,7 +8,7 @@ import {
   Stack,
   Text,
 } from "@uiid/design-system";
-import { Trash2Icon } from "@uiid/icons";
+import { PlayIcon, PlusIcon, Trash2Icon } from "@uiid/icons";
 
 import { useArchiveAction } from "../../api/use-archive-action";
 import { useSessionExitActions } from "../../api/use-session-exit-actions";
@@ -48,24 +48,34 @@ function describeExit(code: number | null): {
  * This panel is not a gate, so the equivalent is stating that the work is
  * already saved.
  */
+/** One resumable conversation, as the panel needs it. */
+export type ResumableConversation = {
+  conversationId: string;
+  ordinal: number;
+  title: string | null;
+};
+
 export function SessionExitPanel({
   session,
   categoryPath,
   exitCode,
   conversationCount,
+  conversations,
   project,
 }: {
   readonly session: SessionRow;
   readonly categoryPath: string;
   readonly exitCode: number | null;
   readonly conversationCount: number;
+  /** Newest first. Empty is fine — resume then only offers a new conversation. */
+  readonly conversations: readonly ResumableConversation[];
   readonly project?: string;
 }) {
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const archive = useArchiveAction(session, project);
-  const { rate, discard } = useSessionExitActions(session, project, {
+  const { rate, discard, resume, describeError } = useSessionExitActions(session, project, {
     // The route is keyed by the session that no longer exists, so staying here
     // would render a "not found" shell. Fall back to the category it lived in.
     onDiscarded: () => {
@@ -112,6 +122,49 @@ export function SessionExitPanel({
           onChange={(next) => rate.mutate(next)}
           disabled={rate.isPending}
         />
+      </Stack>
+
+      <Stack gap={2}>
+        <Text size={-1} shade="muted">
+          Pick up where this left off
+        </Text>
+        <Stack gap={1} ax="stretch">
+          <Button
+            size="small"
+            variant="subtle"
+            loading={resume.isPending && resume.variables === undefined}
+            disabled={resume.isPending}
+            onClick={() => resume.mutate(undefined)}
+          >
+            <PlusIcon size={13} />
+            New conversation
+          </Button>
+          {conversations.map((c) => (
+            <Button
+              key={c.conversationId}
+              size="small"
+              variant="subtle"
+              loading={
+                resume.isPending && resume.variables === c.conversationId
+              }
+              disabled={resume.isPending}
+              onClick={() => resume.mutate(c.conversationId)}
+            >
+              <PlayIcon size={13} />
+              <Text truncate>
+                Conversation {c.ordinal}
+                {c.title ? ` — ${c.title}` : ""}
+              </Text>
+            </Button>
+          ))}
+        </Stack>
+        {resume.error && (
+          // Inline rather than a toast: at capacity the remedy is "stop another
+          // session", and that belongs next to the button that just refused.
+          <Text size={-1} shade="muted">
+            ⚠ {describeError(resume.error)}
+          </Text>
+        )}
       </Stack>
 
       <Stack gap={2}>

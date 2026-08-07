@@ -1,5 +1,8 @@
 import { randomUUID } from "crypto";
-import { createSession, updateSession } from "@/db/queries/sessions";
+import { existsSync } from "fs";
+import { createSession, updateSession, getSession } from "@/db/queries/sessions";
+import { getEdgeEventOfType } from "@/db/queries/events";
+import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { getOrCreateCategoryPath } from "@/db/queries/categories";
@@ -42,12 +45,17 @@ const sessions = new Map<string, DashboardSession>();
  *
  * The number is a machine-protection guess, not a licensing rule — override it
  * when you know your box can take more.
+ *
+ * Read per call rather than snapshotted at module load. Both hosting entry
+ * points consult it, and a module-level constant made the bound a function of
+ * *import order* — two test files needing different caps in one process would
+ * silently get whichever loaded first.
  */
-export const MAX_DASHBOARD_SESSIONS = Number(
-  process.env.BERTRAND_MAX_DASHBOARD_SESSIONS ?? 8,
-);
+export function dashboardSessionLimit(): number {
+  return Number(process.env.BERTRAND_MAX_DASHBOARD_SESSIONS ?? 8);
+}
 
-/** Thrown when a spawn would exceed {@link MAX_DASHBOARD_SESSIONS}. */
+/** Thrown when a spawn would exceed {@link dashboardSessionLimit}. */
 export class DashboardSessionLimitError extends Error {
   readonly limit: number;
   constructor(limit: number) {
@@ -119,61 +127,63 @@ export interface SpawnDashboardSessionResult {
   pid: number;
 }
 
-export function spawnDashboardSession(
-  opts: SpawnDashboardSessionOpts,
-): SpawnDashboardSessionResult {
-  // Checked before any row is written: a rejected spawn must leave no trace.
-  // The map holds only live sessions (finalize deletes the entry), so this
-  // counts what is actually running, not what has ever run.
-  if (sessions.size >= MAX_DASHBOARD_SESSIONS) {
-    throw new DashboardSessionLimitError(MAX_DASHBOARD_SESSIONS);
-  }
-
-  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
-  const session = createSession({
-    categoryId,
-    slug: opts.slug,
-    name: opts.name ?? opts.slug,
-  });
-
-  const claudeId = randomUUID();
-  createConversation({ id: claudeId, sessionId: session.id });
-
-  const sessionName = `${opts.categoryPath}/${opts.slug}`;
+/**
+ * Bring a server-owned `claude` up for a session row that already exists, and
+ * register it as live.
+ *
+ * Shared by the two ways a dashboard session starts — a brand new one and a
+ * resumed one — because everything after "which conversation, and has Claude
+ * seen it" is identical between them. The alternative is a second copy of the
+ * PTY, relay, geometry and finalize wiring, which is the divergence #208 was
+ * caused by and #209 spent a PR undoing.
+ */
+function startClaudePty(opts: {
+  sessionId: string;
+  claudeId: string;
+  sessionName: string;
+  slug: string;
+  contract: string;
+  cwd: string;
+  /** `claude --resume <id>` when true, `--session-id <id>` when false. */
+  resumeExisting: boolean;
+}): number {
   const active = resolveActiveProject();
-  const contract = buildContract(
-    sessionName,
-    helpText({ agent: true }),
-    buildSiblingContext(session.id),
-  );
-
   const env = buildEnv({
-    BERTRAND_CLAUDE_ID: claudeId,
-    BERTRAND_SESSION: session.id,
-    BERTRAND_SESSION_NAME: sessionName,
+    BERTRAND_CLAUDE_ID: opts.claudeId,
+    BERTRAND_SESSION: opts.sessionId,
+    BERTRAND_SESSION_NAME: opts.sessionName,
     BERTRAND_SESSION_SLUG: opts.slug,
     BERTRAND_PROJECT: active.slug,
     BERTRAND_PROJECT_DB: active.db,
   });
 
   const entry: DashboardSession = {
-    sessionId: session.id,
-    claudeId,
+    sessionId: opts.sessionId,
+    claudeId: opts.claudeId,
     pty: null as unknown as PtyHandle,
     relay: null,
     claim: null,
   };
 
   const initial = smallestDims(null, null);
-  const pty = spawnPty(["claude", "--session-id", claudeId, "--append-system-prompt", contract], {
-    cwd: opts.cwd,
-    env,
-    cols: initial.cols,
-    rows: initial.rows,
-    onData: (chunk) => entry.relay?.send(chunk),
-  });
+  const pty = spawnPty(
+    [
+      "claude",
+      opts.resumeExisting ? "--resume" : "--session-id",
+      opts.claudeId,
+      "--append-system-prompt",
+      opts.contract,
+    ],
+    {
+      cwd: opts.cwd,
+      env,
+      cols: initial.cols,
+      rows: initial.rows,
+      onData: (chunk) => entry.relay?.send(chunk),
+    },
+  );
   entry.pty = pty;
-  sessions.set(session.id, entry);
+  sessions.set(opts.sessionId, entry);
 
   // There is no local terminal, so the claim is the whole input to geometry.
   const applyDims = () => {
@@ -187,7 +197,7 @@ export function spawnDashboardSession(
   };
 
   entry.relay = connectTerminalRelay({
-    sessionId: session.id,
+    sessionId: opts.sessionId,
     onInput: (chunk) => pty.write(chunk),
     onSetSize: (dims) => {
       entry.claim = dims;
@@ -214,23 +224,156 @@ export function spawnDashboardSession(
   // The PTY's own PID, not the server's. recoverStaleSessions treats a dead
   // pid as a dead session, so recording the shared, long-lived serve PID here
   // would make every crashed dashboard session look alive forever.
-  updateSession(session.id, {
+  updateSession(opts.sessionId, {
     status: "active",
     pid: pty.pid,
     pidStartedAt: Date.now(),
   });
-  emitClaudeStarted({
-    sessionId: session.id,
-    conversationId: claudeId,
-    cwd: opts.cwd,
-  });
+
+  // Only when Claude has no transcript for this conversation — i.e. it is
+  // starting rather than continuing. Emitting on a true `--resume` would
+  // record a second start for one continuous conversation, splitting the
+  // dashboard timeline into a chapter that never began.
+  if (!opts.resumeExisting) {
+    emitClaudeStarted({
+      sessionId: opts.sessionId,
+      conversationId: opts.claudeId,
+      cwd: opts.cwd,
+    });
+  }
 
   pty.exited.then(
-    (code) => finalize(session.id, claudeId, code),
-    () => finalize(session.id, claudeId, 1),
+    (code) => finalize(opts.sessionId, opts.claudeId, code),
+    () => finalize(opts.sessionId, opts.claudeId, 1),
   );
 
-  return { sessionId: session.id, claudeId, pid: pty.pid };
+  return pty.pid;
+}
+
+export function spawnDashboardSession(
+  opts: SpawnDashboardSessionOpts,
+): SpawnDashboardSessionResult {
+  // Checked before any row is written: a rejected spawn must leave no trace.
+  // The map holds only live sessions (finalize deletes the entry), so this
+  // counts what is actually running, not what has ever run.
+  if (sessions.size >= dashboardSessionLimit()) {
+    throw new DashboardSessionLimitError(dashboardSessionLimit());
+  }
+
+  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
+  const session = createSession({
+    categoryId,
+    slug: opts.slug,
+    name: opts.name ?? opts.slug,
+  });
+
+  const claudeId = randomUUID();
+  createConversation({ id: claudeId, sessionId: session.id });
+
+  const sessionName = `${opts.categoryPath}/${opts.slug}`;
+  const pid = startClaudePty({
+    sessionId: session.id,
+    claudeId,
+    sessionName,
+    slug: opts.slug,
+    contract: buildContract(
+      sessionName,
+      helpText({ agent: true }),
+      buildSiblingContext(session.id),
+    ),
+    cwd: opts.cwd,
+    // A conversation minted a line ago; Claude has never heard of it.
+    resumeExisting: false,
+  });
+
+  return { sessionId: session.id, claudeId, pid };
+}
+
+export type ResumeDashboardSessionResult =
+  | { ok: true; sessionId: string; claudeId: string; pid: number }
+  | {
+      ok: false;
+      reason:
+        | "not-found"
+        | "conversation-not-found"
+        | "already-running"
+        | "no-cwd"
+        | "at-capacity";
+      limit?: number;
+    };
+
+/**
+ * Recover the directory a session ran in.
+ *
+ * Resume has to run `claude` where the session lived, and the server's own cwd
+ * is unrelated to it. The `claude.started` event records the cwd on every
+ * launch, which makes it the durable answer — and the *last* one is the right
+ * one, since a session that has already been resumed may have moved.
+ */
+function resolveSessionCwd(sessionId: string): string | null {
+  const started = getEdgeEventOfType(sessionId, "claude.started", "last");
+  const cwd = (started?.meta as Record<string, unknown> | null)?.cwd;
+  if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) return null;
+  return cwd;
+}
+
+/**
+ * Resume a session under the server's ownership (#214) — the dashboard's
+ * equivalent of the TUI exit screen's "Resume".
+ *
+ * `conversationId` omitted mints a new conversation under the same session,
+ * matching the resume picker's "+ New conversation". Which conversation to
+ * attach to, and whether Claude has ever seen it, are decided by the shared
+ * `planResume` rather than re-derived here.
+ *
+ * Returns a result rather than throwing so the HTTP layer can map each refusal
+ * to its own status — at capacity in particular is a condition the user can
+ * act on, not a server fault.
+ */
+export function resumeDashboardSession(opts: {
+  sessionId: string;
+  conversationId?: string;
+}): ResumeDashboardSessionResult {
+  // Before anything is written, and before the plan mints a conversation row
+  // that a refused resume would leave orphaned.
+  if (sessions.has(opts.sessionId)) {
+    return { ok: false, reason: "already-running" };
+  }
+  if (sessions.size >= dashboardSessionLimit()) {
+    return { ok: false, reason: "at-capacity", limit: dashboardSessionLimit() };
+  }
+
+  const cwd = resolveSessionCwd(opts.sessionId);
+  if (!cwd) {
+    // Either the session predates the event, or the directory is gone. Both
+    // mean we cannot honestly pick a working directory, and guessing one would
+    // start Claude somewhere the user never worked.
+    return getSession(opts.sessionId)
+      ? { ok: false, reason: "no-cwd" }
+      : { ok: false, reason: "not-found" };
+  }
+
+  const planned = planResume({
+    sessionId: opts.sessionId,
+    conversationId: opts.conversationId,
+    cwd,
+  });
+  if (!planned.ok) return { ok: false, reason: planned.reason };
+
+  const { session, sessionName, contract, conversationId, resumeExisting } =
+    planned.plan;
+
+  const pid = startClaudePty({
+    sessionId: session.id,
+    claudeId: conversationId,
+    sessionName,
+    slug: session.slug,
+    contract,
+    cwd,
+    resumeExisting,
+  });
+
+  return { ok: true, sessionId: session.id, claudeId: conversationId, pid };
 }
 
 /** Stop a dashboard-owned session. The PTY outlives every viewer, so ending
