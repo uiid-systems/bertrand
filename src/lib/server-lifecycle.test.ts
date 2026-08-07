@@ -79,6 +79,9 @@ describe("ensureServerStarted", () => {
       port: TEST_PORT, // nothing listening here in CI
       resolveBin: makeFakeBin,
       getActiveCount: () => 0,
+      // The fake bin never binds a port, so cap the readiness wait rather than
+      // spending the production timeout proving it.
+      readyTimeoutMs: 50,
     });
 
     await ensureServerStarted();
@@ -153,6 +156,7 @@ describe("ensureServerForActiveSessions", () => {
       port: TEST_PORT, // nothing listening here in CI
       resolveBin: makeFakeBin,
       getActiveCount: () => 1,
+      readyTimeoutMs: 50,
     });
 
     await ensureServerForActiveSessions();
