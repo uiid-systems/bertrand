@@ -56,6 +56,7 @@ export function finalizeSessionRow(
   updateSession(sessionId, {
     status: "paused",
     pid: null,
+    pidStartedAt: null,
     endedAt: new Date().toISOString(),
   });
   storeSessionSummary(sessionId);

@@ -16,6 +16,11 @@ import {
 } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
+import {
+  isFreshClaim,
+  isProcessAlive as isAlive,
+  verifyPidIdentity as verifyIdentity,
+} from "@/lib/process-identity";
 import { allocatePort, apiPortKey, getPort, prunePorts, releasePort } from "./port";
 import { localhostPreviewUrl, workspaceEnv } from "./env";
 import { resolveWorkspace } from "./resolve";
@@ -182,73 +187,16 @@ function readState(sessionId: string): PidState | null {
   }
 }
 
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Parse ps's etime format `[[dd-]hh:]mm:ss` into milliseconds. */
-function parseEtimeMs(etime: string): number | null {
-  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(etime.trim());
-  if (!m) return null;
-  const [, dd, hh, mm, ss] = m;
-  return (
-    (((Number(dd ?? 0) * 24 + Number(hh ?? 0)) * 60 + Number(mm)) * 60 +
-      Number(ss)) *
-    1000
-  );
-}
-
 /**
- * Guard against PID recycling: a pid file survives reboots and OS pids get
- * reused, so before treating (or worse, group-killing) a pid as ours, check
- * that it still looks like the process we spawned. Two cheap signals from one
- * `ps` call: our detached children lead their own process group (pgid == pid),
- * and the process start time (now − etime; elapsed time is TZ-independent,
- * unlike lstart's wall-clock string) must match when we recorded spawning it.
- * An unverifiable pid is treated as NOT ours — the failure mode is a stale
- * status, never a SIGTERM into an innocent process group.
+ * These children are spawned detached and signalled as a *group*, so their
+ * identity check additionally requires the pid to lead its own process group.
+ * That check is specific to this caller — session pids can't use it (see
+ * `VerifyPidOptions.requireGroupLeader`).
  */
+const IDENTITY_OPTS = { requireGroupLeader: true } as const;
+
 function verifyPidIdentity(pid: number, startedAt: number | null): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile("ps", ["-o", "pgid=,etime=", "-p", String(pid)], (err, stdout) => {
-      if (err) return resolve(false); // process gone
-      const m = /^(\d+)\s+(\S+)$/.exec(stdout.trim());
-      if (!m) return resolve(false);
-      if (Number(m[1]) !== pid) return resolve(false); // not a group leader
-      if (startedAt != null) {
-        const elapsed = parseEtimeMs(m[2]!);
-        if (elapsed != null) {
-          const processStart = Date.now() - elapsed;
-          // etime has second precision and clocks drift; 120s of slack is
-          // still far tighter than any realistic pid-recycling window.
-          if (Math.abs(processStart - startedAt) > 120_000) {
-            return resolve(false);
-          }
-        }
-      }
-      resolve(true);
-    });
-  });
-}
-
-/**
- * A claim recorded moments ago is trusted without probing the OS. PID
- * recycling needs a reboot or a full pid-space wraparound — neither happens
- * within a minute of us writing the claim — and for claims this fresh the
- * etime check is vacuous anyway (its ±120s tolerance always passes). Probing
- * would be all downside: `ps` can transiently fail under fork pressure, and a
- * just-spawned detached child may not have applied setsid yet (Linux does the
- * child-side setup after fork), so a live fresh pid can flunk the
- * group-leader check. A false negative is not harmless — callers drop the
- * state file on it, permanently orphaning a live server.
- */
-function isFreshClaim(startedAt: number | null): boolean {
-  return startedAt != null && Date.now() - startedAt < 60_000;
+  return verifyIdentity(pid, startedAt, IDENTITY_OPTS);
 }
 
 function killGroup(pid: number, signal: NodeJS.Signals): void {

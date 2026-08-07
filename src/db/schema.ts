@@ -52,6 +52,11 @@ export const sessions = sqliteTable(
     summary: text("summary"),
     rating: integer("rating"),
     pid: integer("pid"),
+    // Epoch ms when `pid` was recorded, so a recycled pid can't pass as the
+    // original process (#209). Null on rows written before this existed —
+    // identity then degrades to a bare liveness probe. Distinct from
+    // `startedAt`, which is the session's lifetime, not this process's.
+    pidStartedAt: integer("pid_started_at"),
     startedAt: text("started_at")
       .notNull()
       .default(sql`(datetime('now'))`),

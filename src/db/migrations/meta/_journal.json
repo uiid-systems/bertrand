@@ -85,6 +85,13 @@
       "when": 1785812926355,
       "tag": "0011_slim_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786070433596,
+      "tag": "0012_talented_vindicator",
+      "breakpoints": true
     }
   ]
 }

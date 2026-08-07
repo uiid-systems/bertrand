@@ -221,6 +221,7 @@ export function updateSession(
     status: SessionStatus;
     summary: string;
     pid: number | null;
+    pidStartedAt: number | null;
     endedAt: string;
     worktreePath: string | null;
     worktreeBranch: string | null;

@@ -3,6 +3,7 @@ import { existsSync } from "fs"
 import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import { spawnDashboardSession, stopDashboardSession } from "@/engine/dashboard-session"
+import { recoverStaleSessions } from "@/engine/recovery"
 import {
   getMainWorktree,
   getWorktreeBranch,
@@ -625,13 +626,38 @@ function reapOrphanedWorkspaceState(): void {
   }
 }
 
+/**
+ * Reconcile sessions left `active` with a dead pid (#209).
+ *
+ * A dashboard-owned `claude` dies with the server that spawned it — its PTY
+ * master lives in this process, so a serve restart SIGHUPs it. What survives
+ * the restart is the row, still marked active and pointing at a pid the OS is
+ * free to recycle. Nothing else runs this on the server side: recovery was
+ * previously wired only into `bertrand launch`, so a user who never touched
+ * the CLI accumulated stale rows indefinitely.
+ *
+ * Best-effort and non-blocking, like the workspace reap above — boot must not
+ * wait on `ps`.
+ */
+function recoverStaleSessionRows(): void {
+  void recoverStaleSessions().then(
+    (n) => {
+      if (n > 0) console.log(`[server] recovered ${n} stale session(s)`)
+    },
+    (err) => console.error("[server] session recovery failed:", err),
+  )
+}
+
 export function startServer(port = PORT) {
   // A worktree preview can boot this same server as its API sidecar (the
   // `api` workspace script; BERTRAND_WORKSPACE is set in that env). Global
   // sweeps are the shared server's boot duty — a sidecar running branch code
   // must not reap other sessions' servers or rewrite the port registry based
   // on the branch's view of the world.
-  if (!process.env.BERTRAND_WORKSPACE) reapOrphanedWorkspaceState()
+  if (!process.env.BERTRAND_WORKSPACE) {
+    reapOrphanedWorkspaceState()
+    recoverStaleSessionRows()
+  }
   const server = Bun.serve({
     port,
     // Loopback only. The API has no auth, answers with CORS *, and now

@@ -179,7 +179,11 @@ export function spawnDashboardSession(
   // The PTY's own PID, not the server's. recoverStaleSessions treats a dead
   // pid as a dead session, so recording the shared, long-lived serve PID here
   // would make every crashed dashboard session look alive forever.
-  updateSession(session.id, { status: "active", pid: pty.pid });
+  updateSession(session.id, {
+    status: "active",
+    pid: pty.pid,
+    pidStartedAt: Date.now(),
+  });
   emitClaudeStarted({
     sessionId: session.id,
     conversationId: claudeId,
