@@ -48,3 +48,10 @@ export type EngagementStats = {
 export type ArchiveReason = "not-found" | "active" | "already-archived";
 export type UnarchiveReason = "not-found" | "not-archived";
 export type ArchiveErrorReason = ArchiveReason | UnarchiveReason | "unknown";
+
+export type RateReason = "not-found" | "out-of-range";
+export type DiscardReason = "not-found" | "active";
+export type SessionActionErrorReason =
+  | RateReason
+  | DiscardReason
+  | "unknown";

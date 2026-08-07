@@ -7,6 +7,7 @@ import type {
   SessionStatsRow,
   EngagementStats,
   ArchiveErrorReason,
+  SessionActionErrorReason,
   RemoveWorktreeReason,
   WorktreeSessionRow,
   WorktreeChangedFiles,
@@ -51,6 +52,54 @@ export const archiveSession = (id: string, project?: string) =>
   postSessionAction(id, "archive", project)
 export const unarchiveSession = (id: string, project?: string) =>
   postSessionAction(id, "unarchive", project)
+
+/** Thrown by the end-of-session actions (#214) that aren't archive. */
+export class SessionActionError extends Error {
+  reason: SessionActionErrorReason
+  constructor(message: string, reason: SessionActionErrorReason) {
+    super(message)
+    this.name = "SessionActionError"
+    this.reason = reason
+  }
+}
+
+async function postSessionActionJson<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(apiUrl(path), { method: "POST", ...init })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string
+      reason?: SessionActionErrorReason
+    }
+    throw new SessionActionError(
+      body.error ?? res.statusText,
+      body.reason ?? "unknown",
+    )
+  }
+  return res.json()
+}
+
+/** Set the session's 1-5 rating, or `null` to clear it. */
+export const rateSession = (
+  id: string,
+  rating: number | null,
+  project?: string,
+): Promise<SessionRow> =>
+  postSessionActionJson<SessionRow>(
+    `/api/sessions/${id}/rating${projectParam(project)}`,
+    {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating }),
+    },
+  )
+
+/** Permanently delete the session and everything cascading from it. */
+export const discardSession = (id: string, project?: string): Promise<{ ok: true }> =>
+  postSessionActionJson<{ ok: true }>(
+    `/api/sessions/${id}/discard${projectParam(project)}`,
+  )
 
 /**
  * Serialize a projects filter into a query string. `undefined` omits the param

@@ -57,6 +57,7 @@ import {
   type SessionTerminalState,
 } from "../components/terminal";
 import { CopyResumeButton } from "../components/copy-resume-button";
+import { SessionExitPanel } from "../components/session-exit";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
 export const Route = createFileRoute("/$")({
@@ -173,6 +174,22 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
     return next;
   }, [rawEvents]);
 
+  // The exit code the session finished on, read from the durable event log
+  // rather than the relay's `ended` frame (#215). A browser that opened this
+  // route after the session ended never received that frame, and one that was
+  // attached has since had the terminal replaced — so the frame can't be the
+  // source here. Last `claude.ended` wins: a resumed session emits one per run.
+  const exitCode = useMemo(() => {
+    for (let i = rawEvents.length - 1; i >= 0; i--) {
+      const event = rawEvents[i]!;
+      if (event.event !== "claude.ended") continue;
+      const meta = event.meta as Record<string, unknown> | null;
+      const code = meta?.exit_code;
+      return typeof code === "number" ? code : null;
+    }
+    return null;
+  }, [rawEvents]);
+
   // Deep-link support: once segments render, honour a #conversation-… hash so
   // a shared link scrolls to the right chapter (native fragment scrolling
   // misses because the anchors mount after this async data resolves).
@@ -207,17 +224,23 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
       <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
         <Resizable direction="horizontal">
           <ResizablePanel>
-            {isLive ? (
-              <LiveSessionZones
-                sessionId={sessionId}
-                timeline={<TimelineBody segments={segments} />}
-              />
-            ) : (
-              // A finished session has no PTY to attach to, so it keeps the
-              // plain full-height timeline — zone chrome around a single zone
-              // would be noise.
-              <TimelineBody segments={segments} />
-            )}
+            <SessionZones
+              sessionId={sessionId}
+              timeline={<TimelineBody segments={segments} />}
+              // A finished session has no PTY to attach to; the same zone
+              // carries its exit panel instead (#214).
+              exit={
+                isLive ? null : (
+                  <SessionExitPanel
+                    session={match.session}
+                    categoryPath={match.categoryPath}
+                    exitCode={exitCode}
+                    conversationCount={segments.length}
+                    project={projectSlug}
+                  />
+                )
+              }
+            />
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize={460} minSize={360} maxSize={640}>
@@ -267,8 +290,13 @@ TimelineBody.displayName = "TimelineBody";
 const TERMINAL_ZONE_SHARE = "45%";
 
 /**
- * A live session's main content area: the timeline and the session's terminal,
- * stacked as two collapsible zones in one full-height flex column.
+ * A session's main content area: the timeline plus a second zone, stacked as
+ * two collapsible zones in one full-height flex column.
+ *
+ * The second zone is the session's terminal while it runs and its exit panel
+ * once it has ended (#214). Both are "the thing happening to this session right
+ * now", they occupy the same space, and only one can ever apply — so they share
+ * one slot rather than introducing a third zone that is empty half the time.
  *
  * The column *is* the sizing mechanism. Each zone's `flex` says what share it
  * wants — a collapsed zone shrinks to its trigger bar, an open one absorbs
@@ -281,20 +309,30 @@ const TERMINAL_ZONE_SHARE = "45%";
  * terminal that outlived its route would show a different session's PTY than the
  * timeline beside it.
  *
+ * The two states keep *separate* collapse ids. The stored state is global
+ * rather than per-session, and the reason terminal collapse is persisted at all
+ * — expanding it reattaches a PTY and asks it to repaint — has no equivalent
+ * for a static panel. Sharing one id would mean dismissing the exit panel on a
+ * finished session silently collapsed the terminal on every live one.
+ *
  * "Maximize" is just collapsing the timeline zone, which keeps one mechanism
  * instead of introducing a second sizing path.
  */
-const LiveSessionZones = ({
+const SessionZones = ({
   sessionId,
   timeline,
+  exit,
 }: {
   readonly sessionId: string;
   readonly timeline: ReactNode;
+  /** Present once the session has ended; renders instead of the terminal. */
+  readonly exit: ReactNode | null;
 }) => {
   const { open: timelineStoredOpen, setOpen: setTimelineOpen } =
     useZoneCollapse("timeline");
-  const { open: terminalOpen, setOpen: setTerminalOpen } =
-    useZoneCollapse("terminal");
+  const { open: terminalOpen, setOpen: setTerminalOpen } = useZoneCollapse(
+    exit ? "session-exit" : "terminal",
+  );
 
   const [terminal, setTerminal] = useState<SessionTerminalState | null>(null);
 
@@ -330,8 +368,8 @@ const LiveSessionZones = ({
       </ContentZone>
 
       <ContentZone
-        data-slot="terminal-zone"
-        title="Terminal"
+        data-slot={exit ? "session-exit-zone" : "terminal-zone"}
+        title={exit ? "Session" : "Terminal"}
         open={terminalOpen}
         onOpenChange={setTerminalOpen}
         // Only bounded while it shares the column; with the timeline collapsed
@@ -345,7 +383,7 @@ const LiveSessionZones = ({
         // terminal from the timeline scrolling above it.
         TriggerGroupProps={{ bt: 1 }}
         badge={
-          terminal && terminalOpen ? (
+          !exit && terminal && terminalOpen ? (
             <Group gap={2} ay="center">
               <Badge
                 color={terminal.status === "attached" ? "green" : "neutral"}
@@ -363,7 +401,8 @@ const LiveSessionZones = ({
         actions={
           terminalOpen ? (
             <Group gap={1} ay="center">
-              <TerminalFontSizeControls />
+              {/* Font size only means something for the xterm surface. */}
+              {!exit && <TerminalFontSizeControls />}
               <Button
                 size="xsmall"
                 variant="ghost"
@@ -384,16 +423,18 @@ const LiveSessionZones = ({
           ) : null
         }
       >
-        <SessionTerminal
-          sessionId={sessionId}
-          onStateChange={setTerminal}
-          toolbar={false}
-        />
+        {exit ?? (
+          <SessionTerminal
+            sessionId={sessionId}
+            onStateChange={setTerminal}
+            toolbar={false}
+          />
+        )}
       </ContentZone>
     </Stack>
   );
 };
-LiveSessionZones.displayName = "LiveSessionZones";
+SessionZones.displayName = "SessionZones";
 
 /**
  * One conversation's timeline. When the session has more than one conversation,
