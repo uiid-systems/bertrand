@@ -177,10 +177,10 @@ function MarkdownDevPage() {
               lineHeight: 1.5,
               padding: 12,
               minHeight: 600,
-              border: "1px solid var(--color-border)",
+              border: "1px solid var(--globals-border-color)",
               borderRadius: 4,
-              background: "var(--color-surface)",
-              color: "var(--color-text)",
+              background: "var(--shade-surface)",
+              color: "var(--shade-foreground)",
               resize: "vertical",
             }}
           />
