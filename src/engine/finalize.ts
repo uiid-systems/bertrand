@@ -17,6 +17,16 @@ export interface FinalizeSessionOptions {
    * dashboard-owned session and any attached browser with it.
    */
   stopServerWhenIdle: boolean;
+  /**
+   * Whether to kick a background sync push. Defaults to true — a session
+   * ending is exactly when a push should happen.
+   *
+   * Set false when finalizing several sessions in a loop (crash recovery):
+   * `triggerBackgroundPush` has no debounce and spawns a detached
+   * `bertrand sync push` per call, so N recovered sessions would spawn N
+   * sync processes at once. The caller pushes once when it's done instead.
+   */
+  triggerSyncPush?: boolean;
 }
 
 /**
@@ -56,6 +66,7 @@ export function finalizeSessionRow(
   updateSession(sessionId, {
     status: "paused",
     pid: null,
+    pidStartedAt: null,
     endedAt: new Date().toISOString(),
   });
   storeSessionSummary(sessionId);
@@ -66,5 +77,5 @@ export function finalizeSessionRow(
   if (opts.stopServerWhenIdle) stopServerIfIdle();
 
   // Sync push on session end. Detached fire-and-forget — won't block exit.
-  triggerBackgroundPush();
+  if (opts.triggerSyncPush !== false) triggerBackgroundPush();
 }

@@ -47,6 +47,7 @@ function forceFinalizeLive(): void {
     updateSession(liveSession.sessionId, {
       status: "paused",
       pid: null,
+      pidStartedAt: null,
       endedAt: new Date().toISOString(),
     });
   } catch {
@@ -152,7 +153,11 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Update session to working with PID
-  updateSession(session.id, { status: "active", pid: process.pid });
+  updateSession(session.id, {
+    status: "active",
+    pid: process.pid,
+    pidStartedAt: Date.now(),
+  });
   liveSession = { sessionId: session.id, claudeId };
   installExitHandlers();
   await ensureServerStarted();
@@ -205,7 +210,11 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   // same UUID, so bertrand events keep their conversation_id linkage.
   const isFreshClaudeSession = !claudeSessionExists(opts.conversationId);
 
-  updateSession(session.id, { status: "active", pid: process.pid });
+  updateSession(session.id, {
+    status: "active",
+    pid: process.pid,
+    pidStartedAt: Date.now(),
+  });
   liveSession = { sessionId: session.id, claudeId: opts.conversationId };
   installExitHandlers();
   await ensureServerStarted();

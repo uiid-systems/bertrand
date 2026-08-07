@@ -51,7 +51,6 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   const env = {
     ...process.env,
-    BERTRAND_PID: String(process.pid),
     BERTRAND_CLAUDE_ID: opts.claudeId,
     BERTRAND_SESSION: opts.sessionId,
     BERTRAND_SESSION_NAME: opts.sessionName,
