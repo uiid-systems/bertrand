@@ -49,15 +49,15 @@
   /* Diff lines tint the gutter to match the line bg. */
   .bertrand-diff-block .shiki .line.diff.add .diff-num {
     background-color: light-dark(
-      color-mix(in oklch, var(--theme-positive) 18%, transparent),
-      color-mix(in oklch, var(--theme-positive) 22%, transparent)
+      color-mix(in oklch, var(--color-green-500) 18%, transparent),
+      color-mix(in oklch, var(--color-green-500) 22%, transparent)
     ) !important;
   }
 
   .bertrand-diff-block .shiki .line.diff.remove .diff-num {
     background-color: light-dark(
-      color-mix(in oklch, var(--theme-critical) 18%, transparent),
-      color-mix(in oklch, var(--theme-critical) 22%, transparent)
+      color-mix(in oklch, var(--color-red-500) 18%, transparent),
+      color-mix(in oklch, var(--color-red-500) 22%, transparent)
     ) !important;
   }
 
@@ -94,41 +94,41 @@
   }
 
   .bertrand-diff-block .shiki .line.diff.add .diff-marker {
-    color: var(--theme-positive-foreground);
+    color: var(--color-green-500-foreground);
     border-inline-color: light-dark(
-      color-mix(in oklch, var(--theme-positive) 18%, transparent),
-      color-mix(in oklch, var(--theme-positive) 22%, transparent)
+      color-mix(in oklch, var(--color-green-500) 18%, transparent),
+      color-mix(in oklch, var(--color-green-500) 22%, transparent)
     );
   }
 
   .bertrand-diff-block .shiki .line.diff.remove .diff-marker {
-    color: var(--theme-critical-foreground);
+    color: var(--color-red-500-foreground);
     border-inline-color: light-dark(
-      color-mix(in oklch, var(--theme-critical) 18%, transparent),
-      color-mix(in oklch, var(--theme-critical) 22%, transparent)
+      color-mix(in oklch, var(--color-red-500) 18%, transparent),
+      color-mix(in oklch, var(--color-red-500) 22%, transparent)
     );
   }
 
   .bertrand-diff-block .shiki .line.diff.add {
-    background-color: var(--theme-positive-surface) !important;
+    background-color: var(--color-green-500-surface) !important;
   }
 
   .bertrand-diff-block .shiki .line.diff.remove {
-    background-color: var(--theme-critical-surface) !important;
+    background-color: var(--color-red-500-surface) !important;
   }
 
   .bertrand-diff-block .shiki .line .diff-word.add {
     background-color: light-dark(
-      color-mix(in oklch, var(--theme-positive) 55%, transparent),
-      color-mix(in oklch, var(--theme-positive) 60%, transparent)
+      color-mix(in oklch, var(--color-green-500) 55%, transparent),
+      color-mix(in oklch, var(--color-green-500) 60%, transparent)
     ) !important;
     border-radius: 2px;
   }
 
   .bertrand-diff-block .shiki .line .diff-word.remove {
     background-color: light-dark(
-      color-mix(in oklch, var(--theme-critical) 55%, transparent),
-      color-mix(in oklch, var(--theme-critical) 60%, transparent)
+      color-mix(in oklch, var(--color-red-500) 55%, transparent),
+      color-mix(in oklch, var(--color-red-500) 60%, transparent)
     ) !important;
     border-radius: 2px;
   }

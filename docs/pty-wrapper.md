@@ -298,16 +298,36 @@ What is actually new:
   `liveSession`, and the exit handlers that finalize *the* live session. A server hosting
   N sessions needs each of these keyed by session ID. This is a refactor of `session.ts`,
   not a new spawn path bolted beside it.
-- **Server-owned lifetime.** Today a session ends when its terminal does. A
-  server-spawned PTY outlives every viewer, so it needs explicit teardown, orphan reaping,
-  and PID identity that survives reuse. This is a solved shape in this codebase, not a new
-  one — the workspace preview registry (PR #175) already does PID-identity via `etime`, an
-  atomic registry, a start lock, SIGKILL escalation, and orphan reaping. Follow it. Two
-  specifics it has to cover: `session.pid` can no longer be the spawner's PID
-  (`recoverStaleSessions` pauses sessions whose PID is dead — point it at the serve daemon
-  and crashed sessions look alive forever, while restarting serve mass-pauses all of
-  them), and `stopServerIfIdle()` becomes a self-SIGTERM when `finalizeSession` runs
-  inside serve.
+- **Server-owned lifetime.** Resolved by spike (see issue #209). A server-spawned PTY
+  outlives every *viewer* — closing the browser tab does not end the session — but it does
+  **not** outlive `bertrand serve`. `Bun.spawn({ terminal })` keeps the PTY master in the
+  serve process and the child is never detached, so `claude` runs as a session leader with
+  a controlling terminal (`STAT Ss+`); when serve dies the master closes and the kernel
+  SIGHUPs it. Confirmed on both SIGTERM and SIGKILL, children included.
+
+  Two consequences. There are no orphaned processes to reap, so the #175 file registry has
+  no job here — what leaked was the session *row*, left `active` with a dead pid and no end
+  time. And **adopting a live session across a serve restart is impossible**: the master fd
+  died with the old process, so even a surviving `claude` would be unreachable. Real
+  adoption would need a genuinely detached, reattachable PTY (setsid plus a durable
+  transport) — a much larger change, unbuilt.
+
+  What shipped instead: `sessions.pid_started_at` records when the pid was claimed, and
+  `lib/process-identity.ts` verifies it against the observed process start (now − `etime`)
+  so a *recycled* pid can't pass as the original — otherwise recovery's `kill(pid, 0)`
+  reads the recycled number as alive and the row is never reconciled. `startServer()` runs
+  that reconciliation on boot, through the same `finalizeSessionRow` a clean exit uses.
+  The identity helpers are shared with #175 rather than duplicated; its group-leader check
+  is opt-in, because session pids are not reliably group leaders (the CLI records its own
+  `process.pid`, which does not lead the group inside a pipeline) and requiring it there
+  would reap live sessions.
+
+  Two specifics that still hold: `session.pid` is the PTY's pid, not the serve daemon's
+  (point it at serve and every crashed session looks alive forever, while restarting serve
+  mass-pauses all of them), and `stopServerIfIdle()` would be a self-SIGTERM when finalize
+  runs inside serve — both the dashboard exit path and boot recovery pass
+  `stopServerWhenIdle: false`. Concurrent server-owned sessions are capped
+  (`BERTRAND_MAX_DASHBOARD_SESSIONS`, default 8); the endpoint answers 503 at capacity.
 - **Credentials for a daemon-spawned `claude`.** Resolved by spike (see issue #207): a
   detached, no-tty, `stdio:"ignore"` `claude` authenticates against the macOS login
   keychain without prompting. The one requirement is `USER` in the environment — without

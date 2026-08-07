@@ -51,7 +51,6 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   const env = {
     ...process.env,
-    BERTRAND_PID: String(process.pid),
     BERTRAND_CLAUDE_ID: opts.claudeId,
     BERTRAND_SESSION: opts.sessionId,
     BERTRAND_SESSION_NAME: opts.sessionName,
@@ -163,24 +162,30 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
 
-    const cleanup = () => {
+    const cleanup = (exitCode: number) => {
       process.stdin.removeListener("data", onStdinData);
       if (stdinIsTty) process.stdin.setRawMode(false);
       process.stdin.pause();
       if (process.stdout.isTTY) process.stdout.removeListener("resize", onResize);
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
+      // Before the close, and for CLI sessions too: a browser watching one
+      // through the relay is just as stranded by a silent disconnect as a
+      // browser watching a dashboard-owned session.
+      relay?.sendEnded(exitCode);
       relay?.close();
       activePty = null;
     };
 
     pty.exited.then(
       (code) => {
-        cleanup();
+        cleanup(code);
         resolve(code);
       },
       (err) => {
-        cleanup();
+        // The process is gone either way; browsers need telling regardless of
+        // whether we learned the real code.
+        cleanup(1);
         reject(err);
       },
     );

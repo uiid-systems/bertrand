@@ -32,6 +32,34 @@ interface DashboardSession {
 
 const sessions = new Map<string, DashboardSession>();
 
+/**
+ * Ceiling on concurrently running dashboard-owned sessions (#209).
+ *
+ * A server-spawned session is not cheap: a full `claude` process plus the MCP
+ * servers it starts, all of them outliving the browser tab that asked for one.
+ * Nothing about the HTTP endpoint is self-limiting, so without a cap a stuck
+ * client (or a retry loop) can fork the machine to its knees.
+ *
+ * The number is a machine-protection guess, not a licensing rule — override it
+ * when you know your box can take more.
+ */
+export const MAX_DASHBOARD_SESSIONS = Number(
+  process.env.BERTRAND_MAX_DASHBOARD_SESSIONS ?? 8,
+);
+
+/** Thrown when a spawn would exceed {@link MAX_DASHBOARD_SESSIONS}. */
+export class DashboardSessionLimitError extends Error {
+  readonly limit: number;
+  constructor(limit: number) {
+    super(
+      `Refusing to spawn: ${limit} dashboard sessions are already running ` +
+        `(BERTRAND_MAX_DASHBOARD_SESSIONS). Stop one before starting another.`,
+    );
+    this.name = "DashboardSessionLimitError";
+    this.limit = limit;
+  }
+}
+
 export function getDashboardSession(sessionId: string): DashboardSession | undefined {
   return sessions.get(sessionId);
 }
@@ -94,6 +122,13 @@ export interface SpawnDashboardSessionResult {
 export function spawnDashboardSession(
   opts: SpawnDashboardSessionOpts,
 ): SpawnDashboardSessionResult {
+  // Checked before any row is written: a rejected spawn must leave no trace.
+  // The map holds only live sessions (finalize deletes the entry), so this
+  // counts what is actually running, not what has ever run.
+  if (sessions.size >= MAX_DASHBOARD_SESSIONS) {
+    throw new DashboardSessionLimitError(MAX_DASHBOARD_SESSIONS);
+  }
+
   const categoryId = getOrCreateCategoryPath(opts.categoryPath);
   const session = createSession({
     categoryId,
@@ -179,7 +214,11 @@ export function spawnDashboardSession(
   // The PTY's own PID, not the server's. recoverStaleSessions treats a dead
   // pid as a dead session, so recording the shared, long-lived serve PID here
   // would make every crashed dashboard session look alive forever.
-  updateSession(session.id, { status: "active", pid: pty.pid });
+  updateSession(session.id, {
+    status: "active",
+    pid: pty.pid,
+    pidStartedAt: Date.now(),
+  });
   emitClaudeStarted({
     sessionId: session.id,
     conversationId: claudeId,
@@ -205,6 +244,10 @@ export function stopDashboardSession(sessionId: string): boolean {
 
 function finalize(sessionId: string, conversationId: string, exitCode: number): void {
   const entry = sessions.get(sessionId);
+  // Before the close: browsers keep their sockets open when upstream
+  // disconnects, so closing first would leave them attached to a terminal that
+  // is simply never going to say anything again.
+  entry?.relay?.sendEnded(exitCode);
   entry?.relay?.close();
   sessions.delete(sessionId);
 

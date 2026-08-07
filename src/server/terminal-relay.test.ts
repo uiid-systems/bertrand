@@ -394,4 +394,64 @@ describe("terminal relay", () => {
     upstreamA.close();
     browserB.close();
   });
+
+  test("an upstream `ended` frame reaches attached browsers", async () => {
+    const port = startTestServer();
+
+    const upstream = connectUpstream(port, "s");
+    const browser = connectBrowser(port, "s");
+    await Promise.all([waitOpen(upstream), waitOpen(browser)]);
+
+    const seen = collect(browser);
+    upstream.send(JSON.stringify({ t: "ended", exitCode: 0 }));
+    await settle();
+
+    expect(seen.text.map((t) => JSON.parse(t))).toContainEqual({
+      t: "ended",
+      exitCode: 0,
+    });
+
+    upstream.close();
+    browser.close();
+  });
+
+  test("a browser cannot fake `ended` for other browsers", async () => {
+    // Same rule as `dims`: only the side that owns the PTY may report on it.
+    // A browser forging this would strand every other viewer of a live session.
+    const port = startTestServer();
+
+    const upstream = connectUpstream(port, "s");
+    const liar = connectBrowser(port, "s");
+    const victim = connectBrowser(port, "s");
+    await Promise.all([waitOpen(upstream), waitOpen(liar), waitOpen(victim)]);
+
+    const seen = collect(victim);
+    liar.send(JSON.stringify({ t: "ended", exitCode: 0 }));
+    await settle();
+
+    expect(seen.text).toEqual([]);
+
+    upstream.close();
+    liar.close();
+    victim.close();
+  });
+
+  test("`ended` without a usable exitCode still reports the exit", async () => {
+    // The fact of the exit is what unblocks a waiting browser; the code is
+    // only for display, so a garbled one must not swallow the whole frame.
+    const port = startTestServer();
+
+    const upstream = connectUpstream(port, "s");
+    const browser = connectBrowser(port, "s");
+    await Promise.all([waitOpen(upstream), waitOpen(browser)]);
+
+    const seen = collect(browser);
+    upstream.send(JSON.stringify({ t: "ended" }));
+    await settle();
+
+    expect(seen.text.map((t) => JSON.parse(t))).toContainEqual({ t: "ended" });
+
+    upstream.close();
+    browser.close();
+  });
 });

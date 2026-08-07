@@ -25,7 +25,7 @@ register("launch", async (args) => {
     ensureHooksCurrent();
 
     // Recover any sessions stuck in working/blocked/prompting from crashed processes
-    recoverStaleSessions();
+    await recoverStaleSessions();
 
     const sessionName = args[0];
 
