@@ -244,6 +244,10 @@ export function stopDashboardSession(sessionId: string): boolean {
 
 function finalize(sessionId: string, conversationId: string, exitCode: number): void {
   const entry = sessions.get(sessionId);
+  // Before the close: browsers keep their sockets open when upstream
+  // disconnects, so closing first would leave them attached to a terminal that
+  // is simply never going to say anything again.
+  entry?.relay?.sendEnded(exitCode);
   entry?.relay?.close();
   sessions.delete(sessionId);
 

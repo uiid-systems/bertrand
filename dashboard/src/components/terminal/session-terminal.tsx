@@ -51,7 +51,7 @@ import { useSizingAuthority } from "./use-sizing-authority";
  * session's PTY than the surrounding page.
  */
 
-export type TerminalStatus = "connecting" | "attached" | "detached";
+export type TerminalStatus = "connecting" | "attached" | "detached" | "ended";
 
 export interface SessionTerminalState {
   status: TerminalStatus;
@@ -179,6 +179,12 @@ export const SessionTerminal = ({
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repaintedForRef = useRef<Dims | null>(null);
+  /**
+   * Set once this session's process has reported exiting. A ref rather than
+   * state because `socket.onclose` reads it — a closure created before the
+   * frame arrived would otherwise see a stale `false` and retry anyway.
+   */
+  const endedRef = useRef(false);
   // Held in a ref and read through one, so the terminal isn't recreated when the
   // consumer passes a new callback identity.
   const onDiagnosticsRef = useRef(onDiagnostics);
@@ -472,6 +478,9 @@ export const SessionTerminal = ({
     let disposed = false;
     let retry = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // This effect re-runs per session, so a previously ended session must not
+    // leave the next one refusing to connect.
+    endedRef.current = false;
 
     const open = () => {
       if (disposed) return;
@@ -542,6 +551,15 @@ export const SessionTerminal = ({
               if (isFirst || fromHandover) repaintedForRef.current = next;
               else repaintLater(next);
             }
+            // The session's process exited. Upstream disconnects without
+            // closing our socket, so this frame is the only notice we get —
+            // without it the terminal keeps its last frame, still looks
+            // attached, and silently swallows every keystroke.
+            if (frame?.t === "ended") {
+              endedRef.current = true;
+              setStatus("ended");
+              socket.close();
+            }
           } catch {
             // Ignore malformed control frames.
           }
@@ -558,6 +576,13 @@ export const SessionTerminal = ({
         socketRef.current = null;
         claimRef.current = null;
         if (disposed) return;
+        // An ended session is never coming back, so retrying it forever is
+        // just a spinner that never resolves. The indefinite backoff below is
+        // right for a dropped connection and wrong for a finished one.
+        if (endedRef.current) {
+          setStatus("ended");
+          return;
+        }
         setStatus("detached");
         // Keep trying indefinitely at the capped backoff. Giving up left a
         // terminal that looked attached but silently dropped every keystroke,
@@ -633,6 +658,9 @@ const STATUS_COLOR = {
   attached: "green",
   connecting: "yellow",
   detached: "neutral",
+  // Distinct from `detached`: that one is still trying to come back, this one
+  // is a final state.
+  ended: "blue",
 } as const;
 
 /**
