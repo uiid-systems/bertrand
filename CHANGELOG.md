@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.35.0](https://github.com/uiid-systems/bertrand/compare/v0.34.0...v0.35.0) (2026-08-07)
+
+
+### Features
+
+* **dashboard:** end-of-session panel with rate, archive and discard ([#219](https://github.com/uiid-systems/bertrand/issues/219)) ([adf3592](https://github.com/uiid-systems/bertrand/commit/adf3592676d8f4849f78547c8e0ab364bbc6accb)), closes [#214](https://github.com/uiid-systems/bertrand/issues/214)
+* **dashboard:** resume a session from the browser ([#220](https://github.com/uiid-systems/bertrand/issues/220)) ([b3397c9](https://github.com/uiid-systems/bertrand/commit/b3397c9fa09b560aea7dde5404396e9d411f85ee)), closes [#214](https://github.com/uiid-systems/bertrand/issues/214)
+* **server:** server-owned session lifetime — pid identity, boot recovery, and a concurrency bound ([#213](https://github.com/uiid-systems/bertrand/issues/213)) ([03e37b0](https://github.com/uiid-systems/bertrand/commit/03e37b0af9374507b64509bf4fec00989cdef33c)), closes [#209](https://github.com/uiid-systems/bertrand/issues/209)
+
+
+### Bug Fixes
+
+* **diff:** restore diff viewer tints on the palette contract ([#218](https://github.com/uiid-systems/bertrand/issues/218)) ([35f0931](https://github.com/uiid-systems/bertrand/commit/35f09311e4926cb9e7a5a353139fd7e0f1a9f650)), closes [#217](https://github.com/uiid-systems/bertrand/issues/217)
+* **markdown:** restore entity chip colors on the palette contract ([#216](https://github.com/uiid-systems/bertrand/issues/216)) ([2f23ab0](https://github.com/uiid-systems/bertrand/commit/2f23ab0b9fed024ff466ed86f7b601e08438d40a))
+* **pty:** reconnect the terminal relay instead of giving up on first refusal ([#211](https://github.com/uiid-systems/bertrand/issues/211)) ([44fb1e5](https://github.com/uiid-systems/bertrand/commit/44fb1e51384e2e7c7ada7acd5136eaea6f50e3dc))
+* **terminal:** tell attached browsers when a session's process exits ([#215](https://github.com/uiid-systems/bertrand/issues/215)) ([07041a0](https://github.com/uiid-systems/bertrand/commit/07041a02006812872b9fd16393ef2a354334a87e)), closes [#214](https://github.com/uiid-systems/bertrand/issues/214)
+
 ## [0.34.0](https://github.com/uiid-systems/bertrand/compare/v0.33.0...v0.34.0) (2026-08-05)
 
 
