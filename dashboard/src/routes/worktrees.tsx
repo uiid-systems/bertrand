@@ -49,7 +49,11 @@ function WorktreesPage() {
                   · {formatRelativeTime(entry.session.updatedAt)}
                 </Text>
               </Group>
-              <WorktreeItem entry={entry} preview={entry.status} />
+              <WorktreeItem
+                sessionId={entry.session.id}
+                entry={entry}
+                preview={entry.status}
+              />
             </Stack>
           ))}
         </Stack>
