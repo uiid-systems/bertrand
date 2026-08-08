@@ -32,13 +32,33 @@ export async function listWorktrees(): Promise<Worktree[]> {
   return worktrees;
 }
 
-/** Create a new worktree with a new branch */
+/**
+ * Create a worktree on a new branch. Pass `cwd` (typically the repo's main
+ * checkout) whenever the calling process isn't guaranteed to be inside the
+ * owning repo — the same hazard `removeWorktree` documents below, and the
+ * reason this ran in the wrong repo when called from `bertrand serve`, which
+ * runs from wherever it happened to be launched.
+ *
+ * `baseBranch` defaults to whatever the resolved repo has checked out; pass it
+ * explicitly when the base matters.
+ */
 export async function createWorktree(
   path: string,
   branch: string,
-  baseBranch = "HEAD"
+  opts: { baseBranch?: string; cwd?: string } = {},
 ): Promise<void> {
-  await $`git worktree add -b ${branch} ${path} ${baseBranch}`;
+  const cwd = opts.cwd ?? process.cwd();
+  const baseBranch = opts.baseBranch ?? "HEAD";
+  await $`git -C ${cwd} worktree add -b ${branch} ${path} ${baseBranch}`.quiet();
+}
+
+/** Prefer git's stderr over Bun's generic "exited with code 128" message. */
+export function shellDetail(err: unknown): string {
+  if (err && typeof err === "object" && "stderr" in err) {
+    const stderr = String((err as { stderr: unknown }).stderr ?? "").trim();
+    if (stderr) return stderr;
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**

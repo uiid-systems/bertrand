@@ -2,7 +2,7 @@ import { existsSync } from "fs";
 import { getSession, updateSession } from "@/db/queries/sessions";
 import { emitWorktreeExited } from "@/db/events/emit";
 import { teardownWorkspace } from "@/lib/workspace";
-import { getMainWorktree, removeWorktree } from "@/lib/git";
+import { getMainWorktree, removeWorktree, shellDetail } from "@/lib/git";
 import type { Db } from "@/db/client";
 import type { SessionRow } from "@/types";
 
@@ -18,15 +18,6 @@ export type RemoveWorktreeResult =
   | { ok: false; reason: RemoveWorktreeReason; detail?: string };
 
 const ACTIVE_STATUSES = ["active", "waiting", "blocked"] as const;
-
-/** Prefer git's stderr over Bun's generic "exited with code 128" message. */
-function shellDetail(err: unknown): string {
-  if (err && typeof err === "object" && "stderr" in err) {
-    const stderr = String((err as { stderr: unknown }).stderr ?? "").trim();
-    if (stderr) return stderr;
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 /**
  * Delete a session's git worktree and clear its worktree record — the
