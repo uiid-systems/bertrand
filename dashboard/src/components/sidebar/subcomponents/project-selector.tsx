@@ -6,7 +6,13 @@ import {
   type GroupProps,
   SelectMultiple,
 } from "@uiid/design-system";
-import { ActivityIcon, FolderIcon, GithubIcon, Unlink2Icon } from "@uiid/icons";
+import {
+  ActivityIcon,
+  FolderIcon,
+  GithubIcon,
+  TriangleAlertIcon,
+  Unlink2Icon,
+} from "@uiid/icons";
 
 import { useSelectedProjects } from "../selected-projects";
 
@@ -25,11 +31,19 @@ export const ProjectSelector = ({ ...props }: GroupProps) => {
   // Every option carries a second line: the bound `owner/repo`, or an explicit
   // "Not linked". Unbound projects get words rather than blank space, so the
   // gap reads as a state you can act on instead of a rendering bug.
+  //
+  // A binding whose host the CLI no longer vouches for keeps its label but
+  // loses the GitHub mark: a host can be named to read like github.com, and
+  // the one thing this row must not do is call it GitHub on that machine's say-so.
   const items = projects.map((p) => ({
     value: p.slug,
     label: p.name,
-    description: p.repo?.label ?? "Not linked",
-    icon: p.repo ? GithubIcon : Unlink2Icon,
+    description: p.repo
+      ? p.repo.hostTrusted
+        ? p.repo.label
+        : `${p.repo.label} — unverified host`
+      : "Not linked",
+    icon: p.repo ? (p.repo.hostTrusted ? GithubIcon : TriangleAlertIcon) : Unlink2Icon,
   }));
   // `selected` is null only until the live default seeds (one tick); the
   // trigger shows its placeholder in that window.

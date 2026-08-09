@@ -1,5 +1,11 @@
 import { describe, test, expect } from "bun:test";
-import { formatIdentity, parseGitHubRemote, type ProviderIdentity } from "./identity";
+import {
+  formatIdentity,
+  isTrustedHost,
+  normalizeEnterpriseHost,
+  parseGitHubRemote,
+  type ProviderIdentity,
+} from "./identity";
 
 const github = (owner: string, repo: string, host?: string): ProviderIdentity =>
   host ? { provider: "github", owner, repo, host } : { provider: "github", owner, repo };
@@ -24,21 +30,6 @@ describe("parseGitHubRemote", () => {
     ["www alias", "https://www.github.com/o/r.git", github("o", "r")],
     ["ssh-over-https alias", "ssh://git@ssh.github.com:443/o/r.git", github("o", "r")],
     ["dots in repo name", "https://github.com/o/my.repo.js.git", github("o", "my.repo.js")],
-
-    // Enterprise: the host is what tells `gh` where to talk, so it is captured.
-    ["enterprise host", "https://github.acme.com/o/r.git", github("o", "r", "github.acme.com")],
-    ["enterprise scp", "git@github.acme.com:o/r.git", github("o", "r", "github.acme.com")],
-    ["enterprise ghe label", "https://ghe.acme.io/o/r.git", github("o", "r", "ghe.acme.io")],
-    [
-      "enterprise http port is part of identity",
-      "https://github.acme.com:8443/o/r.git",
-      github("o", "r", "github.acme.com:8443"),
-    ],
-    [
-      "enterprise ssh port is transport-only",
-      "ssh://git@github.acme.com:2222/o/r.git",
-      github("o", "r", "github.acme.com"),
-    ],
   ];
 
   for (const [label, remote, expected] of parses) {
@@ -79,6 +70,14 @@ describe("parseGitHubRemote", () => {
     ["gist", "https://gist.github.com/o/r.git"],
     ["api", "https://api.github.com/repos/o/r"],
 
+    // Hosts that read as GitHub but are not. Every one of these parsed under
+    // the old label heuristic; with nothing declared, only github.com does.
+    ["github.com as a prefix", "https://github.com.evil.com/o/r.git"],
+    ["github as a subdomain", "https://github.evil.com/o/r.git"],
+    ["ghe as a subdomain", "https://ghe.evil.com/o/r.git"],
+    ["undeclared enterprise host", "https://github.acme.com/o/r.git"],
+    ["undeclared enterprise host over scp", "git@github.acme.com:o/r.git"],
+
     ["owner only", "https://github.com/o"],
     ["deeper than owner/repo", "https://github.com/o/r/tree/main"],
     ["root path", "https://github.com/"],
@@ -108,6 +107,154 @@ describe("parseGitHubRemote", () => {
     for (const form of forms) {
       expect(parseGitHubRemote(form)).toEqual(github("uiid-systems", "bertrand"));
     }
+  });
+});
+
+describe("parseGitHubRemote with declared enterprise hosts", () => {
+  const ACME = { enterpriseHosts: ["github.acme.com"] };
+
+  // The host is what tells `gh` where to talk, so a declared one is captured.
+  const parses: [label: string, remote: string, expected: ProviderIdentity][] = [
+    ["https", "https://github.acme.com/o/r.git", github("o", "r", "github.acme.com")],
+    ["scp", "git@github.acme.com:o/r.git", github("o", "r", "github.acme.com")],
+    ["mixed case", "https://GitHub.Acme.com/o/r.git", github("o", "r", "github.acme.com")],
+    ["trailing dot", "https://github.acme.com./o/r.git", github("o", "r", "github.acme.com")],
+    // An ssh port is transport-only, so it never reaches the declared host.
+    ["ssh port", "ssh://git@github.acme.com:2222/o/r.git", github("o", "r", "github.acme.com")],
+  ];
+
+  for (const [label, remote, expected] of parses) {
+    test(`parses ${label}: ${remote}`, () => {
+      expect(parseGitHubRemote(remote, ACME)).toEqual(expected);
+    });
+  }
+
+  test("a bare label is a legitimate intranet host", () => {
+    expect(parseGitHubRemote("git@ghe:o/r.git", { enterpriseHosts: ["ghe"] })).toEqual(
+      github("o", "r", "ghe"),
+    );
+  });
+
+  test("any hostname can be declared, not just github-flavored ones", () => {
+    expect(parseGitHubRemote("https://git.acme.com/o/r.git", { enterpriseHosts: ["git.acme.com"] })).toEqual(
+      github("o", "r", "git.acme.com"),
+    );
+  });
+
+  test("declaring one host does not trust its neighbors", () => {
+    expect(parseGitHubRemote("https://github.acme.co/o/r.git", ACME)).toBeNull();
+    expect(parseGitHubRemote("https://evil.github.acme.com/o/r.git", ACME)).toBeNull();
+    expect(parseGitHubRemote("https://github.acme.com.evil.com/o/r.git", ACME)).toBeNull();
+  });
+
+  // A port addresses a different service on the same machine, and the whole
+  // point of the allowlist is that what we dial was named on purpose.
+  test("an http port must be declared with the host", () => {
+    expect(parseGitHubRemote("https://github.acme.com:8443/o/r.git", ACME)).toBeNull();
+    expect(
+      parseGitHubRemote("https://github.acme.com:8443/o/r.git", {
+        enterpriseHosts: ["github.acme.com:8443"],
+      }),
+    ).toEqual(github("o", "r", "github.acme.com:8443"));
+  });
+
+  // The probe from ELKY-158, which is the reason any of this exists.
+  const lookalikes = [
+    "https://github.com.evil.com/acme/web.git",
+    "https://github.evil.com/acme/web.git",
+    "https://ghe.evil.com/acme/web.git",
+  ];
+
+  for (const remote of lookalikes) {
+    test(`rejects lookalike even when declared: ${remote}`, () => {
+      // `github.evil.com` is only reachable by declaring it, which is a choice
+      // a user can make; `github.com.evil.com` is refused outright.
+      expect(parseGitHubRemote(remote)).toBeNull();
+      expect(parseGitHubRemote(remote, { enterpriseHosts: ["github.com.evil.com"] })).toBeNull();
+    });
+  }
+
+  test("github.com itself never needs declaring and never changes meaning", () => {
+    expect(parseGitHubRemote("https://github.com/o/r.git", ACME)).toEqual(github("o", "r"));
+    expect(
+      parseGitHubRemote("https://github.com/o/r.git", { enterpriseHosts: ["github.com"] }),
+    ).toEqual(github("o", "r"));
+    // Declaring a github.com subdomain does not make it a repo remote.
+    expect(
+      parseGitHubRemote("https://gist.github.com/o/r.git", {
+        enterpriseHosts: ["gist.github.com"],
+      }),
+    ).toBeNull();
+  });
+
+  test("unusable entries are ignored rather than trusted", () => {
+    const junk = { enterpriseHosts: ["", "   ", "not a host", "github.acme.com:notaport"] };
+    expect(parseGitHubRemote("https://github.acme.com/o/r.git", junk)).toBeNull();
+    expect(parseGitHubRemote("https://github.com/o/r.git", junk)).toEqual(github("o", "r"));
+  });
+});
+
+describe("normalizeEnterpriseHost", () => {
+  const normalizes: [raw: string, expected: string][] = [
+    ["github.acme.com", "github.acme.com"],
+    ["  GitHub.Acme.com  ", "github.acme.com"],
+    ["github.acme.com.", "github.acme.com"],
+    ["https://github.acme.com", "github.acme.com"],
+    ["https://github.acme.com/", "github.acme.com"],
+    ["https://github.acme.com/o/r.git", "github.acme.com"],
+    ["ssh://git@github.acme.com", "github.acme.com"],
+    ["github.acme.com:8443", "github.acme.com:8443"],
+    ["https://github.acme.com:8443/", "github.acme.com:8443"],
+    ["ghe", "ghe"],
+    ["10.0.0.5:8443", "10.0.0.5:8443"],
+  ];
+
+  for (const [raw, expected] of normalizes) {
+    test(`normalizes ${JSON.stringify(raw)} to ${expected}`, () => {
+      expect(normalizeEnterpriseHost(raw)).toBe(expected);
+    });
+  }
+
+  const rejects: [label: string, raw: string][] = [
+    ["empty", ""],
+    ["whitespace", "   "],
+    ["spaces in host", "not a host"],
+    ["non-numeric port", "github.acme.com:notaport"],
+    ["empty port", "github.acme.com:"],
+    ["underscore", "git_hub.acme.com"],
+    // github.com is built in; declaring it is redundant at best.
+    ["github.com", "github.com"],
+    ["github.com subdomain", "gist.github.com"],
+    // The shape no configuration may trust.
+    ["github.com as a prefix", "github.com.evil.com"],
+    ["github.com prefix with port", "github.com.evil.com:8443"],
+  ];
+
+  for (const [label, raw] of rejects) {
+    test(`rejects ${label}: ${JSON.stringify(raw)}`, () => {
+      expect(normalizeEnterpriseHost(raw)).toBeNull();
+    });
+  }
+});
+
+describe("isTrustedHost", () => {
+  test("an absent host is github.com, which is always trusted", () => {
+    expect(isTrustedHost(undefined)).toBe(true);
+    expect(isTrustedHost(undefined, [])).toBe(true);
+  });
+
+  test("a declared host is trusted, in whatever case it was stored", () => {
+    expect(isTrustedHost("github.acme.com", ["github.acme.com"])).toBe(true);
+    expect(isTrustedHost("GitHub.Acme.com", ["github.acme.com"])).toBe(true);
+    expect(isTrustedHost("github.acme.com:8443", ["github.acme.com:8443"])).toBe(true);
+  });
+
+  // The case this predicate exists for: a binding written under the old rules.
+  test("a stored host nobody declared is not trusted", () => {
+    expect(isTrustedHost("github.acme.com")).toBe(false);
+    expect(isTrustedHost("github.acme.com", ["github.other.com"])).toBe(false);
+    expect(isTrustedHost("github.acme.com:8443", ["github.acme.com"])).toBe(false);
+    expect(isTrustedHost("github.com.evil.com", ["github.com.evil.com"])).toBe(false);
   });
 });
 

@@ -4,6 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { $ } from "bun";
 
+import { _setEnterpriseHosts } from "./hosts";
 import {
   resolveRepoAt,
   _resetRepoCache,
@@ -74,12 +75,16 @@ let clock = 0;
 beforeEach(() => {
   clock = 1_000_000;
   _setClock(() => clock);
+  // Declare nothing by default, so no test's result depends on whether the
+  // developer running it happens to have a GHES host in their own config.
+  _setEnterpriseHosts([]);
   _resetRepoCache();
 });
 
 afterEach(() => {
   _setGitRunner(null);
   _setClock(null);
+  _setEnterpriseHosts(null);
   _resetRepoCache();
 });
 
@@ -158,9 +163,10 @@ describe("resolveRepoAt", () => {
     expect(result.ok && result.repo.defaultBranch).toBe("main");
   });
 
-  test("carries the enterprise host through from the remote", async () => {
+  test("carries a declared enterprise host through from the remote", async () => {
     const git = fakeGit(githubRepo({ [ORIGIN_URL]: "git@github.acme.com:o/r.git" }));
     _setGitRunner(git.runner);
+    _setEnterpriseHosts(["github.acme.com"]);
 
     const result = await resolveRepoAt(REPO);
 
@@ -230,6 +236,31 @@ describe("resolveRepoAt failures", () => {
     await resolveRepoAt(REPO);
 
     expect(git.calls.map((c) => c.command)).toEqual([WORKTREE_LIST, ORIGIN_URL]);
+  });
+
+  test("not-github for an enterprise host this machine has not declared", async () => {
+    const remote = "git@github.acme.com:o/r.git";
+    const git = fakeGit(githubRepo({ [ORIGIN_URL]: remote }));
+    _setGitRunner(git.runner);
+
+    expect(await resolveRepoAt(REPO)).toEqual({
+      ok: false,
+      reason: "not-github",
+      remoteUrl: remote,
+    });
+  });
+
+  // The shape ELKY-158 is about: it reads as github.com in `project list`, and
+  // declaring it must not be a way to make it resolve.
+  test("not-github for a github.com lookalike, declared or not", async () => {
+    const remote = "https://github.com.evil.com/acme/web.git";
+    _setGitRunner(fakeGit(githubRepo({ [ORIGIN_URL]: remote })).runner);
+    expect(await resolveRepoAt(REPO)).toMatchObject({ ok: false, reason: "not-github" });
+
+    _resetRepoCache();
+    _setEnterpriseHosts(["github.com.evil.com"]);
+    _setGitRunner(fakeGit(githubRepo({ [ORIGIN_URL]: remote })).runner);
+    expect(await resolveRepoAt(REPO)).toMatchObject({ ok: false, reason: "not-github" });
   });
 });
 

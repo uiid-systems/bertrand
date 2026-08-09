@@ -8,6 +8,14 @@ export interface BertrandConfig {
   sync?: {
     enabled: boolean;
   };
+  github?: {
+    /**
+     * Hosts trusted to serve GitHub Enterprise Server. github.com needs no
+     * entry; anything else is not a GitHub remote until it appears here.
+     * A port is part of the host: `github.acme.com:8443` is its own entry.
+     */
+    enterpriseHosts?: string[];
+  };
 }
 
 /**

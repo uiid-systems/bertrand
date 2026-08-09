@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -112,6 +112,33 @@ describe("GET /api/projects", () => {
     const row = bySlug(await get<ProjectSummary[]>("/api/projects"), "ghes");
 
     expect(row.repo?.label).toBe("git.acme.corp/acme/internal");
+  });
+
+  test("trusts github.com without any configuration", async () => {
+    const row = bySlug(await get<ProjectSummary[]>("/api/projects"), "bound");
+
+    expect(row.repo?.hostTrusted).toBe(true);
+  });
+
+  // A binding stored before enterprise hosts had to be declared. It is still
+  // served — dropping it would hide a project's repo without saying so — but
+  // the dashboard needs to know not to render it as verified GitHub.
+  test("marks a binding whose host is not declared", async () => {
+    const row = bySlug(await get<ProjectSummary[]>("/api/projects"), "ghes");
+
+    expect(row.repo?.hostTrusted).toBe(false);
+    expect(row.repo?.label).toBe("git.acme.corp/acme/internal");
+  });
+
+  test("trusts an enterprise host once config declares it", async () => {
+    writeFileSync(
+      join(tmpRoot, "config.json"),
+      JSON.stringify({ github: { enterpriseHosts: ["git.acme.corp"] } }),
+    );
+
+    const row = bySlug(await get<ProjectSummary[]>("/api/projects"), "ghes");
+
+    expect(row.repo?.hostTrusted).toBe(true);
   });
 
   test("sends repo: null for an unbound project rather than omitting it", async () => {

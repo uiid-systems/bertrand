@@ -99,9 +99,16 @@ function describeFailure(
         `  Add one with: git -C "${path}" remote add origin git@github.com:<owner>/<repo>.git`
       );
     case "not-github":
+      // Two very different causes land here — a non-GitHub forge, and a GHES
+      // host this machine has not been told to trust — and the remote alone
+      // cannot tell them apart. Naming both beats guessing at one: the fix for
+      // whichever it is has to be in the message, because there is no second
+      // place a user would think to look.
       return (
         `"${path}" has an \`origin\` bertrand cannot attach to${remoteUrl ? ` (${redactRemote(remoteUrl)})` : ""}.\n` +
-        `  Only GitHub remotes are supported. Re-point \`origin\` at a GitHub repository.`
+        `  Only GitHub remotes are supported. Re-point \`origin\` at a GitHub repository.\n` +
+        `  If that host is a GitHub Enterprise Server, declare it in ~/.bertrand/config.json:\n` +
+        `      { "github": { "enterpriseHosts": ["github.acme.com"] } }`
       );
   }
 }
