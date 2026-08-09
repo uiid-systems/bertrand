@@ -4,10 +4,12 @@ import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import {
   DashboardSessionLimitError,
+  WorktreeCreateError,
   spawnDashboardSession,
   resumeDashboardSession,
   stopDashboardSession,
 } from "@/engine/dashboard-session"
+import type { CreateWorktreeReason } from "@/lib/worktree-create"
 import { recoverStaleSessions } from "@/engine/recovery"
 import {
   getMainWorktree,
@@ -568,20 +570,44 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
 }
 
 /**
+ * Worktree creation failures, mapped to statuses a caller can act on (#210).
+ *
+ * Same reasoning as RESUME_ERROR above: a name that collides with an existing
+ * branch is the caller's to fix and reads as a conflict, not a server fault.
+ * Only git failing outright is a 500.
+ */
+const SPAWN_WORKTREE_STATUS: Record<CreateWorktreeReason, number> = {
+  "not-a-repo": 400,
+  "path-exists": 409,
+  "branch-exists": 409,
+  "git-failed": 500,
+}
+
+/**
  * Spawn a session whose PTY this server owns (issue #207). Unlike a
  * CLI-started session there is no terminal involved at all — the caller
- * supplies the cwd, and the browser that attaches becomes the sole sizing
+ * supplies the repo, and the browser that attaches becomes the sole sizing
  * authority.
+ *
+ * `cwd` is the repository the session works in, not the directory `claude`
+ * runs in: every dashboard session gets its own worktree under that repo's
+ * main checkout (#210), and the worktree is the working directory.
  */
 async function handleSpawnDashboardSession(req: Request): Promise<Response> {
-  let body: { categoryPath?: unknown; slug?: unknown; name?: unknown; cwd?: unknown }
+  let body: {
+    categoryPath?: unknown
+    slug?: unknown
+    name?: unknown
+    cwd?: unknown
+    baseBranch?: unknown
+  }
   try {
     body = (await req.json()) as typeof body
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { categoryPath, slug, cwd } = body
+  const { categoryPath, slug, cwd, baseBranch } = body
   if (typeof categoryPath !== "string" || !categoryPath) {
     return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
   }
@@ -589,15 +615,25 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
   }
   if (typeof cwd !== "string" || !cwd.startsWith("/") || !existsSync(cwd)) {
-    return Response.json({ error: "cwd must be an existing absolute path" }, { status: 400 })
+    return Response.json(
+      { error: "cwd must be an existing absolute path to a git repository" },
+      { status: 400 },
+    )
+  }
+  if (baseBranch !== undefined && (typeof baseBranch !== "string" || !baseBranch)) {
+    return Response.json(
+      { error: "baseBranch must be a non-empty string when provided" },
+      { status: 400 },
+    )
   }
 
   try {
-    const result = spawnDashboardSession({
+    const result = await spawnDashboardSession({
       categoryPath,
       slug,
       name: typeof body.name === "string" ? body.name : undefined,
       cwd,
+      baseBranch,
     })
     return Response.json(result)
   } catch (err) {
@@ -606,6 +642,15 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     // surfacing an opaque 500.
     if (err instanceof DashboardSessionLimitError) {
       return Response.json({ error: err.message, limit: err.limit }, { status: 503 })
+    }
+    // The worktree could not be created, so no session exists. The reason
+    // travels with the error so a form can point at the field that caused it
+    // rather than showing a generic failure.
+    if (err instanceof WorktreeCreateError) {
+      return Response.json(
+        { error: err.message, reason: err.reason, detail: err.detail },
+        { status: SPAWN_WORKTREE_STATUS[err.reason] },
+      )
     }
     return Response.json({ error: (err as Error).message }, { status: 500 })
   }

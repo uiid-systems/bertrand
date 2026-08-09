@@ -13,6 +13,11 @@ import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
+import { removeWorktree } from "@/lib/git";
+import {
+  createSessionWorktree,
+  type CreateWorktreeReason,
+} from "@/lib/worktree-create";
 
 /**
  * Sessions whose PTY is owned by `bertrand serve` rather than by a CLI process
@@ -116,16 +121,54 @@ export interface SpawnDashboardSessionOpts {
   categoryPath: string;
   slug: string;
   name?: string;
-  /** Working directory for `claude`. Passed explicitly — the server's own cwd
-   *  is an inherited accident with no relation to the session. */
+  /**
+   * The repo the session works in — passed explicitly, because the server's own
+   * cwd is an inherited accident with no relation to the session.
+   *
+   * Note this is the repo to branch *from*, not the directory `claude` runs in:
+   * every dashboard session gets its own worktree, and that worktree is the
+   * working directory.
+   */
   cwd: string;
+  /** Branch the worktree starts from. Defaults to the repo's current HEAD. */
+  baseBranch?: string;
 }
 
 export interface SpawnDashboardSessionResult {
   sessionId: string;
   claudeId: string;
   pid: number;
+  worktreePath: string;
+  worktreeBranch: string;
 }
+
+/**
+ * Thrown when a session's worktree can't be created. Carries the resolver's
+ * reason so the HTTP layer can map it to a status a UI can act on, rather than
+ * flattening "that branch already exists" into an opaque 500.
+ */
+export class WorktreeCreateError extends Error {
+  readonly reason: CreateWorktreeReason;
+  readonly detail?: string;
+  constructor(reason: CreateWorktreeReason, detail?: string) {
+    super(WORKTREE_ERROR_MESSAGE[reason](detail));
+    this.name = "WorktreeCreateError";
+    this.reason = reason;
+    this.detail = detail;
+  }
+}
+
+const WORKTREE_ERROR_MESSAGE: Record<
+  CreateWorktreeReason,
+  (detail?: string) => string
+> = {
+  "not-a-repo": (d) => `${d ?? "That directory"} is not inside a git repository.`,
+  "path-exists": (d) =>
+    `A worktree directory already exists at ${d}. Remove it, or pick another name.`,
+  "branch-exists": (d) =>
+    `Branch "${d}" already exists. Pick another session name, or delete the branch.`,
+  "git-failed": (d) => `git could not create the worktree: ${d ?? "unknown error"}`,
+};
 
 /**
  * Bring a server-owned `claude` up for a session row that already exists, and
@@ -250,9 +293,9 @@ function startClaudePty(opts: {
   return pty.pid;
 }
 
-export function spawnDashboardSession(
+export async function spawnDashboardSession(
   opts: SpawnDashboardSessionOpts,
-): SpawnDashboardSessionResult {
+): Promise<SpawnDashboardSessionResult> {
   // Checked before any row is written: a rejected spawn must leave no trace.
   // The map holds only live sessions (finalize deletes the entry), so this
   // counts what is actually running, not what has ever run.
@@ -260,12 +303,38 @@ export function spawnDashboardSession(
     throw new DashboardSessionLimitError(dashboardSessionLimit());
   }
 
-  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
-  const session = createSession({
-    categoryId,
-    slug: opts.slug,
-    name: opts.name ?? opts.slug,
+  // Before the session row, so a worktree that cannot be created surfaces as an
+  // error instead of a half-created session pointing at nothing.
+  const created = await createSessionWorktree(opts.cwd, opts.slug, {
+    baseBranch: opts.baseBranch,
   });
+  if (!created.ok) {
+    throw new WorktreeCreateError(created.reason, created.detail);
+  }
+  const { path: worktreePath, branch: worktreeBranch, root } = created.target;
+
+  let session;
+  try {
+    const categoryId = getOrCreateCategoryPath(opts.categoryPath);
+    session = createSession({
+      categoryId,
+      slug: opts.slug,
+      name: opts.name ?? opts.slug,
+    });
+  } catch (err) {
+    // Only this window needs a rollback: the worktree exists but nothing
+    // references it yet, so a failed row would leave it as pure litter. Once
+    // the row exists the worktree has an owner, and the dashboard's existing
+    // delete action (`removeSessionWorktree`) is what takes it back out.
+    await removeWorktree(worktreePath, { force: true, cwd: root }).catch(() => {});
+    throw err;
+  }
+
+  // Creation is the writer for a dashboard session. The `worktree.entered` hook
+  // that maintains these columns for CLI sessions fires when Claude *enters* a
+  // worktree mid-session; a dashboard session starts in its own, so that hook
+  // never fires for it and there is no second writer to drift against.
+  updateSession(session.id, { worktreePath, worktreeBranch });
 
   const claudeId = randomUUID();
   createConversation({ id: claudeId, sessionId: session.id });
@@ -281,12 +350,15 @@ export function spawnDashboardSession(
       helpText({ agent: true }),
       buildSiblingContext(session.id),
     ),
-    cwd: opts.cwd,
+    // The worktree, not the repo it was cut from — this is what
+    // `emitClaudeStarted` records as the session's cwd, and what resume reads
+    // back later.
+    cwd: worktreePath,
     // A conversation minted a line ago; Claude has never heard of it.
     resumeExisting: false,
   });
 
-  return { sessionId: session.id, claudeId, pid };
+  return { sessionId: session.id, claudeId, pid, worktreePath, worktreeBranch };
 }
 
 export type ResumeDashboardSessionResult =

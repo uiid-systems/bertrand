@@ -109,6 +109,11 @@ export function dispatchHookEvent(
       emitWorktreeEntered({ sessionId, conversationId, path, branch });
       // Mirror the *current* worktree onto the session row so siblings and the
       // dashboard can see where it's working without scanning the event log.
+      //
+      // This is the writer for sessions that *enter* a worktree mid-run. A
+      // dashboard-created session starts in one instead, so this hook never
+      // fires for it and creation writes these columns directly — see
+      // spawnDashboardSession and docs/pty-wrapper.md.
       updateSession(sessionId, {
         worktreePath: path || null,
         worktreeBranch: branch ?? null,
