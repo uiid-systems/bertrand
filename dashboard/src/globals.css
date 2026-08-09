@@ -12,12 +12,6 @@
   text-decoration: underline;
 }
 
-/* Timeline table-of-contents rows: underline the title on hover so the row
-   reads as a jump link, matching the sidebar zone triggers above. */
-.timeline-toc-item:hover .timeline-toc-title {
-  text-decoration: underline;
-}
-
 /* A hue used as text *on a tinted card*. Text's `color` prop resolves to
    `--palette-text`, which @uiid/tokens measures against the page background —
    the wrong slot once a timeline card carries a tint of its own. Pairing a
