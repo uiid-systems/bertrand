@@ -56,7 +56,16 @@ export type EngagementStats = {
  * *types* from `src`, never runtime code, since there's no `@/` alias in the
  * Vite build). Sending the formatted string keeps the rule in one place.
  */
-export type ProjectRepoView = ProjectRepo & { label: string };
+export type ProjectRepoView = ProjectRepo & {
+  label: string;
+  /**
+   * False for a binding whose host this machine no longer declares as GitHub
+   * Enterprise Server. The binding is still shown — dropping a project's repo
+   * out from under it would be worse — but a host bertrand cannot vouch for
+   * should not render as one it can.
+   */
+  hostTrusted: boolean;
+};
 
 /**
  * One row of /api/projects.

@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { resolve as resolvePath } from "path";
+import { readEnterpriseHosts } from "./hosts";
 import { parseGitHubRemote, type ProviderIdentity } from "./identity";
 
 /**
@@ -136,7 +137,10 @@ async function resolveUncached(path: string): Promise<RepoResolution> {
     return { ok: false, reason: "no-remote" };
   }
 
-  const provider = parseGitHubRemote(remoteUrl);
+  // Read per resolution rather than once at import, so declaring a GHES host
+  // takes effect without restarting a long-lived server — once the negative
+  // entry for the path expires, which is the same wait as any other fix.
+  const provider = parseGitHubRemote(remoteUrl, { enterpriseHosts: readEnterpriseHosts() });
 
   if (!provider) {
     return { ok: false, reason: "not-github", remoteUrl };

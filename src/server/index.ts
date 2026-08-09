@@ -57,6 +57,7 @@ import {
   type ProjectRepo,
 } from "@/lib/projects/registry"
 import { formatIdentity } from "@/lib/github/identity"
+import { isDeclaredHost } from "@/lib/github/hosts"
 import {
   resolveActiveProject,
   _resetActiveProjectCache,
@@ -230,7 +231,13 @@ const getEngagement = (
 
 /** Widen a stored binding into its wire form, or `null` when unbound. */
 const toRepoView = (repo: ProjectRepo | undefined): ProjectRepoView | null =>
-  repo ? { ...repo, label: formatIdentity(repo.provider) } : null
+  repo
+    ? {
+        ...repo,
+        label: formatIdentity(repo.provider),
+        hostTrusted: isDeclaredHost(repo.provider.host),
+      }
+    : null
 
 const listAllProjects = (): ProjectSummary[] => {
   const active = resolveActiveProject()

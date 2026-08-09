@@ -16,6 +16,7 @@ import { projectPaths } from "@/lib/projects/paths";
 import { createProject } from "@/lib/projects/create";
 import { resolveBindableRepo, RepoBindError } from "@/lib/projects/policy";
 import { formatIdentity } from "@/lib/github/identity";
+import { isDeclaredHost } from "@/lib/github/hosts";
 import { resolveActiveProject, _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { bootstrapFromInvite } from "@/sync/bootstrap";
 import { isInvite } from "@/sync/invite";
@@ -141,6 +142,9 @@ export function listSubcommand(args: string[]): void {
     // Explicit null rather than an absent key: consumers of `--json` can tell
     // "unbound" from "this build didn't know about bindings".
     repo: p.repo ?? null,
+    // Null when unbound. False marks a binding stored before enterprise hosts
+    // had to be declared, whose host nothing in config vouches for now.
+    repoHostTrusted: p.repo ? isDeclaredHost(p.repo.provider.host) : null,
   }));
 
   if (isJson) {
@@ -159,9 +163,13 @@ export function listSubcommand(args: string[]): void {
   const maxSlug = Math.max(...rows.map((r) => r.slug.length), 4);
   const maxName = Math.max(...rows.map((r) => r.name.length), 4);
   // An unattached project is the thing the user most likely needs to act on,
-  // so it gets a word rather than a blank cell.
+  // so it gets a word rather than a blank cell. An undeclared host gets a mark
+  // in the cell itself: `github.com.evil.com/o/r` reads as github.com to anyone
+  // scanning this column, which is the confusion the allowlist exists to stop.
   const repoLabel = (r: (typeof rows)[number]) =>
-    r.repo ? formatIdentity(r.repo.provider) : "unlinked";
+    r.repo
+      ? `${formatIdentity(r.repo.provider)}${r.repoHostTrusted ? "" : " (!)"}`
+      : "unlinked";
   const maxRepo = Math.max(...rows.map((r) => repoLabel(r).length), 4);
 
   console.log(
@@ -178,6 +186,14 @@ export function listSubcommand(args: string[]): void {
       : `${dim}${repoLabel(r).padEnd(maxRepo)}${reset}`;
     console.log(
       `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${repoCell}  ${sessionStr}  ${ago}`,
+    );
+  }
+
+  if (rows.some((r) => r.repoHostTrusted === false)) {
+    console.log();
+    console.log(`${dim}  (!) host is not declared in github.enterpriseHosts.${reset}`);
+    console.log(
+      `${dim}      Declare it in ~/.bertrand/config.json, or re-link the project.${reset}`,
     );
   }
 }
@@ -295,8 +311,10 @@ export function currentSubcommand(args: string[]): void {
   // stale the moment `project link` ran in the same process.
   const repo = getProjectRepo(active.slug) ?? null;
 
+  const repoHostTrusted = repo ? isDeclaredHost(repo.provider.host) : null;
+
   if (isJson) {
-    console.log(JSON.stringify({ ...active, repo }, null, 2));
+    console.log(JSON.stringify({ ...active, repo, repoHostTrusted }, null, 2));
     return;
   }
   console.log(`Active project: ${active.slug} (${active.name})`);
@@ -304,7 +322,14 @@ export function currentSubcommand(args: string[]): void {
   console.log(`  DB:      ${active.db}`);
   console.log(`  SyncEnv: ${active.syncEnv}`);
   if (repo) {
-    console.log(`  Repo:    ${formatIdentity(repo.provider)} → ${repo.path}`);
+    const mark = repoHostTrusted ? "" : " (!)";
+    console.log(`  Repo:    ${formatIdentity(repo.provider)}${mark} → ${repo.path}`);
+    if (!repoHostTrusted) {
+      console.log(
+        `           (!) ${repo.provider.host} is not declared in github.enterpriseHosts.\n` +
+          `               Declare it in ~/.bertrand/config.json, or re-link the project.`,
+      );
+    }
   } else {
     console.log(`  Repo:    unlinked (bertrand project link ${active.slug} <path>)`);
   }
