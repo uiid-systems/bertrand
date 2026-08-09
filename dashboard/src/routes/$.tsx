@@ -52,6 +52,7 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
+import { TimelineActions } from "../components/timeline/timeline-actions";
 import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
@@ -249,7 +250,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <ResizablePanel>
             <SessionZones
               sessionId={sessionId}
-              timeline={<TimelineBody segments={segments} />}
+              segments={segments}
               // A finished session has no PTY to attach to; the same zone
               // carries its exit panel instead (#214).
               exit={
@@ -344,11 +345,13 @@ const TERMINAL_ZONE_SHARE = "45%";
  */
 const SessionZones = ({
   sessionId,
-  timeline,
+  segments,
   exit,
 }: {
   readonly sessionId: string;
-  readonly timeline: ReactNode;
+  /** Feeds both the timeline body and its header's jump list, so a card and its
+   *  entry in that list can never describe different things. */
+  readonly segments: ConversationSegment[];
   /** Present once the session has ended; renders instead of the terminal. */
   readonly exit: ReactNode | null;
 }) => {
@@ -383,12 +386,19 @@ const SessionZones = ({
         title="Timeline"
         open={timelineOpen}
         onOpenChange={openTimeline}
+        actions={
+          <TimelineActions
+            segments={segments}
+            open={timelineOpen}
+            onOpen={() => openTimeline(true)}
+          />
+        }
         // Every prompt, reply, and answer in here renders through `Markdown`, so
         // rebuilding the timeline is O(events) parses — enough to stall a long
         // session's expand. Hide it while collapsed instead of unmounting it.
         keepMounted
       >
-        {timeline}
+        <TimelineBody segments={segments} />
       </ContentZone>
 
       <ContentZone
