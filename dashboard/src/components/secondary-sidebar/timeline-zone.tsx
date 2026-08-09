@@ -15,11 +15,7 @@ import { ArrowDownToLineIcon, ArrowUpToLineIcon } from "@uiid/icons";
 import { eventsQuery } from "../../api/queries";
 import type { EventRow } from "../../api/types";
 import { eventColor, eventTocTitle, formatTimestamp } from "../../lib/format";
-import {
-  isFreshKey,
-  useSettledKeys,
-  type SettledKeys,
-} from "../../lib/use-settled-keys";
+import { useSettledKeys, type SettledKeys } from "../../lib/use-settled-keys";
 import { AgentTurnSummary } from "../timeline/agent_turn_summary";
 import {
   eventAnchorId,
@@ -216,12 +212,7 @@ const ConversationToc = ({
     )}
     <Stack gap={1} fullwidth ax="stretch" pl={grouped ? 3 : 0}>
       {segment.events.map((event) => (
-        <TocRow
-          key={event.id}
-          event={event}
-          isNew={isFreshKey(settled, event.id)}
-          onJump={onJump}
-        />
+        <TocRow key={event.id} event={event} onJump={onJump} />
       ))}
     </Stack>
   </Stack>
@@ -236,11 +227,9 @@ ConversationToc.displayName = "ConversationToc";
  */
 const TocRow = ({
   event,
-  isNew,
   onJump,
 }: {
   event: EventRow;
-  isNew: boolean;
   onJump: (anchorId: string) => void;
 }) => (
   <Stack

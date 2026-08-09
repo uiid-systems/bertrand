@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge, Group, Number, Text } from "@uiid/design-system";
 
 import { changedFilesQuery } from "../../api/queries";
-import { isFreshKey, useSettledKeys } from "../../lib/use-settled-keys";
+import { useSettledKeys } from "../../lib/use-settled-keys";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
 import { ChangedFileRow } from "../worktrees/changed-file-row";
 
@@ -71,11 +71,7 @@ export const ChangedFilesZone = ({
           }}
         >
           {files.map((file) => (
-            <ChangedFileRow
-              key={file.path}
-              file={file}
-              isNew={isFreshKey(settled, file.path)}
-            />
+            <ChangedFileRow key={file.path} file={file} />
           ))}
         </Group>
       )}
