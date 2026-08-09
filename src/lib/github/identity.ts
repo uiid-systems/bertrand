@@ -147,3 +147,20 @@ export function formatIdentity(identity: ProviderIdentity): string {
   const ownerRepo = `${identity.owner}/${identity.repo}`;
   return identity.host ? `${identity.host}/${ownerRepo}` : ownerRepo;
 }
+
+/**
+ * Whether two identities address the same repository.
+ *
+ * Lives here rather than at the call site because it depends on two invariants
+ * this module owns: an absent `host` means github.com, and GitHub treats
+ * `owner`/`repo` case-insensitively — so `Acme/Bertrand` and `acme/bertrand`
+ * are one repo, and a caller comparing fields by hand would say otherwise.
+ */
+export function sameIdentity(a: ProviderIdentity, b: ProviderIdentity): boolean {
+  return (
+    a.provider === b.provider &&
+    (a.host ?? GITHUB_COM) === (b.host ?? GITHUB_COM) &&
+    a.owner.toLowerCase() === b.owner.toLowerCase() &&
+    a.repo.toLowerCase() === b.repo.toLowerCase()
+  );
+}
