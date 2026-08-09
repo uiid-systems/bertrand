@@ -150,6 +150,7 @@ export const WorktreeItem = ({
         {entry ? (
           <Text
             weight="bold"
+            size={-1}
             style={truncate}
             title={worktreePath ?? undefined}
           >
@@ -161,9 +162,7 @@ export const WorktreeItem = ({
           </Text>
         )}
         {pending ? null : missing ? (
-          <Badge color="neutral" ml="auto">
-            none
-          </Badge>
+          <></>
         ) : listening ? (
           <Badge color="green" ml="auto">
             running
@@ -274,12 +273,12 @@ export const WorktreeItem = ({
         </Group>
       </Group>
 
-      {missing && !pending && (
+      {/* {missing && !pending && (
         <Text size={-1} shade="muted">
           This session isn't working in a worktree — there's no checkout to
           open, preview or delete.
         </Text>
-      )}
+      )} */}
 
       {error && (
         <Text size={-1} shade="muted">

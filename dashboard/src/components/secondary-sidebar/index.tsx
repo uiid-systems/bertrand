@@ -58,20 +58,19 @@ export const SecondarySidebar = ({
 
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
-      <WorktreeZone sessionId={sessionId} />
       <ChangedFilesZone
         sessionId={sessionId}
         isLive={isLive}
         projectSlug={projectSlug}
       />
-      {/* Every zone below renders unconditionally now, so the separators are
-          fixed too — none of them can dangle above a hidden section. */}
       <Separator />
       <UsageZone
         sessionId={sessionId}
         isLive={isLive}
         projectSlug={projectSlug}
       />
+      <Separator />
+      <WorktreeZone sessionId={sessionId} />
       <Separator />
       <TimelineZone
         sessionId={sessionId}
