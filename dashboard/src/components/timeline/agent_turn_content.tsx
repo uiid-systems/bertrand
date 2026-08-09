@@ -1,7 +1,6 @@
-import { Stack, Text } from "@uiid/design-system";
+import { Stack } from "@uiid/design-system";
 
 import type { EventRow } from "../../api/types";
-import { eventColor, eventTitle } from "../../lib/format";
 import { AssistantContent } from "./assistant_content";
 import { WorkContent } from "./work_content";
 
@@ -38,9 +37,10 @@ AgentTurnContent.displayName = "AgentTurnContent";
 
 /**
  * A single member of a turn. Assistant prose renders as bare markdown — the
- * card title ("Agent's response") already frames it. Tool work keeps the little
- * colored summary line each work card used to show as its title, so a run of
- * commands and edits stays scannable inside the consolidated card.
+ * card title ("Agent's response") already frames it. Tool work renders as one
+ * line that is both its title and its disclosure trigger, so a run of commands
+ * and edits stays scannable inside the consolidated card no matter how much
+ * detail each call carries.
  */
 const AgentTurnPart = ({ part }: { part: EventRow }) => {
   if (part.event === "assistant.message") {
@@ -49,9 +49,6 @@ const AgentTurnPart = ({ part }: { part: EventRow }) => {
 
   return (
     <Stack data-slot="agent-turn-work" gap={2} fullwidth>
-      <Text size={-1} weight="medium" color={eventColor(part.event)}>
-        {eventTitle(part)}
-      </Text>
       <WorkContent event={part} />
     </Stack>
   );

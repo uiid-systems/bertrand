@@ -144,28 +144,25 @@ export const WorktreeItem = ({
   const error = (start.error ?? stop.error) as Error | null;
 
   return (
-    <Stack data-slot="worktree-item" gap={1} fullwidth>
+    <Stack data-slot="worktree-item" gap={4} p={2} pb={0} fullwidth>
       <Group ay="center" gap={2} fullwidth>
         <Status color={listening ? "green" : running ? "yellow" : color} />
         {entry ? (
           <Text
-            family="mono"
             weight="bold"
-            size={0}
+            size={-1}
             style={truncate}
             title={worktreePath ?? undefined}
           >
             {branch ?? "(unknown branch)"}
           </Text>
         ) : (
-          <Text weight="bold" size={0} shade="halftone" style={truncate}>
+          <Text weight="bold" shade="halftone" style={truncate}>
             {pending ? "Checking…" : "No worktree"}
           </Text>
         )}
         {pending ? null : missing ? (
-          <Badge color="neutral" ml="auto">
-            none
-          </Badge>
+          <></>
         ) : listening ? (
           <Badge color="green" ml="auto">
             running
@@ -197,8 +194,7 @@ export const WorktreeItem = ({
               `disabled` and would navigate to a dead file URI. */}
           <Button
             size="xsmall"
-            variant="ghost"
-            shape="square"
+            variant="subtle"
             disabled={!worktreePath}
             aria-label={`Open worktree in ${editorLabel(editor)}`}
             tooltip={
@@ -217,7 +213,6 @@ export const WorktreeItem = ({
           {running ? (
             <Button
               size="xsmall"
-              shape="square"
               aria-label="Stop preview"
               tooltip="Stop preview"
               onClick={() => stop.mutate()}
@@ -228,8 +223,7 @@ export const WorktreeItem = ({
           ) : (
             <Button
               size="xsmall"
-              variant="ghost"
-              shape="square"
+              variant="subtle"
               disabled={disabled}
               aria-label="Start preview"
               tooltip={missing ? "No worktree to preview" : "Start preview"}
@@ -241,8 +235,7 @@ export const WorktreeItem = ({
           )}
           <Button
             size="xsmall"
-            variant="ghost"
-            shape="square"
+            variant="subtle"
             disabled={disabled}
             aria-pressed={showLogs}
             aria-label={showLogs ? "Hide logs" : "Show logs"}
@@ -262,8 +255,8 @@ export const WorktreeItem = ({
               against yanking a preview someone is actively using. */}
           <Button
             size="xsmall"
-            variant="ghost"
-            shape="square"
+            variant="subtle"
+            color="red"
             disabled={running || disabled}
             aria-label="Delete worktree"
             tooltip={
@@ -275,17 +268,17 @@ export const WorktreeItem = ({
             }
             onClick={() => setConfirmOpen(true)}
           >
-            <Trash2Icon size={13} color="var(--color-red)" />
+            <Trash2Icon />
           </Button>
         </Group>
       </Group>
 
-      {missing && !pending && (
+      {/* {missing && !pending && (
         <Text size={-1} shade="muted">
           This session isn't working in a worktree — there's no checkout to
           open, preview or delete.
         </Text>
-      )}
+      )} */}
 
       {error && (
         <Text size={-1} shade="muted">

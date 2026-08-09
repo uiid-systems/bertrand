@@ -8,12 +8,18 @@ import {
   useState,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2Icon, Minimize2Icon } from "@uiid/icons";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+} from "@uiid/icons";
 
 import {
   Badge,
   Breadcrumbs,
   Button,
+  Card,
   Group,
   Resizable,
   ResizableHandle,
@@ -22,7 +28,6 @@ import {
   Status,
   type StatusProps,
   Text,
-  Timeline,
 } from "@uiid/design-system";
 
 import { eventsQuery, projectsQuery } from "../api/queries";
@@ -37,7 +42,6 @@ import {
   isLiveStatus,
   statusColor,
 } from "../lib/format";
-import { categoryOf } from "../lib/timeline/categories";
 import { iconOf } from "../lib/timeline/icons";
 import {
   eventAnchorId,
@@ -48,6 +52,7 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
+import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
 import { ContentZone, useZoneCollapse } from "../components/content-zone";
@@ -465,7 +470,7 @@ SessionZones.displayName = "SessionZones";
  *
  * Memoized against the segment's identity (stable for unchanged conversations,
  * see segmentConversations) so a live append rebuilds only the segment that
- * grew instead of every Timeline in the session.
+ * grew instead of every card in the session.
  */
 const ConversationSegmentView = memo(function ConversationSegmentView({
   segment,
@@ -500,66 +505,102 @@ const ConversationSegmentView = memo(function ConversationSegmentView({
         </Stack>
       )}
       {segment.events.length > 0 && (
-        <Timeline
-          activeIndex={segment.events.length}
-          gap={6}
-          ContentProps={{ maxw: 960, pt: 0, pb: 6 }}
-          items={segment.events.map((e) => {
-            // A consolidated agent turn hides its many work rows, so surface a
-            // compact readout (tool calls · reads · file diffs) beside the
-            // timestamp — parity with the folded detail without touching the
-            // title. Other cards keep the bare timestamp.
-            const turnStats = agentTurnStats(e);
-            const timestamp = (
-              <Badge color={eventColor(e.event)} size="small">
-                <span style={{ whiteSpace: "nowrap" }}>
-                  {formatTimestamp(e.createdAt)}
-                </span>
-              </Badge>
-            );
-            return {
-              // Anchor every card so the sidebar table-of-contents can scroll to
-              // it; the margin keeps the target off the container's top edge.
-              id: eventAnchorId(e),
-              style: { scrollMarginTop: 16 },
-              color: eventColor(e.event),
-              marker: <EventMarker event={e} />,
-              content:
-                e.event === "claude.started" ? (
-                  <SessionStartedContent event={e} vitals={segment.vitals} />
-                ) : (
-                  <EventContent event={e} />
-                ),
-              title: eventTitle(e),
-              TitleProps: { color: eventColor(e.event) },
-              time: turnStats ? (
-                <Group gap={2} ay="center">
-                  <AgentTurnSummary event={e} />
-                  {timestamp}
-                </Group>
-              ) : (
-                timestamp
-              ),
-              // Lifecycle rows are just an id/exit badge — no card surface.
-              CardProps:
-                categoryOf(e.event) === "lifecycle"
-                  ? { variant: "ghost" as const }
-                  : undefined,
-            };
-          })}
-        />
+        <Stack ax="stretch" gap={4} maxw={960} fullwidth>
+          {segment.events.map((e) => (
+            <EventCard key={e.id} event={e} vitals={segment.vitals} />
+          ))}
+        </Stack>
       )}
     </Stack>
   );
 });
 ConversationSegmentView.displayName = "ConversationSegmentView";
 
-/** Per-event icon rendered inside the timeline marker on the rail. */
-function EventMarker({ event }: { readonly event: EventRow }) {
-  const Icon = iconOf(event.event);
-  return <Icon size={12} />;
+/**
+ * One event as a card. The event kind picks the palette hue, and that hue is the
+ * card's whole surface — background, border, and foreground together — so the
+ * kind reads at a glance the way the rail's colored marker used to convey it: a
+ * user prompt is blue, tool work yellow, an agent reply indigo.
+ *
+ * Because the surface carries the hue, nothing inside the card restates it. The
+ * title takes its color from `--palette-on-tint` rather than an explicit hue,
+ * and the timestamp is plain mono text: a same-hue Badge resolves to exactly the
+ * card's own tint, which would leave it invisible.
+ *
+ * The timestamp sits in the footer, below the separator CardFooter draws, so the
+ * header keeps the title and the turn's activity readout as its only tenants.
+ *
+ * A work event's title already names what it did ("edited $.tsx (+4 -4)"), so
+ * rather than repeat that as a summary row above the diff, the title line *is*
+ * the disclosure: clicking it (or the chevron opposite) reveals the detail,
+ * which stays closed by default. Every other kind of card shows its content
+ * outright — a prompt or a reply is the thing you came to read.
+ */
+function EventCard({
+  event,
+  vitals,
+}: {
+  readonly event: EventRow;
+  readonly vitals: ConversationSegment["vitals"];
+}) {
+  // A consolidated agent turn hides its many work rows, so surface a compact
+  // readout (tool calls · reads · file diffs) opposite the title — parity with
+  // the folded detail without touching the title itself. Other cards show none.
+  const turnStats = agentTurnStats(event);
+  const [open, setOpen] = useState(false);
+  const collapsible = hasWorkDetail(event);
+  const toggle = () => setOpen((v) => !v);
+
+  const timestamp = (
+    <Text size={-1} family="mono" style={{ whiteSpace: "nowrap", opacity: 0.7 }}>
+      {formatTimestamp(event.createdAt)}
+    </Text>
+  );
+
+  return (
+    <Card
+      // Anchor every card so the sidebar table-of-contents can scroll to it; the
+      // margin keeps the target off the scroll container's top edge.
+      id={eventAnchorId(event)}
+      style={{ scrollMarginTop: 16 }}
+      color={eventColor(event.event)}
+      icon={iconOf(event.event)}
+      title={collapsible ? workTitle(event) : eventTitle(event)}
+      TitleProps={
+        collapsible
+          ? { onClick: toggle, style: { cursor: "pointer" } }
+          : undefined
+      }
+      action={
+        collapsible ? (
+          <Group
+            gap={2}
+            ay="center"
+            onClick={toggle}
+            style={{ cursor: "pointer" }}
+          >
+            {turnStats && <AgentTurnSummary event={event} />}
+            {open ? (
+              <ChevronDownIcon size={14} />
+            ) : (
+              <ChevronRightIcon size={14} />
+            )}
+          </Group>
+        ) : turnStats ? (
+          <AgentTurnSummary event={event} />
+        ) : undefined
+      }
+      footer={timestamp}
+    >
+      {collapsible && !open ? null : event.event === "claude.started" ? (
+        <SessionStartedContent event={event} vitals={vitals} />
+      ) : (
+        <EventContent event={event} />
+      )}
+    </Card>
+  );
 }
-EventMarker.displayName = "EventMarker";
+EventCard.displayName = "EventCard";
 
 function ArchiveToggle({
   session,

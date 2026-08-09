@@ -6,7 +6,6 @@ import {
   Button,
   Group,
   Number,
-  Reveal,
   Stack,
   Text,
   type TextProps,
@@ -16,11 +15,7 @@ import { ArrowDownToLineIcon, ArrowUpToLineIcon } from "@uiid/icons";
 import { eventsQuery } from "../../api/queries";
 import type { EventRow } from "../../api/types";
 import { eventColor, eventTocTitle, formatTimestamp } from "../../lib/format";
-import {
-  isFreshKey,
-  useSettledKeys,
-  type SettledKeys,
-} from "../../lib/use-settled-keys";
+import { useSettledKeys, type SettledKeys } from "../../lib/use-settled-keys";
 import { AgentTurnSummary } from "../timeline/agent_turn_summary";
 import {
   eventAnchorId,
@@ -217,12 +212,7 @@ const ConversationToc = ({
     )}
     <Stack gap={1} fullwidth ax="stretch" pl={grouped ? 3 : 0}>
       {segment.events.map((event) => (
-        <TocRow
-          key={event.id}
-          event={event}
-          isNew={isFreshKey(settled, event.id)}
-          onJump={onJump}
-        />
+        <TocRow key={event.id} event={event} onJump={onJump} />
       ))}
     </Stack>
   </Stack>
@@ -237,11 +227,9 @@ ConversationToc.displayName = "ConversationToc";
  */
 const TocRow = ({
   event,
-  isNew,
   onJump,
 }: {
   event: EventRow;
-  isNew: boolean;
   onJump: (anchorId: string) => void;
 }) => (
   <Stack
@@ -253,7 +241,7 @@ const TocRow = ({
     onClick={() => onJump(eventAnchorId(event))}
   >
     <Group ay="center" gap={2} fullwidth>
-      <TocTitle event={event} isNew={isNew} />
+      <TocTitle event={event} />
       <Text size={-1} family="mono" shade="muted" style={{ flexShrink: 0 }}>
         {formatTimestamp(event.createdAt)}
       </Text>
@@ -263,18 +251,7 @@ const TocRow = ({
 );
 TocRow.displayName = "TocRow";
 
-/**
- * The row's label. A row that arrived while the session is live reveals in word
- * by word; everything else renders as plain text. Both branches spread the same
- * props object so the typography is provably identical — the animation is the
- * only difference, and a revealed row settles into exactly the static one.
- *
- * `isNew` is fixed for the life of the row (the baseline set is a ref and the
- * event id is stable), so this never swaps components mid-life and restarts the
- * animation. Reveal itself animates per word on mount, which means a title that
- * grows as a turn consolidates animates only its newly-added words.
- */
-const TocTitle = ({ event, isNew }: { event: EventRow; isNew: boolean }) => {
+const TocTitle = ({ event }: { event: EventRow }) => {
   const props: Omit<TextProps, "children"> = {
     className: "timeline-toc-title",
     size: -1,
@@ -284,10 +261,6 @@ const TocTitle = ({ event, isNew }: { event: EventRow; isNew: boolean }) => {
   };
   const title = eventTocTitle(event);
 
-  return isNew ? (
-    <Reveal {...props}>{title}</Reveal>
-  ) : (
-    <Text {...props}>{title}</Text>
-  );
+  return <Text {...props}>{title}</Text>;
 };
 TocTitle.displayName = "TocTitle";

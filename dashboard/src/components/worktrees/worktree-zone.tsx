@@ -29,15 +29,12 @@ export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
 
   return (
     <SidebarZone data-slot="worktree-zone" title="Worktree">
-      <Stack fullwidth>
-        <WorktreeItem
-          sessionId={sessionId}
-          entry={entry}
-          preview={entry?.status}
-          pending={isPending}
-        />
-        <Separator />
-      </Stack>
+      <WorktreeItem
+        sessionId={sessionId}
+        entry={entry}
+        preview={entry?.status}
+        pending={isPending}
+      />
     </SidebarZone>
   );
 };

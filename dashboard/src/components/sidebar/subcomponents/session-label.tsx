@@ -12,7 +12,7 @@ export const SessionLabel = ({ session: s }: SessionLabelProps) => (
     size={-1}
     truncate
   >
-    <Text render={<span />} shade="muted">
+    <Text render={<span />} size={-1} shade="muted">
       {s.categoryPath}
     </Text>
     {`/${s.session.slug}`}
