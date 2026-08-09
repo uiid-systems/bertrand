@@ -10,8 +10,25 @@ import {
 import { randomBytes } from "crypto";
 import { join } from "path";
 import { paths } from "@/lib/paths";
+import type { ProviderIdentity } from "@/lib/github/identity";
 
 export const DEFAULT_PROJECT_SLUG = "default";
+
+/**
+ * A project's binding to a git repository.
+ *
+ * `path` is machine-local and `provider` is not: a registry synced to another
+ * machine keeps a meaningful `owner/repo` even when the checkout lives
+ * somewhere else (or nowhere at all).
+ */
+export interface ProjectRepo {
+  /** Absolute path to the checkout on this machine. */
+  path: string;
+  /** Portable identity, stable across machines. */
+  provider: ProviderIdentity;
+  /** Resolved from `origin/HEAD`; absent when it could not be determined. */
+  defaultBranch?: string;
+}
 
 export interface ProjectEntry {
   slug: string;
@@ -19,6 +36,7 @@ export interface ProjectEntry {
   createdAt: string;
   lastUsedAt: string;
   color?: string;
+  repo?: ProjectRepo;
 }
 
 export interface ProjectRegistry {
@@ -53,6 +71,9 @@ function projectsDir(): string {
  * Read the registry from `<root>/projects.json`. Returns `null` if the
  * file does not exist OR is malformed (caller decides the fallback). The
  * project-directory scan recovery is offered via {@link recoverFromDisk}.
+ *
+ * Optional fields are normalized rather than validated: a mangled `repo`
+ * binding drops to `undefined` and leaves every other project readable.
  */
 export function readRegistry(): ProjectRegistry | null {
   const path = registryPath();
@@ -61,7 +82,10 @@ export function readRegistry(): ProjectRegistry | null {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (!isRegistry(parsed)) return null;
-    return parsed;
+    return {
+      activeProjectSlug: parsed.activeProjectSlug,
+      projects: parsed.projects.map(normalizeEntry),
+    };
   } catch {
     return null;
   }
@@ -248,6 +272,13 @@ export function removeProject(slug: string): void {
   writeRegistry(registry);
 }
 
+/**
+ * Structural gate for the fields every entry must have.
+ *
+ * Deliberately says nothing about `repo`: rejecting the file over an optional
+ * field would make one bad hand-edit hide every project. {@link normalizeEntry}
+ * decides what a `repo` that got past here is worth.
+ */
 function isRegistry(value: unknown): value is ProjectRegistry {
   if (typeof value !== "object" || value === null) return false;
   const r = value as Record<string, unknown>;
@@ -263,4 +294,89 @@ function isRegistry(value: unknown): value is ProjectRegistry {
       typeof e.lastUsedAt === "string"
     );
   });
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function normalizeProvider(value: unknown): ProviderIdentity | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const p = value as Record<string, unknown>;
+
+  if (p.provider !== "github") return undefined;
+  if (!isNonEmptyString(p.owner) || !isNonEmptyString(p.repo)) return undefined;
+  // Absent host means github.com; a present-but-unusable one is not a
+  // detail we can safely guess at, so the whole identity goes.
+  if (p.host !== undefined && !isNonEmptyString(p.host)) return undefined;
+
+  return p.host === undefined
+    ? { provider: "github", owner: p.owner, repo: p.repo }
+    : { provider: "github", owner: p.owner, repo: p.repo, host: p.host };
+}
+
+/**
+ * Validate a stored `repo` binding, returning `undefined` for anything we
+ * can't stand behind. Rebuilt field by field rather than passed through, so
+ * what a reader gets back always matches {@link ProjectRepo}.
+ */
+function normalizeRepo(value: unknown): ProjectRepo | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Record<string, unknown>;
+
+  if (!isNonEmptyString(r.path)) return undefined;
+
+  const provider = normalizeProvider(r.provider);
+  if (!provider) return undefined;
+
+  const repo: ProjectRepo = { path: r.path, provider };
+  if (isNonEmptyString(r.defaultBranch)) repo.defaultBranch = r.defaultBranch;
+
+  return repo;
+}
+
+/** Drop an unusable `repo` while leaving every other field untouched. */
+function normalizeEntry(entry: ProjectEntry): ProjectEntry {
+  // `entry` is only structurally checked, so `repo` is `unknown` in practice
+  // whatever the declared type claims.
+  const { repo, ...rest } = entry;
+  const normalized = normalizeRepo(repo);
+  return normalized ? { ...rest, repo: normalized } : rest;
+}
+
+/**
+ * Read a project's repo binding. Returns `undefined` for an unbound project,
+ * an unknown slug, or a binding that failed to normalize — callers asking
+ * "is this project attached to a repo?" want an answer, not an exception.
+ */
+export function getProjectRepo(slug: string): ProjectRepo | undefined {
+  return listProjects().find((p) => p.slug === slug)?.repo;
+}
+
+/**
+ * Bind a project to a repository, preserving the entry's other fields.
+ * Atomic via {@link writeRegistry}.
+ *
+ * Rejects a binding that wouldn't survive a read, so a stored `repo` always
+ * round-trips instead of silently vanishing the next time the file is loaded.
+ */
+export function setProjectRepo(slug: string, repo: ProjectRepo): void {
+  const normalized = normalizeRepo(repo);
+  if (!normalized) {
+    throw new Error(
+      `Invalid repo binding for project "${slug}" — need an absolute path and a provider identity`,
+    );
+  }
+
+  const registry = loadRegistry();
+  if (!registry) {
+    throw new Error(`No registry to update — create a project first`);
+  }
+  const entry = registry.projects.find((p) => p.slug === slug);
+  if (!entry) {
+    throw new Error(`Unknown project slug "${slug}"`);
+  }
+
+  entry.repo = normalized;
+  writeRegistry(registry);
 }
