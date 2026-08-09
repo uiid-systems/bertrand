@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.36.0](https://github.com/uiid-systems/bertrand/compare/v0.35.0...v0.36.0) (2026-08-09)
+
+
+### Features
+
+* **dashboard:** always render the secondary sidebar's zones ([#223](https://github.com/uiid-systems/bertrand/issues/223)) ([7dad94e](https://github.com/uiid-systems/bertrand/commit/7dad94eba0be072c41f92807cad1bef920182493))
+* **dashboard:** give every dashboard-created session its own worktree ([#224](https://github.com/uiid-systems/bertrand/issues/224)) ([3ff5e41](https://github.com/uiid-systems/bertrand/commit/3ff5e4123db9bd9a625129326be1acd1591783ec)), closes [#210](https://github.com/uiid-systems/bertrand/issues/210)
+* **dashboard:** render the timeline as colored cards ([#225](https://github.com/uiid-systems/bertrand/issues/225)) ([3fd1ca0](https://github.com/uiid-systems/bertrand/commit/3fd1ca053d85910259a494421e124fe5e2341c67))
+
+
+### Bug Fixes
+
+* **dashboard:** let stale service workers die instead of serving a mangled UI ([#221](https://github.com/uiid-systems/bertrand/issues/221)) ([d20d0f2](https://github.com/uiid-systems/bertrand/commit/d20d0f2554c9ab3d4a463d3c3ba5f6445ce07c50))
+
 ## [0.35.0](https://github.com/uiid-systems/bertrand/compare/v0.34.0...v0.35.0) (2026-08-07)
 
 
