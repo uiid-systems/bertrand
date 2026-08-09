@@ -1,6 +1,7 @@
 import type { sessions, events, sessionStats } from "./db/schema";
 // Type-only — erased at build; keeps this barrel free of runtime imports.
 import type { WorkspaceServerStatus } from "./lib/workspace/server";
+import type { ProjectRepo } from "./lib/projects/registry";
 
 export type { ChangedFile, WorktreeChangedFiles } from "./lib/git";
 
@@ -43,6 +44,43 @@ export type WorktreeSessionRow = SessionWithCategory & {
 export type EngagementStats = {
   toolUsage: Record<string, number>;
   discardRate: { discarded: number; total: number };
+};
+
+/**
+ * A project's repo binding as the API serves it: the stored binding plus a
+ * display `label` the server formats.
+ *
+ * The label is computed server-side on purpose. Rendering `owner/repo` looks
+ * trivial until GitHub Enterprise, where the host has to be prefixed —
+ * `formatIdentity` owns that rule, and the dashboard can't call it (it takes
+ * *types* from `src`, never runtime code, since there's no `@/` alias in the
+ * Vite build). Sending the formatted string keeps the rule in one place.
+ */
+export type ProjectRepoView = ProjectRepo & { label: string };
+
+/**
+ * One row of /api/projects.
+ *
+ * `repo` is explicitly `null` when unbound rather than omitted: an absent key
+ * would be indistinguishable from a server too old to send it, and the
+ * dashboard renders those two cases differently.
+ */
+export type ProjectSummary = {
+  slug: string;
+  name: string;
+  /** True for the registry's active project — the CLI's write target. */
+  active: boolean;
+  lastUsedAt: string;
+  /** Count of currently live (active/waiting) sessions in this project. */
+  liveCount: number;
+  repo: ProjectRepoView | null;
+};
+
+/** /api/active-project — the registry's current write target. */
+export type ActiveProjectMeta = {
+  slug: string;
+  name: string;
+  repo: ProjectRepoView | null;
 };
 
 export type ArchiveReason = "not-found" | "active" | "already-archived";

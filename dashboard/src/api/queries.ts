@@ -12,6 +12,7 @@ import type {
   WorktreeSessionRow,
   WorktreeChangedFiles,
   ChangedFile,
+  ProjectSummary,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -362,14 +363,9 @@ export const engagementQuery = (
     placeholderData: keepPreviousData,
   })
 
-export type ProjectSummary = {
-  slug: string
-  name: string
-  active: boolean
-  lastUsedAt: string
-  /** Count of currently live (active/waiting) sessions in this project. */
-  liveCount: number
-}
+// Re-exported rather than re-declared: the shape is the server's, and a local
+// copy would drift silently the next time a field is added to the response.
+export type { ProjectSummary }
 
 export const projectsQuery = queryOptions({
   queryKey: ["projects"],

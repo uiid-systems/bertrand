@@ -14,6 +14,9 @@ export type {
   SessionActionErrorReason,
   ChangedFile,
   WorktreeChangedFiles,
+  ProjectRepoView,
+  ProjectSummary,
+  ActiveProjectMeta,
 } from "@/types"
 
 // Type-only — erased at build, so this never pulls the workspace runtime
