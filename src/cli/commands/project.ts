@@ -8,9 +8,14 @@ import {
   setActiveProjectSlug,
   renameProject,
   removeProject,
+  getProjectRepo,
+  setProjectRepo,
+  type ProjectRepo,
 } from "@/lib/projects/registry";
 import { projectPaths } from "@/lib/projects/paths";
 import { createProject } from "@/lib/projects/create";
+import { resolveBindableRepo, RepoBindError } from "@/lib/projects/policy";
+import { formatIdentity } from "@/lib/github/identity";
 import { resolveActiveProject, _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { bootstrapFromInvite } from "@/sync/bootstrap";
 import { isInvite } from "@/sync/invite";
@@ -133,6 +138,9 @@ export function listSubcommand(args: string[]): void {
     active: p.slug === activeSlug,
     sessions: countSessions(p.slug),
     lastUsedAt: p.lastUsedAt,
+    // Explicit null rather than an absent key: consumers of `--json` can tell
+    // "unbound" from "this build didn't know about bindings".
+    repo: p.repo ?? null,
   }));
 
   if (isJson) {
@@ -150,9 +158,14 @@ export function listSubcommand(args: string[]): void {
   const bold = "\x1b[1m";
   const maxSlug = Math.max(...rows.map((r) => r.slug.length), 4);
   const maxName = Math.max(...rows.map((r) => r.name.length), 4);
+  // An unattached project is the thing the user most likely needs to act on,
+  // so it gets a word rather than a blank cell.
+  const repoLabel = (r: (typeof rows)[number]) =>
+    r.repo ? formatIdentity(r.repo.provider) : "unlinked";
+  const maxRepo = Math.max(...rows.map((r) => repoLabel(r).length), 4);
 
   console.log(
-    `${dim}  ${"SLUG".padEnd(maxSlug)}  ${"NAME".padEnd(maxName)}  ${"SESSIONS".padEnd(10)}  LAST USED${reset}`,
+    `${dim}  ${"SLUG".padEnd(maxSlug)}  ${"NAME".padEnd(maxName)}  ${"REPO".padEnd(maxRepo)}  ${"SESSIONS".padEnd(10)}  LAST USED${reset}`,
   );
   for (const r of rows) {
     const marker = r.active ? `${bold}*${reset}` : " ";
@@ -160,23 +173,51 @@ export function listSubcommand(args: string[]): void {
       ? "?".padEnd(10)
       : `${r.sessions.total} (${r.sessions.active} active)`.padEnd(10);
     const ago = formatAgo(r.lastUsedAt);
+    const repoCell = r.repo
+      ? repoLabel(r).padEnd(maxRepo)
+      : `${dim}${repoLabel(r).padEnd(maxRepo)}${reset}`;
     console.log(
-      `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${sessionStr}  ${ago}`,
+      `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${repoCell}  ${sessionStr}  ${ago}`,
     );
   }
 }
 
-export function createSubcommand(args: string[]): void {
+/**
+ * Resolve a path into a binding, restating a policy refusal as a UsageError so
+ * it prints and exits non-zero like every other bad-input case. The policy
+ * messages are already written for a human, so they pass straight through.
+ */
+async function bindableRepo(path: string, forSlug?: string): Promise<ProjectRepo> {
+  try {
+    return await resolveBindableRepo(path, { forSlug });
+  } catch (err) {
+    if (err instanceof RepoBindError) {
+      throw new UsageError(err.message);
+    }
+    throw err;
+  }
+}
+
+export async function createSubcommand(args: string[]): Promise<void> {
   const [slug] = positional(args);
   validateSlug(slug ?? "");
   const customName = parseFlag(args, "name");
+  const repoPath = parseFlag(args, "repo");
   const activate = hasFlag(args, "activate");
 
   if (listProjects().some((p) => p.slug === slug)) {
     throw new UsageError(`Project "${slug}" already exists.`);
   }
 
-  createProject({ slug: slug!, name: customName });
+  if (hasFlag(args, "repo") && !repoPath) {
+    throw new UsageError("--repo requires a path to a GitHub checkout.");
+  }
+
+  // Resolve before creating: a bad path should leave no project behind, and
+  // `bindableRepo` is the slow step (it shells out to git).
+  const repo = repoPath ? await bindableRepo(repoPath, slug) : undefined;
+
+  createProject({ slug: slug!, name: customName, repo });
 
   if (activate) {
     setActiveProjectSlug(slug!);
@@ -184,6 +225,35 @@ export function createSubcommand(args: string[]): void {
   }
 
   console.log(`Created project "${slug}"${activate ? " (now active)" : ""}.`);
+  if (repo) {
+    console.log(`  Repo: ${formatIdentity(repo.provider)} → ${repo.path}`);
+  }
+}
+
+export async function linkSubcommand(args: string[]): Promise<void> {
+  const [slug, path] = positional(args);
+  if (!slug || !path) {
+    throw new UsageError("Usage: bertrand project link <slug> <path>");
+  }
+
+  if (!listProjects().some((p) => p.slug === slug)) {
+    throw new UsageError(`Unknown project slug "${slug}".`);
+  }
+
+  const repo = await bindableRepo(path, slug);
+  const previous = getProjectRepo(slug);
+  setProjectRepo(slug, repo);
+
+  console.log(`Linked "${slug}" to ${formatIdentity(repo.provider)}.`);
+  console.log(`  Path: ${repo.path}`);
+  if (repo.defaultBranch) {
+    console.log(`  Default branch: ${repo.defaultBranch}`);
+  }
+  // Re-linking is legal, but silently swapping which repo a project points at
+  // is the kind of thing you want to see confirmed.
+  if (previous && formatIdentity(previous.provider) !== formatIdentity(repo.provider)) {
+    console.log(`  (was ${formatIdentity(previous.provider)})`);
+  }
 }
 
 export function switchSubcommand(args: string[]): void {
@@ -220,14 +290,24 @@ export function switchSubcommand(args: string[]): void {
 export function currentSubcommand(args: string[]): void {
   const isJson = hasFlag(args, "json");
   const active = resolveActiveProject();
+  // Read the binding rather than taking it off `active`: resolveActiveProject
+  // is memoized for the process lifetime, so a binding carried on it would go
+  // stale the moment `project link` ran in the same process.
+  const repo = getProjectRepo(active.slug) ?? null;
+
   if (isJson) {
-    console.log(JSON.stringify(active, null, 2));
+    console.log(JSON.stringify({ ...active, repo }, null, 2));
     return;
   }
   console.log(`Active project: ${active.slug} (${active.name})`);
   console.log(`  Root:    ${active.root}`);
   console.log(`  DB:      ${active.db}`);
   console.log(`  SyncEnv: ${active.syncEnv}`);
+  if (repo) {
+    console.log(`  Repo:    ${formatIdentity(repo.provider)} → ${repo.path}`);
+  } else {
+    console.log(`  Repo:    unlinked (bertrand project link ${active.slug} <path>)`);
+  }
 }
 
 export function renameSubcommand(args: string[]): void {
@@ -321,8 +401,9 @@ bertrand project — manage projects
 
 Usage:
   bertrand project list [--json]                  List all projects
-  bertrand project create <slug> [--name "..."] [--activate]
+  bertrand project create <slug> [--name "..."] [--repo <path>] [--activate]
                                                   Create a new project
+  bertrand project link <slug> <path>             Attach a project to a GitHub checkout
   bertrand project switch <slug>                  Set the active project
   bertrand project current [--json]               Show the active project
   bertrand project rename <slug> <new-name>       Rename a project (display name only)
@@ -335,6 +416,7 @@ Usage:
 const KNOWN_SUBS = new Set([
   "list",
   "create",
+  "link",
   "switch",
   "current",
   "rename",
@@ -348,8 +430,12 @@ register("project", async (args) => {
     switch (sub) {
       case "list":
         return listSubcommand(args.slice(1));
+      // `await`, not `return`: a returned rejection settles outside this
+      // try/catch and would skip the UsageError handling below.
       case "create":
-        return createSubcommand(args.slice(1));
+        return await createSubcommand(args.slice(1));
+      case "link":
+        return await linkSubcommand(args.slice(1));
       case "switch":
         return switchSubcommand(args.slice(1));
       case "current":

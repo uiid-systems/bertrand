@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "fs";
 import { randomBytes } from "crypto";
-import { join } from "path";
+import { isAbsolute, join } from "path";
 import { paths } from "@/lib/paths";
 import type { ProviderIdentity } from "@/lib/github/identity";
 
@@ -324,7 +324,11 @@ function normalizeRepo(value: unknown): ProjectRepo | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const r = value as Record<string, unknown>;
 
-  if (!isNonEmptyString(r.path)) return undefined;
+  // Absolute is the documented contract for `ProjectRepo.path`, and the error
+  // in setProjectRepo already promises it. Enforce it here so the promise is
+  // true for every caller, not just the ones routed through resolveBindableRepo
+  // (which gets an absolute path from git for free).
+  if (!isNonEmptyString(r.path) || !isAbsolute(r.path)) return undefined;
 
   const provider = normalizeProvider(r.provider);
   if (!provider) return undefined;

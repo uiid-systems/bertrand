@@ -1,6 +1,6 @@
 import { mkdirSync } from "fs";
 import { runMigrations } from "@/db/migrate";
-import { registerProject, removeProject } from "./registry";
+import { registerProject, removeProject, setProjectRepo, type ProjectRepo } from "./registry";
 import { projectPaths } from "./paths";
 
 /**
@@ -15,13 +15,24 @@ import { projectPaths } from "./paths";
  * would synthesize a phantom registry entry from the just-planted
  * `bertrand.db` sentinel and `registerProject` would see "already
  * exists".
+ *
+ * An optional `repo` binding is applied inside the same guarded step, so a
+ * project that was asked to be born attached is never left half-created and
+ * unattached — it either exists bound, or does not exist.
  */
-export function createProject(opts: { slug: string; name?: string }): void {
+export function createProject(opts: {
+  slug: string;
+  name?: string;
+  repo?: ProjectRepo;
+}): void {
   registerProject({ slug: opts.slug, name: opts.name ?? opts.slug });
   try {
     const paths = projectPaths(opts.slug);
     mkdirSync(paths.root, { recursive: true });
     runMigrations(paths.db);
+    if (opts.repo) {
+      setProjectRepo(opts.slug, opts.repo);
+    }
   } catch (err) {
     try {
       removeProject(opts.slug);
