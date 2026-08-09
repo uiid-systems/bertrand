@@ -6,7 +6,7 @@ import {
   type GroupProps,
   SelectMultiple,
 } from "@uiid/design-system";
-import { ActivityIcon, FolderIcon } from "@uiid/icons";
+import { ActivityIcon, FolderIcon, GithubIcon, Unlink2Icon } from "@uiid/icons";
 
 import { useSelectedProjects } from "../selected-projects";
 
@@ -22,7 +22,15 @@ export const ProjectSelector = ({ ...props }: GroupProps) => {
 
   if (projects.length === 0) return null;
 
-  const items = projects.map((p) => ({ value: p.slug, label: p.name }));
+  // Every option carries a second line: the bound `owner/repo`, or an explicit
+  // "Not linked". Unbound projects get words rather than blank space, so the
+  // gap reads as a state you can act on instead of a rendering bug.
+  const items = projects.map((p) => ({
+    value: p.slug,
+    label: p.name,
+    description: p.repo?.label ?? "Not linked",
+    icon: p.repo ? GithubIcon : Unlink2Icon,
+  }));
   // `selected` is null only until the live default seeds (one tick); the
   // trigger shows its placeholder in that window.
   const value = selected ?? [];

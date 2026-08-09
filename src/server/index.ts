@@ -53,7 +53,10 @@ import {
   listProjects,
   setActiveProjectSlug,
   projectExists,
+  getProjectRepo,
+  type ProjectRepo,
 } from "@/lib/projects/registry"
+import { formatIdentity } from "@/lib/github/identity"
 import {
   resolveActiveProject,
   _resetActiveProjectCache,
@@ -66,6 +69,9 @@ import type {
   EventRow,
   SessionStatsRow,
   EngagementStats,
+  ProjectRepoView,
+  ProjectSummary,
+  ActiveProjectMeta,
 } from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
@@ -222,7 +228,11 @@ const getEngagement = (
   url: URL,
 ): EngagementStats => computeEngagementStats(sessionId!, resolveDb(url))
 
-const listAllProjects = (): unknown => {
+/** Widen a stored binding into its wire form, or `null` when unbound. */
+const toRepoView = (repo: ProjectRepo | undefined): ProjectRepoView | null =>
+  repo ? { ...repo, label: formatIdentity(repo.provider) } : null
+
+const listAllProjects = (): ProjectSummary[] => {
   const active = resolveActiveProject()
   return listProjects().map((p) => ({
     slug: p.slug,
@@ -232,12 +242,22 @@ const listAllProjects = (): unknown => {
     // Live-session count drives the dashboard's default view (projects with
     // current activity). Handles are cached, so this is a cheap per-poll COUNT.
     liveCount: countLiveSessions(getDbForProject(p.slug)),
+    repo: toRepoView(p.repo),
   }))
 }
 
-const getActiveProjectMeta = (): unknown => {
+const getActiveProjectMeta = (): ActiveProjectMeta => {
   const active = resolveActiveProject()
-  return { slug: active.slug, name: active.name }
+  // The binding is read from the registry rather than taken off `active`:
+  // resolveActiveProject memoizes for the whole process lifetime, so a
+  // `bertrand project link` during a long-lived server would otherwise not
+  // show up until restart. Registry reads hit disk each call, so this is
+  // always current.
+  return {
+    slug: active.slug,
+    name: active.name,
+    repo: toRepoView(getProjectRepo(active.slug)),
+  }
 }
 
 // Sessions currently working in a worktree. Derived from the worktree_path
