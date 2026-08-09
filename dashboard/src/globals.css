@@ -18,6 +18,15 @@
   text-decoration: underline;
 }
 
+/* A hue used as text *on a tinted card*. Text's `color` prop resolves to
+   `--palette-text`, which @uiid/tokens measures against the page background —
+   the wrong slot once a timeline card carries a tint of its own. Pairing a
+   `.palette-<hue>` class with this rule keeps the hue but takes the step tuned
+   to sit on a tinted surface, the pairing the tokens guarantee clears AA. */
+.tint-text {
+  color: var(--palette-on-tint);
+}
+
 /* A zone dimmed via its flashlight toggle: knock back the panel with
    `brightness` (not opacity, so it stays fully opaque and keeps its layering)
    and restore full brightness on hover so it can be read without un-dimming. */
