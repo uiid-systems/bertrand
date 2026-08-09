@@ -39,16 +39,20 @@ const ROWS = [
 /**
  * Collapsible "Token usage" section for the secondary sidebar. Totals are
  * rolled up from the session's conversations, where transcript ingestion
- * accrues them. Renders nothing when nothing has been captured — an empty
- * zone is noise, not signal — which also keeps it hidden for sessions
- * predating usage capture until they are backfilled.
+ * accrues them.
+ *
+ * The zone always renders, including when nothing was captured — it's a fixed
+ * landmark like its neighbours. "None captured" is its own answer, and it
+ * covers both a session that spent nothing and one predating usage capture
+ * that hasn't been backfilled; the two are indistinguishable from here, so
+ * the copy claims neither.
  */
 export const UsageZone = ({
   sessionId,
   isLive,
   projectSlug,
 }: UsageZoneProps) => {
-  const { data: stats } = useQuery({
+  const { data: stats, isPending } = useQuery({
     ...statsQuery(sessionId, isLive, projectSlug),
     enabled: !!sessionId,
   });
@@ -63,57 +67,82 @@ export const UsageZone = ({
     allStatsQuery({ hasLiveSession: isLive, projects: queryProjects }),
   );
 
-  if (!stats) return null;
+  const captured = stats
+    ? stats.inputTokens +
+      stats.outputTokens +
+      stats.cacheCreationTokens +
+      stats.cacheReadTokens
+    : 0;
 
-  const captured =
-    stats.inputTokens +
-    stats.outputTokens +
-    stats.cacheCreationTokens +
-    stats.cacheReadTokens;
-  if (captured === 0) return null;
-
-  const standing = standingFor(stats.outputTokens, usagePeers(allStats));
+  // Standing only means something against real numbers; with nothing captured
+  // there's no peer comparison to draw, so the badge falls back to "none".
+  const standing =
+    stats && captured > 0
+      ? standingFor(stats.outputTokens, usagePeers(allStats))
+      : null;
 
   return (
     <SidebarZone
       data-slot="usage-zone"
       title="Token usage"
       badge={
-        <Badge color={standing.color} title={standing.title}>
-          <Text size={-1} weight="bold">
-            {formatTokens(stats.outputTokens)}
-          </Text>
-        </Badge>
+        isPending ? null : standing && stats ? (
+          <Badge color={standing.color} title={standing.title}>
+            <Text size={-1} weight="bold">
+              {formatTokens(stats.outputTokens)}
+            </Text>
+          </Badge>
+        ) : (
+          <Badge color="neutral">none</Badge>
+        )
       }
       PanelProps={{ style: { paddingBlock: 8 } }}
     >
-      {/* One grid for the whole list so the counts line up tabularly. */}
-      <Group
-        px={2}
-        gap={1}
-        fullwidth
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto",
-          columnGap: 12,
-        }}
-      >
-        {ROWS.map(({ key, label, hint }) => (
-          <Fragment key={key}>
-            <Text size={-1} shade="muted" title={hint}>
-              {label}
-            </Text>
-            <Text
-              size={-1}
-              family="mono"
-              title={`${(stats[key] as number).toLocaleString()} tokens — ${hint}`}
-              style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}
-            >
-              {formatTokens(stats[key] as number)}
-            </Text>
-          </Fragment>
-        ))}
-      </Group>
+      {stats && captured > 0 ? (
+        /* One grid for the whole list so the counts line up tabularly. */
+        <Group
+          px={2}
+          gap={1}
+          fullwidth
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            columnGap: 12,
+          }}
+        >
+          {ROWS.map(({ key, label, hint }) => (
+            <Fragment key={key}>
+              <Text size={-1} shade="muted" title={hint}>
+                {label}
+              </Text>
+              <Text
+                size={-1}
+                family="mono"
+                title={`${(stats[key] as number).toLocaleString()} tokens — ${hint}`}
+                style={{
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {formatTokens(stats[key] as number)}
+              </Text>
+            </Fragment>
+          ))}
+        </Group>
+      ) : (
+        <Group px={2} fullwidth>
+          {/* Zeroed counters would assert this session spent nothing, which
+              isn't knowable here — a session predating usage capture reads
+              the same until its transcripts are backfilled. */}
+          <Text
+            size={-1}
+            shade="muted"
+            title="Sessions predating usage capture stay empty until their transcripts are backfilled."
+          >
+            {isPending ? "Checking…" : "No token usage captured."}
+          </Text>
+        </Group>
+      )}
     </SidebarZone>
   );
 };

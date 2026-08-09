@@ -40,8 +40,16 @@ import {
 } from "../../lib/editor";
 
 export type WorktreeItemProps = {
-  entry: WorktreeSessionRow;
+  /** The session this row acts on. Passed separately from `entry` because a
+   * session without a worktree has no /api/worktrees row to read it from. */
+  sessionId: string;
+  /** The session's worktree, when it has one. Absent means it never entered
+   * one — the row still renders, says so, and disables its controls. */
+  entry?: WorktreeSessionRow;
   preview?: WorkspaceServerStatus;
+  /** The worktree list hasn't resolved yet. Renders the row neutral instead
+   * of briefly claiming the session has no worktree. */
+  pending?: boolean;
 };
 
 const truncate = {
@@ -63,9 +71,24 @@ const truncate = {
  * Deletion is a two-step confirm: the modal states what goes (the checkout)
  * and what stays (the branch); when the server reports uncommitted changes,
  * the modal escalates to an explicit "Force delete" instead of dead-ending.
+ *
+ * A session with no worktree renders the same row rather than disappearing:
+ * "No worktree" with every control disabled and a tooltip saying why. The
+ * absence is a fact about the session worth stating in place.
  */
-export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
-  const { session, branch } = entry;
+export const WorktreeItem = ({
+  sessionId,
+  entry,
+  preview,
+  pending,
+}: WorktreeItemProps) => {
+  const session = entry?.session;
+  const branch = entry?.branch;
+  const worktreePath = session?.worktreePath ?? null;
+  // Nothing on disk to act on: every control below is inert. While the list is
+  // still loading we disable the same way but stay quiet about the reason.
+  const missing = !entry;
+  const disabled = missing || !!pending;
   const qc = useQueryClient();
   const [editor] = usePreferredEditor();
   const [showLogs, setShowLogs] = useState(false);
@@ -80,16 +103,16 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["worktrees"] });
   const start = useMutation({
-    mutationFn: () => startWorktree(session.id),
+    mutationFn: () => startWorktree(sessionId),
     onSuccess: refresh,
   });
   const stop = useMutation({
-    mutationFn: () => stopWorktree(session.id),
+    mutationFn: () => stopWorktree(sessionId),
     onSuccess: refresh,
   });
 
   const del = useMutation({
-    mutationFn: (force: boolean) => deleteWorktree(session.id, { force }),
+    mutationFn: (force: boolean) => deleteWorktree(sessionId, { force }),
     onSuccess: () => {
       setConfirmOpen(false);
       qc.invalidateQueries({ queryKey: ["worktrees"] });
@@ -101,7 +124,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   // Only fetched once the server has refused a delete for being dirty — the
   // modal then shows exactly what "Force delete" would discard.
   const discarded = useQuery({
-    ...worktreeFilesQuery(session.id, "uncommitted"),
+    ...worktreeFilesQuery(sessionId, "uncommitted"),
     enabled: dirty && confirmOpen,
     refetchInterval: false,
   });
@@ -109,29 +132,41 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
   // Only poll logs while the panel is open; keep refreshing them while the
   // server runs so a starting/installing worktree shows progress live.
   const logs = useQuery({
-    queryKey: ["worktree-logs", session.id],
-    queryFn: () => fetchWorktreeLogs(session.id),
+    queryKey: ["worktree-logs", sessionId],
+    queryFn: () => fetchWorktreeLogs(sessionId),
     enabled: showLogs,
     refetchInterval: showLogs && running ? 2000 : false,
   });
 
-  const color = statusColor(session.status) as StatusProps["color"];
+  const color = (
+    session ? statusColor(session.status) : "neutral"
+  ) as StatusProps["color"];
   const error = (start.error ?? stop.error) as Error | null;
 
   return (
     <Stack data-slot="worktree-item" gap={1} fullwidth>
       <Group ay="center" gap={2} fullwidth>
         <Status color={listening ? "green" : running ? "yellow" : color} />
-        <Text
-          family="mono"
-          weight="bold"
-          size={0}
-          style={truncate}
-          title={session.worktreePath ?? undefined}
-        >
-          {branch ?? "(unknown branch)"}
-        </Text>
-        {listening ? (
+        {entry ? (
+          <Text
+            family="mono"
+            weight="bold"
+            size={0}
+            style={truncate}
+            title={worktreePath ?? undefined}
+          >
+            {branch ?? "(unknown branch)"}
+          </Text>
+        ) : (
+          <Text weight="bold" size={0} shade="halftone" style={truncate}>
+            {pending ? "Checking…" : "No worktree"}
+          </Text>
+        )}
+        {pending ? null : missing ? (
+          <Badge color="neutral" ml="auto">
+            none
+          </Badge>
+        ) : listening ? (
           <Badge color="green" ml="auto">
             running
           </Badge>
@@ -158,18 +193,27 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
           </Text>
         )}
         <Group gap={1} ay="center" ml="auto">
-          {session.worktreePath && (
-            <Button
-              size="xsmall"
-              variant="ghost"
-              shape="square"
-              aria-label={`Open worktree in ${editorLabel(editor)}`}
-              tooltip={`Open in ${editorLabel(editor)}`}
-              render={<a href={editorFileUri(editor, session.worktreePath)} />}
-            >
-              <ExternalLinkIcon size={13} />
-            </Button>
-          )}
+          {/* Stays a real <button> without a path — an anchor ignores
+              `disabled` and would navigate to a dead file URI. */}
+          <Button
+            size="xsmall"
+            variant="ghost"
+            shape="square"
+            disabled={!worktreePath}
+            aria-label={`Open worktree in ${editorLabel(editor)}`}
+            tooltip={
+              worktreePath
+                ? `Open in ${editorLabel(editor)}`
+                : "No worktree to open"
+            }
+            render={
+              worktreePath ? (
+                <a href={editorFileUri(editor, worktreePath)} />
+              ) : undefined
+            }
+          >
+            <ExternalLinkIcon size={13} />
+          </Button>
           {running ? (
             <Button
               size="xsmall"
@@ -186,8 +230,9 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
               size="xsmall"
               variant="ghost"
               shape="square"
+              disabled={disabled}
               aria-label="Start preview"
-              tooltip="Start preview"
+              tooltip={missing ? "No worktree to preview" : "Start preview"}
               onClick={() => start.mutate()}
               loading={start.isPending}
             >
@@ -198,9 +243,16 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
             size="xsmall"
             variant="ghost"
             shape="square"
+            disabled={disabled}
             aria-pressed={showLogs}
             aria-label={showLogs ? "Hide logs" : "Show logs"}
-            tooltip={showLogs ? "Hide logs" : "Show logs"}
+            tooltip={
+              missing
+                ? "No preview logs without a worktree"
+                : showLogs
+                  ? "Hide logs"
+                  : "Show logs"
+            }
             onClick={() => setShowLogs((s) => !s)}
           >
             <ScrollTextIcon size={13} />
@@ -212,15 +264,28 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
             size="xsmall"
             variant="ghost"
             shape="square"
-            disabled={running}
+            disabled={running || disabled}
             aria-label="Delete worktree"
-            tooltip={running ? "Stop the preview first" : "Delete worktree"}
+            tooltip={
+              missing
+                ? "No worktree to delete"
+                : running
+                  ? "Stop the preview first"
+                  : "Delete worktree"
+            }
             onClick={() => setConfirmOpen(true)}
           >
             <Trash2Icon size={13} color="var(--color-red)" />
           </Button>
         </Group>
       </Group>
+
+      {missing && !pending && (
+        <Text size={-1} shade="muted">
+          This session isn't working in a worktree — there's no checkout to
+          open, preview or delete.
+        </Text>
+      )}
 
       {error && (
         <Text size={-1} shade="muted">
@@ -297,7 +362,7 @@ export const WorktreeItem = ({ entry, preview }: WorktreeItemProps) => {
       >
         <Stack gap={2} fullwidth>
           <Text size={-1} family="mono" style={{ wordBreak: "break-all" }}>
-            {session.worktreePath}
+            {worktreePath}
           </Text>
           {dirty &&
             (discarded.data ? (
