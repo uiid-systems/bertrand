@@ -56,16 +56,6 @@ export const SecondarySidebar = ({
     enabled: !!sessionId,
   });
 
-  // UsageZone hides itself when nothing was captured, so the separator has to
-  // be gated on the same condition or it dangles above nothing.
-  const hasUsage =
-    !!stats &&
-    stats.inputTokens +
-      stats.outputTokens +
-      stats.cacheCreationTokens +
-      stats.cacheReadTokens >
-      0;
-
   return (
     <SidebarWrapper data-slot="secondary-sidebar" {...props}>
       <WorktreeZone sessionId={sessionId} />
@@ -74,7 +64,9 @@ export const SecondarySidebar = ({
         isLive={isLive}
         projectSlug={projectSlug}
       />
-      {hasUsage && <Separator />}
+      {/* Every zone below renders unconditionally now, so the separators are
+          fixed too — none of them can dangle above a hidden section. */}
+      <Separator />
       <UsageZone
         sessionId={sessionId}
         isLive={isLive}

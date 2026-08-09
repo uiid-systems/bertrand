@@ -15,20 +15,27 @@ export type WorktreeZoneProps = {
 /**
  * Collapsible "Worktree" section for the secondary sidebar. The sidebar is
  * per-session, so this shows the one worktree belonging to the session being
- * viewed, with live preview state and controls. Renders nothing when the
- * session has no worktree — in a stats sidebar an empty section is noise,
- * not signal.
+ * viewed, with live preview state and controls.
+ *
+ * The zone always renders, including for sessions with no worktree: it's a
+ * fixed landmark at the top of the sidebar, and "no worktree" is a fact about
+ * the session worth stating rather than an absence to hide. Hiding it also
+ * made the sidebar's shape jump between sessions.
  */
 export const WorktreeZone = ({ sessionId }: WorktreeZoneProps) => {
-  const { data: worktrees = [] } = useQuery(worktreesQuery);
+  const { data: worktrees, isPending } = useQuery(worktreesQuery);
 
-  const entry = worktrees.find((w) => w.session.id === sessionId);
-  if (!entry) return null;
+  const entry = worktrees?.find((w) => w.session.id === sessionId);
 
   return (
     <SidebarZone data-slot="worktree-zone" title="Worktree">
       <Stack fullwidth>
-        <WorktreeItem entry={entry} preview={entry.status} />
+        <WorktreeItem
+          sessionId={sessionId}
+          entry={entry}
+          preview={entry?.status}
+          pending={isPending}
+        />
         <Separator />
       </Stack>
     </SidebarZone>
