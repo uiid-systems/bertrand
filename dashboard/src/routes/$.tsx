@@ -21,6 +21,7 @@ import {
   Button,
   Card,
   Group,
+  Number,
   Resizable,
   ResizableHandle,
   ResizablePanel,
@@ -52,6 +53,7 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
+import { TimelineActions } from "../components/timeline/timeline-actions";
 import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
@@ -249,7 +251,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <ResizablePanel>
             <SessionZones
               sessionId={sessionId}
-              timeline={<TimelineBody segments={segments} />}
+              segments={segments}
               // A finished session has no PTY to attach to; the same zone
               // carries its exit panel instead (#214).
               exit={
@@ -344,11 +346,13 @@ const TERMINAL_ZONE_SHARE = "45%";
  */
 const SessionZones = ({
   sessionId,
-  timeline,
+  segments,
   exit,
 }: {
   readonly sessionId: string;
-  readonly timeline: ReactNode;
+  /** Feeds both the timeline body and its header's jump list, so a card and its
+   *  entry in that list can never describe different things. */
+  readonly segments: ConversationSegment[];
   /** Present once the session has ended; renders instead of the terminal. */
   readonly exit: ReactNode | null;
 }) => {
@@ -376,6 +380,10 @@ const SessionZones = ({
 
   const maximized = !timelineOpen;
 
+  // Cards actually rendered, not raw events — transforms fold runs of tool
+  // calls into one card, so this counts what the timeline shows.
+  const cardCount = segments.reduce((n, s) => n + s.events.length, 0);
+
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ minHeight: 0 }}>
       <ContentZone
@@ -383,12 +391,29 @@ const SessionZones = ({
         title="Timeline"
         open={timelineOpen}
         onOpenChange={openTimeline}
+        badge={
+          // Matches the sidebar zones' count badge. Held back at zero — an
+          // empty timeline has nothing to count, and a `0` that flips to `40`
+          // reads as the session changing rather than its events arriving.
+          cardCount === 0 ? null : (
+            <Badge color="neutral">
+              <Number size={-1} weight="bold" value={cardCount} />
+            </Badge>
+          )
+        }
+        actions={
+          <TimelineActions
+            segments={segments}
+            open={timelineOpen}
+            onOpen={() => openTimeline(true)}
+          />
+        }
         // Every prompt, reply, and answer in here renders through `Markdown`, so
         // rebuilding the timeline is O(events) parses — enough to stall a long
         // session's expand. Hide it while collapsed instead of unmounting it.
         keepMounted
       >
-        {timeline}
+        <TimelineBody segments={segments} />
       </ContentZone>
 
       <ContentZone
@@ -464,7 +489,7 @@ SessionZones.displayName = "SessionZones";
  * One conversation's timeline. When the session has more than one conversation,
  * a header carries the ordinal, event count, relative start, and the first user
  * prompt as a subtitle. The segment container's `id` is the deep-link anchor the
- * sidebar's Timeline table-of-contents (and a shared #hash link) scroll to — it
+ * zone header's jump list (and a shared #hash link) scroll to — it
  * lives on the container (not the header) so single-conversation sessions, which
  * render no header, still expose an anchor to jump to.
  *
@@ -559,8 +584,9 @@ function EventCard({
 
   return (
     <Card
-      // Anchor every card so the sidebar table-of-contents can scroll to it; the
-      // margin keeps the target off the scroll container's top edge.
+      // Anchor every card so the zone header's jump list can scroll to it — and
+      // so its scroll-spy can tell which card you're on; the margin keeps the
+      // target off the scroll container's top edge.
       id={eventAnchorId(event)}
       style={{ scrollMarginTop: 16 }}
       color={eventColor(event.event)}

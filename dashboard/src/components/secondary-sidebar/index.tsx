@@ -30,7 +30,6 @@ import {
 } from "../sidebar/subcomponents/sidebar-wrapper";
 import { WorktreeZone } from "../worktrees";
 import { ChangedFilesZone } from "./changed-files-zone";
-import { TimelineZone } from "./timeline-zone";
 import { UsageZone } from "./usage-zone";
 
 export type SecondarySidebarProps = Omit<SidebarWrapperProps, "children"> & {
@@ -71,12 +70,6 @@ export const SecondarySidebar = ({
       />
       <Separator />
       <WorktreeZone sessionId={sessionId} />
-      <Separator />
-      <TimelineZone
-        sessionId={sessionId}
-        isLive={isLive}
-        projectSlug={projectSlug}
-      />
       {/* {stats && <SessionStats stats={stats} engagement={engagement} />} */}
     </SidebarWrapper>
   );

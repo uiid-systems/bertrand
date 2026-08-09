@@ -123,9 +123,10 @@ function anchorFor(conversationId: string): string {
 
 /**
  * Stable DOM anchor for a single timeline card, e.g. `event-1234`. Shared by
- * the timeline (which stamps it on each item's `<li>`) and the sidebar's
- * table-of-contents (which scrolls to it). The row keeps its DB id through
- * every transform, so the anchor is stable and globally unique.
+ * the timeline (which stamps it on each card) and the zone header's jump list
+ * (which scrolls to it, and spies on it to track the reading position). The row
+ * keeps its DB id through every transform, so the anchor is stable and globally
+ * unique.
  */
 export function eventAnchorId(event: EventRow): string {
   return `event-${event.id}`
