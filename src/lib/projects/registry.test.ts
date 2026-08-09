@@ -17,7 +17,10 @@ import {
   writeRegistry,
   recoverFromDisk,
   loadRegistry,
+  getProjectRepo,
+  setProjectRepo,
   type ProjectRegistry,
+  type ProjectRepo,
 } from "./registry";
 
 let tmpRoot: string;
@@ -253,5 +256,180 @@ describe("recoverFromDisk", () => {
     mkdirSync(join(tmpRoot, "projects", "empty1"), { recursive: true });
     mkdirSync(join(tmpRoot, "projects", "empty2"), { recursive: true });
     expect(recoverFromDisk()).toBeNull();
+  });
+});
+
+const REPO: ProjectRepo = {
+  path: "/Users/dev/www/acme",
+  provider: { provider: "github", owner: "acme", repo: "acme-app" },
+};
+
+/** Write a registry straight to disk, bypassing the typed write path. */
+function writeRaw(projects: unknown[], activeProjectSlug = "acme"): void {
+  writeFileSync(
+    join(tmpRoot, "projects.json"),
+    JSON.stringify({ activeProjectSlug, projects }),
+  );
+}
+
+function rawEntry(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    slug: "acme",
+    name: "Acme",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    lastUsedAt: "2026-01-01T00:00:00.000Z",
+    ...extra,
+  };
+}
+
+describe("repo binding — reading", () => {
+  test("entries without a repo still load", () => {
+    writeRaw([rawEntry()]);
+    expect(readRegistry()!.projects[0]!.repo).toBeUndefined();
+  });
+
+  test("round-trips a valid binding", () => {
+    writeRaw([rawEntry({ repo: REPO })]);
+    expect(getProjectRepo("acme")).toEqual(REPO);
+  });
+
+  test("round-trips an enterprise host and defaultBranch", () => {
+    const repo: ProjectRepo = {
+      path: "/srv/acme",
+      provider: { provider: "github", owner: "acme", repo: "app", host: "github.acme.com" },
+      defaultBranch: "trunk",
+    };
+    writeRaw([rawEntry({ repo })]);
+    expect(getProjectRepo("acme")).toEqual(repo);
+  });
+
+  test.each([
+    ["not an object", "nonsense"],
+    ["null", null],
+    ["missing path", { provider: REPO.provider }],
+    ["empty path", { path: "   ", provider: REPO.provider }],
+    ["missing provider", { path: "/Users/dev/www/acme" }],
+    ["provider not an object", { path: "/x", provider: "acme/acme-app" }],
+    ["unknown provider kind", { path: "/x", provider: { provider: "gitlab", owner: "a", repo: "b" } }],
+    ["provider missing repo", { path: "/x", provider: { provider: "github", owner: "acme" } }],
+    ["provider with empty owner", { path: "/x", provider: { provider: "github", owner: "", repo: "b" } }],
+    ["provider with non-string host", { path: "/x", provider: { ...REPO.provider, host: 42 } }],
+  ])("drops a malformed repo (%s) to undefined", (_label, repo) => {
+    writeRaw([rawEntry({ repo })]);
+    const registry = readRegistry();
+    // The entry itself must survive — losing the binding is recoverable,
+    // losing the project is not.
+    expect(registry).not.toBeNull();
+    expect(registry!.projects).toHaveLength(1);
+    expect(registry!.projects[0]!.slug).toBe("acme");
+    expect(registry!.projects[0]!.repo).toBeUndefined();
+  });
+
+  test("one bad hand-edit does not hide the other projects", () => {
+    writeRaw([
+      rawEntry({ repo: { path: "/x" } }),
+      rawEntry({ slug: "personal", name: "Personal", repo: REPO }),
+    ]);
+    const projects = readRegistry()!.projects;
+    expect(projects.map((p) => p.slug)).toEqual(["acme", "personal"]);
+    expect(projects[0]!.repo).toBeUndefined();
+    expect(projects[1]!.repo).toEqual(REPO);
+  });
+
+  test("a malformed repo leaves the entry's other fields intact", () => {
+    writeRaw([rawEntry({ color: "amber", repo: 7 })]);
+    expect(readRegistry()!.projects[0]).toEqual({
+      slug: "acme",
+      name: "Acme",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      lastUsedAt: "2026-01-01T00:00:00.000Z",
+      color: "amber",
+    });
+  });
+
+  test("strips unrecognized keys inside the binding", () => {
+    writeRaw([rawEntry({ repo: { ...REPO, wat: true, provider: { ...REPO.provider, wat: true } } })]);
+    expect(getProjectRepo("acme")).toEqual(REPO);
+  });
+
+  test("round-trips a real-world registry (no repo bindings) without loss", () => {
+    const live = {
+      activeProjectSlug: "bertrand",
+      projects: [
+        { slug: "default", name: "Default", createdAt: "2026-06-16T01:16:50.820Z", lastUsedAt: "2026-08-07T04:03:03.990Z" },
+        { slug: "design-system", name: "design-system", createdAt: "2026-06-16T01:28:59.853Z", lastUsedAt: "2026-08-02T15:09:38.813Z" },
+        { slug: "bertrand", name: "bertrand", createdAt: "2026-06-16T01:38:33.248Z", lastUsedAt: "2026-08-09T16:24:00.104Z" },
+        { slug: "shuff-app", name: "shuff-app", createdAt: "2026-06-16T02:24:27.028Z", lastUsedAt: "2026-07-20T02:15:11.785Z" },
+      ],
+    };
+    writeFileSync(join(tmpRoot, "projects.json"), JSON.stringify(live, null, 2) + "\n");
+    expect(readRegistry()).toEqual(live);
+  });
+});
+
+describe("getProjectRepo", () => {
+  test("returns undefined for an unbound project", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(getProjectRepo("acme")).toBeUndefined();
+  });
+
+  test("returns undefined for an unknown slug", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(getProjectRepo("nope")).toBeUndefined();
+  });
+});
+
+describe("setProjectRepo", () => {
+  test("persists the binding", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    setProjectRepo("acme", REPO);
+    expect(getProjectRepo("acme")).toEqual(REPO);
+    const onDisk = JSON.parse(readFileSync(join(tmpRoot, "projects.json"), "utf8"));
+    expect(onDisk.projects[0].repo).toEqual(REPO);
+  });
+
+  test("preserves unrelated fields on the entry", () => {
+    const before = registerProject({ slug: "acme", name: "Acme", color: "amber" });
+    setProjectRepo("acme", REPO);
+    const after = listProjects().find((p) => p.slug === "acme")!;
+    expect(after).toEqual({ ...before, repo: REPO });
+  });
+
+  test("preserves unrelated projects", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    registerProject({ slug: "personal", name: "Personal" });
+    setProjectRepo("acme", REPO);
+    expect(getProjectRepo("personal")).toBeUndefined();
+    expect(listProjects().map((p) => p.slug)).toEqual(["acme", "personal"]);
+  });
+
+  test("does not disturb the active slug", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    registerProject({ slug: "personal", name: "Personal" });
+    setProjectRepo("personal", REPO);
+    expect(getActiveProjectSlug()).toBe("acme");
+  });
+
+  test("replaces an existing binding", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    setProjectRepo("acme", REPO);
+    const moved: ProjectRepo = { ...REPO, path: "/Users/dev/elsewhere", defaultBranch: "main" };
+    setProjectRepo("acme", moved);
+    expect(getProjectRepo("acme")).toEqual(moved);
+  });
+
+  test("throws on an unknown slug", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(() => setProjectRepo("nope", REPO)).toThrow(/Unknown project slug/);
+  });
+
+  test("throws when no registry exists yet", () => {
+    expect(() => setProjectRepo("acme", REPO)).toThrow(/No registry to update/);
+  });
+
+  test("rejects a binding that would not survive a read", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(() => setProjectRepo("acme", { ...REPO, path: "" })).toThrow(/Invalid repo binding/);
+    expect(getProjectRepo("acme")).toBeUndefined();
   });
 });
