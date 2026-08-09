@@ -432,4 +432,14 @@ describe("setProjectRepo", () => {
     expect(() => setProjectRepo("acme", { ...REPO, path: "" })).toThrow(/Invalid repo binding/);
     expect(getProjectRepo("acme")).toBeUndefined();
   });
+
+  // The error already promised "an absolute path"; without this the promise
+  // was only true for callers coming through resolveBindableRepo.
+  test("rejects a relative checkout path", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(() => setProjectRepo("acme", { ...REPO, path: "relative/checkout" })).toThrow(
+      /Invalid repo binding/,
+    );
+    expect(getProjectRepo("acme")).toBeUndefined();
+  });
 });

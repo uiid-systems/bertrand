@@ -179,6 +179,18 @@ describe("resolveBindableRepo", () => {
     expect(err.message).toMatch(/gitlab\.com/);
   });
 
+  test("redacts credentials embedded in the quoted remote", async () => {
+    seedRegistry([entry("acme")]);
+    _setGitRunner(fakeGit({ "/src/acme": "https://dev:ghp_secret@gitlab.com/acme/web.git" }));
+
+    const err = await resolveBindableRepo("/src/acme").catch((e) => e);
+    expect(err.reason).toBe("not-github");
+    // The host still names the problem; the token never reaches stdout.
+    expect(err.message).toMatch(/gitlab\.com/);
+    expect(err.message).not.toMatch(/ghp_secret/);
+    expect(err.message).not.toMatch(/dev:/);
+  });
+
   test("rejects a repo already bound to another project", async () => {
     seedRegistry([
       entry("acme", { path: "/src/acme", owner: "acme", repo: "web" }),

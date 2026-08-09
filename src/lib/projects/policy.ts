@@ -65,6 +65,20 @@ export function findProjectByRepo(identity: ProviderIdentity): ProjectEntry | un
 }
 
 /**
+ * Strip `user:token@` from a remote before it is echoed back.
+ *
+ * A remote can carry an embedded credential, and this message goes to stdout —
+ * terminal scrollback, CI logs, screenshots, pasted bug reports. The host and
+ * path are what make the error actionable; the userinfo never is.
+ *
+ * Only the URL form has userinfo to strip. The SCP form (`git@host:path`) has
+ * no `//`, so it passes through untouched.
+ */
+function redactRemote(remoteUrl: string): string {
+  return remoteUrl.replace(/\/\/[^/@]*@/, "//");
+}
+
+/**
  * Message for a path that would not resolve. Each reason names the fix, because
  * "could not attach" without a next step is the least useful thing we could say.
  */
@@ -86,7 +100,7 @@ function describeFailure(
       );
     case "not-github":
       return (
-        `"${path}" has an \`origin\` bertrand cannot attach to${remoteUrl ? ` (${remoteUrl})` : ""}.\n` +
+        `"${path}" has an \`origin\` bertrand cannot attach to${remoteUrl ? ` (${redactRemote(remoteUrl)})` : ""}.\n` +
         `  Only GitHub remotes are supported. Re-point \`origin\` at a GitHub repository.`
       );
   }
