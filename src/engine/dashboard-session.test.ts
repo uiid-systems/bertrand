@@ -1,7 +1,11 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const {
   DashboardSessionLimitError,
+  WorktreeCreateError,
   dashboardSessionLimit,
   spawnDashboardSession,
   resumeDashboardSession,
@@ -18,6 +22,11 @@ beforeEach(() => {
   process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "0";
 });
 
+const temps: string[] = [];
+afterAll(() => {
+  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
+});
+
 describe("dashboard session concurrency bound", () => {
   test("reads the cap from the environment", () => {
     expect(dashboardSessionLimit()).toBe(0);
@@ -28,21 +37,22 @@ describe("dashboard session concurrency bound", () => {
     expect(dashboardSessionLimit()).toBe(3);
   });
 
-  test("refuses to spawn past the cap", () => {
-    expect(() =>
+  test("refuses to spawn past the cap", async () => {
+    await expect(
       spawnDashboardSession({
         categoryPath: "test",
         slug: "over-cap",
         cwd: process.cwd(),
       }),
-    ).toThrow(DashboardSessionLimitError);
+    ).rejects.toThrow(DashboardSessionLimitError);
   });
 
-  test("the refused spawn registers no session", () => {
-    // The guard runs before createSession, so a rejection leaves no trace —
-    // no half-built row for recovery to clean up later.
+  test("the refused spawn registers no session", async () => {
+    // The guard runs before both worktree creation and createSession, so a
+    // rejection leaves no trace — no half-built row for recovery to clean up
+    // later, and no orphaned worktree on disk.
     try {
-      spawnDashboardSession({
+      await spawnDashboardSession({
         categoryPath: "test",
         slug: "over-cap-2",
         cwd: process.cwd(),
@@ -51,6 +61,37 @@ describe("dashboard session concurrency bound", () => {
       // expected
     }
     expect(listDashboardSessions()).toEqual([]);
+  });
+
+  test("a cwd outside a git repo is refused before any session exists", async () => {
+    // Raised past the guard so the spawn actually reaches worktree creation —
+    // the point being that the *next* gate also runs before createSession.
+    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "bertrand-spawn-")));
+    temps.push(plain);
+
+    await expect(
+      spawnDashboardSession({
+        categoryPath: "test",
+        slug: "no-repo-here",
+        cwd: plain,
+      }),
+    ).rejects.toThrow(WorktreeCreateError);
+    expect(listDashboardSessions()).toEqual([]);
+  });
+
+  test("the refusal names the reason so the API can map it", async () => {
+    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "bertrand-spawn-")));
+    temps.push(plain);
+
+    const err = await spawnDashboardSession({
+      categoryPath: "test",
+      slug: "no-repo-either",
+      cwd: plain,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(WorktreeCreateError);
+    expect(err.reason).toBe("not-a-repo");
   });
 
   test("the error names the limit it enforced", () => {
