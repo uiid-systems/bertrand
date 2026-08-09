@@ -21,6 +21,7 @@ import {
   Button,
   Card,
   Group,
+  Number,
   Resizable,
   ResizableHandle,
   ResizablePanel,
@@ -379,6 +380,10 @@ const SessionZones = ({
 
   const maximized = !timelineOpen;
 
+  // Cards actually rendered, not raw events — transforms fold runs of tool
+  // calls into one card, so this counts what the timeline shows.
+  const cardCount = segments.reduce((n, s) => n + s.events.length, 0);
+
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ minHeight: 0 }}>
       <ContentZone
@@ -386,6 +391,16 @@ const SessionZones = ({
         title="Timeline"
         open={timelineOpen}
         onOpenChange={openTimeline}
+        badge={
+          // Matches the sidebar zones' count badge. Held back at zero — an
+          // empty timeline has nothing to count, and a `0` that flips to `40`
+          // reads as the session changing rather than its events arriving.
+          cardCount === 0 ? null : (
+            <Badge color="neutral">
+              <Number size={-1} weight="bold" value={cardCount} />
+            </Badge>
+          )
+        }
         actions={
           <TimelineActions
             segments={segments}
