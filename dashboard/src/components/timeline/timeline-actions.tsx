@@ -4,6 +4,7 @@ import { Button, Group, Select } from "@uiid/design-system";
 import { ArrowDownToLineIcon, ArrowUpToLineIcon, type Icon } from "@uiid/icons";
 
 import { eventTocTitle, formatTimestamp } from "../../lib/format";
+import { useScrollSpy } from "../../lib/use-scroll-spy";
 import { iconOf } from "../../lib/timeline/icons";
 import {
   eventAnchorId,
@@ -100,8 +101,22 @@ export const TimelineActions = ({
   onOpen,
 }: TimelineActionsProps) => {
   const items = useMemo(() => anchorItems(segments), [segments]);
-  // Tracks the last anchor jumped to, so the trigger names where you are. It
-  // doesn't follow manual scrolling — a scroll-spy is the obvious next step.
+
+  // Cards only. A conversation's own anchor wraps every card inside it, so it
+  // would hold the top of the spy's band for the whole conversation and beat
+  // all of them — and it's a disabled heading, never a selectable value.
+  const cardAnchors = useMemo(
+    () => segments.flatMap((s) => s.events.map(eventAnchorId)),
+    [segments],
+  );
+  const spied = useScrollSpy({
+    containerId: SCROLL_ID,
+    anchorIds: cardAnchors,
+    enabled: open,
+  });
+  // The last anchor jumped to. Only shows through before the spy has an answer
+  // — on the frame a jump is queued, and while the zone is collapsed, when
+  // there's no laid-out container to observe.
   const [anchor, setAnchor] = useState<string | null>(null);
   const [pendingScroll, setPendingScroll] = useState<(() => void) | null>(null);
 
@@ -152,7 +167,7 @@ export const TimelineActions = ({
       <Select
         ghost
         items={items}
-        value={anchor}
+        value={spied ?? anchor}
         onValueChange={(next: string | null) => {
           if (!next) return;
           setAnchor(next);

@@ -474,7 +474,7 @@ SessionZones.displayName = "SessionZones";
  * One conversation's timeline. When the session has more than one conversation,
  * a header carries the ordinal, event count, relative start, and the first user
  * prompt as a subtitle. The segment container's `id` is the deep-link anchor the
- * sidebar's Timeline table-of-contents (and a shared #hash link) scroll to — it
+ * zone header's jump list (and a shared #hash link) scroll to — it
  * lives on the container (not the header) so single-conversation sessions, which
  * render no header, still expose an anchor to jump to.
  *
@@ -569,8 +569,9 @@ function EventCard({
 
   return (
     <Card
-      // Anchor every card so the sidebar table-of-contents can scroll to it; the
-      // margin keeps the target off the scroll container's top edge.
+      // Anchor every card so the zone header's jump list can scroll to it — and
+      // so its scroll-spy can tell which card you're on; the margin keeps the
+      // target off the scroll container's top edge.
       id={eventAnchorId(event)}
       style={{ scrollMarginTop: 16 }}
       color={eventColor(event.event)}
