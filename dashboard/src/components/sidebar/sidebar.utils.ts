@@ -1,5 +1,5 @@
 import type { SessionWithCategory } from "../../api/types";
-import type { CategoryGroup } from "./sidebar.types";
+import type { SessionGroup } from "./sidebar.types";
 import { LIVE_STATUS_ORDER } from "./sidebar.constants";
 
 /**
@@ -55,6 +55,36 @@ export function selectLiveSessions(
 }
 
 /**
+ * Zone A's groups: live sessions bucketed by owning project. Takes the list
+ * `selectLiveSessions` already prioritised and preserves first-seen order, so
+ * the group holding the most urgent session floats to the top and rows keep
+ * blocked-before-waiting-before-active order inside it. Re-sorting here would
+ * throw that away.
+ *
+ * The project header is the only place a live row's project is named now, so a
+ * row that arrived without one is bucketed rather than dropped — it would
+ * otherwise vanish from the one zone that must never hide anything.
+ */
+export function groupByProject(
+  sessions: SessionWithCategory[],
+): SessionGroup[] {
+  const byProject = new Map<string, SessionGroup>();
+  for (const s of sessions) {
+    const key = s.project?.slug ?? "";
+    const group = byProject.get(key);
+    if (group) group.sessions.push(s);
+    else {
+      byProject.set(key, {
+        key,
+        label: s.project?.name ?? "Unknown project",
+        sessions: [s],
+      });
+    }
+  }
+  return Array.from(byProject.values());
+}
+
+/**
  * Zone B's rows: everything that isn't live (paused, plus archived when shown),
  * grouped by category path. Each group is sorted by most-recent activity, and
  * the groups themselves are ordered by their most recently active session, so
@@ -66,7 +96,7 @@ export function selectLiveSessions(
  */
 export function groupByCategory(
   sessions: SessionWithCategory[],
-): CategoryGroup[] {
+): SessionGroup[] {
   const byCategory = new Map<string, SessionWithCategory[]>();
   for (const s of sessions) {
     if (isLive(s)) continue;
@@ -76,7 +106,7 @@ export function groupByCategory(
     else byCategory.set(key, [s]);
   }
 
-  const groups = Array.from(byCategory, ([key, list]): CategoryGroup => {
+  const groups = Array.from(byCategory, ([key, list]): SessionGroup => {
     list.sort((a, b) => activityTime(b) - activityTime(a));
     return { key, label: key, sessions: list };
   });

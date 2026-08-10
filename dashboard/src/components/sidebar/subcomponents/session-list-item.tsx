@@ -13,14 +13,9 @@ import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionListItemProps = {
   session: SessionWithCategory;
-  /** Show the owning project in the title — see `SessionLabel`. */
-  showProject?: boolean;
 };
 
-export const SessionListItem = ({
-  session: s,
-  showProject,
-}: SessionListItemProps) => {
+export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const isArchived = s.session.status === "archived";
   const color = statusColor(s.session.status);
   const { setSelected } = useSelectedProject();
@@ -75,7 +70,7 @@ export const SessionListItem = ({
         }
       >
         <Group gap={2} ay="center" fullwidth>
-          <SessionLabel session={s} showProject={showProject} />
+          <SessionLabel session={s} />
           <SessionUsageBadge session={s} />
         </Group>
         <SessionContent session={s} />
