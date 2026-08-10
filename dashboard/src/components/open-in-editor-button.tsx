@@ -1,14 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
+import { SiCursor } from "@icons-pack/react-simple-icons";
 import { Button, type ButtonProps } from "@uiid/design-system";
 import { ExternalLinkIcon } from "@uiid/icons";
 
 import { projectsQuery } from "../api/queries";
 import type { SessionRow } from "../api/types";
 import {
+  type EditorId,
   editorFileUri,
   editorLabel,
   usePreferredEditor,
 } from "../lib/editor";
+
+/**
+ * The editor's own mark, so the button says which editor it opens without
+ * relying on its tooltip. Simple Icons ships no Visual Studio Code mark (its
+ * only VSCode-family entry is VSCodium, a different product), so VS Code keeps
+ * the generic open-link glyph rather than borrowing another project's logo.
+ */
+function EditorIcon({ editor }: { readonly editor: EditorId }) {
+  return editor === "cursor" ? (
+    <SiCursor size={13} />
+  ) : (
+    <ExternalLinkIcon size={13} />
+  );
+}
 
 type OpenInEditorButtonProps = Omit<ButtonProps, "render" | "children"> & {
   session: SessionRow;
@@ -38,7 +54,7 @@ export const OpenInEditorButton = ({
   session,
   projectSlug,
   size = "small",
-  variant = "subtle",
+  variant = "ghost",
   shape = "square",
   ...rest
 }: OpenInEditorButtonProps) => {
@@ -74,7 +90,7 @@ export const OpenInEditorButton = ({
       render={target ? <a href={editorFileUri(editor, target)} /> : undefined}
       {...rest}
     >
-      <ExternalLinkIcon size={13} />
+      <EditorIcon editor={editor} />
     </Button>
   );
 };
