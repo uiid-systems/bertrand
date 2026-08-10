@@ -1,3 +1,15 @@
+/**
+ * Per-worktree dev-server process manager (docs/workspaces.md, Phase 1B).
+ *
+ * Modeled on `server-lifecycle.ts`: spawn a detached process, track it by a
+ * PID file, probe liveness with `kill(pid, 0)`. One server per session, keyed
+ * by session id, with its own log file so the dashboard/CLI can tail it.
+ *
+ * The server runs the resolved `setup && run` in the worktree cwd with the
+ * injected `BERTRAND_*` env. It is detached and its output goes to a log file,
+ * so starting it never blocks the caller on a slow `install` or a long-lived
+ * dev server.
+ */
 import { execFile, spawn } from "child_process";
 import {
   appendFileSync,
@@ -24,49 +36,11 @@ import {
 import { allocatePort, apiPortKey, getPort, prunePorts, releasePort } from "./port";
 import { localhostPreviewUrl, workspaceEnv } from "./env";
 import { resolveWorkspace } from "./resolve";
-import type { WorkspaceRunConfig } from "./types";
+import type { WorkspaceRunConfig, WorkspaceServerStatus } from "./types";
 
-/**
- * Per-worktree dev-server process manager (docs/workspaces.md, Phase 1B).
- *
- * Modeled on `server-lifecycle.ts`: spawn a detached process, track it by a
- * PID file, probe liveness with `kill(pid, 0)`. One server per session, keyed
- * by session id, with its own log file so the dashboard/CLI can tail it.
- *
- * The server runs the resolved `setup && run` in the worktree cwd with the
- * injected `BERTRAND_*` env. It is detached and its output goes to a log file,
- * so starting it never blocks the caller on a slow `install` or a long-lived
- * dev server.
- */
-export interface WorkspaceServerStatus {
-  running: boolean;
-  pid: number | null;
-  /** Allocated port, or null when the session has never been started. */
-  port: number | null;
-  /**
-   * Port the process group is actually LISTENing on, or null when nothing is
-   * (yet). Can legitimately differ from `port`: the app may ignore `PORT`
-   * (Vite), pin its own port, or auto-increment on a conflict (Next).
-   */
-  observedPort: number | null;
-  /** True when the running process group accepts connections on observedPort. */
-  listening: boolean;
-  /**
-   * Preview URL. Follows `observedPort` when listening — the URL must always
-   * be true — and falls back to the allocated port (the URL the server *will*
-   * get) while starting. Null when no port is allocated.
-   */
-  url: string | null;
-  /**
-   * API sidecar state, or null when the workspace has none (no `api` script
-   * — the common, UI-only case). `listening` means observed on the assigned
-   * port specifically: the UI's `/api` proxy target is pinned to that port
-   * (`BERTRAND_API_TARGET`), so a sidecar bound anywhere else is unreachable
-   * and honestly reads as down.
-   */
-  api: { port: number; listening: boolean } | null;
-  logFile: string;
-}
+// Declared in the leaf `./types` so the dashboard's type graph stops there;
+// re-exported because this is where callers of the process manager expect it.
+export type { WorkspaceServerStatus } from "./types";
 
 export interface StartWorkspaceInput {
   sessionId: string;

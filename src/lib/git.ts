@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import type { ChangedFile, WorktreeChangedFiles } from "./git-types";
 
 export interface Worktree {
   path: string;
@@ -111,21 +112,10 @@ export async function getMainWorktree(cwd: string): Promise<string> {
   return first ? first.slice(9).trim() : cwd;
 }
 
-/** A file a worktree changed relative to its merge base with the main branch. */
-export interface ChangedFile {
-  path: string;
-  /** Line counts from --numstat; null for binary and untracked files. */
-  added: number | null;
-  removed: number | null;
-  status: "added" | "modified" | "deleted" | "untracked";
-}
-
-export interface WorktreeChangedFiles {
-  /** Merge-base commit the diff runs against; null when it couldn't be
-   * resolved and only uncommitted changes (vs HEAD) are shown. */
-  base: string | null;
-  files: ChangedFile[];
-}
+// Declared in the leaf `./git-types` so the dashboard's type graph stops
+// there instead of following this module's `bun` import; re-exported because
+// this is where callers of the git helpers expect them.
+export type { ChangedFile, WorktreeChangedFiles } from "./git-types";
 
 /** Parse `git diff --numstat` lines: `<added>\t<removed>\t<path>`, `-` for binary. */
 export function parseNumstat(

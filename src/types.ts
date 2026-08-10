@@ -1,9 +1,20 @@
+/**
+ * Shared API/domain shapes. The dashboard's TypeScript program includes this
+ * file (`dashboard/tsconfig.json`), so every module reachable from here has to
+ * resolve under the dashboard's build too.
+ *
+ * `import type` is not enough to keep that safe on its own — it erases the
+ * runtime import but the *type* graph still has to resolve, so pointing at a
+ * module that does I/O makes the dashboard build depend on everything behind
+ * it. Import only from leaf type modules — a `types.ts` beside the module
+ * that owns the shape — never from a module that imports `fs`, `os`, `path`
+ * or `bun`. `types-boundary.test.ts` enforces this.
+ */
 import type { sessions, events, sessionStats } from "./db/schema";
-// Type-only — erased at build; keeps this barrel free of runtime imports.
-import type { WorkspaceServerStatus } from "./lib/workspace/server";
-import type { ProjectRepo } from "./lib/projects/registry";
+import type { WorkspaceServerStatus } from "./lib/workspace/types";
+import type { ProjectRepo } from "./lib/projects/types";
 
-export type { ChangedFile, WorktreeChangedFiles } from "./lib/git";
+export type { ChangedFile, WorktreeChangedFiles } from "./lib/git-types";
 
 export type SessionRow = typeof sessions.$inferSelect;
 export type SessionStatus = SessionRow["status"];

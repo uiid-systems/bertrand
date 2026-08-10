@@ -5,13 +5,12 @@ import { teardownWorkspace } from "@/lib/workspace";
 import { getMainWorktree, removeWorktree, shellDetail } from "@/lib/git";
 import type { Db } from "@/db/client";
 import type { SessionRow } from "@/types";
+import type { RemoveWorktreeReason } from "./worktree-remove-types";
 
-export type RemoveWorktreeReason =
-  | "not-found"
-  | "no-worktree"
-  | "active"
-  | "dirty"
-  | "git-failed";
+// Declared in the leaf `./worktree-remove-types` so the dashboard can name a
+// failure reason without its type graph following the `fs`/db/`bun` imports
+// above; re-exported because this is where callers of the remover expect it.
+export type { RemoveWorktreeReason } from "./worktree-remove-types";
 
 export type RemoveWorktreeResult =
   | { ok: true; session: SessionRow }

@@ -59,3 +59,42 @@ export interface RepoWorkspaceConfig {
   archive?: string;
   devCommand?: string;
 }
+
+/**
+ * What `getWorkspaceServer` reports about a session's dev server, and what
+ * `/api/worktrees` serves to the dashboard.
+ *
+ * The shape lives here rather than in `server.ts` because `src/types.ts`
+ * embeds it in `WorktreeSessionRow`, and the dashboard typechecks against
+ * that barrel. Declared next to the process manager it would drag
+ * `child_process`, `fs` and `path` into the dashboard's type graph.
+ */
+export interface WorkspaceServerStatus {
+  running: boolean;
+  pid: number | null;
+  /** Allocated port, or null when the session has never been started. */
+  port: number | null;
+  /**
+   * Port the process group is actually LISTENing on, or null when nothing is
+   * (yet). Can legitimately differ from `port`: the app may ignore `PORT`
+   * (Vite), pin its own port, or auto-increment on a conflict (Next).
+   */
+  observedPort: number | null;
+  /** True when the running process group accepts connections on observedPort. */
+  listening: boolean;
+  /**
+   * Preview URL. Follows `observedPort` when listening — the URL must always
+   * be true — and falls back to the allocated port (the URL the server *will*
+   * get) while starting. Null when no port is allocated.
+   */
+  url: string | null;
+  /**
+   * API sidecar state, or null when the workspace has none (no `api` script
+   * — the common, UI-only case). `listening` means observed on the assigned
+   * port specifically: the UI's `/api` proxy target is pinned to that port
+   * (`BERTRAND_API_TARGET`), so a sidecar bound anywhere else is unreachable
+   * and honestly reads as down.
+   */
+  api: { port: number; listening: boolean } | null;
+  logFile: string;
+}
