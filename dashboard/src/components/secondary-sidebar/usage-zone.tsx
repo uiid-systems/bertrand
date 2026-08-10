@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Badge, Group, Text } from "@uiid/design-system";
 
-import { allStatsQuery, statsQuery } from "../../api/queries";
+import { statsQuery } from "../../api/queries";
 import type { SessionStatsRow } from "../../api/types";
 import { formatTokens } from "../../lib/format";
 import { standingFor, usagePeers } from "../../lib/usage-standing";
-import { useSelectedProjects } from "../sidebar/selected-projects";
+import { useAllStats } from "../../lib/use-sessions";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
 
 export type UsageZoneProps = {
@@ -58,14 +58,11 @@ export const UsageZone = ({
   });
 
   // Peers give the counters a scale to be read against. Deliberately the same
-  // selection the primary sidebar ranks against, not this session's project:
-  // the two badges sit on screen together, so a session that reads "heavy" in
-  // one must read heavy in the other. Already cached by the sessions list, so
-  // this is usually free.
-  const { queryProjects } = useSelectedProjects();
-  const { data: allStats } = useQuery(
-    allStatsQuery({ hasLiveSession: isLive, projects: queryProjects }),
-  );
+  // set the primary sidebar ranks against — every known session, not this
+  // session's project: the two badges sit on screen together, so a session that
+  // reads "heavy" in one must read heavy in the other. Shares the sidebar's
+  // cache entry, so this is usually free.
+  const allStats = useAllStats();
 
   const captured = stats
     ? stats.inputTokens +

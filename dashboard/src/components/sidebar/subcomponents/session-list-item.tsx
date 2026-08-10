@@ -6,17 +6,33 @@ import type { SessionWithCategory } from "@/types";
 
 import { statusColor } from "../../../lib/format";
 
+import { useSelectedProject } from "../selected-project";
 import { SessionLabel } from "./session-label";
 import { SessionContent } from "./session-content";
 import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionListItemProps = {
   session: SessionWithCategory;
+  /** Show the owning project in the title — see `SessionLabel`. */
+  showProject?: boolean;
 };
 
-export const SessionListItem = ({ session: s }: SessionListItemProps) => {
+export const SessionListItem = ({
+  session: s,
+  showProject,
+}: SessionListItemProps) => {
   const isArchived = s.session.status === "archived";
   const color = statusColor(s.session.status);
+  const { setSelected } = useSelectedProject();
+
+  // Opening a session moves the sidebar to its project, so the zone below
+  // always frames whatever you're looking at. Only the live zone can actually
+  // cross projects; elsewhere this is a no-op. Done on click rather than off
+  // the route so it can't fight a deliberate pick from the selector.
+  const followProject = () => {
+    const slug = s.project?.slug;
+    if (slug) setSelected(slug);
+  };
 
   // "You are here": the row for the session currently open in the detail view.
   // The route splat is exactly `<categoryPath>/<slug>` (see findSessionFromSplat).
@@ -41,7 +57,9 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
       style={isArchived ? { opacity: 0.4 } : undefined}
     >
       <Card
-        render={<Link to="/$" params={{ _splat: splat }} />}
+        render={
+          <Link to="/$" params={{ _splat: splat }} onClick={followProject} />
+        }
         color={color === "neutral" ? undefined : color}
         p={2}
         fullwidth
@@ -57,7 +75,7 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
         }
       >
         <Group gap={2} ay="center" fullwidth>
-          <SessionLabel session={s} />
+          <SessionLabel session={s} showProject={showProject} />
           <SessionUsageBadge session={s} />
         </Group>
         <SessionContent session={s} />
