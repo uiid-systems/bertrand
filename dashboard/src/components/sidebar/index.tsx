@@ -1,22 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  Group,
-  Input,
-  Kbd,
-  Text,
-  ToggleButton,
-  Separator,
-} from "@uiid/design-system";
-import { EyeIcon, EyeOffIcon, SearchIcon } from "@uiid/icons";
+import { Input, Kbd } from "@uiid/design-system";
+import { SearchIcon } from "@uiid/icons";
 
-import { useSessions } from "../../lib/use-sessions";
+import { useAllSessions, useSessions } from "../../lib/use-sessions";
 
 import { ProjectSelector } from "./subcomponents/project-selector";
-import { buildSidebarLayout } from "./sidebar.utils";
+import {
+  groupByCategory,
+  matchesQuery,
+  selectLiveSessions,
+} from "./sidebar.utils";
 
 import { LiveZone } from "./subcomponents/live-zone";
-import { ProjectSections } from "./subcomponents/project-sections";
+import { ProjectZone } from "./subcomponents/project-zone";
 import {
   SidebarWrapper,
   type SidebarWrapperProps,
@@ -26,29 +23,28 @@ export type SidebarProps = {
   WrapperProps?: SidebarWrapperProps;
 };
 
-const GAP = 2;
-
 export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const sessions = useSessions({ includeArchived });
+  // Two scopes on purpose: "Active sessions" spans every project, the zone
+  // below is narrowed to the selected one. Both come off the same poll.
+  const allSessions = useAllSessions();
+  const projectSessions = useSessions({ includeArchived });
 
-  const trimmedQuery = query.trim();
+  const q = query.trim().toLowerCase();
 
-  const { live, projects } = useMemo(() => {
-    const q = trimmedQuery.toLowerCase();
-    const filtered = q
-      ? sessions.filter(
-          (s) =>
-            s.session.slug.toLowerCase().includes(q) ||
-            s.session.name.toLowerCase().includes(q) ||
-            s.categoryPath.toLowerCase().includes(q),
-        )
-      : sessions;
-    return buildSidebarLayout(filtered);
-  }, [sessions, trimmedQuery]);
+  // Search deliberately doesn't reach the live zone. That zone is a pinned
+  // inbox — something blocked on you must not vanish because you typed a
+  // filter for the project list underneath it. The input sits below the zone,
+  // next to the selector it does narrow.
+  const live = useMemo(() => selectLiveSessions(allSessions), [allSessions]);
+
+  const categories = useMemo(
+    () => groupByCategory(projectSessions.filter((s) => matchesQuery(s, q))),
+    [projectSessions, q],
+  );
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -62,48 +58,32 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const isEmpty = live.length === 0 && projects.length === 0;
-
   return (
     <SidebarWrapper {...WrapperProps}>
-      <ProjectSelector gap={GAP} />
-      <Group ay="center" gap={GAP} fullwidth>
-        <Input
-          ref={inputRef}
-          placeholder="Search for a session"
-          before={<SearchIcon />}
-          after={<Kbd hotkey={["meta", "k"]} />}
-          size="small"
-          fullwidth
-          style={{ flex: 1, minWidth: 0 }}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <ToggleButton
-          size="small"
-          variant="subtle"
-          tooltip={includeArchived ? "Hide archived" : "Show archived"}
-          pressed={includeArchived}
-          onPressedChange={setIncludeArchived}
-          icon={{
-            unpressed: <EyeOffIcon />,
-            pressed: <EyeIcon />,
-          }}
-        />
-      </Group>
+      {/* Pinned to the top, above the project controls: what needs you comes
+          before where you're browsing. Carries its own trailing separator. */}
+      <LiveZone sessions={live} />
 
-      <Separator />
+      <ProjectSelector />
+      <Input
+        ref={inputRef}
+        placeholder="Search this project"
+        before={<SearchIcon />}
+        after={<Kbd hotkey={["meta", "k"]} />}
+        size="small"
+        fullwidth
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
 
-      {isEmpty ? (
-        <Text size={-1} shade="muted" px={4} py={2}>
-          {trimmedQuery ? `No sessions match "${query}".` : "No sessions yet."}
-        </Text>
-      ) : (
-        <>
-          <LiveZone sessions={live} />
-          {projects.length > 0 && <ProjectSections projects={projects} />}
-        </>
-      )}
+      <ProjectZone
+        categories={categories}
+        includeArchived={includeArchived}
+        onIncludeArchivedChange={setIncludeArchived}
+        emptyLabel={
+          query.trim() ? `No sessions match "${query}".` : "No sessions yet."
+        }
+      />
     </SidebarWrapper>
   );
 };

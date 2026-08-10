@@ -1,30 +1,20 @@
+import { Kbd, Select } from "@uiid/design-system";
 import {
-  Box,
-  Button,
-  Group,
-  Kbd,
-  type GroupProps,
-  SelectMultiple,
-} from "@uiid/design-system";
-import {
-  ActivityIcon,
   FolderIcon,
   GithubIcon,
   TriangleAlertIcon,
   Unlink2Icon,
 } from "@uiid/icons";
 
-import { useSelectedProjects } from "../selected-projects";
+import { useSelectedProject } from "../selected-project";
 
 /**
- * Multi-select project filter for the sidebar header. Purely a view control:
- * choosing projects changes which sessions the dashboard lists, never the CLI's
- * active project. Disabled when there's only one project (nothing to filter).
- * The activity button snaps the view back to the live-projects default.
+ * The sidebar's project switcher. Purely a view control: choosing a project
+ * changes which sessions the dashboard lists, never the CLI's active project.
+ * Disabled when there's only one project (nothing to switch to).
  */
-export const ProjectSelector = ({ ...props }: GroupProps) => {
-  const { projects, selected, setSelected, resetToLive, isAtLiveDefault } =
-    useSelectedProjects();
+export const ProjectSelector = () => {
+  const { projects, selected, setSelected } = useSelectedProject();
 
   if (projects.length === 0) return null;
 
@@ -43,39 +33,32 @@ export const ProjectSelector = ({ ...props }: GroupProps) => {
         ? p.repo.label
         : `${p.repo.label} — unverified host`
       : "Not linked",
-    icon: p.repo ? (p.repo.hostTrusted ? GithubIcon : TriangleAlertIcon) : Unlink2Icon,
+    icon: p.repo
+      ? p.repo.hostTrusted
+        ? GithubIcon
+        : TriangleAlertIcon
+      : Unlink2Icon,
   }));
-  // `selected` is null only until the live default seeds (one tick); the
-  // trigger shows its placeholder in that window.
-  const value = selected ?? [];
-  const multiple = projects.length > 1;
 
   return (
-    <Group ay="center" gap={1} fullwidth {...props}>
-      <SelectMultiple
-        placeholder="Select projects"
-        onValueChange={(next) => setSelected(next)}
-        before={<FolderIcon />}
-        after={<Kbd hotkey={["meta", "j"]} />}
-        disabled={!multiple}
-        items={items}
-        value={value}
-        size="small"
-        fullwidth
-        TriggerProps={{ style: { minWidth: 0 } }}
-      />
-      {multiple && (
-        <Button
-          tooltip="Show live projects"
-          onClick={resetToLive}
-          disabled={isAtLiveDefault}
-          variant="subtle"
-          size="small"
-        >
-          <ActivityIcon />
-        </Button>
-      )}
-    </Group>
+    <Select
+      placeholder="Select a project"
+      // Base UI can emit `null` for a cleared select. There's no "no project"
+      // view to fall back to, so a clear is simply ignored.
+      onValueChange={(next) => {
+        if (next !== null) setSelected(next);
+      }}
+      before={<FolderIcon />}
+      after={<Kbd hotkey={["meta", "j"]} />}
+      disabled={projects.length < 2}
+      items={items}
+      // `selected` is null only until the default seeds (one tick); the trigger
+      // shows its placeholder in that window.
+      value={selected}
+      size="small"
+      fullwidth
+      TriggerProps={{ style: { minWidth: 0 } }}
+    />
   );
 };
 ProjectSelector.displayName = "ProjectSelector";
