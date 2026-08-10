@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function read(storageKey: string): string[] {
   try {
@@ -51,6 +51,39 @@ export function useCollapsed(storageKey: string) {
   );
 
   return { collapsed, setCollapsed, toggle };
+}
+
+/**
+ * Collapse state that lives only as long as `active` does, mirroring
+ * `useCollapsed`'s shape so a caller can swap between the two.
+ *
+ * This is what a search collapses into. Search results start fully expanded —
+ * a hit hidden inside a section the reader shut days ago reads as search being
+ * broken — but the reader must still be able to fold a noisy group away without
+ * that fold outliving the query, or a stray click during a search would silently
+ * rewrite collapses they'd chosen for the unfiltered list. Everything here is
+ * dropped the moment the query clears, restoring the persisted state untouched.
+ */
+export function useEphemeralCollapsed(active: boolean) {
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Only ever clears: going inactive discards the search's collapses, so the
+    // next search starts expanded again.
+    if (!active) setCollapsed([]);
+  }, [active]);
+
+  const toggle = useCallback((key: string, open: boolean) => {
+    setCollapsed((prev) =>
+      open
+        ? prev.filter((k) => k !== key)
+        : prev.includes(key)
+          ? prev
+          : [...prev, key],
+    );
+  }, []);
+
+  return { collapsed, toggle };
 }
 
 /** The project zone's own collapsed state, keyed by project slug. */

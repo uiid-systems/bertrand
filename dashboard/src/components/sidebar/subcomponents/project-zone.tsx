@@ -6,12 +6,22 @@ import { useSelectedProject } from "../selected-project";
 import {
   useCollapsedCategories,
   useCollapsedProjects,
+  useEphemeralCollapsed,
 } from "../use-collapsed";
 import { SessionGroup } from "./session-group";
 import { SidebarZone } from "./sidebar-zone";
 
 type ProjectZoneProps = {
   categories: SessionGroupModel[];
+  /**
+   * A query is narrowing `categories`. Everything here is then a hit, so the
+   * zone swaps its persisted collapse state for an ephemeral one that starts
+   * expanded: a match rendered inside a group the reader shut days ago is a
+   * match they never see, which reads as search being broken rather than as a
+   * section being shut. Folding a group away during a search still works, it
+   * just doesn't outlive the query.
+   */
+  searching: boolean;
   includeArchived: boolean;
   onIncludeArchivedChange: (next: boolean) => void;
   /** Shown in place of the list when nothing matches — phrased by the caller,
@@ -28,14 +38,23 @@ type ProjectZoneProps = {
  */
 export const ProjectZone = ({
   categories,
+  searching,
   includeArchived,
   onIncludeArchivedChange,
   emptyLabel,
 }: ProjectZoneProps) => {
   const { projects, selected } = useSelectedProject();
-  const { collapsed, toggle } = useCollapsedProjects();
-  const { collapsed: collapsedCategories, toggle: toggleCategory } =
-    useCollapsedCategories();
+
+  // Two stores per level, picked by whether a search is on. Selecting the store
+  // rather than overriding `open` at the call site keeps "results start
+  // expanded" and "collapsing a result group is temporary" as one rule.
+  const persistedProjects = useCollapsedProjects();
+  const persistedCategories = useCollapsedCategories();
+  const searchProjects = useEphemeralCollapsed(searching);
+  const searchCategories = useEphemeralCollapsed(searching);
+
+  const projectCollapse = searching ? searchProjects : persistedProjects;
+  const categoryCollapse = searching ? searchCategories : persistedCategories;
 
   if (selected === null) return null;
   const project = projects.find((p) => p.slug === selected);
@@ -68,8 +87,8 @@ export const ProjectZone = ({
           }}
         />
       }
-      open={!collapsed.includes(project.slug)}
-      onOpenChange={(next) => toggle(project.slug, next)}
+      open={!projectCollapse.collapsed.includes(project.slug)}
+      onOpenChange={(next) => projectCollapse.toggle(project.slug, next)}
       RootProps={{ style: { marginBlockEnd: 8 } }}
       PanelProps={{ style: { paddingBlockStart: 8, paddingBlockEnd: 16 } }}
       TriggerGroupProps={{ mb: 2 }}
@@ -86,9 +105,13 @@ export const ProjectZone = ({
               group={group}
               // Namespaced by project: two projects can both have a `worktrees`
               // category, and collapsing one must not collapse the other.
-              open={!collapsedCategories.includes(`${project.slug}/${group.key}`)}
+              open={
+                !categoryCollapse.collapsed.includes(
+                  `${project.slug}/${group.key}`,
+                )
+              }
               onOpenChange={(next) =>
-                toggleCategory(`${project.slug}/${group.key}`, next)
+                categoryCollapse.toggle(`${project.slug}/${group.key}`, next)
               }
             />
           ))}

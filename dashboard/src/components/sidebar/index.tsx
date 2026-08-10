@@ -41,9 +41,17 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   // next to the selector it does narrow.
   const live = useMemo(() => selectLiveSessions(allSessions), [allSessions]);
 
+  // A live session still has to be findable. The zone above won't narrow, so
+  // while searching this zone carries live rows too — see `groupByCategory`.
+  const searching = q.length > 0;
+
   const categories = useMemo(
-    () => groupByCategory(projectSessions.filter((s) => matchesQuery(s, q))),
-    [projectSessions, q],
+    () =>
+      groupByCategory(
+        projectSessions.filter((s) => matchesQuery(s, q)),
+        { includeLive: searching },
+      ),
+    [projectSessions, q, searching],
   );
 
   useEffect(() => {
@@ -78,6 +86,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
       <ProjectZone
         categories={categories}
+        searching={searching}
         includeArchived={includeArchived}
         onIncludeArchivedChange={setIncludeArchived}
         emptyLabel={
