@@ -12,7 +12,6 @@ import {
 } from "@uiid/design-system";
 
 import {
-  ExternalLinkIcon,
   PlayIcon,
   ScrollTextIcon,
   SquareIcon,
@@ -33,11 +32,6 @@ import type {
 } from "../../api/types";
 import { statusColor } from "../../lib/format";
 import { ChangedFileRow } from "./changed-file-row";
-import {
-  editorFileUri,
-  editorLabel,
-  usePreferredEditor,
-} from "../../lib/editor";
 
 export type WorktreeItemProps = {
   /** The session this row acts on. Passed separately from `entry` because a
@@ -90,7 +84,6 @@ export const WorktreeItem = ({
   const missing = !entry;
   const disabled = missing || !!pending;
   const qc = useQueryClient();
-  const [editor] = usePreferredEditor();
   const [showLogs, setShowLogs] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const running = preview?.running ?? false;
@@ -190,26 +183,6 @@ export const WorktreeItem = ({
           </Text>
         )}
         <Group gap={1} ay="center" ml="auto">
-          {/* Stays a real <button> without a path — an anchor ignores
-              `disabled` and would navigate to a dead file URI. */}
-          <Button
-            size="xsmall"
-            variant="subtle"
-            disabled={!worktreePath}
-            aria-label={`Open worktree in ${editorLabel(editor)}`}
-            tooltip={
-              worktreePath
-                ? `Open in ${editorLabel(editor)}`
-                : "No worktree to open"
-            }
-            render={
-              worktreePath ? (
-                <a href={editorFileUri(editor, worktreePath)} />
-              ) : undefined
-            }
-          >
-            <ExternalLinkIcon size={13} />
-          </Button>
           {running ? (
             <Button
               size="xsmall"
