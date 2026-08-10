@@ -11,14 +11,14 @@ import {
   ToggleGroup,
 } from "@uiid/design-system";
 
-import { allStatsQuery, sessionsQuery } from "../api/queries";
+import { sessionsQuery } from "../api/queries";
 import type { SessionStatsRow, SessionWithCategory } from "../api/types";
-import { useSelectedProjects } from "../components/sidebar/selected-projects";
+import { useSelectedProject } from "../components/sidebar/selected-project";
+import { useAllStats } from "../lib/use-sessions";
 import {
   formatDuration,
   formatRelativeTime,
   formatTokens,
-  isLiveStatus,
   statusColor,
   statusLabel,
 } from "../lib/format";
@@ -117,14 +117,13 @@ function totalTokens(stat: SessionStatsRow | undefined): number {
  * back to each session; no filtering or sorting controls yet, deliberately.
  */
 function SessionsPage() {
-  const { queryProjects } = useSelectedProjects();
+  const { queryProjects } = useSelectedProject();
   const { data: sessions = [] } = useQuery(
     sessionsQuery({ projects: queryProjects }),
   );
-  const hasLiveSession = sessions.some((s) => isLiveStatus(s.session.status));
-  const { data: stats = {} } = useQuery(
-    allStatsQuery({ hasLiveSession, projects: queryProjects }),
-  );
+  // Superset stats, sliced by this page's own (project-scoped) session list —
+  // same numbers as before, but sharing the sidebar's single cache entry.
+  const stats = useAllStats();
 
   const [ranking, setRanking] = useState<Ranking>("recent");
 

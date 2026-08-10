@@ -1,5 +1,5 @@
 import type { SessionWithCategory } from "../../api/types";
-import type { SessionGroup, SidebarLayout } from "./sidebar.types";
+import type { CategoryGroup } from "./sidebar.types";
 import { LIVE_STATUS_ORDER } from "./sidebar.constants";
 
 /**
@@ -11,8 +11,8 @@ const activityTime = (s: SessionWithCategory): number =>
   new Date(s.session.updatedAt).getTime();
 
 /**
- * Blocked, waiting or active — the states that belong in the pinned "Needs you"
- * zone (a live session: Claude has a process running or is halted on the user).
+ * Blocked, waiting or active — the states that belong in the pinned "Active
+ * sessions" zone (Claude has a process running, or is halted on the user).
  */
 export function isLive(s: SessionWithCategory): boolean {
   const st = s.session.status;
@@ -20,52 +20,68 @@ export function isLive(s: SessionWithCategory): boolean {
 }
 
 /**
- * Arrange sessions into the two-zone model:
- *  - `live` — active/waiting, across all in-scope projects, ordered
- *    waiting-first (blocked on the user) then by most-recent activity.
- *  - `projects` — everything else (paused, plus archived when shown), grouped
- *    by project. Each group is sorted by most-recent activity, and the groups
- *    themselves are ordered by their most recently active session, so the
- *    project you touched last floats up.
- *
- * Grouping keys on the project, not the category path: two projects that share
- * a category name (e.g. both have a `sidebar` category) must stay separate.
+ * The search predicate for the project zone. Project name isn't matchable —
+ * search only ever narrows a single project's sessions, so matching on the name
+ * every row already shares would be a no-op.
  */
-export function buildSidebarLayout(
-  sessions: SessionWithCategory[],
-): SidebarLayout {
-  const live: SessionWithCategory[] = [];
-  const rest: SessionWithCategory[] = [];
-  for (const s of sessions) {
-    (isLive(s) ? live : rest).push(s);
-  }
+export function matchesQuery(s: SessionWithCategory, q: string): boolean {
+  if (!q) return true;
+  return (
+    s.session.slug.toLowerCase().includes(q) ||
+    s.session.name.toLowerCase().includes(q) ||
+    s.categoryPath.toLowerCase().includes(q)
+  );
+}
 
-  live.sort((a, b) => {
+/**
+ * Zone A's rows: every live session, ordered blocked-first (halted awaiting
+ * approval), then waiting, then active, and by most-recent activity within a
+ * status.
+ *
+ * Deliberately fed the *unscoped*, unsearched session list. "Active sessions"
+ * is a cross-project inbox — a session blocked on you in another project must
+ * still surface while you're looking at this one — which is exactly what the
+ * project selector and search below it must not narrow.
+ */
+export function selectLiveSessions(
+  sessions: SessionWithCategory[],
+): SessionWithCategory[] {
+  return sessions.filter(isLive).sort((a, b) => {
     const pa = LIVE_STATUS_ORDER.indexOf(a.session.status);
     const pb = LIVE_STATUS_ORDER.indexOf(b.session.status);
     if (pa !== pb) return pa - pb;
     return activityTime(b) - activityTime(a);
   });
+}
 
-  const byProject = new Map<string, SessionWithCategory[]>();
-  for (const s of rest) {
-    const key = s.project?.slug ?? s.categoryPath;
-    const list = byProject.get(key);
+/**
+ * Zone B's rows: everything that isn't live (paused, plus archived when shown),
+ * grouped by category path. Each group is sorted by most-recent activity, and
+ * the groups themselves are ordered by their most recently active session, so
+ * the category you touched last floats up.
+ *
+ * Live sessions are dropped here rather than duplicated — they're already
+ * pinned in zone A. Keying on the category path alone is safe because this zone
+ * only ever holds one project's sessions.
+ */
+export function groupByCategory(
+  sessions: SessionWithCategory[],
+): CategoryGroup[] {
+  const byCategory = new Map<string, SessionWithCategory[]>();
+  for (const s of sessions) {
+    if (isLive(s)) continue;
+    const key = s.categoryPath;
+    const list = byCategory.get(key);
     if (list) list.push(s);
-    else byProject.set(key, [s]);
+    else byCategory.set(key, [s]);
   }
 
-  const projects = Array.from(byProject, ([key, list]): SessionGroup => {
+  const groups = Array.from(byCategory, ([key, list]): CategoryGroup => {
     list.sort((a, b) => activityTime(b) - activityTime(a));
-    return {
-      key,
-      category: list[0]?.project?.name ?? list[0]?.categoryPath ?? key,
-      sessions: list,
-    };
+    return { key, label: key, sessions: list };
   });
-  projects.sort(
+  groups.sort(
     (a, b) => activityTime(b.sessions[0]) - activityTime(a.sessions[0]),
   );
-
-  return { live, projects };
+  return groups;
 }

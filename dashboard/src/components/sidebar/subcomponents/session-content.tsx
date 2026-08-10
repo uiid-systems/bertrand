@@ -3,24 +3,16 @@ import { Group, Text } from "@uiid/design-system";
 import { FilesIcon, GitBranchIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
-import { allStatsQuery, worktreesQuery } from "../../../api/queries";
+import { worktreesQuery } from "../../../api/queries";
 import { formatRelativeTime } from "../../../lib/format";
-import { useSessions } from "../../../lib/use-sessions";
-import { useSelectedProjects } from "../selected-projects";
-import { isLive } from "../sidebar.utils";
+import { useAllStats } from "../../../lib/use-sessions";
 
 type SessionContentProps = {
   session: SessionWithCategory;
 };
 
 export const SessionContent = ({ session: s }: SessionContentProps) => {
-  const { queryProjects } = useSelectedProjects();
-  const sessions = useSessions();
-  const hasLiveSession = sessions.some(isLive);
-  const { data: allStats } = useQuery(
-    allStatsQuery({ hasLiveSession, projects: queryProjects }),
-  );
-  const stats = allStats?.[s.session.id];
+  const stats = useAllStats()[s.session.id];
   const linesAdded = stats?.linesAdded ?? 0;
   const linesRemoved = stats?.linesRemoved ?? 0;
   const filesTouched = stats?.filesTouched ?? 0;

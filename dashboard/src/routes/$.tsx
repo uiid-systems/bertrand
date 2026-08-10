@@ -65,6 +65,7 @@ import {
 } from "../components/terminal";
 import { CopyResumeButton } from "../components/copy-resume-button";
 import { OpenInEditorButton } from "../components/open-in-editor-button";
+import { OpenOnGithubButton } from "../components/open-on-github-button";
 import { SessionExitPanel } from "../components/session-exit";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
@@ -248,6 +249,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             session={match.session}
             projectSlug={projectSlug}
           />
+          <OpenOnGithubButton projectSlug={projectSlug} />
           <ArchiveToggle session={match.session} project={projectSlug} />
         </Group>
       </Group>
@@ -645,7 +647,7 @@ function ArchiveToggle({
   return (
     <Button
       tooltip={action.tooltip}
-      variant="subtle"
+      variant="ghost"
       size="small"
       disabled={action.disabled}
       loading={action.loading}
