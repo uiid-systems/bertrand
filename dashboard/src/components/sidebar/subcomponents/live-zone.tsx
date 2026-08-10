@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { Badge, Number, Separator, Stack } from "@uiid/design-system";
+import { Badge, Number, Stack } from "@uiid/design-system";
 
 import type { SessionWithCategory } from "@/types";
 
@@ -35,34 +35,31 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
   if (sessions.length === 0) return null;
 
   return (
-    <>
-      <SidebarZone
-        data-slot="sidebar-live-zone"
-        title="Active sessions"
-        // Explicit id so the persisted dim state is tied to the zone rather
-        // than its label — the default keys off `title`, which would drop the
-        // user's toggle every time this copy changes.
-        zoneId="live"
-        badge={
-          <Badge color="blue">
-            <Number size={-1} weight="bold" value={sessions.length} />
-          </Badge>
-        }
-        PanelProps={{ style: { paddingBlock: 8 } }}
-      >
-        <Stack data-slot="sidebar-live-projects" ax="stretch" gap={3} fullwidth>
-          {groups.map((group) => (
-            <SessionGroup
-              key={group.key}
-              group={group}
-              open={!collapsed.includes(group.key)}
-              onOpenChange={(next) => toggle(group.key, next)}
-            />
-          ))}
-        </Stack>
-      </SidebarZone>
-      <Separator />
-    </>
+    <SidebarZone
+      data-slot="sidebar-live-zone"
+      title="Active sessions"
+      // Explicit id so the persisted dim state is tied to the zone rather
+      // than its label — the default keys off `title`, which would drop the
+      // user's toggle every time this copy changes.
+      zoneId="live"
+      badge={
+        <Badge color="blue">
+          <Number size={-1} weight="bold" value={sessions.length} />
+        </Badge>
+      }
+      PanelProps={{ style: { paddingBlock: 8 } }}
+    >
+      <Stack data-slot="sidebar-live-projects" ax="stretch" gap={3} fullwidth>
+        {groups.map((group) => (
+          <SessionGroup
+            key={group.key}
+            group={group}
+            open={!collapsed.includes(group.key)}
+            onOpenChange={(next) => toggle(group.key, next)}
+          />
+        ))}
+      </Stack>
+    </SidebarZone>
   );
 };
 LiveZone.displayName = "LiveZone";

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Input, Kbd } from "@uiid/design-system";
+import { Input, Kbd, Separator } from "@uiid/design-system";
 import { SearchIcon } from "@uiid/icons";
 
 import { useAllSessions, useSessions } from "../../lib/use-sessions";
@@ -61,8 +61,10 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   return (
     <SidebarWrapper {...WrapperProps}>
       {/* Pinned to the top, above the project controls: what needs you comes
-          before where you're browsing. Carries its own trailing separator. */}
+          before where you're browsing. */}
       <LiveZone sessions={live} />
+
+      <Separator my={2} />
 
       <ProjectSelector />
       <Input
