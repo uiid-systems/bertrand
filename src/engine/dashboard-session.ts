@@ -376,23 +376,52 @@ export type ResumeDashboardSessionResult =
         | "conversation-not-found"
         | "already-running"
         | "no-cwd"
+        | "worktree-gone"
         | "at-capacity";
       limit?: number;
     };
+
+type SessionCwdResult =
+  | { ok: true; cwd: string }
+  | { ok: false; reason: "not-found" | "no-cwd" | "worktree-gone" };
 
 /**
  * Recover the directory a session ran in.
  *
  * Resume has to run `claude` where the session lived, and the server's own cwd
- * is unrelated to it. The `claude.started` event records the cwd on every
- * launch, which makes it the durable answer — and the *last* one is the right
- * one, since a session that has already been resumed may have moved.
+ * is unrelated to it. Two records answer that, and they can disagree:
+ *
+ * `worktree_path` is asked first, because a session with one is doing isolated
+ * work and that is the only correct place to resume it. The recorded cwd is not
+ * a substitute: `EnterWorktree`'s hook writes this column mid-run without
+ * emitting a new `claude.started`, so a CLI session that entered a worktree has
+ * the *main checkout* on its last event. Preferring that would resume isolated
+ * work on `main` and commit there — the failure this task exists to rule out.
+ *
+ * A recorded worktree that is gone from disk is therefore a refusal, not a cue
+ * to fall through: the fall-through target is the very main checkout above.
+ *
+ * Only a session with no worktree reaches `claude.started`, and there it is the
+ * durable answer — the *last* one, since a session that has already been
+ * resumed may have moved. `no-cwd` survives for that case because it is the
+ * honest name for it: nothing was ever recorded, and no worktree is missing.
  */
-function resolveSessionCwd(sessionId: string): string | null {
+function resolveSessionCwd(sessionId: string): SessionCwdResult {
+  const session = getSession(sessionId);
+  if (!session) return { ok: false, reason: "not-found" };
+
+  if (session.worktreePath) {
+    return existsSync(session.worktreePath)
+      ? { ok: true, cwd: session.worktreePath }
+      : { ok: false, reason: "worktree-gone" };
+  }
+
   const started = getEdgeEventOfType(sessionId, "claude.started", "last");
   const cwd = (started?.meta as Record<string, unknown> | null)?.cwd;
-  if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) return null;
-  return cwd;
+  if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) {
+    return { ok: false, reason: "no-cwd" };
+  }
+  return { ok: true, cwd };
 }
 
 /**
@@ -421,15 +450,12 @@ export function resumeDashboardSession(opts: {
     return { ok: false, reason: "at-capacity", limit: dashboardSessionLimit() };
   }
 
-  const cwd = resolveSessionCwd(opts.sessionId);
-  if (!cwd) {
-    // Either the session predates the event, or the directory is gone. Both
-    // mean we cannot honestly pick a working directory, and guessing one would
-    // start Claude somewhere the user never worked.
-    return getSession(opts.sessionId)
-      ? { ok: false, reason: "no-cwd" }
-      : { ok: false, reason: "not-found" };
-  }
+  // Every refusal here means we cannot honestly pick a working directory, and
+  // guessing one would start Claude somewhere the user never worked — or, for
+  // `worktree-gone`, somewhere they specifically arranged not to work.
+  const resolved = resolveSessionCwd(opts.sessionId);
+  if (!resolved.ok) return { ok: false, reason: resolved.reason };
+  const { cwd } = resolved;
 
   const planned = planResume({
     sessionId: opts.sessionId,

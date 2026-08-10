@@ -101,6 +101,32 @@ describe("removeSessionWorktree", () => {
     expect(events.some((e) => e.event === "worktree.exited")).toBe(true);
   });
 
+  test("targets the owning repo even when the process stands elsewhere", async () => {
+    // The mirror of worktree-create's #210 guard. `bertrand serve` runs from
+    // wherever it was launched, so removal anchored on `process.cwd()` asked
+    // the wrong repo to drop a worktree it has never heard of. The decoy is a
+    // real repo, not a plain directory: git would refuse an unknown worktree
+    // there, which is precisely the failure this asserts cannot happen.
+    const repo = await makeRepo();
+    const wt = await addWorktree(repo, "feature-afar");
+    const s = makeSession(wt);
+    const decoy = await makeRepo();
+
+    const originalCwd = process.cwd();
+    let result;
+    try {
+      process.chdir(decoy);
+      result = await removeSessionWorktree(s.id);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(wt)).toBe(false);
+    const list = await $`git -C ${repo} worktree list --porcelain`.text();
+    expect(list).not.toContain(wt);
+  });
+
   test("refuses a live session and touches nothing", async () => {
     const repo = await makeRepo();
     const wt = await addWorktree(repo, "feature-live");

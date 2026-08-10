@@ -536,6 +536,13 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
       "Cannot tell which directory this session ran in, or it no longer exists. " +
       "Resume it from the CLI in the right directory.",
   },
+  "worktree-gone": {
+    status: 409,
+    message:
+      "This session's worktree no longer exists on disk. Resuming it in the " +
+      "main checkout would put its work on the wrong branch — recreate the " +
+      "worktree, or clear it from the session first.",
+  },
 }
 
 /**

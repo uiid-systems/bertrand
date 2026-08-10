@@ -25,7 +25,7 @@ migrate(drizzle(sqlite), {
 });
 
 const { createCategory } = await import("@/db/queries/categories");
-const { createSession } = await import("@/db/queries/sessions");
+const { createSession, updateSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { emitClaudeStarted } = await import("@/db/events/emit");
 const { resumeDashboardSession, listDashboardSessions } = await import(
@@ -103,6 +103,54 @@ describe("resumeDashboardSession refusals", () => {
     expect(listDashboardSessions()).toEqual([]);
 
     rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("a recorded worktree that is gone refuses rather than falling back", () => {
+    // The precedence guard. Both records are present and they disagree: the
+    // worktree is gone, the recorded cwd is fine. Treating the worktree as a
+    // mere fallback would resolve to that recorded cwd — which for a session
+    // that entered a worktree mid-run is the main checkout it was cut from,
+    // resuming isolated work on `main`. The refusal is the point.
+    const checkout = mkdtempSync(join(tmpdir(), "bertrand-resume-checkout-"));
+    const worktree = mkdtempSync(join(tmpdir(), "bertrand-resume-wt-"));
+    const s = makeSession("worktree-deleted");
+    const conversationId = crypto.randomUUID();
+    createConversation({ id: conversationId, sessionId: s.id });
+    emitClaudeStarted({ sessionId: s.id, conversationId, cwd: checkout });
+    updateSession(s.id, { worktreePath: worktree, worktreeBranch: "feature" });
+
+    rmSync(worktree, { recursive: true, force: true });
+
+    expect(resumeDashboardSession({ sessionId: s.id })).toEqual({
+      ok: false,
+      reason: "worktree-gone",
+    });
+
+    rmSync(checkout, { recursive: true, force: true });
+  });
+
+  test("a live worktree resolves the cwd with no launch ever recorded", () => {
+    // The other half of precedence: the worktree is consulted at all. This
+    // session has no `claude.started`, so it would be `no-cwd` if resolution
+    // only read events. Reaching `conversation-not-found` — a refusal raised
+    // *after* the cwd is settled — is what proves the worktree answered.
+    const worktree = mkdtempSync(join(tmpdir(), "bertrand-resume-wt-live-"));
+    const s = makeSession("worktree-only");
+    updateSession(s.id, { worktreePath: worktree, worktreeBranch: "feature" });
+
+    const foreign = makeSession("worktree-only-other");
+    const foreignConversation = crypto.randomUUID();
+    createConversation({ id: foreignConversation, sessionId: foreign.id });
+
+    expect(
+      resumeDashboardSession({
+        sessionId: s.id,
+        conversationId: foreignConversation,
+      }),
+    ).toEqual({ ok: false, reason: "conversation-not-found" });
+    expect(listDashboardSessions()).toEqual([]);
+
+    rmSync(worktree, { recursive: true, force: true });
   });
 
   test("the cwd comes from the most recent claude.started", () => {
