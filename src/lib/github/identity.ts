@@ -1,16 +1,13 @@
 /**
- * Portable identity of a GitHub repository. Portable is the point: bertrand
- * syncs projects across machines, where `owner/repo` travels and a checkout
- * path does not.
+ * Parses a git remote URL into a portable GitHub identity. Pure — the caller
+ * supplies any host policy it needs (see `ParseOptions`).
  */
-export interface ProviderIdentity {
-  /** Discriminant; other forges would be additive. */
-  provider: "github";
-  owner: string;
-  repo: string;
-  /** Undefined means github.com. Set only for GitHub Enterprise Server. */
-  host?: string;
-}
+import type { ProviderIdentity } from "./types";
+
+// Defined in the leaf `./types` so callers that need only the shape don't
+// have to import the parser; re-exported here because this is where callers
+// of `parseGitHubRemote` expect to find it.
+export type { ProviderIdentity } from "./types";
 
 const GITHUB_COM = "github.com";
 

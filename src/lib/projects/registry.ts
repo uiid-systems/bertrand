@@ -10,39 +10,15 @@ import {
 import { randomBytes } from "crypto";
 import { isAbsolute, join } from "path";
 import { paths } from "@/lib/paths";
-import type { ProviderIdentity } from "@/lib/github/identity";
+import type { ProviderIdentity } from "@/lib/github/types";
+import type { ProjectEntry, ProjectRegistry, ProjectRepo } from "./types";
+
+// Defined in the leaf `./types` so `src/types.ts` can describe API responses
+// without the dashboard's type graph reaching the `fs`/`path` imports above;
+// re-exported here because this is where callers of the registry expect them.
+export type { ProjectEntry, ProjectRegistry, ProjectRepo } from "./types";
 
 export const DEFAULT_PROJECT_SLUG = "default";
-
-/**
- * A project's binding to a git repository.
- *
- * `path` is machine-local and `provider` is not: a registry synced to another
- * machine keeps a meaningful `owner/repo` even when the checkout lives
- * somewhere else (or nowhere at all).
- */
-export interface ProjectRepo {
-  /** Absolute path to the checkout on this machine. */
-  path: string;
-  /** Portable identity, stable across machines. */
-  provider: ProviderIdentity;
-  /** Resolved from `origin/HEAD`; absent when it could not be determined. */
-  defaultBranch?: string;
-}
-
-export interface ProjectEntry {
-  slug: string;
-  name: string;
-  createdAt: string;
-  lastUsedAt: string;
-  color?: string;
-  repo?: ProjectRepo;
-}
-
-export interface ProjectRegistry {
-  activeProjectSlug: string;
-  projects: ProjectEntry[];
-}
 
 let _registryDir: string = paths.root;
 
