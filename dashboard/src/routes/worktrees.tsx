@@ -4,6 +4,7 @@ import { Badge, Group, Stack, Text } from "@uiid/design-system";
 
 import { worktreesQuery } from "../api/queries";
 import { WorktreeItem } from "../components/worktrees";
+import { OpenInEditorButton } from "../components/open-in-editor-button";
 import { formatRelativeTime } from "../lib/format";
 
 /**
@@ -30,7 +31,7 @@ function WorktreesPage() {
         <Stack gap={4} ax="stretch" fullwidth style={{ maxWidth: 720 }}>
           {worktrees.map((entry) => (
             <Stack key={entry.session.id} gap={2} pb={4} bb={1} fullwidth>
-              <Group gap={2} ay="center">
+              <Group gap={2} ay="center" fullwidth>
                 <Text
                   size={-1}
                   shade="muted"
@@ -48,6 +49,15 @@ function WorktreesPage() {
                 <Text size={-1} shade="muted">
                   · {formatRelativeTime(entry.session.updatedAt)}
                 </Text>
+                {/* Sits in the row's session header rather than among the
+                    worktree controls below, matching where the session view
+                    carries it (beside the breadcrumbs). */}
+                <Group ml="auto">
+                  <OpenInEditorButton
+                    session={entry.session}
+                    projectSlug={entry.project?.slug}
+                  />
+                </Group>
               </Group>
               <WorktreeItem
                 sessionId={entry.session.id}
