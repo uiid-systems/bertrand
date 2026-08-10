@@ -34,11 +34,14 @@ export async function listWorktrees(): Promise<Worktree[]> {
 }
 
 /**
- * Create a worktree on a new branch. Pass `cwd` (typically the repo's main
- * checkout) whenever the calling process isn't guaranteed to be inside the
- * owning repo — the same hazard `removeWorktree` documents below, and the
- * reason this ran in the wrong repo when called from `bertrand serve`, which
- * runs from wherever it happened to be launched.
+ * Create a worktree on a new branch, anchored at `cwd` — required, and
+ * typically the repo's main checkout.
+ *
+ * It is required because the `process.cwd()` default it replaced produced a
+ * real bug: called from `bertrand serve`, which runs from wherever it happened
+ * to be launched, this created worktrees in whatever repo the server was
+ * started in. A caller that cannot name the repo cannot safely guess it, so
+ * the omission is now a type error rather than a wrong-repo worktree.
  *
  * `baseBranch` defaults to whatever the resolved repo has checked out; pass it
  * explicitly when the base matters.
@@ -46,11 +49,10 @@ export async function listWorktrees(): Promise<Worktree[]> {
 export async function createWorktree(
   path: string,
   branch: string,
-  opts: { baseBranch?: string; cwd?: string } = {},
+  opts: { cwd: string; baseBranch?: string },
 ): Promise<void> {
-  const cwd = opts.cwd ?? process.cwd();
   const baseBranch = opts.baseBranch ?? "HEAD";
-  await $`git -C ${cwd} worktree add -b ${branch} ${path} ${baseBranch}`.quiet();
+  await $`git -C ${opts.cwd} worktree add -b ${branch} ${path} ${baseBranch}`.quiet();
 }
 
 /** Prefer git's stderr over Bun's generic "exited with code 128" message. */
@@ -63,20 +65,19 @@ export function shellDetail(err: unknown): string {
 }
 
 /**
- * Remove a worktree. Pass `cwd` (typically the repo's main checkout) whenever
- * the calling process isn't guaranteed to be inside the owning repo — the
- * dashboard server runs from wherever `bertrand serve` was launched, and git
- * refuses to remove the worktree the process is standing in.
+ * Remove a worktree, anchored at `cwd` — required, for the reason
+ * `createWorktree` gives above, plus one of its own: the dashboard server runs
+ * from wherever `bertrand serve` was launched, and git refuses to remove the
+ * worktree the process is standing in.
  */
 export async function removeWorktree(
   path: string,
-  opts: { force?: boolean; cwd?: string } = {}
+  opts: { cwd: string; force?: boolean }
 ): Promise<void> {
-  const cwd = opts.cwd ?? process.cwd();
   if (opts.force) {
-    await $`git -C ${cwd} worktree remove --force ${path}`.quiet();
+    await $`git -C ${opts.cwd} worktree remove --force ${path}`.quiet();
   } else {
-    await $`git -C ${cwd} worktree remove ${path}`.quiet();
+    await $`git -C ${opts.cwd} worktree remove ${path}`.quiet();
   }
 }
 
