@@ -64,6 +64,7 @@ import {
   type SessionTerminalState,
 } from "../components/terminal";
 import { CopyResumeButton } from "../components/copy-resume-button";
+import { OpenInEditorButton } from "../components/open-in-editor-button";
 import { SessionExitPanel } from "../components/session-exit";
 import { SessionItem } from "../components/sidebar/subcomponents/session-item";
 
@@ -242,6 +243,10 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <CopyResumeButton
             session={match.session}
             categoryPath={match.categoryPath}
+          />
+          <OpenInEditorButton
+            session={match.session}
+            projectSlug={projectSlug}
           />
           <ArchiveToggle session={match.session} project={projectSlug} />
         </Group>
