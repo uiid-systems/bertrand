@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.37.0](https://github.com/uiid-systems/bertrand/compare/v0.36.0...v0.37.0) (2026-08-10)
+
+
+### Features
+
+* **dashboard:** make the main content zones an accordion ([#245](https://github.com/uiid-systems/bertrand/issues/245)) ([1109474](https://github.com/uiid-systems/bertrand/commit/1109474ae09d224847eaffb9fd1911165460aa37))
+* **dashboard:** move timeline navigation into the timeline zone header ([#231](https://github.com/uiid-systems/bertrand/issues/231)) ([4ffa2d3](https://github.com/uiid-systems/bertrand/commit/4ffa2d308d07651742147084b6e59993d87be47f))
+* **dashboard:** open a session's code in the IDE from the breadcrumbs bar ([#237](https://github.com/uiid-systems/bertrand/issues/237)) ([2046bb5](https://github.com/uiid-systems/bertrand/commit/2046bb5dbab74667a405e3d1b6243471770dcfa9))
+* **dashboard:** open a session's repo on GitHub from the breadcrumb ([#243](https://github.com/uiid-systems/bertrand/issues/243)) ([28a8f5a](https://github.com/uiid-systems/bertrand/commit/28a8f5a162c82d01559280b93846391a3a86dcf3))
+* **diff:** render display paths against the project repo, not the cwd ([#241](https://github.com/uiid-systems/bertrand/issues/241)) ([57243b6](https://github.com/uiid-systems/bertrand/commit/57243b635f868ea5aaa61e94a0c0998d6732dd3d))
+* **github:** add a capped, never-throwing gh transport with typed failures ([#244](https://github.com/uiid-systems/bertrand/issues/244)) ([155755d](https://github.com/uiid-systems/bertrand/commit/155755d7b4c89b707255787c2e7e94c5b6fa42b1))
+* **github:** parse git remotes into portable repo identities ([#226](https://github.com/uiid-systems/bertrand/issues/226)) ([80c7117](https://github.com/uiid-systems/bertrand/commit/80c71176a7245fc5613498ffba594c02b6847f42))
+* **github:** require enterprise hosts to be declared before a remote is trusted ([#235](https://github.com/uiid-systems/bertrand/issues/235)) ([5f7cc13](https://github.com/uiid-systems/bertrand/commit/5f7cc139d035eea4ac2a86889f8e74368cc2eb03))
+* **github:** resolve repo identity from a path with a TTL cache ([#233](https://github.com/uiid-systems/bertrand/issues/233)) ([8f00b16](https://github.com/uiid-systems/bertrand/commit/8f00b1620966a7a3438d53b505dee063b89c22bb))
+* **projects:** bind projects to a repository in the registry ([#227](https://github.com/uiid-systems/bertrand/issues/227)) ([16822cb](https://github.com/uiid-systems/bertrand/commit/16822cb3ab551130beed2d9ae1999a7455bd85a8))
+* **projects:** bind the live registry's projects to their repos ([#238](https://github.com/uiid-systems/bertrand/issues/238)) ([51ebc3b](https://github.com/uiid-systems/bertrand/commit/51ebc3b46fb199874e416811a10ddf89f9606684))
+* **sessions:** derive a dashboard session's repo from its project ([#239](https://github.com/uiid-systems/bertrand/issues/239)) ([5485910](https://github.com/uiid-systems/bertrand/commit/5485910381f85815ea107367caff2318f99a698f))
+* **sidebar:** group the live zone by project and count each group ([#246](https://github.com/uiid-systems/bertrand/issues/246)) ([c5d3679](https://github.com/uiid-systems/bertrand/commit/c5d367980f352fb7078e1d09eaeba1f1019dd5a7))
+* **sidebar:** select one project and group its sessions by category ([#242](https://github.com/uiid-systems/bertrand/issues/242)) ([1079234](https://github.com/uiid-systems/bertrand/commit/10792344362629e7a8ccb66a3d533f29008fd337))
+* **worktree:** anchor worktree operations on the project repo ([#240](https://github.com/uiid-systems/bertrand/issues/240)) ([e94611e](https://github.com/uiid-systems/bertrand/commit/e94611e0fc52aa47129bee5c2d5ea756cf658aa3))
+
+
+### Bug Fixes
+
+* **dashboard:** make live sessions findable from sidebar search ([#247](https://github.com/uiid-systems/bertrand/issues/247)) ([fbc5377](https://github.com/uiid-systems/bertrand/commit/fbc5377d47811ed955b898c253af49e2cb437432))
+
+
+### Refactoring
+
+* **types:** keep the dashboard's type graph on leaf modules ([#236](https://github.com/uiid-systems/bertrand/issues/236)) ([840f72b](https://github.com/uiid-systems/bertrand/commit/840f72b5505edb1622a5f6c26556562a7e569eca))
+
 ## [0.36.0](https://github.com/uiid-systems/bertrand/compare/v0.35.0...v0.36.0) (2026-08-09)
 
 
