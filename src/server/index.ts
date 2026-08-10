@@ -148,6 +148,21 @@ function resolveDb(url: URL): Db | undefined {
   return undefined
 }
 
+/**
+ * The repo root a response's file paths should be rendered relative to.
+ *
+ * Deliberately mirrors `resolveDb`'s choice of project, so the paths and the
+ * rows they describe always come from the same one — reading the active
+ * project's root while serving another project's sessions would render every
+ * path absolute. `undefined` when that project has no repo bound, which the
+ * display path treats as "leave it absolute".
+ */
+function resolveRepoRoot(url: URL): string | undefined {
+  const slug = url.searchParams.get("project")
+  const owner = slug && projectExists(slug) ? slug : resolveActiveProject().slug
+  return getProjectRepo(owner)?.path
+}
+
 const listSessions = (_params: object, url: URL): SessionWithCategory[] => {
   const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
   return resolveProjectScope(url).flatMap((project) =>
@@ -222,7 +237,7 @@ const getChangedFilesBySession = (
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
   if (!session) return []
-  return computeChangedFiles(sessionId!, db)
+  return computeChangedFiles(sessionId!, resolveRepoRoot(url), db)
 }
 
 const getEngagement = (
