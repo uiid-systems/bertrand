@@ -27,15 +27,21 @@ function lineCount(s?: string): number {
  * carry absolute paths; two normalizations make them repo-relative:
  *   1. Collapse a `.claude/worktrees/<name>/` infix so a file edited inside a
  *      worktree reads as its logical repo path (…/worktrees/x/src/a → src/a).
- *   2. Strip the server's working directory (the active project's repo root).
- * Cross-project paths that match neither fall back to the absolute path — the
- * row still shows the filename and a full-path tooltip.
+ *   2. Strip `root` — the repo root of the project that owns the session.
+ *
+ * `root` is supplied by the caller rather than read from `process.cwd()`. The
+ * server runs from wherever `bertrand serve` was launched, so the process
+ * directory bears no relation to the repo being rendered; from `/tmp` every
+ * path failed to match and the sidebar showed absolute paths for everything.
+ *
+ * `undefined` is a legitimate answer — an unbound project has no root — and
+ * lands on the same absolute-path fallback as a cross-project path. The row
+ * still shows the filename and a full-path tooltip.
  */
-function toDisplayPath(p: string): string {
+function toDisplayPath(p: string, root: string | undefined): string {
   const wt = p.match(/^(.*)\/\.claude\/worktrees\/[^/]+\/(.+)$/);
   const abs = wt ? `${wt[1]}/${wt[2]}` : p;
-  const root = process.cwd();
-  if (abs.startsWith(`${root}/`)) return abs.slice(root.length + 1);
+  if (root && abs.startsWith(`${root}/`)) return abs.slice(root.length + 1);
   return abs;
 }
 
@@ -99,6 +105,7 @@ export function computeDiffStats(
  */
 export function computeChangedFiles(
   sessionId: string,
+  root: string | undefined,
   db: Db = getDb(),
 ): ChangedFile[] {
   const byFile = accumulateFileDiffs(sessionId, db);
@@ -110,7 +117,7 @@ export function computeChangedFiles(
         : added === 0 && removed > 0
           ? "deleted"
           : "modified";
-    files.push({ path: toDisplayPath(path), added, removed, status });
+    files.push({ path: toDisplayPath(path, root), added, removed, status });
   }
   files.sort(
     (a, b) =>
