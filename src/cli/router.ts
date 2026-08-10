@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { migrateLegacyLayout } from "@/lib/projects/migrate-layout";
+import { migrateProjectRepos } from "@/lib/projects/migrate-repo";
 import { DEFAULT_PROJECT_SLUG } from "@/lib/projects/registry";
 import { triggerBackgroundPull } from "@/sync/trigger";
 import { helpText } from "@/cli/help";
@@ -64,6 +65,41 @@ function migrateOrAbort(): void {
 }
 
 /**
+ * One-shot repo-binding migration for the live registry. Runs after the layout
+ * migration, since it reads the `projects.json` that one writes.
+ *
+ * Never aborts the command. Unlike the layout migration there is no broken
+ * half-state to protect the user from: an unbound project still works, it just
+ * hasn't been attached to a repo yet. So the refusal paths warn and continue.
+ */
+async function migrateReposOrReport(): Promise<void> {
+  const result = await migrateProjectRepos();
+
+  if (result.migrated) {
+    for (const project of result.bound) {
+      console.log(`Bound project "${project.slug}" to ${project.identity}.`);
+    }
+    if (result.removed.length > 0) {
+      console.log(`Removed empty projects: ${result.removed.join(", ")}.`);
+    }
+    console.log(`Previous registry saved to ${result.backup}.`);
+    return;
+  }
+
+  if (result.reason === "mismatch") {
+    console.error(
+      `Skipped repo migration: project "${result.slug}" resolves to ` +
+        `${result.found}, expected ${result.expected}. Registry left unchanged.`,
+    );
+  } else if (result.reason === "undetectable") {
+    console.error(
+      `Skipped repo migration: no resolvable checkout found for project ` +
+        `"${result.slug}". Registry left unchanged.`,
+    );
+  }
+}
+
+/**
  * Run init silently before falling through to launch on a fresh install.
  *
  * Detected by the absence of the SQLite db file. Init's success logs are
@@ -110,6 +146,7 @@ export async function route(argv: string[]) {
   // session held the legacy DB while the new-binary hook tried to migrate).
   if (!command || !HOOK_COMMANDS.has(command)) {
     migrateOrAbort();
+    await migrateReposOrReport();
   }
 
   // No args → launch TUI (auto-init on fresh install first)
