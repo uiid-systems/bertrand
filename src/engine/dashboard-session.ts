@@ -8,6 +8,7 @@ import { emitClaudeStarted } from "@/db/events/emit";
 import { getOrCreateCategoryPath } from "@/db/queries/categories";
 import { finalizeSessionRow } from "./finalize";
 import { resolveActiveProject } from "@/lib/projects/resolve";
+import { requireBoundRepo } from "@/lib/projects/policy";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
@@ -121,15 +122,6 @@ export interface SpawnDashboardSessionOpts {
   categoryPath: string;
   slug: string;
   name?: string;
-  /**
-   * The repo the session works in — passed explicitly, because the server's own
-   * cwd is an inherited accident with no relation to the session.
-   *
-   * Note this is the repo to branch *from*, not the directory `claude` runs in:
-   * every dashboard session gets its own worktree, and that worktree is the
-   * working directory.
-   */
-  cwd: string;
   /** Branch the worktree starts from. Defaults to the repo's current HEAD. */
   baseBranch?: string;
 }
@@ -296,6 +288,17 @@ function startClaudePty(opts: {
 export async function spawnDashboardSession(
   opts: SpawnDashboardSessionOpts,
 ): Promise<SpawnDashboardSessionResult> {
+  // The repo is derived, never supplied. A caller-provided path would let the
+  // browser start a session against any directory on the machine, and the
+  // server's own cwd is an inherited accident with no relation to the session
+  // — the project's binding is the only answer that means anything.
+  //
+  // Resolved before the capacity check because an unbound project is a
+  // permanent misconfiguration with a specific remedy, while being at capacity
+  // is transient: reporting "too many sessions" to someone whose real problem
+  // is an unlinked project sends them chasing the wrong fix.
+  const repo = requireBoundRepo(resolveActiveProject().slug);
+
   // Checked before any row is written: a rejected spawn must leave no trace.
   // The map holds only live sessions (finalize deletes the entry), so this
   // counts what is actually running, not what has ever run.
@@ -305,7 +308,10 @@ export async function spawnDashboardSession(
 
   // Before the session row, so a worktree that cannot be created surfaces as an
   // error instead of a half-created session pointing at nothing.
-  const created = await createSessionWorktree(opts.cwd, opts.slug, {
+  //
+  // `repo.path` is the checkout to branch *from*, not the directory `claude`
+  // runs in: the worktree cut from it below is the working directory.
+  const created = await createSessionWorktree(repo.path, opts.slug, {
     baseBranch: opts.baseBranch,
   });
   if (!created.ok) {
