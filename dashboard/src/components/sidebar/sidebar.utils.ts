@@ -85,21 +85,28 @@ export function groupByProject(
 }
 
 /**
- * Zone B's rows: everything that isn't live (paused, plus archived when shown),
- * grouped by category path. Each group is sorted by most-recent activity, and
- * the groups themselves are ordered by their most recently active session, so
- * the category you touched last floats up.
+ * Zone B's rows, grouped by category path. Each group is sorted by most-recent
+ * activity, and the groups themselves are ordered by their most recently active
+ * session, so the category you touched last floats up.
  *
- * Live sessions are dropped here rather than duplicated — they're already
- * pinned in zone A. Keying on the category path alone is safe because this zone
- * only ever holds one project's sessions.
+ * Live sessions are normally dropped rather than duplicated — they're already
+ * pinned in zone A. `includeLive` is how a search gets them back: zone A ignores
+ * the query on purpose (it's a pinned inbox), so if this zone also skipped them
+ * a live session would match nothing anywhere and search would look broken to
+ * anyone looking for the session they're actually running. While a query is
+ * active this zone stops being "the rest of the project" and becomes "results in
+ * this project", so a live row appearing in both places is the point.
+ *
+ * Keying on the category path alone is safe because this zone only ever holds
+ * one project's sessions.
  */
 export function groupByCategory(
   sessions: SessionWithCategory[],
+  { includeLive = false }: { includeLive?: boolean } = {},
 ): SessionGroup[] {
   const byCategory = new Map<string, SessionWithCategory[]>();
   for (const s of sessions) {
-    if (isLive(s)) continue;
+    if (!includeLive && isLive(s)) continue;
     const key = s.categoryPath;
     const list = byCategory.get(key);
     if (list) list.push(s);
