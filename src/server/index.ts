@@ -62,6 +62,7 @@ import {
   resolveActiveProject,
   _resetActiveProjectCache,
 } from "@/lib/projects/resolve"
+import { UnboundProjectError } from "@/lib/projects/policy"
 import { getDbForProject, invalidateDbCache, type Db } from "@/db/client"
 import type {
   SessionRow,
@@ -612,20 +613,20 @@ const SPAWN_WORKTREE_STATUS: Record<CreateWorktreeReason, number> = {
 
 /**
  * Spawn a session whose PTY this server owns (issue #207). Unlike a
- * CLI-started session there is no terminal involved at all — the caller
- * supplies the repo, and the browser that attaches becomes the sole sizing
- * authority.
+ * CLI-started session there is no terminal involved at all — the browser that
+ * attaches becomes the sole sizing authority.
  *
- * `cwd` is the repository the session works in, not the directory `claude`
- * runs in: every dashboard session gets its own worktree under that repo's
- * main checkout (#210), and the worktree is the working directory.
+ * The body carries no path. Where the session works is derived from the active
+ * project's repo binding, because a client-supplied path is both untrustworthy
+ * (any directory on the machine) and unnecessary (the project already knows).
+ * Every dashboard session gets its own worktree under that repo's main
+ * checkout (#210), and the worktree is the working directory.
  */
 async function handleSpawnDashboardSession(req: Request): Promise<Response> {
   let body: {
     categoryPath?: unknown
     slug?: unknown
     name?: unknown
-    cwd?: unknown
     baseBranch?: unknown
   }
   try {
@@ -634,18 +635,12 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { categoryPath, slug, cwd, baseBranch } = body
+  const { categoryPath, slug, baseBranch } = body
   if (typeof categoryPath !== "string" || !categoryPath) {
     return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
   }
   if (typeof slug !== "string" || !slug) {
     return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
-  }
-  if (typeof cwd !== "string" || !cwd.startsWith("/") || !existsSync(cwd)) {
-    return Response.json(
-      { error: "cwd must be an existing absolute path to a git repository" },
-      { status: 400 },
-    )
   }
   if (baseBranch !== undefined && (typeof baseBranch !== "string" || !baseBranch)) {
     return Response.json(
@@ -659,11 +654,21 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       categoryPath,
       slug,
       name: typeof body.name === "string" ? body.name : undefined,
-      cwd,
       baseBranch,
     })
     return Response.json(result)
   } catch (err) {
+    // The project this server is pointed at has no repo, so there is nowhere to
+    // cut a worktree. 409 rather than 500: nothing is broken, a prerequisite is
+    // simply missing, and `err.message` already names the command that fixes
+    // it. `reason` lets a UI offer the link action inline instead of printing
+    // a sentence about the CLI.
+    if (err instanceof UnboundProjectError) {
+      return Response.json(
+        { error: err.message, reason: "unbound-project", slug: err.slug },
+        { status: 409 },
+      )
+    }
     // At capacity is a client-visible condition with a retry story, not a
     // server fault — 503 so a UI can say "too many sessions" rather than
     // surfacing an opaque 500.
