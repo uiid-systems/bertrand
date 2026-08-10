@@ -48,12 +48,12 @@ export const EVENT_CATALOG = {
   "tool.used": { category: "work", color: "yellow", label: "tool" },
   "assistant.message": {
     category: "assistant",
-    color: "indigo",
+    color: "neutral",
     label: "Agent's response",
   },
   "agent.turn": {
     category: "assistant",
-    color: "indigo",
+    color: "neutral",
     label: "Agent's response",
   },
 } as const satisfies Record<string, EventInfo>;

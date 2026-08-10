@@ -13,13 +13,6 @@ export type ContentZoneProps = React.PropsWithChildren<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * `flex` shorthand for the zone's slot in its parent column. The default is
-   * what a column of zones wants: absorb the leftover space while open, shrink
-   * to just the trigger bar while collapsed. Pass a value to cap an open zone's
-   * share when it has an open sibling.
-   */
-  flex?: string;
-  /**
    * Keep the body mounted while collapsed, hidden with `display: none`, instead
    * of unmounting it. Set this when mounting the body is expensive enough to be
    * felt — the timeline re-parses markdown for every event it holds, so
@@ -40,9 +33,10 @@ export type ContentZoneProps = React.PropsWithChildren<{
  *     because what goes in it (a terminal, a scrolling timeline) needs a real
  *     height to lay itself out against;
  *   - the zone is itself a **flex item**, sized by `flex` rather than by its
- *     content, so a column of these divides the height between them: collapsing
- *     one hands its space to whatever is still open, with no measuring or
- *     imperative resizing involved.
+ *     content, so a column of these divides the height between them: the open
+ *     zone absorbs everything its collapsed siblings gave up, with no measuring
+ *     or imperative resizing involved. Collapse them all and the column is just
+ *     its stack of trigger bars.
  *
  * By default children are only rendered while open, so a collapsed zone holds no
  * live resources — a collapsed terminal detaches from its session rather than
@@ -55,7 +49,6 @@ export const ContentZone = ({
   actions,
   open,
   onOpenChange,
-  flex,
   keepMounted,
   "data-slot": dataSlot,
   TriggerGroupProps,
@@ -70,7 +63,7 @@ export const ContentZone = ({
       // `1 1 0` rather than `1 1 auto` so an open zone's size comes from the
       // column, not from how tall its content happens to be — a timeline of 200
       // events must not push the terminal off the bottom.
-      flex: flex ?? (open ? "1 1 0" : "0 0 auto"),
+      flex: open ? "1 1 0" : "0 0 auto",
       minHeight: 0,
       overflow: "hidden",
     }}
