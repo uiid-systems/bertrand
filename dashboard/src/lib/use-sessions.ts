@@ -1,9 +1,10 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { sessionsQuery } from "../api/queries"
-import type { SessionWithCategory } from "../api/types"
-import { useSelectedProjects } from "../components/sidebar/selected-projects"
+import { allStatsQuery, sessionsQuery } from "../api/queries"
+import type { SessionStatsRow, SessionWithCategory } from "../api/types"
+import { useSelectedProject } from "../components/sidebar/selected-project"
+import { isLive } from "../components/sidebar/sidebar.utils"
 
 /**
  * The one shared session poll. Consumers used to subscribe to several distinct
@@ -17,7 +18,7 @@ import { useSelectedProjects } from "../components/sidebar/selected-projects"
  * order — the sidebar re-sorts by activity anyway.
  */
 export function useAllSessions(): SessionWithCategory[] {
-  const { projects } = useSelectedProjects()
+  const { projects } = useSelectedProject()
   const allSlugs = useMemo(
     () => projects.map((p) => p.slug).sort(),
     [projects],
@@ -30,10 +31,34 @@ export function useAllSessions(): SessionWithCategory[] {
 }
 
 /**
+ * The one shared stats poll, scoped to every project for the same reason
+ * `useAllSessions` is: the live zone spans projects, so a card there needs its
+ * diff counters and usage standing whichever project it belongs to. Keeping a
+ * single superset key also means switching projects re-slices a warm cache
+ * instead of invalidating it.
+ *
+ * Peer-relative readouts (the usage badge and its secondary-sidebar twin) must
+ * all rank against this same set, or the same session reads "heavy" in one
+ * place and not the other.
+ */
+export function useAllStats(): Record<string, SessionStatsRow> {
+  const { projects } = useSelectedProject()
+  const allSlugs = useMemo(
+    () => projects.map((p) => p.slug).sort(),
+    [projects],
+  )
+  const hasLiveSession = useAllSessions().some(isLive)
+  const { data = {} } = useQuery({
+    ...allStatsQuery({ hasLiveSession, projects: allSlugs }),
+    enabled: allSlugs.length > 0,
+  })
+  return data
+}
+
+/**
  * A view over the shared session list, narrowed to the sidebar's selected
- * projects. This mirrors the old server-side semantics: an uninitialized
- * selection falls back to the active project, an explicit empty selection shows
- * nothing.
+ * project. An uninitialized selection falls back to the registry's active
+ * project, mirroring the server's own default.
  */
 export function useSessions(
   opts: {
@@ -41,7 +66,7 @@ export function useSessions(
   } = {},
 ): SessionWithCategory[] {
   const all = useAllSessions()
-  const { queryProjects, projects } = useSelectedProjects()
+  const { queryProjects, projects } = useSelectedProject()
   const activeSlug = projects.find((p) => p.active)?.slug
   const { includeArchived } = opts
 
