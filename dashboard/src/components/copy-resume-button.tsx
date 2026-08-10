@@ -17,7 +17,7 @@ export const CopyResumeButton = ({
   session,
   categoryPath,
   size = "small",
-  variant = "subtle",
+  variant = "ghost",
   shape = "square",
   ...rest
 }: CopyResumeButtonProps) => {
