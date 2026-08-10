@@ -8,12 +8,7 @@ import {
   useState,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  Maximize2Icon,
-  Minimize2Icon,
-} from "@uiid/icons";
+import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 import {
   Badge,
@@ -57,7 +52,7 @@ import { TimelineActions } from "../components/timeline/timeline-actions";
 import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
 import { SecondarySidebar } from "../components/secondary-sidebar";
-import { ContentZone, useZoneCollapse } from "../components/content-zone";
+import { ContentZone, useOpenZone } from "../components/content-zone";
 import {
   SessionTerminal,
   TerminalFontSizeControls,
@@ -315,12 +310,13 @@ const TimelineBody = ({
 TimelineBody.displayName = "TimelineBody";
 
 /**
- * Share of the column the terminal takes while the timeline is also open. A
- * proportion rather than a pixel height so the split holds its shape on a laptop
- * and on a tall monitor alike, and so neither zone can ever be squeezed to
- * nothing: the two bases always add up to less than the column.
+ * The second zone's identity in the accordion. Deliberately one id across both
+ * of its states: what's stored is *which slot the reader wants open*, and this
+ * is one slot showing whichever of the two applies. Keying them separately would
+ * mean a finished session, whose slot holds the exit panel, opened with
+ * everything collapsed just because the last live session had its terminal up.
  */
-const TERMINAL_ZONE_SHARE = "45%";
+const SECONDARY_ZONE_ID = "secondary";
 
 /**
  * A session's main content area: the timeline plus a second zone, stacked as
@@ -331,25 +327,22 @@ const TERMINAL_ZONE_SHARE = "45%";
  * now", they occupy the same space, and only one can ever apply — so they share
  * one slot rather than introducing a third zone that is empty half the time.
  *
- * The column *is* the sizing mechanism. Each zone's `flex` says what share it
- * wants — a collapsed zone shrinks to its trigger bar, an open one absorbs
- * everything left over — so collapsing either zone gives the whole column to the
- * other by pure layout, with nothing to measure or keep in sync.
+ * The two zones are an **accordion**: opening one closes the other, and closing
+ * the open one leaves the column as a pair of trigger bars. So the reader picks
+ * a surface to read rather than a split to divide, and every zone is either
+ * full-height or absent — there is no in-between share to tune, and no state in
+ * which two half-height zones are both too short to be useful. `useOpenZone`
+ * holds the single open id, so opening a zone needs no matching close.
  *
- * Collapse state is persisted (`useZoneCollapse`) but the terminal itself is
- * scoped to this view: navigating to another session unmounts it, which detaches
- * the websocket. That's deliberate — several sessions can be live at once, and a
+ * The column *is* the sizing mechanism: an open zone absorbs the leftover
+ * height, a collapsed one shrinks to its trigger bar, so a click hands over the
+ * whole column by pure layout with nothing to measure or keep in sync.
+ *
+ * Which zone is open persists (`useOpenZone`) but the terminal itself is scoped
+ * to this view: navigating to another session unmounts it, which detaches the
+ * websocket. That's deliberate — several sessions can be live at once, and a
  * terminal that outlived its route would show a different session's PTY than the
  * timeline beside it.
- *
- * The two states keep *separate* collapse ids. The stored state is global
- * rather than per-session, and the reason terminal collapse is persisted at all
- * — expanding it reattaches a PTY and asks it to repaint — has no equivalent
- * for a static panel. Sharing one id would mean dismissing the exit panel on a
- * finished session silently collapsed the terminal on every live one.
- *
- * "Maximize" is just collapsing the timeline zone, which keeps one mechanism
- * instead of introducing a second sizing path.
  */
 const SessionZones = ({
   sessionId,
@@ -363,29 +356,16 @@ const SessionZones = ({
   /** Present once the session has ended; renders instead of the terminal. */
   readonly exit: ReactNode | null;
 }) => {
-  const { open: timelineStoredOpen, setOpen: setTimelineOpen } =
-    useZoneCollapse("timeline");
-  const { open: terminalOpen, setOpen: setTerminalOpen } = useZoneCollapse(
-    exit ? "session-exit" : "terminal",
+  // The timeline is what a session is *about*, so it holds the column until the
+  // reader says otherwise; the terminal has to be asked for.
+  const { open: timelineOpen, setOpen: setTimelineOpen } = useOpenZone(
+    "timeline",
+    { defaultOpen: true },
   );
+  const { open: terminalOpen, setOpen: setTerminalOpen } =
+    useOpenZone(SECONDARY_ZONE_ID);
 
   const [terminal, setTerminal] = useState<SessionTerminalState | null>(null);
-
-  // Never let both zones be collapsed — that's two trigger bars over a band of
-  // dead space. The timeline is the fallback, so collapsing the terminal reopens
-  // it, as does arriving with both stored collapsed (which earlier builds of
-  // this view could persist).
-  const timelineOpen = timelineStoredOpen || !terminalOpen;
-
-  // The other direction needs a nudge rather than a fallback: collapsing the
-  // timeline hands the column to the terminal, which has to be open to take it
-  // or the click would appear to do nothing.
-  const openTimeline = (open: boolean) => {
-    setTimelineOpen(open);
-    if (!open) setTerminalOpen(true);
-  };
-
-  const maximized = !timelineOpen;
 
   // Cards actually rendered, not raw events — transforms fold runs of tool
   // calls into one card, so this counts what the timeline shows.
@@ -397,7 +377,7 @@ const SessionZones = ({
         data-slot="timeline-zone"
         title="Timeline"
         open={timelineOpen}
-        onOpenChange={openTimeline}
+        onOpenChange={setTimelineOpen}
         badge={
           // Matches the sidebar zones' count badge. Held back at zero — an
           // empty timeline has nothing to count, and a `0` that flips to `40`
@@ -412,7 +392,7 @@ const SessionZones = ({
           <TimelineActions
             segments={segments}
             open={timelineOpen}
-            onOpen={() => openTimeline(true)}
+            onOpen={() => setTimelineOpen(true)}
           />
         }
         // Every prompt, reply, and answer in here renders through `Markdown`, so
@@ -428,13 +408,6 @@ const SessionZones = ({
         title={exit ? "Session" : "Terminal"}
         open={terminalOpen}
         onOpenChange={setTerminalOpen}
-        // Only bounded while it shares the column; with the timeline collapsed
-        // the default (fill the leftover space) gives it the full height.
-        flex={
-          terminalOpen && timelineOpen
-            ? `0 1 ${TERMINAL_ZONE_SHARE}`
-            : undefined
-        }
         // Without a split handle between them, this line is what separates the
         // terminal from the timeline scrolling above it.
         TriggerGroupProps={{ bt: 1 }}
@@ -454,30 +427,11 @@ const SessionZones = ({
             </Group>
           ) : null
         }
-        actions={
-          terminalOpen ? (
-            <Group gap={1} ay="center">
-              {/* Font size only means something for the xterm surface. */}
-              {!exit && <TerminalFontSizeControls />}
-              <Button
-                size="xsmall"
-                variant="ghost"
-                shape="square"
-                onClick={() => openTimeline(maximized)}
-                aria-label={
-                  maximized ? "Restore timeline" : "Maximize terminal"
-                }
-                tooltip={maximized ? "Restore timeline" : "Maximize terminal"}
-              >
-                {maximized ? (
-                  <Minimize2Icon size={13} />
-                ) : (
-                  <Maximize2Icon size={13} />
-                )}
-              </Button>
-            </Group>
-          ) : null
-        }
+        // Font size only means something for the xterm surface, and only while
+        // it's on screen. There is no maximize control: an open zone already
+        // has the whole column, and handing it back is what the other zone's
+        // trigger bar does.
+        actions={terminalOpen && !exit ? <TerminalFontSizeControls /> : null}
       >
         {exit ?? (
           <SessionTerminal
@@ -552,7 +506,7 @@ ConversationSegmentView.displayName = "ConversationSegmentView";
  * One event as a card. The event kind picks the palette hue, and that hue is the
  * card's whole surface — background, border, and foreground together — so the
  * kind reads at a glance the way the rail's colored marker used to convey it: a
- * user prompt is blue, tool work yellow, an agent reply indigo.
+ * user prompt is blue, tool work yellow, an agent reply neutral.
  *
  * Because the surface carries the hue, nothing inside the card restates it. The
  * title takes its color from `--palette-on-tint` rather than an explicit hue,
@@ -584,7 +538,11 @@ function EventCard({
   const toggle = () => setOpen((v) => !v);
 
   const timestamp = (
-    <Text size={-1} family="mono" style={{ whiteSpace: "nowrap", opacity: 0.7 }}>
+    <Text
+      size={-1}
+      family="mono"
+      style={{ whiteSpace: "nowrap", opacity: 0.7 }}
+    >
       {formatTimestamp(event.createdAt)}
     </Text>
   );
