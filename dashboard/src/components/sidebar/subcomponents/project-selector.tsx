@@ -42,6 +42,7 @@ export const ProjectSelector = () => {
 
   return (
     <Select
+      data-slot="project-selector"
       placeholder="Select a project"
       // Base UI can emit `null` for a cleared select. There's no "no project"
       // view to fall back to, so a clear is simply ignored.
@@ -49,7 +50,7 @@ export const ProjectSelector = () => {
         if (next !== null) setSelected(next);
       }}
       before={<FolderIcon />}
-      after={<Kbd hotkey={["meta", "j"]} />}
+      // after={<Kbd hotkey={["meta", "j"]} />}
       disabled={projects.length < 2}
       items={items}
       // `selected` is null only until the default seeds (one tick); the trigger
