@@ -1,27 +1,31 @@
 import { Collapsible, Group, List, Text } from "@uiid/design-system";
 
-import type { CategoryGroup as CategoryGroupModel } from "../sidebar.types";
+import type { SessionGroup as SessionGroupModel } from "../sidebar.types";
 import { SessionListItem } from "./session-list-item";
 
-type CategoryGroupProps = {
-  group: CategoryGroupModel;
+type SessionGroupProps = {
+  group: SessionGroupModel;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
 /**
- * One category's sessions inside the project zone, under a muted header that
- * doubles as a collapse trigger.
+ * One run of sessions under a muted header that doubles as a collapse trigger —
+ * a category in the project zone, a project in the live zone. Both zones share
+ * it so the two lists read as the same kind of thing at the same depth.
+ *
+ * The count sits beside the label because the header is often collapsed: it has
+ * to say how much is behind it without being opened.
  *
  * The open/closed marker is a plain `-`/`+` rather than the chevron icon the
  * zone triggers use: this header sits a level below them, and matching their
  * affordance would flatten the hierarchy the indent is establishing.
  */
-export const CategoryGroup = ({
+export const SessionGroup = ({
   group,
   open,
   onOpenChange,
-}: CategoryGroupProps) => (
+}: SessionGroupProps) => (
   <Collapsible
     instant
     RootProps={{ open, onOpenChange }}
@@ -29,7 +33,7 @@ export const CategoryGroup = ({
     PanelProps={{ style: { width: "100%" } }}
     trigger={
       <Group
-        data-slot="sidebar-category-header"
+        data-slot="sidebar-group-header"
         ay="center"
         gap={1}
         px={2}
@@ -44,6 +48,9 @@ export const CategoryGroup = ({
           style={{ minWidth: 0 }}
         >
           {group.label}
+        </Text>
+        <Text size={-1} shade="muted" family="mono">
+          ({group.sessions.length})
         </Text>
         <Text size={-1} shade="muted" family="mono" aria-hidden>
           {open ? "-" : "+"}
@@ -66,4 +73,4 @@ export const CategoryGroup = ({
     </List>
   </Collapsible>
 );
-CategoryGroup.displayName = "CategoryGroup";
+SessionGroup.displayName = "SessionGroup";

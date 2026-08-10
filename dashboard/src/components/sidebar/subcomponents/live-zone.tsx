@@ -1,8 +1,12 @@
-import { Badge, List, Number, Separator } from "@uiid/design-system";
+import { useMemo } from "react";
+
+import { Badge, Number, Separator, Stack } from "@uiid/design-system";
 
 import type { SessionWithCategory } from "@/types";
 
-import { SessionListItem } from "./session-list-item";
+import { groupByProject } from "../sidebar.utils";
+import { useCollapsedLiveProjects } from "../use-collapsed";
+import { SessionGroup } from "./session-group";
 import { SidebarZone } from "./sidebar-zone";
 
 type LiveZoneProps = {
@@ -19,8 +23,15 @@ type LiveZoneProps = {
  * blocked on you elsewhere has to stay visible while you work in another
  * project, which is the whole point of a pinned inbox. Feed it the unscoped,
  * unfiltered session list.
+ *
+ * Because the rows cross projects they're grouped under a project header, the
+ * same shape the zone below uses for categories. That header, not a prefix on
+ * every card, is what tells you which project a row belongs to.
  */
 export const LiveZone = ({ sessions }: LiveZoneProps) => {
+  const { collapsed, toggle } = useCollapsedLiveProjects();
+  const groups = useMemo(() => groupByProject(sessions), [sessions]);
+
   if (sessions.length === 0) return null;
 
   return (
@@ -39,18 +50,16 @@ export const LiveZone = ({ sessions }: LiveZoneProps) => {
         }
         PanelProps={{ style: { paddingBlock: 8 } }}
       >
-        <List
-          data-slot="sidebar-list"
-          marker="none"
-          ax="stretch"
-          gap={1}
-          px={2}
-          fullwidth
-        >
-          {sessions.map((s) => (
-            <SessionListItem key={s.session.id} session={s} showProject />
+        <Stack data-slot="sidebar-live-projects" ax="stretch" gap={3} fullwidth>
+          {groups.map((group) => (
+            <SessionGroup
+              key={group.key}
+              group={group}
+              open={!collapsed.includes(group.key)}
+              onOpenChange={(next) => toggle(group.key, next)}
+            />
           ))}
-        </List>
+        </Stack>
       </SidebarZone>
       <Separator />
     </>

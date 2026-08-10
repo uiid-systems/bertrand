@@ -1,17 +1,17 @@
 import { Badge, Number, Stack, Text, ToggleButton } from "@uiid/design-system";
 import { EyeIcon, EyeOffIcon } from "@uiid/icons";
 
-import type { CategoryGroup as CategoryGroupModel } from "../sidebar.types";
+import type { SessionGroup as SessionGroupModel } from "../sidebar.types";
 import { useSelectedProject } from "../selected-project";
 import {
   useCollapsedCategories,
   useCollapsedProjects,
 } from "../use-collapsed";
-import { CategoryGroup } from "./category-group";
+import { SessionGroup } from "./session-group";
 import { SidebarZone } from "./sidebar-zone";
 
 type ProjectZoneProps = {
-  categories: CategoryGroupModel[];
+  categories: SessionGroupModel[];
   includeArchived: boolean;
   onIncludeArchivedChange: (next: boolean) => void;
   /** Shown in place of the list when nothing matches — phrased by the caller,
@@ -81,7 +81,7 @@ export const ProjectZone = ({
       ) : (
         <Stack data-slot="sidebar-categories" ax="stretch" gap={3} fullwidth>
           {categories.map((group) => (
-            <CategoryGroup
+            <SessionGroup
               key={group.key}
               group={group}
               // Namespaced by project: two projects can both have a `worktrees`

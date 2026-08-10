@@ -60,3 +60,13 @@ export const useCollapsedProjects = () =>
 /** Collapsed category groups inside the project zone, keyed by category path. */
 export const useCollapsedCategories = () =>
   useCollapsed("bertrand:sidebar:collapsed-categories");
+
+/**
+ * Collapsed project groups inside the live zone, keyed by project slug.
+ *
+ * Separate storage from `useCollapsedProjects` even though both key off the
+ * same slugs: that one tracks whether the project *zone* is open, and sharing a
+ * key would make folding a project's live group silently fold the zone below.
+ */
+export const useCollapsedLiveProjects = () =>
+  useCollapsed("bertrand:sidebar:collapsed-live-projects");
