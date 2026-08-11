@@ -1,6 +1,8 @@
+import { existsSync } from "fs";
+
 import { getEventsByType } from "@/db/queries/events";
 import { getDb, type Db } from "@/db/client";
-import type { ChangedFile } from "@/lib/git";
+import { getWorktreeChangedFiles, type ChangedFile } from "@/lib/git";
 
 export interface DiffStats {
   linesAdded: number;
@@ -96,12 +98,12 @@ export function computeDiffStats(
 }
 
 /**
- * The individual files a session changed, with per-file line counts — the
- * secondary sidebar's "Files changed" list. Shares the accumulator above with
- * `computeDiffStats`, so the file count and totals always match the primary
- * sidebar. Status is inferred from the net line delta (we don't have git's
- * verdict here): purely-added → added, purely-removed → deleted, otherwise
- * modified. Busiest files first.
+ * The individual files a session changed, replayed from its timeline. The
+ * fallback arm of `resolveChangedFiles` — used only where git cannot answer.
+ *
+ * Status is inferred from the net line delta (we don't have git's verdict
+ * here): purely-added → added, purely-removed → deleted, otherwise modified.
+ * Busiest files first.
  */
 export function computeChangedFiles(
   sessionId: string,
@@ -124,4 +126,51 @@ export function computeChangedFiles(
       (b.added ?? 0) + (b.removed ?? 0) - (a.added ?? 0) - (a.removed ?? 0),
   );
   return files;
+}
+
+/** Reads a worktree's changed files. Injectable so the server can share its
+ *  short-lived cache with `/api/worktrees/:id/files` — both poll the same
+ *  git subprocesses — and so tests can stand in a fake. */
+export type WorktreeFilesReader = (
+  worktreePath: string,
+) => Promise<ChangedFile[]>;
+
+const readWorktreeFiles: WorktreeFilesReader = async (worktreePath) =>
+  (await getWorktreeChangedFiles(worktreePath)).files;
+
+/**
+ * The files a session changed — git's answer when it has one, the timeline's
+ * when it doesn't. The single source behind the secondary sidebar's "Files
+ * changed" list.
+ *
+ * Git is the better answer wherever it can be had. Diffing the branch against
+ * its merge base reports the session's *net* effect, which is what a reviewer
+ * sees on the PR; replaying `tool.applied` reports what the agent typed, so a
+ * file rewritten three times counts three times and an edit made outside the
+ * session isn't counted at all.
+ *
+ * It cannot always be had. Once a worktree is removed there is nothing for git
+ * to read, so those sessions fall back to the event replay, which stays
+ * computable forever from immutable rows. The fallback is a stopgap: the
+ * durable fix is to snapshot the git-derived counts into `session_stats`
+ * before the worktree goes away, after which this arm only serves sessions
+ * that predate the snapshot.
+ *
+ * Note the two arms disagree by design — git's counts are the correct ones, so
+ * a session's numbers may shift the first time it is served from git.
+ */
+export async function resolveChangedFiles(
+  session: { id: string; worktreePath: string | null },
+  root: string | undefined,
+  db: Db = getDb(),
+  read: WorktreeFilesReader = readWorktreeFiles,
+): Promise<ChangedFile[]> {
+  // `existsSync` rather than trusting the column: `worktreePath` outlives the
+  // directory between a `worktree remove` and the row being cleared, and git
+  // reports a missing worktree as "nothing changed" — indistinguishable from a
+  // clean one, and it would silently zero the list.
+  if (session.worktreePath && existsSync(session.worktreePath)) {
+    return read(session.worktreePath);
+  }
+  return computeChangedFiles(session.id, root, db);
 }

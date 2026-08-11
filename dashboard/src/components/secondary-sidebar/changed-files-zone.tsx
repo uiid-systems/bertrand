@@ -18,10 +18,14 @@ export type ChangedFilesZoneProps = {
 
 /**
  * Collapsible "Files changed" section for the secondary sidebar: every file the
- * session touched over its lifetime, with per-file +/- line counts. The list is
- * derived from the session's timeline (the same `tool.applied` events behind
- * the primary sidebar's file-count/+- totals), so it appears for every session
- * with diff — not just those with a live worktree.
+ * session changed, with per-file +/- line counts.
+ *
+ * Git-derived while the session has a worktree — the branch's net change
+ * against its merge base, so these counts are the ones a reviewer sees on the
+ * PR. Sessions without a worktree fall back to a replay of the session's
+ * `tool.applied` events, so the list still appears for every session; that arm
+ * counts each rewrite of a file separately and can read higher. The server
+ * picks between them, so the two never appear at once.
  *
  * The zone always renders, a count of zero included: the sidebar's sections
  * are fixed landmarks, so "nothing changed yet" is stated in place rather than
