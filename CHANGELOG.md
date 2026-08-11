@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.38.0](https://github.com/uiid-systems/bertrand/compare/v0.37.0...v0.38.0) (2026-08-11)
+
+
+### Features
+
+* **dashboard:** derive the changed-file list from git ([#253](https://github.com/uiid-systems/bertrand/issues/253)) ([8e7ce9f](https://github.com/uiid-systems/bertrand/commit/8e7ce9f9c748483690a07ac3cc67021613924fd5))
+* **dashboard:** show a branch's pull request and checks with its files ([#257](https://github.com/uiid-systems/bertrand/issues/257)) ([210c75d](https://github.com/uiid-systems/bertrand/commit/210c75db9f70cc028371593c53b247f43125adcc))
+* **dashboard:** snapshot git-derived stats before a worktree is removed ([#256](https://github.com/uiid-systems/bertrand/issues/256)) ([04fe67a](https://github.com/uiid-systems/bertrand/commit/04fe67ad9d932a575207d585e5084a03cd873aca))
+* **github:** resolve the pull request and checks for a branch ([#252](https://github.com/uiid-systems/bertrand/issues/252)) ([4bf57cb](https://github.com/uiid-systems/bertrand/commit/4bf57cbefa18c101a8f2a23e1a6437601d4c3243))
+
+
+### Bug Fixes
+
+* **project:** release DB handles on remove so --purge reclaims space ([#254](https://github.com/uiid-systems/bertrand/issues/254)) ([ab8d324](https://github.com/uiid-systems/bertrand/commit/ab8d3246cb6ae84f93c8111795825375606e61ae))
+
 ## [0.37.0](https://github.com/uiid-systems/bertrand/compare/v0.36.0...v0.37.0) (2026-08-10)
 
 
