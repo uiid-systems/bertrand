@@ -55,11 +55,11 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
         render={
           <Link to="/$" params={{ _splat: splat }} onClick={followProject} />
         }
-        color={color === "neutral" ? undefined : color}
-        p={2}
-        fullwidth
         InnerContainerProps={{ gap: 1 }}
         aria-current={isCurrent ? "page" : undefined}
+        color={color}
+        py={3}
+        fullwidth
         style={
           isCurrent
             ? {
@@ -69,7 +69,7 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
             : undefined
         }
       >
-        <Group gap={2} ay="center" fullwidth>
+        <Group gap={3} ay="center" fullwidth>
           <SessionLabel session={s} />
           <Text
             size={-1}

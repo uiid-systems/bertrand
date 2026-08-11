@@ -21,11 +21,11 @@ export function formatAgo(isoOrDate: string | Date): string {
   const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   const ms = Date.now() - date.getTime();
 
-  if (ms < MINUTE) return "just now";
-  if (ms < HOUR) return `${Math.floor(ms / MINUTE)}m ago`;
-  if (ms < DAY) return `${Math.floor(ms / HOUR)}h ago`;
+  if (ms < MINUTE) return "now";
+  if (ms < HOUR) return `${Math.floor(ms / MINUTE)}m`;
+  if (ms < DAY) return `${Math.floor(ms / HOUR)}h`;
   if (ms < 2 * DAY) return "yesterday";
-  if (ms < 7 * DAY) return `${Math.floor(ms / DAY)}d ago`;
+  if (ms < 7 * DAY) return `${Math.floor(ms / DAY)}d`;
 
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

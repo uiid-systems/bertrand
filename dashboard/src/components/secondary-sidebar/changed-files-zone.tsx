@@ -55,8 +55,13 @@ export const ChangedFilesZone = ({
         // Held back until the count is real — a `0` that flips to `12` reads
         // as a change in the session, not as the list arriving.
         isPending ? null : (
-          <Badge color="neutral">
-            <Number size={-1} weight="bold" value={files.length} />
+          <Badge color="neutral" size="small">
+            <Number
+              size={-1}
+              weight="bold"
+              family="mono"
+              value={files.length}
+            />
           </Badge>
         )
       }

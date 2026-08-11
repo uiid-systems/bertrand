@@ -144,6 +144,28 @@ export const TimelineActions = ({
 
   return (
     <Group gap={1} ay="center">
+      <Select
+        ghost
+        fullwidth
+        items={items}
+        value={spied ?? anchor}
+        onValueChange={(next: string | null) => {
+          if (!next) return;
+          setAnchor(next);
+          scrollTimelineTo(() => jumpTo(next));
+        }}
+        placeholder="Jump to…"
+        size="small"
+        aria-label="Jump to a card in the timeline"
+        TriggerProps={{
+          style: { maxWidth: 320, minWidth: 0 },
+        }}
+        PositionerProps={{
+          align: "end",
+          alignItemWithTrigger: false,
+        }}
+        PopupProps={{ style: { maxWidth: 460 } }}
+      />
       <Button
         size="xsmall"
         variant="ghost"
@@ -164,27 +186,6 @@ export const TimelineActions = ({
       >
         <ArrowDownToLineIcon />
       </Button>
-      <Select
-        ghost
-        items={items}
-        value={spied ?? anchor}
-        onValueChange={(next: string | null) => {
-          if (!next) return;
-          setAnchor(next);
-          scrollTimelineTo(() => jumpTo(next));
-        }}
-        placeholder="Jump to…"
-        size="small"
-        aria-label="Jump to a card in the timeline"
-        TriggerProps={{
-          style: { width: 220, minWidth: 0 },
-        }}
-        PositionerProps={{
-          align: "end",
-          alignItemWithTrigger: false,
-        }}
-        PopupProps={{ style: { maxWidth: 460 } }}
-      />
     </Group>
   );
 };

@@ -4,7 +4,6 @@ import { FilesIcon, GitBranchIcon } from "@uiid/icons";
 
 import type { SessionWithCategory } from "@/types";
 import { worktreesQuery } from "../../../api/queries";
-import { formatRelativeTime } from "../../../lib/format";
 import { useAllStats } from "../../../lib/use-sessions";
 import { SessionUsageBadge } from "./session-usage-badge";
 
@@ -24,30 +23,29 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
 
   return (
     <Group ay="center" gap={2} fullwidth>
-      {hasWorktree && (
-        <Group ay="center" fullheight>
-          <GitBranchIcon size={12} aria-label="Has a worktree" />
-        </Group>
-      )}
-      {filesTouched > 0 && (
-        <Group ay="start" gap={1}>
-          <FilesIcon size={12} />
-          <Text size={-1} family="mono" shade="muted">
-            {filesTouched}
-          </Text>
-        </Group>
-      )}
-      {hasDiff && (
-        <Group ay="center" gap={1}>
-          <Text size={-1} family="mono" color="green">
-            {`+${linesAdded}`}
-          </Text>
-          <Text size={-1} family="mono" color="red">
-            {`-${linesRemoved}`}
-          </Text>
-        </Group>
-      )}
       <SessionUsageBadge session={s} />
+      <Text>&middot;</Text>
+      <Group gap={2}>
+        {hasWorktree && <GitBranchIcon size={12} aria-label="Has a worktree" />}
+        {filesTouched > 0 && (
+          <Group ay="start" gap={1}>
+            <FilesIcon size={12} />
+            <Text size={-1} family="mono" shade="muted">
+              {filesTouched}
+            </Text>
+          </Group>
+        )}
+        {hasDiff && (
+          <Group ay="center" gap={1}>
+            <Text size={-1} family="mono" color="green">
+              {`+${linesAdded}`}
+            </Text>
+            <Text size={-1} family="mono" color="red">
+              {`-${linesRemoved}`}
+            </Text>
+          </Group>
+        )}
+      </Group>
     </Group>
   );
 };

@@ -27,11 +27,9 @@ export const SessionUsageBadge = ({ session: s }: SessionUsageBadgeProps) => {
   const standing = standingFor(outputTokens, usagePeers(allStats));
 
   return (
-    <Group ml="auto">
-      <Badge size="small" color={standing.color} title={standing.title}>
-        {formatTokens(outputTokens)}
-      </Badge>
-    </Group>
+    <Text size={-1} family="mono" color={standing.color}>
+      {formatTokens(outputTokens)}
+    </Text>
   );
 };
 SessionUsageBadge.displayName = "SessionUsageBadge";

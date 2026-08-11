@@ -139,14 +139,14 @@ export const PullRequestCard = ({
   }
 
   const pr = data.pullRequest;
-  const { color, Icon } = present(pr);
+  const { label, color, Icon } = present(pr);
   const done = finished(pr.checks);
 
   const Title = () => (
     <Group ay="center" gap={2} fullwidth>
       <Group ay="center" gap={4}>
         <Text size={1} weight="bold">
-          #{pr.number}
+          #{pr.number}: {label}
         </Text>
         {pr.rollup === "none" ? undefined : (
           <Group ay="center" gap={1}>

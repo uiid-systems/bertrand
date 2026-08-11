@@ -68,8 +68,8 @@ export const ProjectZone = ({
       zoneId={project.slug}
       title={project.name}
       badge={
-        <Badge color="neutral">
-          <Number size={-1} weight="bold" value={total} />
+        <Badge color="neutral" size="small">
+          <Number size={-1} weight="bold" family="mono" value={total} />
         </Badge>
       }
       actions={

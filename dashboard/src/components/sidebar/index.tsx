@@ -68,11 +68,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
 
   return (
     <SidebarWrapper {...WrapperProps}>
-      {/* Pinned to the top, above the project controls: what needs you comes
-          before where you're browsing. */}
       <LiveZone sessions={live} />
-
-      <Separator my={2} />
 
       <ProjectSelector />
       <Input
