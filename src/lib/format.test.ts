@@ -25,22 +25,22 @@ describe("formatDuration", () => {
 
 describe("formatAgo", () => {
   test("just now", () => {
-    expect(formatAgo(new Date())).toBe("just now");
+    expect(formatAgo(new Date())).toBe("now");
   });
 
-  test("minutes ago", () => {
+  test("minutes", () => {
     const fiveMinAgo = new Date(Date.now() - 5 * 60_000);
-    expect(formatAgo(fiveMinAgo)).toBe("5m ago");
+    expect(formatAgo(fiveMinAgo)).toBe("5m");
   });
 
-  test("hours ago", () => {
+  test("hours", () => {
     const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000);
-    expect(formatAgo(threeHoursAgo)).toBe("3h ago");
+    expect(formatAgo(threeHoursAgo)).toBe("3h");
   });
 
   test("accepts ISO string", () => {
     const recent = new Date(Date.now() - 10 * 60_000).toISOString();
-    expect(formatAgo(recent)).toBe("10m ago");
+    expect(formatAgo(recent)).toBe("10m");
   });
 });
 
