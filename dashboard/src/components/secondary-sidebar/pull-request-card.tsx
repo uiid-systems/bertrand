@@ -6,7 +6,7 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   GitPullRequestIcon,
-  ExternalLinkIcon,
+  ArrowUpRightIcon,
 } from "@uiid/icons";
 
 import { pullRequestQuery } from "../../api/queries";
@@ -139,64 +139,53 @@ export const PullRequestCard = ({
   }
 
   const pr = data.pullRequest;
-  const { label, color, Icon } = present(pr);
+  const { color, Icon } = present(pr);
   const done = finished(pr.checks);
 
-  const PrDetails = () => (
-    <Group ay="center" gap={4}>
-      <Text weight="bold" truncate>
-        #{pr.number}
-      </Text>
-
-      {/* <Text size={-1} weight="bold">
-        {label}
-      </Text> */}
-
-      {pr.rollup === "none" ? undefined : (
-        <Group ay="center" gap={1}>
-          <Status color={ROLLUP_COLOR[pr.rollup]} />
-          <Text size={-1} family="mono">
-            {`${done}/${pr.checks.length}`}
-          </Text>
-        </Group>
-      )}
+  const Title = () => (
+    <Group ay="center" gap={2} fullwidth>
+      <Group ay="center" gap={4}>
+        <Text size={1} weight="bold">
+          #{pr.number}
+        </Text>
+        {pr.rollup === "none" ? undefined : (
+          <Group ay="center" gap={1}>
+            <Status color={ROLLUP_COLOR[pr.rollup]} />
+            <Text size={-1} family="mono">
+              {`${done}/${pr.checks.length}`}
+            </Text>
+          </Group>
+        )}
+      </Group>
     </Group>
   );
 
   const Actions = () => (
-    <Group gap={2} ml="auto">
+    <Group gap={2}>
       <Button
-        size="xsmall"
         nativeButton={false}
         render={<a href={pr.url} target="_blank" rel="noreferrer" />}
-        style={{ marginLeft: "auto" }}
+        size="xsmall"
+        variant="ghost"
       >
-        View
+        View in GitHub
+        <ArrowUpRightIcon />
       </Button>
     </Group>
   );
 
   return (
-    <Group px={2} fullwidth>
-      <Card
-        data-slot="pull-request-card"
-        color={color}
-        title={pr.title}
-        footer={
-          <Group ay="center" gap={2} fullwidth>
-            <Icon size={16} />
-            <PrDetails />
-            <Badge size="small" ml="auto">
-              {label}
-            </Badge>
-          </Group>
-        }
-        TitleProps={{ size: 0, weight: "bold" }}
-        HeaderProps={{ fullwidth: true, style: { overflow: "hidden" } }}
-        render={<a href={pr.url} target="_blank" rel="noreferrer" />}
-        fullwidth
-      />
-    </Group>
+    <Card
+      data-slot="pull-request-card"
+      icon={Icon}
+      py={2}
+      pr={2}
+      HeaderProps={{ ay: "center" }}
+      title={<Title />}
+      action={<Actions />}
+      color={color}
+      fullwidth
+    />
   );
 };
 PullRequestCard.displayName = "PullRequestCard";
