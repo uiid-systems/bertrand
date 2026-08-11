@@ -29,6 +29,8 @@ const { createCategory } = await import("@/db/queries/categories");
 const { createSession, updateSession, updateSessionStatus, getSession } =
   await import("@/db/queries/sessions");
 const { getEventsBySession } = await import("@/db/queries/events");
+const { getSessionStats } = await import("@/db/queries/stats");
+const { snapshotGitDiffStats } = await import("@/lib/stats-snapshot");
 const { removeSessionWorktree } = await import("@/lib/worktree-remove");
 const { _setServerDeps, _resetServerDeps } = await import(
   "@/lib/workspace/server"
@@ -165,6 +167,52 @@ describe("removeSessionWorktree", () => {
     const result = await removeSessionWorktree(s.id);
     expect(result.ok).toBe(true);
     expect(getSession(s.id)!.worktreePath).toBeNull();
+  });
+
+  test("snapshots git-derived stats before the worktree is removed", async () => {
+    // The mitigation for the whole git-derived-stats design: once the checkout
+    // is gone `git diff` has nothing to read, so a session's real line counts
+    // exist only if they were written down first. Removal is the deadline.
+    const repo = await makeRepo();
+    const wt = await addWorktree(repo, "feature-counted");
+    writeFileSync(join(wt, "added.txt"), "one\ntwo\nthree\n");
+    await $`git -C ${wt} -c user.email=test@test -c user.name=test add added.txt`.quiet();
+    await $`git -C ${wt} -c user.email=test@test -c user.name=test commit -qm work`.quiet();
+    const s = makeSession(wt);
+
+    const result = await removeSessionWorktree(s.id);
+    expect(result.ok).toBe(true);
+    expect(existsSync(wt)).toBe(false);
+
+    // Read back after the worktree is gone — nothing could recompute this now.
+    const stats = getSessionStats(s.id)!;
+    expect(stats.diffSource).toBe("git");
+    expect(stats.linesAdded).toBe(3);
+    expect(stats.linesRemoved).toBe(0);
+    expect(stats.filesTouched).toBe(1);
+  });
+
+  test("a worktree deleted by hand leaves the stored counts alone", async () => {
+    // The capture cannot run — there is no directory to measure — so the
+    // previous snapshot has to stand rather than being zeroed by an empty
+    // answer from git.
+    const repo = await makeRepo();
+    const wt = await addWorktree(repo, "feature-vanished");
+    writeFileSync(join(wt, "added.txt"), "one\ntwo\n");
+    await $`git -C ${wt} -c user.email=test@test -c user.name=test add added.txt`.quiet();
+    await $`git -C ${wt} -c user.email=test@test -c user.name=test commit -qm work`.quiet();
+    const s = makeSession(wt);
+    await snapshotGitDiffStats(s);
+    expect(getSessionStats(s.id)!.linesAdded).toBe(2);
+
+    rmSync(wt, { recursive: true, force: true });
+    const result = await removeSessionWorktree(s.id);
+
+    expect(result.ok).toBe(true);
+    const stats = getSessionStats(s.id)!;
+    expect(stats.linesAdded).toBe(2);
+    expect(stats.filesTouched).toBe(1);
+    expect(stats.diffSource).toBe("git");
   });
 
   test("returns not-found for an unknown session", async () => {

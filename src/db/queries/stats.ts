@@ -27,6 +27,7 @@ export function upsertSessionStats(
     linesAdded: number;
     linesRemoved: number;
     filesTouched: number;
+    diffSource?: "events" | "git";
     inputTokens: number;
     outputTokens: number;
     cacheCreationTokens: number;
@@ -45,6 +46,33 @@ export function upsertSessionStats(
       target: sessionStats.sessionId,
       set: { ...data, updatedAt: sql`(datetime('now'))` },
     })
+    .returning()
+    .get();
+}
+
+/**
+ * Write git-derived diff counters onto an existing stats row, marking them as
+ * such. Only the three counters and their source move — everything else on the
+ * row is event-derived and stays where the last full computation left it.
+ *
+ * Separate from `upsertSessionStats` because the two writes answer to different
+ * lifetimes. The full computation can be re-run from immutable events at any
+ * point; this one can only be taken while the session's worktree is on disk, so
+ * it is issued at moments (worktree removal, a dashboard poll that found the
+ * directory still there) that have nothing to do with a session ending.
+ *
+ * Returns the updated row, or `undefined` when the session has no stats row
+ * yet — the caller is expected to have materialized one first.
+ */
+export function snapshotDiffStats(
+  sessionId: string,
+  diff: { linesAdded: number; linesRemoved: number; filesTouched: number },
+  db: Db = getDb(),
+): SessionStatsRow | undefined {
+  return db
+    .update(sessionStats)
+    .set({ ...diff, diffSource: "git", updatedAt: sql`(datetime('now'))` })
+    .where(eq(sessionStats.sessionId, sessionId))
     .returning()
     .get();
 }

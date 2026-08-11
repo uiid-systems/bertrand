@@ -151,10 +151,10 @@ const readWorktreeFiles: WorktreeFilesReader = async (worktreePath) =>
  *
  * It cannot always be had. Once a worktree is removed there is nothing for git
  * to read, so those sessions fall back to the event replay, which stays
- * computable forever from immutable rows. The fallback is a stopgap: the
- * durable fix is to snapshot the git-derived counts into `session_stats`
- * before the worktree goes away, after which this arm only serves sessions
- * that predate the snapshot.
+ * computable forever from immutable rows. The *aggregate* counters survive
+ * removal — `snapshotGitDiffStats` writes them into `session_stats` while the
+ * worktree still exists — but the per-file breakdown has no such home, so this
+ * arm remains the only answer for a session whose worktree is gone.
  *
  * Note the two arms disagree by design — git's counts are the correct ones, so
  * a session's numbers may shift the first time it is served from git.
@@ -173,4 +173,37 @@ export async function resolveChangedFiles(
     return read(session.worktreePath);
   }
   return computeChangedFiles(session.id, root, db);
+}
+
+/** Roll a git changed-file list up into the three aggregate counters.
+ *
+ *  Untracked files carry `null` counts — `--numstat` never saw them — so they
+ *  add to `filesTouched` without moving the line totals. That is the same
+ *  arithmetic the changed-files list displays, so the sidebar's `+N/−N` and its
+ *  file rows always sum to each other. */
+export function sumChangedFiles(files: ChangedFile[]): DiffStats {
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const f of files) {
+    linesAdded += f.added ?? 0;
+    linesRemoved += f.removed ?? 0;
+  }
+  return { linesAdded, linesRemoved, filesTouched: files.length };
+}
+
+/**
+ * A session's diff counters as git sees them, or `null` when git cannot be
+ * asked — the session has no worktree, or the directory is already gone.
+ *
+ * `null` is the important half of the return type. It is what stops a removed
+ * worktree from being read as "this session changed nothing": git answers a
+ * missing directory with an empty list, so a caller that took that at face
+ * value would write zeros over a completed session's history.
+ */
+export async function gitDiffStats(
+  session: { worktreePath: string | null },
+  read: WorktreeFilesReader = readWorktreeFiles,
+): Promise<DiffStats | null> {
+  if (!session.worktreePath || !existsSync(session.worktreePath)) return null;
+  return sumChangedFiles(await read(session.worktreePath));
 }

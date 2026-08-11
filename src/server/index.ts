@@ -35,6 +35,7 @@ import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats, computeAndPersist } from "@/lib/timing"
 import { resolveChangedFiles } from "@/lib/diff_stats"
+import { snapshotGitDiffStats } from "@/lib/stats-snapshot"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -119,6 +120,55 @@ function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
 }
 
 /**
+ * Keep a session's stored git-derived counters current for as long as its
+ * worktree is on disk.
+ *
+ * Fire-and-forget on purpose. The counters are read from the row, not from this
+ * call, so a poll never waits on a git subprocess; a refresh started now lands
+ * in the row and the next 2s tick serves it. One tick of lag is invisible, and
+ * the alternative — awaiting git inside the stats route — puts a subprocess on
+ * the dashboard's hottest path.
+ *
+ * The read goes through `cachedWorktreeFiles`, so this shares its git
+ * subprocesses with the changed-files and worktree routes rather than adding
+ * its own, and `snapshotGitDiffStats` skips the write when nothing moved.
+ *
+ * Runs for live sessions too. Their worktrees are exactly the ones being
+ * changed, and refreshing throughout means a session's numbers don't jump the
+ * moment it pauses.
+ */
+function refreshGitStats(session: SessionRow, db?: Db): void {
+  if (!session.worktreePath) return
+  void snapshotGitDiffStats(session, {
+    db,
+    read: async (path) => (await cachedWorktreeFiles(path, false)).files,
+  }).catch(() => {
+    // Best-effort: a session's line counts never break a stats response.
+  })
+}
+
+/**
+ * Overlay a stored git snapshot's diff counters onto a freshly computed row.
+ *
+ * `liveStats` walks events, so its diff counters measure what the agent typed.
+ * Once a git snapshot exists it is the better answer — the branch's net change,
+ * matching the changed-files list beside it — and it is the one that will
+ * survive the worktree. Only the three counters move; everything else on a live
+ * row is event-derived and current by construction.
+ */
+function withStoredGitDiffs(row: SessionStatsRow, db?: Db): SessionStatsRow {
+  const stored = getSessionStats(row.sessionId, db)
+  if (stored?.diffSource !== "git") return row
+  return {
+    ...row,
+    linesAdded: stored.linesAdded,
+    linesRemoved: stored.linesRemoved,
+    filesTouched: stored.filesTouched,
+    diffSource: "git",
+  }
+}
+
+/**
  * Which projects a list/stats request covers. `?projects=a,b,c` names them
  * explicitly (unknown slugs dropped, empty string → no projects); omitting the
  * param falls back to the active project alone, preserving the single-project
@@ -197,12 +247,13 @@ const listAllStats = (
   for (const project of resolveProjectScope(url)) {
     const db = getDbForProject(project.slug)
     for (const { session } of getAllSessionsForProject(project)) {
+      refreshGitStats(session, db)
       const isLive =
         session.status === "active" ||
         session.status === "waiting" ||
         session.status === "blocked"
       if (isLive) {
-        result[session.id] = liveStats(session.id, db)
+        result[session.id] = withStoredGitDiffs(liveStats(session.id, db), db)
         continue
       }
       result[session.id] =
@@ -219,10 +270,11 @@ const getStatsBySession = (
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
   if (!session) return null
+  refreshGitStats(session, db)
   const isLive = session.status === "active" ||
         session.status === "waiting" ||
         session.status === "blocked"
-  if (isLive) return liveStats(sessionId!, db)
+  if (isLive) return withStoredGitDiffs(liveStats(sessionId!, db), db)
   return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
 }
 

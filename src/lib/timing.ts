@@ -1,6 +1,6 @@
 import { getEventsBySession } from "@/db/queries/events";
 import { getSessionUsage } from "@/db/queries/conversations";
-import { upsertSessionStats } from "@/db/queries/stats";
+import { getSessionStats, upsertSessionStats } from "@/db/queries/stats";
 import { computeDiffStats } from "@/lib/diff_stats";
 import { getDb, type Db } from "@/db/client";
 
@@ -171,6 +171,7 @@ export interface SessionStatsData {
   linesAdded: number;
   linesRemoved: number;
   filesTouched: number;
+  diffSource: "events" | "git";
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -209,6 +210,7 @@ export function computeSessionStats(
     linesAdded: diff.linesAdded,
     linesRemoved: diff.linesRemoved,
     filesTouched: diff.filesTouched,
+    diffSource: "events",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheCreationTokens: usage.cacheCreationTokens,
@@ -219,12 +221,26 @@ export function computeSessionStats(
 /**
  * Compute and persist stats. Called at session end so the materialized
  * row stays warm for paused/archived sessions.
+ *
+ * Everything here is recomputed from events except the diff counters, which are
+ * left alone once a git snapshot has claimed them. The replay and the snapshot
+ * measure different things — what the agent typed versus what the branch
+ * changed — and only the snapshot survives the worktree being removed, so
+ * overwriting it with a replay would trade the durable number for a worse one
+ * that happens to be cheaper to produce.
  */
 export function computeAndPersist(
   sessionId: string,
   db: Db = getDb(),
 ): SessionStatsData {
   const data = computeSessionStats(sessionId, db);
+  const stored = getSessionStats(sessionId, db);
+  if (stored?.diffSource === "git") {
+    data.linesAdded = stored.linesAdded;
+    data.linesRemoved = stored.linesRemoved;
+    data.filesTouched = stored.filesTouched;
+    data.diffSource = "git";
+  }
   upsertSessionStats(sessionId, data, db);
   return data;
 }
