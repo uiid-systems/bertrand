@@ -63,7 +63,8 @@ import {
   _resetActiveProjectCache,
 } from "@/lib/projects/resolve"
 import { UnboundProjectError } from "@/lib/projects/policy"
-import { getDbForProject, invalidateDbCache, type Db } from "@/db/client"
+import { isValidSlug } from "@/lib/projects/paths"
+import { getDbForProject, invalidateDbCache, closeDbForProject, type Db } from "@/db/client"
 import type {
   SessionRow,
   SessionWithCategory,
@@ -528,6 +529,42 @@ async function handleSwitchProject(req: Request): Promise<Response> {
 }
 
 /**
+ * Release the DB handles this process holds for a project the CLI just removed
+ * (issue #249). Closing them is what actually returns the disk space after a
+ * `--purge`: the unlinked inodes survive as long as any descriptor is open.
+ *
+ * Gated on the project being absent from the registry, which is both the
+ * correctness argument and the safety one. `project remove` writes the registry
+ * before calling here, so a live project reaching this path means the caller is
+ * confused (or malicious — the API is loopback-only but unauthenticated), and
+ * closing a DB still being served would break in-flight dashboard reads. A 409
+ * says so rather than silently doing nothing.
+ *
+ * The slug shape is checked for the same reason: it becomes a filesystem path
+ * on the way to a cache key, so `a/../b` would normalize onto project `b` and
+ * close a live project's connection despite the registry check above passing
+ * for the literal string.
+ */
+function handleEvictProject(slug: string): Response {
+  if (!isValidSlug(slug)) {
+    return Response.json(
+      { error: `Invalid project slug "${slug}"`, reason: "invalid-slug" },
+      { status: 400 },
+    )
+  }
+  if (projectExists(slug)) {
+    return Response.json(
+      {
+        error: `Project "${slug}" is still registered — remove it before evicting`,
+        reason: "still-registered",
+      },
+      { status: 409 },
+    )
+  }
+  return Response.json({ ok: true, slug, closed: closeDbForProject(slug) })
+}
+
+/**
  * Every way a resume can be refused, and what the browser should be told.
  *
  * Each carries a message the user can act on. "At capacity" especially: it is
@@ -952,6 +989,17 @@ export function startServer(port = PORT) {
             { stopped },
             { status: stopped ? 200 : 404, headers: { "Access-Control-Allow-Origin": "*" } },
           )
+        }
+      }
+
+      // Drop a removed project's cached DB handles so its files are released
+      // (see handler).
+      if (req.method === "POST") {
+        const evictMatch = /^\/api\/projects\/([^/]+)\/evict$/.exec(url.pathname)
+        if (evictMatch) {
+          const r = handleEvictProject(decodeURIComponent(evictMatch[1]!))
+          r.headers.set("Access-Control-Allow-Origin", "*")
+          return r
         }
       }
 

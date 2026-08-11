@@ -1,6 +1,7 @@
 import { existsSync, rmSync } from "fs";
 import { register } from "@/cli/router";
 import { getDbForProject, invalidateDbCache } from "@/db/client";
+import { evictProjectFromServer } from "@/lib/projects/evict";
 import { sessions } from "@/db/schema";
 import {
   listProjects,
@@ -12,7 +13,7 @@ import {
   setProjectRepo,
   type ProjectRepo,
 } from "@/lib/projects/registry";
-import { projectPaths } from "@/lib/projects/paths";
+import { projectPaths, isValidSlug } from "@/lib/projects/paths";
 import { createProject } from "@/lib/projects/create";
 import { resolveBindableRepo, RepoBindError } from "@/lib/projects/policy";
 import { formatIdentity } from "@/lib/github/identity";
@@ -22,7 +23,6 @@ import { bootstrapFromInvite } from "@/sync/bootstrap";
 import { isInvite } from "@/sync/invite";
 import { formatAgo } from "@/lib/format";
 
-const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 
 /**
  * Marker for "the user did something invalid; print this message and exit
@@ -69,7 +69,7 @@ function validateSlug(slug: string): void {
   if (!slug) {
     throw new UsageError("Slug required.");
   }
-  if (!SLUG_PATTERN.test(slug)) {
+  if (!isValidSlug(slug)) {
     throw new UsageError(
       `Invalid slug "${slug}": must start with alphanumeric and contain only letters, digits, dots, underscores, or dashes.`,
     );
@@ -345,7 +345,7 @@ export function renameSubcommand(args: string[]): void {
   console.log(`Renamed "${slug}" to "${newName}".`);
 }
 
-export function removeSubcommand(args: string[]): void {
+export async function removeSubcommand(args: string[]): Promise<void> {
   const [slug] = positional(args);
   if (!slug) {
     throw new UsageError(
@@ -385,6 +385,14 @@ export function removeSubcommand(args: string[]): void {
   removeProject(slug);
   invalidateDbCache(slug);
 
+  // Both calls above are process-local, and this process is about to exit. A
+  // running `bertrand serve` has its own DB cache and its own open descriptors
+  // on this project's files, and nothing so far has told it anything happened.
+  // Evict before the purge below so the server lets go of the files while they
+  // still exist, rather than leaving us to unlink inodes it is still pinning
+  // (issue #249).
+  const eviction = await evictProjectFromServer(slug);
+
   if (purge) {
     rmSync(projectPaths(slug).root, { recursive: true, force: true });
   }
@@ -392,6 +400,16 @@ export function removeSubcommand(args: string[]): void {
   console.log(
     `Removed project "${slug}"${purge ? " (directory purged)" : " (directory left on disk; pass --purge to delete)"}.`,
   );
+
+  // Only worth mentioning when a server answered and declined: the space the
+  // user asked for is still held, and restarting is the way to get it back.
+  // "No server running" is the normal case and needs no commentary.
+  if (purge && eviction.status === "refused") {
+    console.log(
+      `  Note: the running server would not release "${slug}" (${eviction.message}).\n` +
+        `        Its disk space is reclaimed when that server restarts.`,
+    );
+  }
 }
 
 export async function importSubcommand(args: string[]): Promise<void> {
@@ -468,7 +486,7 @@ register("project", async (args) => {
       case "rename":
         return renameSubcommand(args.slice(1));
       case "remove":
-        return removeSubcommand(args.slice(1));
+        return await removeSubcommand(args.slice(1));
       case "import":
         return await importSubcommand(args.slice(1));
       case undefined:

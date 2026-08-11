@@ -1,6 +1,25 @@
 import { join } from "path";
 import { _getRegistryDir } from "./registry";
 
+/**
+ * The shape a project slug is allowed to take.
+ *
+ * Lives here, beside {@link projectPaths}, because that is where it earns its
+ * keep: the slug is joined straight into a filesystem path, so anything
+ * carrying a separator or a `..` resolves somewhere other than its own project
+ * root. `a/../b` normalizes onto project `b`.
+ */
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+
+/**
+ * Whether `slug` is a well-formed project slug. Callers that take a slug from
+ * outside the registry — the CLI, the HTTP API — should check before turning it
+ * into a path or a cache key.
+ */
+export function isValidSlug(slug: string): boolean {
+  return SLUG_PATTERN.test(slug);
+}
+
 export interface ProjectPaths {
   /** Project root: `<registryDir>/projects/<slug>/` */
   root: string;
