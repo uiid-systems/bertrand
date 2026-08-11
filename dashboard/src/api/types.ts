@@ -17,6 +17,12 @@ export type {
   ProjectRepoView,
   ProjectSummary,
   ActiveProjectMeta,
+  SessionPullRequest,
+  PullRequest,
+  PullRequestCheck,
+  CheckBucket,
+  CheckRollupState,
+  GhFailureReason,
 } from "@/types"
 
 // Shapes the root `src` owns but `@/types` doesn't re-export. `@/*` maps to

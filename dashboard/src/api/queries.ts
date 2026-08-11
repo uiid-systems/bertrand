@@ -13,6 +13,7 @@ import type {
   WorktreeChangedFiles,
   ChangedFile,
   ProjectSummary,
+  SessionPullRequest,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -331,6 +332,27 @@ export const changedFilesQuery = (
       ),
     enabled: !!sessionId,
     refetchInterval: isLive ? 5000 : false,
+    placeholderData: keepPreviousData,
+  })
+
+/**
+ * The pull request for a session's branch, with its check rollup.
+ *
+ * Polled on a fixed interval rather than gated on `isLive`, because checks
+ * move on GitHub's clock, not the session's: the branch a paused session left
+ * behind is exactly the one whose CI someone is waiting on. 30s matches the
+ * server's per-branch TTL, so a faster poll would only re-serve the same
+ * cached answer, and a slower one would leave a green build looking pending.
+ */
+export const pullRequestQuery = (sessionId: string, project?: string) =>
+  queryOptions({
+    queryKey: ["pull-request", sessionId, project ?? null],
+    queryFn: () =>
+      fetchJson<SessionPullRequest>(
+        `/api/github/${sessionId}/pr${projectParam(project)}`,
+      ),
+    enabled: !!sessionId,
+    refetchInterval: 30_000,
     placeholderData: keepPreviousData,
   })
 
