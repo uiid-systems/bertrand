@@ -11,12 +11,7 @@ import {
   Text,
 } from "@uiid/design-system";
 
-import {
-  PlayIcon,
-  ScrollTextIcon,
-  SquareIcon,
-  Trash2Icon,
-} from "@uiid/icons";
+import { PlayIcon, ScrollTextIcon, SquareIcon, Trash2Icon } from "@uiid/icons";
 
 import {
   startWorktree,
@@ -150,22 +145,22 @@ export const WorktreeItem = ({
             {branch ?? "(unknown branch)"}
           </Text>
         ) : (
-          <Text weight="bold" shade="halftone" style={truncate}>
+          <Text shade="halftone" style={truncate}>
             {pending ? "Checking…" : "No worktree"}
           </Text>
         )}
         {pending ? null : missing ? (
           <></>
         ) : listening ? (
-          <Badge color="green" ml="auto">
+          <Badge color="green" size="small" ml="auto">
             running
           </Badge>
         ) : running ? (
-          <Badge color="yellow" ml="auto">
+          <Badge color="yellow" size="small" ml="auto">
             starting
           </Badge>
         ) : (
-          <Badge color="neutral" ml="auto">
+          <Badge color="neutral" size="small" ml="auto">
             idle
           </Badge>
         )}

@@ -2,7 +2,7 @@ import { Group, Stack, Text, type GroupProps } from "@uiid/design-system";
 import { ChevronDownIcon, ChevronRightIcon } from "@uiid/icons";
 
 /** Height of a zone's trigger bar — the full height of a collapsed zone. */
-export const CONTENT_ZONE_HEADER_PX = 34;
+export const CONTENT_ZONE_HEADER_PX = 48;
 
 export type ContentZoneProps = React.PropsWithChildren<{
   title: string;
@@ -59,6 +59,7 @@ export const ContentZone = ({
     data-open={open ? "" : undefined}
     ax="stretch"
     fullwidth
+    bb={1}
     style={{
       // `1 1 0` rather than `1 1 auto` so an open zone's size comes from the
       // column, not from how tall its content happens to be — a timeline of 200
@@ -73,7 +74,7 @@ export const ContentZone = ({
       ay="center"
       gap={2}
       px={3}
-      bb={1}
+      py={2}
       fullwidth
       onClick={() => onOpenChange(!open)}
       style={{

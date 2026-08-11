@@ -235,7 +235,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <Status color={statusDotColor} pulse={isLive} />
           <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         </Group>
-        <Group ay="center" gap={2}>
+        <Group ay="center">
           <CopyResumeButton
             session={match.session}
             categoryPath={match.categoryPath}
@@ -379,12 +379,9 @@ const SessionZones = ({
         open={timelineOpen}
         onOpenChange={setTimelineOpen}
         badge={
-          // Matches the sidebar zones' count badge. Held back at zero — an
-          // empty timeline has nothing to count, and a `0` that flips to `40`
-          // reads as the session changing rather than its events arriving.
           cardCount === 0 ? null : (
-            <Badge color="neutral">
-              <Number size={-1} weight="bold" value={cardCount} />
+            <Badge size="small" color="neutral">
+              <Number size={-1} weight="bold" family="mono" value={cardCount} />
             </Badge>
           )
         }

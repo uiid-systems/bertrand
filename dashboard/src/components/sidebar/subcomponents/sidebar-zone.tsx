@@ -103,12 +103,7 @@ export const SidebarZone = ({
           {/* Right cluster: any zone-specific actions plus the flashlight
               dim toggle. Stop clicks here from reaching the collapsible
               trigger, which would otherwise toggle the zone open/closed. */}
-          <Group
-            ml="auto"
-            gap={1}
-            ay="center"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <Group ml="auto" ay="center" onClick={(e) => e.stopPropagation()}>
             {actions}
             <ToggleButton
               pressed={lit}

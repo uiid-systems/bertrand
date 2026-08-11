@@ -53,8 +53,6 @@ export const ProjectSelector = () => {
       // after={<Kbd hotkey={["meta", "j"]} />}
       disabled={projects.length < 2}
       items={items}
-      // `selected` is null only until the default seeds (one tick); the trigger
-      // shows its placeholder in that window.
       value={selected}
       size="small"
       fullwidth

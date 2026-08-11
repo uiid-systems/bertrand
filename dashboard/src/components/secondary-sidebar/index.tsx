@@ -63,13 +63,13 @@ export const SecondarySidebar = ({
         projectSlug={projectSlug}
       />
       <Separator />
+      <WorktreeZone sessionId={sessionId} />
+      <Separator />
       <UsageZone
         sessionId={sessionId}
         isLive={isLive}
         projectSlug={projectSlug}
       />
-      <Separator />
-      <WorktreeZone sessionId={sessionId} />
       {/* {stats && <SessionStats stats={stats} engagement={engagement} />} */}
     </SidebarWrapper>
   );
