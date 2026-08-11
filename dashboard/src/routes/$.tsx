@@ -235,7 +235,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <Status color={statusDotColor} pulse={isLive} />
           <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         </Group>
-        <Group ay="center" gap={2}>
+        <Group ay="center">
           <CopyResumeButton
             session={match.session}
             categoryPath={match.categoryPath}
