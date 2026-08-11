@@ -1,0 +1,1 @@
+ALTER TABLE `session_stats` ADD `diff_source` text DEFAULT 'events' NOT NULL;

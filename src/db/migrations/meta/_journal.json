@@ -92,6 +92,13 @@
       "when": 1786070433596,
       "tag": "0012_talented_vindicator",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1786410246926,
+      "tag": "0013_chubby_hellion",
+      "breakpoints": true
     }
   ]
 }

@@ -198,6 +198,16 @@ export const sessionStats = sqliteTable("session_stats", {
   linesAdded: integer("lines_added").notNull().default(0),
   linesRemoved: integer("lines_removed").notNull().default(0),
   filesTouched: integer("files_touched").notNull().default(0),
+  // Where the three counters above came from. `events` replays `tool.applied`
+  // and is recomputable forever; `git` is a snapshot taken while the session's
+  // worktree still existed and is **not** — once the worktree is removed there
+  // is nothing left to measure. The column exists so the event path can tell
+  // the two apart and refuse to overwrite a git snapshot with a replay, which
+  // would silently downgrade a completed session's numbers.
+  diffSource: text("diff_source")
+    .$type<"events" | "git">()
+    .notNull()
+    .default("events"),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),
