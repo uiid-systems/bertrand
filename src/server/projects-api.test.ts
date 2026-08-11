@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -7,10 +7,12 @@ import {
   _setRegistryDir,
   _getRegistryDir,
   registerProject,
+  removeProject,
   setProjectRepo,
 } from "@/lib/projects/registry";
 import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { invalidateDbCache } from "@/db/client";
+import { projectPaths } from "@/lib/projects/paths";
+import { getDbForProject, invalidateDbCache, _clearTestDb } from "@/db/client";
 import type { ProjectSummary, ActiveProjectMeta } from "@/types";
 import { startServer } from "./index";
 
@@ -37,6 +39,10 @@ beforeEach(() => {
   // test's project (or the developer's real one).
   _resetActiveProjectCache();
   invalidateDbCache();
+  // Other suites install a process-wide `_setDb` override, which makes
+  // getDbForProject bypass the per-project cache entirely. Left in place it
+  // would hand this file another test's handle.
+  _clearTestDb();
 
   registerProject({ slug: "bound", name: "Bound Project" });
   setProjectRepo("bound", {
@@ -68,6 +74,7 @@ afterEach(() => {
   _setRegistryDir(originalDir);
   _resetActiveProjectCache();
   invalidateDbCache();
+  _clearTestDb();
   rmSync(tmpRoot, { recursive: true, force: true });
 
   if (originalWorkspace === undefined) {
@@ -188,5 +195,71 @@ describe("GET /api/active-project", () => {
     // would need a server restart to show up.
     const active = await get<ActiveProjectMeta>("/api/active-project");
     expect(active.repo?.label).toBe("uiid-systems/loose");
+  });
+});
+
+describe("POST /api/projects/:slug/evict", () => {
+  const evict = (slug: string) =>
+    fetch(`http://127.0.0.1:${server.port}/api/projects/${slug}/evict`, {
+      method: "POST",
+    });
+
+  test("releases the DB handle the server was holding", async () => {
+    // Stand in for the server having served this project at some point, which
+    // is what leaves it holding descriptors on bertrand.db, -wal and -shm.
+    const handle = getDbForProject("loose");
+    expect(() => handle.$client.prepare("SELECT 1").get()).not.toThrow();
+
+    removeProject("loose");
+    const res = await evict("loose");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, slug: "loose", closed: true });
+    // Reproduces #249 directly: before the fix the server kept this connection
+    // open, so the purged files' inodes — and their disk space — stayed alive.
+    expect(() => handle.$client.prepare("SELECT 1").get()).toThrow();
+  });
+
+  test("refuses to evict a project that is still registered", async () => {
+    const handle = getDbForProject("bound");
+
+    const res = await evict("bound");
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ reason: "still-registered" });
+    // The guard exists to protect live reads, so the handle must survive it.
+    expect(() => handle.$client.prepare("SELECT 1").get()).not.toThrow();
+  });
+
+  test("succeeds with closed:false when nothing was cached", async () => {
+    removeProject("loose");
+
+    const res = await evict("loose");
+
+    // `project remove` calls unconditionally and cannot know what the server
+    // has open, so "nothing to release" is a success, not an error.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, closed: false });
+  });
+
+  test("answers a never-registered slug without touching the filesystem", async () => {
+    const res = await evict("no-such-project");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ closed: false });
+    expect(existsSync(projectPaths("no-such-project").root)).toBe(false);
+  });
+
+  test("rejects a traversal slug instead of resolving it onto another project", async () => {
+    const handle = getDbForProject("bound");
+
+    // "x/../bound" is absent from the registry, so it clears the still-
+    // registered guard — but it builds the *same* path as "bound" and would
+    // close a live project's connection out from under the dashboard.
+    const res = await evict(encodeURIComponent("x/../bound"));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ reason: "invalid-slug" });
+    expect(() => handle.$client.prepare("SELECT 1").get()).not.toThrow();
   });
 });

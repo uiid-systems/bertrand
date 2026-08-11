@@ -14,6 +14,10 @@ import { _resetRepoCache, _setGitRunner, type GitRunner } from "@/lib/github/res
 import { projectPaths } from "@/lib/projects/paths";
 import { _resetActiveProjectCache } from "@/lib/projects/resolve";
 import {
+  _setTestDeps as _setEvictTestDeps,
+  _resetTestDeps as _resetEvictTestDeps,
+} from "@/lib/projects/evict";
+import {
   listSubcommand,
   createSubcommand,
   linkSubcommand,
@@ -30,9 +34,38 @@ import { createCategory } from "@/db/queries/categories";
 let tmpRoot: string;
 const originalDir = _getRegistryDir();
 
+/**
+ * What `removeSubcommand` asked the server to evict, captured at the moment of
+ * the call. `dirExisted` and `stillRegistered` are recorded here rather than
+ * asserted afterwards because they are statements about *ordering* — that the
+ * registry write already landed and the purge has not yet run — and both are
+ * unrecoverable once the command returns.
+ */
+let evictCalls: { slug: string; dirExisted: boolean; stillRegistered: boolean }[] = [];
+
+/** Overridable per test to stand in for a refusal or a dead port. */
+let evictResponse: () => Response = () => Response.json({ ok: true, closed: true });
+
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-projcmd-"));
   _setRegistryDir(tmpRoot);
+  evictCalls = [];
+  evictResponse = () => Response.json({ ok: true, closed: true });
+  // Without this the suite would POST at whatever is on port 5200 — very
+  // plausibly the developer's own running `bertrand serve`.
+  _setEvictTestDeps({
+    fetch: (input) => {
+      const slug = decodeURIComponent(
+        new URL(String(input)).pathname.replace(/^\/api\/projects\/|\/evict$/g, ""),
+      );
+      evictCalls.push({
+        slug,
+        dirExisted: existsSync(projectPaths(slug).root),
+        stillRegistered: listProjects().some((p) => p.slug === slug),
+      });
+      return Promise.resolve(evictResponse());
+    },
+  });
   delete process.env.BERTRAND_PROJECT;
   _resetActiveProjectCache();
   _clearTestDb();
@@ -43,6 +76,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _clearTestDb();
+  _resetEvictTestDeps();
   _setRegistryDir(originalDir);
   delete process.env.BERTRAND_PROJECT;
   _resetActiveProjectCache();
@@ -269,9 +303,15 @@ describe("project rename", () => {
 });
 
 describe("project remove", () => {
+  /**
+   * Every assertion here is `rejects.toThrow`, never `expect(() => …).toThrow`.
+   * `removeSubcommand` is async (it awaits the server eviction), and bun's
+   * `toThrow` passes vacuously against a function that returns a rejected
+   * promise — the sync form would assert nothing at all.
+   */
   test("refuses to remove the active project", async () => {
     await seedProject("acme", { activate: true });
-    expect(() => removeSubcommand(["acme"])).toThrow(/Cannot remove the active/);
+    await expect(removeSubcommand(["acme"])).rejects.toThrow(/Cannot remove the active/);
   });
 
   test("refuses if the project has sessions without --force", async () => {
@@ -287,7 +327,7 @@ describe("project remove", () => {
     delete process.env.BERTRAND_PROJECT;
     _resetActiveProjectCache();
 
-    expect(() => removeSubcommand(["with-sessions"])).toThrow(/Pass --force/);
+    await expect(removeSubcommand(["with-sessions"])).rejects.toThrow(/Pass --force/);
   });
 
   test("--force removes a non-empty project's registry entry", async () => {
@@ -300,7 +340,7 @@ describe("project remove", () => {
     delete process.env.BERTRAND_PROJECT;
     _resetActiveProjectCache();
 
-    removeSubcommand(["doomed", "--force"]);
+    await removeSubcommand(["doomed", "--force"]);
     expect(listProjects().map((p) => p.slug)).toEqual(["a"]);
     // Default: directory left on disk
     expect(existsSync(projectPaths("doomed").root)).toBe(true);
@@ -310,13 +350,73 @@ describe("project remove", () => {
     await seedProject("a", { activate: true });
     await seedProject("doomed");
     expect(existsSync(projectPaths("doomed").root)).toBe(true);
-    removeSubcommand(["doomed", "--purge"]);
+    await removeSubcommand(["doomed", "--purge"]);
     expect(existsSync(projectPaths("doomed").root)).toBe(false);
   });
 
   test("rejects unknown slug", async () => {
     await seedProject("a", { activate: true });
-    expect(() => removeSubcommand(["nope"])).toThrow(/Unknown project/);
+    await expect(removeSubcommand(["nope"])).rejects.toThrow(/Unknown project/);
+  });
+
+  test("tells a running server to release the project before purging", async () => {
+    await seedProject("a", { activate: true });
+    await seedProject("doomed");
+
+    await withCapturedOutputAsync(() => removeSubcommand(["doomed", "--purge"]));
+
+    // The eviction has to reach the server while the files are still there:
+    // unlinking first would leave the server pinning deleted inodes, which is
+    // the whole failure this fixes (#249).
+    expect(evictCalls).toEqual([
+      { slug: "doomed", dirExisted: true, stillRegistered: false },
+    ]);
+  });
+
+  test("evicts on a plain remove too, not just --purge", async () => {
+    await seedProject("a", { activate: true });
+    await seedProject("doomed");
+
+    await withCapturedOutputAsync(() => removeSubcommand(["doomed"]));
+
+    // Without --purge there is no space to reclaim, but the server would still
+    // be caching a project that is gone from the registry.
+    expect(evictCalls.map((c) => c.slug)).toEqual(["doomed"]);
+  });
+
+  test("does not evict when the removal was refused", async () => {
+    await seedProject("acme", { activate: true });
+    await expect(removeSubcommand(["acme"])).rejects.toThrow(/Cannot remove the active/);
+    expect(evictCalls).toEqual([]);
+  });
+
+  test("points at a restart when a live server refuses to release", async () => {
+    await seedProject("a", { activate: true });
+    await seedProject("doomed");
+    evictResponse = () =>
+      Response.json({ error: "still busy", reason: "still-registered" }, { status: 409 });
+
+    const { out } = await withCapturedOutputAsync(() =>
+      removeSubcommand(["doomed", "--purge"]),
+    );
+
+    expect(out.join("\n")).toMatch(/still busy/);
+    expect(out.join("\n")).toMatch(/reclaimed when that server restarts/);
+  });
+
+  test("stays quiet about the server when none is running", async () => {
+    await seedProject("a", { activate: true });
+    await seedProject("doomed");
+    evictResponse = () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:5200");
+    };
+
+    const { out } = await withCapturedOutputAsync(() =>
+      removeSubcommand(["doomed", "--purge"]),
+    );
+
+    expect(out.join("\n")).toMatch(/directory purged/);
+    expect(out.join("\n")).not.toMatch(/server/i);
   });
 });
 

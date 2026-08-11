@@ -6,6 +6,7 @@ import type { SessionWithCategory } from "@/types";
 import { worktreesQuery } from "../../../api/queries";
 import { formatRelativeTime } from "../../../lib/format";
 import { useAllStats } from "../../../lib/use-sessions";
+import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionContentProps = {
   session: SessionWithCategory;
@@ -46,14 +47,7 @@ export const SessionContent = ({ session: s }: SessionContentProps) => {
           </Text>
         </Group>
       )}
-      <Text
-        size={-1}
-        shade="muted"
-        ml="auto"
-        style={{ whiteSpace: "nowrap" }}
-      >
-        {formatRelativeTime(s.session.updatedAt)}
-      </Text>
+      <SessionUsageBadge session={s} />
     </Group>
   );
 };

@@ -14,6 +14,7 @@ import {
   getDb,
   getDbForProject,
   invalidateDbCache,
+  closeDbForProject,
   _clearTestDb,
 } from "./client";
 
@@ -139,5 +140,62 @@ describe("invalidateDbCache", () => {
 
     expect(getDbForProject("a")).not.toBe(a1);
     expect(getDbForProject("b")).not.toBe(b1);
+  });
+
+  test("leaves the underlying connection open — it forgets, it does not close", () => {
+    const a = getDbForProject("a");
+
+    invalidateDbCache("a");
+
+    // The distinction this pins down is the entire bug in #249: a forgotten
+    // handle is still an open file descriptor, so a purge frees no space.
+    expect(() => a.$client.prepare("SELECT 1").get()).not.toThrow();
+  });
+});
+
+describe("closeDbForProject", () => {
+  test("closes the underlying connection, not just the cache entry", () => {
+    const a = getDbForProject("a");
+    expect(() => a.$client.prepare("SELECT 1").get()).not.toThrow();
+
+    expect(closeDbForProject("a")).toBe(true);
+
+    // A closed sqlite connection rejects new statements. That throw is the
+    // only in-process evidence that the descriptors on bertrand.db, -wal and
+    // -shm are gone, which is what lets a purged project's disk space return.
+    expect(() => a.$client.prepare("SELECT 1").get()).toThrow();
+  });
+
+  test("drops the cache so a re-open builds a fresh handle", () => {
+    const a1 = getDbForProject("a");
+    closeDbForProject("a");
+
+    const a2 = getDbForProject("a");
+
+    expect(a2).not.toBe(a1);
+    expect(() => a2.$client.prepare("SELECT 1").get()).not.toThrow();
+  });
+
+  test("leaves other projects untouched", () => {
+    const a = getDbForProject("a");
+    const b = getDbForProject("b");
+
+    closeDbForProject("a");
+
+    expect(getDbForProject("b")).toBe(b);
+    expect(() => b.$client.prepare("SELECT 1").get()).not.toThrow();
+    expect(() => a.$client.prepare("SELECT 1").get()).toThrow();
+  });
+
+  test("reports false for a project this process never opened", () => {
+    // The server evicting a project it happened never to serve is routine, not
+    // an error — `project remove` calls unconditionally.
+    expect(closeDbForProject("never-touched")).toBe(false);
+  });
+
+  test("is idempotent", () => {
+    getDbForProject("a");
+    expect(closeDbForProject("a")).toBe(true);
+    expect(closeDbForProject("a")).toBe(false);
   });
 });

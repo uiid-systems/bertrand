@@ -28,10 +28,8 @@ export const SessionUsageBadge = ({ session: s }: SessionUsageBadgeProps) => {
 
   return (
     <Group ml="auto">
-      <Badge color={standing.color} title={standing.title}>
-        <Text size={-1} weight="bold">
-          {formatTokens(outputTokens)}
-        </Text>
+      <Badge size="small" color={standing.color} title={standing.title}>
+        {formatTokens(outputTokens)}
       </Badge>
     </Group>
   );
