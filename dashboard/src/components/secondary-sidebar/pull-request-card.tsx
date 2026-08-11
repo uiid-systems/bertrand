@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { Badge, Group, Status, Text } from "@uiid/design-system";
+import { Button, Card, Badge, Group, Status, Text } from "@uiid/design-system";
 import {
   GitMergeIcon,
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   GitPullRequestIcon,
+  ExternalLinkIcon,
 } from "@uiid/icons";
 
 import { pullRequestQuery } from "../../api/queries";
@@ -16,7 +17,7 @@ import type {
   PullRequestCheck,
 } from "../../api/types";
 
-export type PullRequestRowProps = {
+export type PullRequestCardProps = {
   /** The session the sidebar belongs to — its branch is the one looked up. */
   sessionId: string;
   /** Project the session belongs to, so the branch resolves against the right DB. */
@@ -33,6 +34,11 @@ type Presentation = {
  * A draft is its own state here even though GitHub models it as a flag on an
  * open PR: "open" invites review and a draft explicitly doesn't, so drawing
  * them the same would misreport what the PR is asking for.
+ *
+ * The state reaches the user three ways — the card's hue, its icon, and the
+ * `label` in the link's tooltip. The hue alone would be the one that fails
+ * anyone who can't separate the colors, and the icons differ in shape
+ * (open/draft/closed/merged) rather than only in tint for that reason.
  */
 function present(pr: PullRequest): Presentation {
   if (pr.state === "MERGED") {
@@ -71,9 +77,9 @@ const finished = (checks: PullRequestCheck[]) =>
  * Failures that mean bertrand has no GitHub to talk to on this machine at all,
  * as opposed to a call that could succeed later.
  *
- * These render nothing. A permanent "PR status unavailable" line under every
+ * These render nothing. A permanent "PR status unavailable" card under every
  * session — because `gh` isn't installed, or the host was undeclared — is
- * exactly the empty scaffolding this row is meant to avoid, and it isn't news
+ * exactly the empty scaffolding this card is meant to avoid, and it isn't news
  * a second time. Everything else (not signed in, rate limited, offline, a
  * timeout) does surface, because those clear and the message names the fix.
  */
@@ -83,22 +89,27 @@ const SILENT_FAILURES = new Set<GhFailureReason>([
 ]);
 
 /**
- * The pull request for a session's branch: number, state, and check rollup,
- * linking out to the PR.
+ * The pull request for a session's branch, as a card: number, title, state,
+ * and check rollup, with the whole card linking out to the PR.
  *
  * Lives with "Files changed" rather than with the worktree because the two
  * answer the same question — what this session is proposing to merge — and
  * the branch's diff is the PR's diff.
  *
+ * A card rather than a row because it is a different *kind* of thing from the
+ * file list beneath it: the files are a table, and giving the PR its own
+ * surface separates the branch's summary from the branch's contents without
+ * needing a rule or a heading to do it.
+ *
  * Renders nothing at all when the branch has no PR, which is most branches.
  * The zones around it are fixed landmarks that state their own emptiness; this
- * row is the opposite, and deliberately so: "no pull request" is the default
+ * card is the opposite, and deliberately so: "no pull request" is the default
  * state of a session and saying it on every one of them would be noise.
  */
-export const PullRequestRow = ({
+export const PullRequestCard = ({
   sessionId,
   projectSlug,
-}: PullRequestRowProps) => {
+}: PullRequestCardProps) => {
   const { data } = useQuery(pullRequestQuery(sessionId, projectSlug));
 
   if (!data || data.status === "none") {
@@ -110,12 +121,19 @@ export const PullRequestRow = ({
       return null;
     }
     return (
-      <Group data-slot="pull-request-row" px={2} fullwidth>
-        {/* Stated, never alarmed: this is "we don't know", and the specific
-            reason — with its fix — is one hover away. */}
-        <Text size={-1} shade="muted" truncate title={data.message}>
-          PR status unavailable
-        </Text>
+      <Group px={2} fullwidth>
+        <Card
+          data-slot="pull-request-card"
+          variant="ghost"
+          title="PR status unavailable"
+          TitleProps={{
+            size: -1,
+            shade: "muted",
+            truncate: true,
+            title: data.message,
+          }}
+          fullwidth
+        />
       </Group>
     );
   }
@@ -124,37 +142,61 @@ export const PullRequestRow = ({
   const { label, color, Icon } = present(pr);
   const done = finished(pr.checks);
 
-  return (
-    <Group data-slot="pull-request-row" ay="center" gap={2} px={2} fullwidth>
-      <Group ay="center" gap={2} minw={0}>
-        <Icon size={13} />
-        <Text
-          size={-1}
-          weight="bold"
-          title={pr.title}
-          render={<a href={pr.url} target="_blank" rel="noreferrer" />}
-        >
-          {`#${pr.number}`}
-        </Text>
-        <Text size={-1} shade="muted" truncate title={pr.title}>
-          {pr.title}
-        </Text>
-      </Group>
+  const PrDetails = () => (
+    <Group ay="center" gap={4}>
+      <Text weight="bold" truncate>
+        #{pr.number}
+      </Text>
 
-      <Group ay="center" gap={2} ml="auto">
-        {/* `none` is a PR nobody configured checks for — distinct from a green
-            one, and drawing a dot for it would claim a pass that never ran. */}
-        {pr.rollup !== "none" && (
-          <Group ay="center" gap={1} title={`${done} of ${pr.checks.length} checks finished`}>
-            <Status color={ROLLUP_COLOR[pr.rollup]} />
-            <Text size={-1} family="mono" shade="muted">
-              {`${done}/${pr.checks.length}`}
-            </Text>
+      {/* <Text size={-1} weight="bold">
+        {label}
+      </Text> */}
+
+      {pr.rollup === "none" ? undefined : (
+        <Group ay="center" gap={1}>
+          <Status color={ROLLUP_COLOR[pr.rollup]} />
+          <Text size={-1} family="mono">
+            {`${done}/${pr.checks.length}`}
+          </Text>
+        </Group>
+      )}
+    </Group>
+  );
+
+  const Actions = () => (
+    <Group gap={2} ml="auto">
+      <Button
+        size="xsmall"
+        nativeButton={false}
+        render={<a href={pr.url} target="_blank" rel="noreferrer" />}
+        style={{ marginLeft: "auto" }}
+      >
+        View
+      </Button>
+    </Group>
+  );
+
+  return (
+    <Group px={2} fullwidth>
+      <Card
+        data-slot="pull-request-card"
+        color={color}
+        title={pr.title}
+        footer={
+          <Group ay="center" gap={2} fullwidth>
+            <Icon size={16} />
+            <PrDetails />
+            <Badge size="small" ml="auto">
+              {label}
+            </Badge>
           </Group>
-        )}
-        <Badge color={color}>{label}</Badge>
-      </Group>
+        }
+        TitleProps={{ size: 0, weight: "bold" }}
+        HeaderProps={{ fullwidth: true, style: { overflow: "hidden" } }}
+        render={<a href={pr.url} target="_blank" rel="noreferrer" />}
+        fullwidth
+      />
     </Group>
   );
 };
-PullRequestRow.displayName = "PullRequestRow";
+PullRequestCard.displayName = "PullRequestCard";

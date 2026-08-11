@@ -6,7 +6,7 @@ import { changedFilesQuery } from "../../api/queries";
 import { useSettledKeys } from "../../lib/use-settled-keys";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
 import { ChangedFileRow } from "../worktrees/changed-file-row";
-import { PullRequestRow } from "./pull-request-row";
+import { PullRequestCard } from "./pull-request-card";
 
 export type ChangedFilesZoneProps = {
   /** The session the sidebar belongs to — only its changed files are shown. */
@@ -66,7 +66,7 @@ export const ChangedFilesZone = ({
         {/* Renders nothing for a branch with no PR, which is most of them —
             so the zone looks exactly as it did before whenever there's
             nothing to say. */}
-        <PullRequestRow sessionId={sessionId} projectSlug={projectSlug} />
+        <PullRequestCard sessionId={sessionId} projectSlug={projectSlug} />
         {files.length === 0 ? (
           <Group px={2} fullwidth>
             <Text size={-1} shade="muted">
