@@ -24,7 +24,9 @@ const { createCategory } = await import("@/db/queries/categories");
 const { createSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { emitToolApplied } = await import("@/db/events/emit");
-const { computeChangedFiles } = await import("@/lib/diff_stats");
+const { computeChangedFiles, resolveChangedFiles } = await import(
+  "@/lib/diff_stats"
+);
 
 afterAll(() => rmSync(TEST_DIR, { recursive: true, force: true }));
 
@@ -139,5 +141,40 @@ describe("computeChangedFiles display paths", () => {
     expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
       `${REPO}-legacy/src/index.ts`,
     ]);
+  });
+});
+
+describe("resolveChangedFiles picks its source", () => {
+  test("no worktree falls back to the timeline replay", async () => {
+    const id = sessionEditing(`${REPO}/src/a.ts`);
+    const files = await resolveChangedFiles({ id, worktreePath: null }, REPO);
+    expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
+  });
+
+  test("a worktree path whose directory is gone falls back rather than zeroing", async () => {
+    // The row outlives the directory between `worktree remove` and the column
+    // being cleared. Git reads a missing worktree as "nothing changed", so
+    // trusting the column here would blank a completed session's file list.
+    const id = sessionEditing(`${REPO}/src/a.ts`);
+    const files = await resolveChangedFiles(
+      { id, worktreePath: join(TEST_DIR, "worktree-that-never-existed") },
+      REPO,
+    );
+    expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
+  });
+
+  test("an existing worktree is read from git, not from the timeline", async () => {
+    // The session's events claim one file; git is asked instead and answers
+    // with its own, so we can tell which arm produced the list.
+    const id = sessionEditing(`${REPO}/src/only-in-events.ts`);
+    const files = await resolveChangedFiles(
+      { id, worktreePath: TEST_DIR },
+      REPO,
+      undefined,
+      async () => [
+        { path: "src/from-git.ts", added: 1, removed: 0, status: "added" },
+      ],
+    );
+    expect(files.map((f) => f.path)).toEqual(["src/from-git.ts"]);
   });
 });

@@ -34,7 +34,7 @@ import {
 import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats, computeAndPersist } from "@/lib/timing"
-import { computeChangedFiles } from "@/lib/diff_stats"
+import { resolveChangedFiles } from "@/lib/diff_stats"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -226,18 +226,25 @@ const getStatsBySession = (
 }
 
 // /api/stats/:sessionId/files — the individual files a session changed, with
-// per-file line counts, derived from its timeline (not git). Mirrors the
-// primary sidebar's file-count/+- totals and covers every session whether or
-// not a worktree exists. A missing session answers "nothing changed" so the
-// sidebar can poll quietly.
+// per-file line counts. Git-derived while the session's worktree is on disk
+// (the branch's net change, as a reviewer sees it), falling back to the
+// timeline replay for sessions without one, so the list still covers every
+// session. A missing session answers "nothing changed" so the sidebar can poll
+// quietly.
+//
+// The worktree read goes through `cachedWorktreeFiles`, so this route and
+// /api/worktrees/:id/files share one set of git subprocesses rather than each
+// forking their own on a 5s poll.
 const getChangedFilesBySession = (
   { sessionId }: { sessionId?: string },
   url: URL,
-): ChangedFile[] => {
+): Promise<ChangedFile[]> => {
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
-  if (!session) return []
-  return computeChangedFiles(sessionId!, resolveRepoRoot(url), db)
+  if (!session) return Promise.resolve([])
+  return resolveChangedFiles(session, resolveRepoRoot(url), db, async (path) =>
+    (await cachedWorktreeFiles(path, false)).files,
+  )
 }
 
 const getEngagement = (

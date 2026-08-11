@@ -107,9 +107,11 @@ function basenameOf(path: string): string {
 /**
  * Render a one-liner that summarizes a `tool.applied` event. Matches
  * `computeDiffStats` on the server: each edit's oldStr counts as removed
- * lines, newStr counts as added lines — coarse but consistent with the
- * sidebar's +/- badges. Returns null when there's nothing file-shaped to
- * summarize so the caller can fall back to the bare event label.
+ * lines, newStr counts as added lines — coarse but consistent with the primary
+ * sidebar's +/- badges, which are drawn from the same replay. (The "Files
+ * changed" list is git-derived and will read lower; it counts the branch's net
+ * change rather than every edit.) Returns null when there's nothing
+ * file-shaped to summarize so the caller can fall back to the bare event label.
  */
 function summarizeApplied(meta: Record<string, unknown>): string | null {
   const permissions = meta.permissions as AppliedPermission[] | undefined;
