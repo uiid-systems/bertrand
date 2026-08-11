@@ -1,10 +1,10 @@
 import { Link, useParams } from "@tanstack/react-router";
 
-import { Card, Group, ListItem } from "@uiid/design-system";
+import { Card, Group, ListItem, Text } from "@uiid/design-system";
 
 import type { SessionWithCategory } from "@/types";
 
-import { statusColor } from "../../../lib/format";
+import { statusColor, formatRelativeTime } from "../../../lib/format";
 
 import { useSelectedProject } from "../selected-project";
 import { SessionLabel } from "./session-label";
@@ -71,7 +71,14 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
       >
         <Group gap={2} ay="center" fullwidth>
           <SessionLabel session={s} />
-          <SessionUsageBadge session={s} />
+          <Text
+            size={-1}
+            shade="muted"
+            ml="auto"
+            style={{ whiteSpace: "nowrap" }}
+          >
+            {formatRelativeTime(s.session.updatedAt)}
+          </Text>
         </Group>
         <SessionContent session={s} />
       </Card>
