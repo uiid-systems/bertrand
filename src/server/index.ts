@@ -58,6 +58,9 @@ import {
 } from "@/lib/projects/registry"
 import { formatIdentity } from "@/lib/github/identity"
 import { isDeclaredHost } from "@/lib/github/hosts"
+import { getPRForBranch } from "@/lib/github/pr"
+import { resolveRepoAt } from "@/lib/github/resolve"
+import { resolveSessionPullRequest } from "@/lib/github/session-pr"
 import {
   resolveActiveProject,
   _resetActiveProjectCache,
@@ -75,6 +78,7 @@ import type {
   ProjectRepoView,
   ProjectSummary,
   ActiveProjectMeta,
+  SessionPullRequest,
 } from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
@@ -424,6 +428,43 @@ const getWorktreeFiles = (
   return cachedWorktreeFiles(session.worktreePath, uncommittedOnly)
 }
 
+// /api/github/:sessionId/pr — the pull request for the session's branch, with
+// its check rollup. The decisions (which branch, which checkout, and what
+// counts as "GitHub didn't answer") live in @/lib/github/session-pr; this is
+// the adapter that hands it the session row and the real I/O.
+//
+// An unknown session answers "no PR" rather than 404ing. The sidebar polls
+// this, and every arm of the response already means "render nothing" except
+// the one where a PR exists — so a missing session has a correct answer, and
+// erroring would make a torn-down session louder than a live one.
+//
+// No route-level cache: `getPRForBranch` TTL-caches per branch and coalesces
+// concurrent lookups, so N sessions on one branch still cost one `gh`.
+const getSessionPullRequest = (
+  { sessionId }: { sessionId?: string },
+  url: URL,
+): Promise<SessionPullRequest> => {
+  const session = getSession(sessionId!, resolveDb(url))
+  if (!session) return Promise.resolve({ status: "none" })
+  return resolveSessionPullRequest(
+    {
+      // A worktree the session has since deleted must not be read as one it
+      // still has — the branch snapshot below is what covers that session.
+      worktreePath:
+        session.worktreePath && existsSync(session.worktreePath)
+          ? session.worktreePath
+          : null,
+      worktreeBranch: session.worktreeBranch,
+      repoPath: resolveRepoRoot(url),
+    },
+    {
+      readBranch: cachedWorktreeBranch,
+      resolveRepo: resolveRepoAt,
+      lookupPR: getPRForBranch,
+    },
+  )
+}
+
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
@@ -431,6 +472,7 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/worktrees\/status$/, listWorktreeStatus],
   [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
   [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/files$/, getWorktreeFiles],
+  [/^\/api\/github\/(?<sessionId>[^/]+)\/pr$/, getSessionPullRequest],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
   [/^\/api\/stats\/(?<sessionId>[^/]+)\/files$/, getChangedFilesBySession],
