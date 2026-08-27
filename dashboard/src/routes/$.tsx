@@ -48,6 +48,7 @@ import { useMatchedSession } from "../lib/use-matched-session";
 import { useSessions } from "../lib/use-sessions";
 import { EventContent } from "../components/timeline";
 import { AgentTurnSummary } from "../components/timeline/agent_turn_summary";
+import { AgentTurnWorkToggle } from "../components/timeline/agent_turn_work_toggle";
 import { TimelineActions } from "../components/timeline/timeline-actions";
 import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
@@ -529,6 +530,8 @@ function EventCard({
   // A consolidated agent turn hides its many work rows, so surface a compact
   // readout (tool calls · reads · file diffs) opposite the title — parity with
   // the folded detail without touching the title itself. Other cards show none.
+  // The eye beside that readout drops the work rows from the body entirely, for
+  // reading the turn as prose; the counts stay, so nothing goes unaccounted for.
   const turnStats = agentTurnStats(event);
   const [open, setOpen] = useState(false);
   const collapsible = hasWorkDetail(event);
@@ -575,7 +578,10 @@ function EventCard({
             )}
           </Group>
         ) : turnStats ? (
-          <AgentTurnSummary event={event} />
+          <Group gap={1} ay="center">
+            <AgentTurnSummary event={event} />
+            <AgentTurnWorkToggle />
+          </Group>
         ) : undefined
       }
       footer={timestamp}
