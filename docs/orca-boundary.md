@@ -34,6 +34,15 @@ Every number here is reproducible; Appendix B gives the exact command for each.
    Orca (Part 3).
 5. **Sequence:** teardown → naming → launcher-optional → layer extraction.
    ~7–12 focused sessions total.
+6. **Latent bug found (act on this independently):** `src/lib/transcript.ts:61`
+   locates transcripts by *deriving* the filename from the session id
+   (`~/.claude/projects/{dir}/{sessionId}.jsonl`). Orca's source carries an explicit
+   vendor warning that *"recent Claude Code names the transcript file with a UUID that
+   differs from the hook session_id (so the id-based glob no longer finds it)."*
+   The hook payload's `transcript_path` is authoritative and should be used instead.
+   Not currently broken (this session's two UUIDs match), but structurally fragile —
+   silent failure would take out transcript ingestion, `assistant.message` capture,
+   and token accounting.
 
 ---
 
@@ -453,7 +462,14 @@ Risk: this changes the identity of every session. Needs a back-compat story.
 Scope:
 - Rewrite all 8 hook scripts to key off the payload's `session_id` (and
   `transcript_path`) instead of `BERTRAND_SESSION`. Orca's
-  `agent-hook-listener` is a working reference implementation.
+  `agent-hook-listener` is a working reference implementation — see
+  `extractAgentProviderSession` in `out/shared/agent-session-resume.js`.
+  **Today bertrand's hooks parse only `.cwd` and `.answers` from the payload**;
+  everything else comes from env.
+- **Bonus fix, and a reason to prioritise this:** adopting the payload's
+  `transcript_path` retires the fragile id-derived path at
+  `src/lib/transcript.ts:61` (see TL;DR item 6). `ingest_cursors` is already keyed by
+  transcript path (`src/db/schema.ts:162`), so the authoritative value slots straight in.
 - Auto-create a bertrand session on the first unseen `session_id`; resolve the
   project from cwd. Consider hooking `SessionStart` (bertrand currently does not).
 - Demote `src/engine` (1,529) and `src/tui` (1,994) from foundation to optional
@@ -482,11 +498,15 @@ Everything host-shaped becomes optional. Requires no Orca decision.
 
 ## Part 6 — Assumptions to validate
 
-- [ ] **Hook payload carries `session_id` on every event bertrand needs**
-      (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
-      `PermissionRequest`, `Stop`). Strongly evidenced by Orca's `last-status.json`
-      for `SessionStart` and `PreToolUse`; **not verified for the rest.** Test by
-      logging raw payloads from a scratch hook.
+- [x] **Hook payload carries `session_id` on every event bertrand needs.** VERIFIED
+      2026-08-28 by reading Orca's listener. `agent-hook-listener.js` computes
+      `providerSession = extractAgentProviderSession(source, hookPayloadRecord)`
+      **once per incoming event, before any event-specific branching** — `eventName` is
+      read separately and the extraction never consults it. `extractAgentProviderSession`
+      (`out/shared/agent-session-resume.js`) switches on *provider*, not event:
+      for `claude` it reads `session_id` and attaches `transcript_path`. Orca handles 13
+      Claude events this way, including the 7 bertrand does not hook. So `session_id` is
+      uniformly available. (Read from source; not independently instrumented.)
 - [x] **Auto-derived slugs are good enough in practice.** VALIDATED over all 154
       sessions (see 4c): ~45% derive cleanly, ~32% partially, ~24% need a fallback.
       The failure set decomposes into ticket-ID slugs, slash-command openings, and
@@ -640,6 +660,10 @@ sqlite3 "$BERTRAND_PROJECT_DB" "SELECT c.name||'/'||s.slug||'  <<<  '|| \
 | Hook guard requiring `BERTRAND_SESSION` | `src/hooks/scripts.ts:41,84,129,164,253,295,354,379` |
 | Non-destructive settings merge + `isBertrandGroup` | `src/hooks/settings.ts` |
 | Pause-time, LLM-free summary derivation | `src/lib/summary.ts` |
+| **Fragile id-derived transcript path (latent bug)** | `src/lib/transcript.ts:61` |
+| Ingest cursors keyed by transcript path | `src/db/schema.ts:162` |
+| Generic per-event session extraction (reference impl) | `Orca.app/…/out/shared/agent-session-resume.js` → `extractAgentProviderSession` |
+| Orca hook removal is filename-scoped | `Orca.app/…/out/main/chunks/managed-agent-hook-controls-*.js` → `createManagedCommandMatcher` |
 | Worktree-path guard on changed-files | `src/server/index.ts:145` |
 | Orca hook transport | `~/.orca/agent-hooks/claude-hook.sh` |
 | Orca orchestration identity triple | `Orca.app/…/out/shared/orchestration-compatibility-evidence.js` |
