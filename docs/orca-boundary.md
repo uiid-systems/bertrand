@@ -1,7 +1,9 @@
 # Bertrand ↔ Orca: boundary, overlap, and teardown sequence
 
 > **Status:** analysis complete, no code changed. This is a decision record and a
-> handoff for task breakdown.
+> handoff for task breakdown. Two of the five open assumptions were subsequently
+> validated (see Part 6); the naming assumption now rests on all 154 sessions, not a
+> 20-session sample.
 > **Produced in:** bertrand session `spike/orca-usage`, 2026-08-28 — the first
 > session run inside [Orca](https://www.onorca.dev) (v1.4.191, `com.stablyai.orca`).
 > **Recover the full discussion with:** `bertrand log spike/orca-usage`
@@ -150,8 +152,14 @@ claude. Every prompt in this session arrived that way.
 2. **`statusLine` is a single slot and Orca owns it.** Unlike `hooks` (arrays), it
    cannot be shared. Bertrand does not set it today. **If bertrand ever wants a
    statusline, this is a real mutual-clobber conflict.**
-3. **`orca agent hooks off`** "removes local hook entries" — its blast radius on
-   bertrand's entries was **not verified**. Worth checking before recommending it.
+3. **`orca agent hooks off` is safe** (verified 2026-08-28 by reading
+   `out/main/chunks/managed-agent-hook-controls-*.js`). Its removal path is
+   `removeManagedCommands(definitions, isManagedCommand)` where the predicate comes
+   from `createManagedCommandMatcher(scriptFileName)` — matching **its own script
+   filename**. It can only strip entries pointing at `claude-hook.sh`. This is exactly
+   symmetric with bertrand's `isBertrandGroup` matching `.bertrand/hooks/`: both tools
+   scope teardown by ownership-by-path. (Read from minified source, not live-tested —
+   running it would disable Orca's hooks.)
 4. **Worktree identity can diverge.** Orca stamps `ORCA_WORKTREE_ID` at pane
    creation and won't follow a mid-session `EnterWorktree` cwd change. Moot once
    Workstream 1 lands.
@@ -321,11 +329,48 @@ Human name vs. first recorded prompt:
 
 **~70% derivable at parity or better; several human names are demonstrably worse.**
 
+#### Full-corpus validation (all 154 sessions, 4 project DBs)
+
+The sample above was 20 sessions. Measured across every session, scoring what
+fraction of a slug's tokens appear in its own first prompt (stopwords dropped):
+
+| Bucket | Sessions | Share |
+|---|---|---|
+| full (100% of slug tokens present) | 58 | 38% |
+| high (≥67%) | 10 | 7% |
+| partial (≥34%) | 48 | 32% |
+| low (<34%) | 36 | 24% |
+
+**152 of 154 sessions (99%) have a recorded first prompt**, so coverage is not the
+constraint. Per project: balance 81%, tabs-backend 81%, bertrand 76%,
+design-system 66% at ≥34%.
+
+**Honest reading:** the 20-session "~70%" holds directionally (76% at ≥34%), but it
+is optimistic if read as "70% would produce *good* names." A truer statement:
+**~45% would derive cleanly, ~32% partially, ~24% need a fallback.**
+
+The low bucket is not random — it decomposes into three actionable failure classes:
+
+1. **Ticket-ID slugs** (`UI-132`, `UI-175`, `UI-332`, `UI-378`, `UI-493`) — the human
+   name carries a Linear ID absent from the prompt text. Derivable from the *branch*
+   or a tracker, not the prompt. Under Orca, `linkedLinearIssue` supplies this directly.
+2. **Slash-command first prompts** (`/agent-skills:test-driven-development`,
+   `/agent-skills:documentation-and-adrs`) — the opening prompt is a command
+   invocation with no subject at all. Must fall back to later turns.
+3. **Human-invented labels** (`brown-bag/eng-demo-1`) — no textual basis anywhere.
+   Genuinely underivable; needs a rename affordance.
+
+Classes 1 and 2 **reinforce pause-time derivation**: a slash-command prompt has no
+subject, but by pause time the conversation does. Only class 3 needs a manual escape
+hatch — which argues for a `bertrand rename` command rather than a launch-time prompt.
+
 Two findings that dissolve the naming blocker:
 
-1. **Structured identifiers are already in the prompts.** GitHub PR/issue URLs
-   recur (`pull/220`, `issues/183`, `pull/152`), and bertrand already owns a URL
-   parser plus `src/lib/github/*`. Those yield unambiguous slugs for free.
+1. **Structured identifiers appear in some prompts.** GitHub PR/issue references
+   (`pull/220`, `issues/183`, `pull/152`) occur in **19 of 152 first prompts (12%)** —
+   a useful signal where present, but *not* a primary naming strategy. (An earlier
+   draft of this doc overstated this as "recur throughout"; the measured rate is 12%.)
+   Bertrand already owns a URL parser plus `src/lib/github/*` to exploit them.
 2. **Naming should happen at pause, not launch.** The TUI names a session at the
    moment of *least* information. `src/lib/summary.ts` already derives a
    subject/outcome at pause time, LLM-free and with zero user steps, precisely
@@ -442,13 +487,16 @@ Everything host-shaped becomes optional. Requires no Orca decision.
       `PermissionRequest`, `Stop`). Strongly evidenced by Orca's `last-status.json`
       for `SessionStart` and `PreToolUse`; **not verified for the rest.** Test by
       logging raw payloads from a scratch hook.
-- [ ] **Auto-derived slugs are good enough in practice.** 4c says ~70% at
-      parity-or-better on 20 sampled sessions. Validate over all 154 before
-      committing, and decide the fallback for the failing ~30% (late rename? a
-      `bertrand name` command?).
+- [x] **Auto-derived slugs are good enough in practice.** VALIDATED over all 154
+      sessions (see 4c): ~45% derive cleanly, ~32% partially, ~24% need a fallback.
+      The failure set decomposes into ticket-ID slugs, slash-command openings, and
+      human-invented labels. **Remaining decision:** the escape hatch for class 3 —
+      a `bertrand rename` command is the recommended shape.
 - [ ] **Dropping `category` doesn't degrade `bertrand log`/`search`.** Project +
       auto-slug + labels must remain as findable as `category/slug`.
-- [ ] **`orca agent hooks off` does not remove bertrand's hook entries.** Unverified.
+- [x] **`orca agent hooks off` does not remove bertrand's hook entries.** VERIFIED by
+      reading Orca's source — the predicate matches its own script filename (Part 1,
+      soft edge 3). Not live-tested.
 - [ ] **Teardown doesn't regress Files-changed.** 4a argues it can't; prove it.
 
 ### What could kill this
