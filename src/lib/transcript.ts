@@ -12,12 +12,13 @@ import {
   closeSync,
   existsSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   statSync,
 } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 
 // -- Types --
 
@@ -62,14 +63,90 @@ export function claudeTranscriptPath(sessionId: string, cwd?: string): string {
 }
 
 /**
+ * Read up to the first newline of `filePath` without loading the whole file.
+ * Transcripts run to tens of megabytes; the identity marker we want sits on
+ * the first line.
+ */
+function readFirstLine(filePath: string, maxBytes = 64 * 1024): string | null {
+  let fd: number;
+  try {
+    fd = openSync(filePath, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const buf = Buffer.alloc(maxBytes);
+    const read = readSync(fd, buf, 0, maxBytes, 0);
+    if (read <= 0) return null;
+    const chunk = buf.toString("utf-8", 0, read);
+    const newline = chunk.indexOf("\n");
+    // A first line longer than the window is not the short identity marker
+    // we're looking for, so skip the file rather than parse a fragment.
+    return newline === -1 ? null : chunk.slice(0, newline);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Locate the transcript JSONL for `sessionId` under `cwd`, or null when there
+ * is none.
+ *
+ * The fast path is the derived `{sessionId}.jsonl` — how Claude has
+ * historically named the file, and still the common case. That naming is no
+ * longer guaranteed: recent Claude Code versions can write a transcript under
+ * a UUID that differs from the session id the hooks report, so the derived
+ * path misses. Every transcript entry carries its own `sessionId`, so when the
+ * derived path is absent we scan the project directory and match on that.
+ *
+ * A false negative here is not cosmetic. `claudeSessionExists` feeds
+ * `planResume`, where a miss silently downgrades a resume to `--session-id`
+ * and hands the user a blank conversation wearing the old one's id.
+ */
+export function findClaudeTranscript(
+  sessionId: string,
+  cwd?: string,
+): string | null {
+  const derived = claudeTranscriptPath(sessionId, cwd);
+  if (existsSync(derived)) return derived;
+
+  let entries: string[];
+  try {
+    entries = readdirSync(dirname(derived));
+  } catch {
+    // No project directory: nothing has ever been written for this cwd.
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".jsonl")) continue;
+    const candidate = join(dirname(derived), entry);
+    if (candidate === derived) continue;
+    const line = readFirstLine(candidate);
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line) as { sessionId?: unknown };
+      if (parsed.sessionId === sessionId) return candidate;
+    } catch {
+      // Partially written or non-JSON first line — treat as no match.
+    }
+  }
+
+  return null;
+}
+
+/**
  * True if Claude has a transcript for this session ID under the current
  * CWD. `claude --resume <id>` requires this; otherwise it exits with
  * "No conversation found with session ID: <id>" — bertrand's resume path
  * uses this check to fall back to `--session-id` when the transcript is
  * missing (fresh conversation, never-interacted session, CWD mismatch).
+ *
+ * Tolerates a transcript whose filename disagrees with the session id; see
+ * `findClaudeTranscript`.
  */
 export function claudeSessionExists(sessionId: string, cwd?: string): boolean {
-  return existsSync(claudeTranscriptPath(sessionId, cwd));
+  return findClaudeTranscript(sessionId, cwd) !== null;
 }
 
 // -- Parsing --

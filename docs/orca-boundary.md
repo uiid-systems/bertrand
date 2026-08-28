@@ -34,15 +34,24 @@ Every number here is reproducible; Appendix B gives the exact command for each.
    Orca (Part 3).
 5. **Sequence:** teardown → naming → launcher-optional → layer extraction.
    ~7–12 focused sessions total.
-6. **Latent bug found (act on this independently):** `src/lib/transcript.ts:61`
-   locates transcripts by *deriving* the filename from the session id
+6. **Latent bug found and FIXED in this session.** `src/lib/transcript.ts`
+   located transcripts by *deriving* the filename from the session id
    (`~/.claude/projects/{dir}/{sessionId}.jsonl`). Orca's source carries an explicit
    vendor warning that *"recent Claude Code names the transcript file with a UUID that
    differs from the hook session_id (so the id-based glob no longer finds it)."*
-   The hook payload's `transcript_path` is authoritative and should be used instead.
-   Not currently broken (this session's two UUIDs match), but structurally fragile —
-   silent failure would take out transcript ingestion, `assistant.message` capture,
-   and token accounting.
+
+   **Corrected blast radius** (an earlier draft of this doc overstated it):
+   transcript *ingestion* was never affected — the hooks already extract the
+   authoritative `transcript_path` from the payload (`src/hooks/scripts.ts:68,177,309`)
+   and pass it to `ingestTranscript`. The derived path fed exactly one caller:
+   `claudeSessionExists` → `planResume` (`src/engine/resume-plan.ts:112`), which
+   decides `--resume` vs `--session-id`. A miss there silently downgrades a resume and,
+   in that function's own words, "hand[s] the user a blank conversation wearing the old
+   one's id."
+
+   Fixed by `findClaudeTranscript()`: keep the derived path as the fast path, and when
+   it is absent scan the project directory matching each file's own `sessionId` (every
+   transcript entry carries one on line 0). No schema change, no hook change.
 
 ---
 
@@ -466,10 +475,9 @@ Scope:
   `extractAgentProviderSession` in `out/shared/agent-session-resume.js`.
   **Today bertrand's hooks parse only `.cwd` and `.answers` from the payload**;
   everything else comes from env.
-- **Bonus fix, and a reason to prioritise this:** adopting the payload's
-  `transcript_path` retires the fragile id-derived path at
-  `src/lib/transcript.ts:61` (see TL;DR item 6). `ingest_cursors` is already keyed by
-  transcript path (`src/db/schema.ts:162`), so the authoritative value slots straight in.
+- Note: ingestion already uses the payload's authoritative `transcript_path`, and
+  the resume-path gap it left was fixed separately (TL;DR item 6). So this workstream
+  is about *session identity*, not transcript location — that part is already solved.
 - Auto-create a bertrand session on the first unseen `session_id`; resolve the
   project from cwd. Consider hooking `SessionStart` (bertrand currently does not).
 - Demote `src/engine` (1,529) and `src/tui` (1,994) from foundation to optional
@@ -660,7 +668,9 @@ sqlite3 "$BERTRAND_PROJECT_DB" "SELECT c.name||'/'||s.slug||'  <<<  '|| \
 | Hook guard requiring `BERTRAND_SESSION` | `src/hooks/scripts.ts:41,84,129,164,253,295,354,379` |
 | Non-destructive settings merge + `isBertrandGroup` | `src/hooks/settings.ts` |
 | Pause-time, LLM-free summary derivation | `src/lib/summary.ts` |
-| **Fragile id-derived transcript path (latent bug)** | `src/lib/transcript.ts:61` |
+| Transcript lookup, derived-path fast path + id-matching scan | `src/lib/transcript.ts` → `findClaudeTranscript` |
+| Hooks already extract the authoritative `transcript_path` | `src/hooks/scripts.ts:68,177,309` |
+| Resume decision that the derived path fed | `src/engine/resume-plan.ts:112` |
 | Ingest cursors keyed by transcript path | `src/db/schema.ts:162` |
 | Generic per-event session extraction (reference impl) | `Orca.app/…/out/shared/agent-session-resume.js` → `extractAgentProviderSession` |
 | Orca hook removal is filename-scoped | `Orca.app/…/out/main/chunks/managed-agent-hook-controls-*.js` → `createManagedCommandMatcher` |

@@ -5,6 +5,7 @@ import { join } from "path";
 import {
   claudeTranscriptPath,
   claudeSessionExists,
+  findClaudeTranscript,
   getLatestAssistantTurn,
   summarizeTranscript,
 } from "./transcript";
@@ -218,6 +219,57 @@ describe("claudeSessionExists", () => {
     writeFileSync(path, "");
     created.push(join(homedir(), ".claude", "projects", cwd.replace(/\//g, "-")));
     expect(claudeSessionExists("test-uuid", cwd)).toBe(true);
+  });
+
+  // Recent Claude Code can name a transcript with a UUID that differs from the
+  // session id the hooks report. Missing it downgrades a resume to
+  // --session-id and hands back a blank conversation wearing the old id.
+  test("finds a transcript whose filename disagrees with the session id", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "btx-cwd-"));
+    created.push(cwd);
+    const dir = join(homedir(), ".claude", "projects", cwd.replace(/\//g, "-"));
+    mkdirSync(dir, { recursive: true });
+    created.push(dir);
+
+    const actual = join(dir, "a-different-uuid.jsonl");
+    writeFileSync(
+      actual,
+      JSON.stringify({ type: "last-prompt", sessionId: "wanted-uuid" }) + "\n",
+    );
+
+    expect(claudeSessionExists("wanted-uuid", cwd)).toBe(true);
+    expect(findClaudeTranscript("wanted-uuid", cwd)).toBe(actual);
+  });
+
+  test("false when no transcript in the directory claims the session id", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "btx-cwd-"));
+    created.push(cwd);
+    const dir = join(homedir(), ".claude", "projects", cwd.replace(/\//g, "-"));
+    mkdirSync(dir, { recursive: true });
+    created.push(dir);
+    writeFileSync(
+      join(dir, "unrelated.jsonl"),
+      JSON.stringify({ sessionId: "someone-else" }) + "\n",
+    );
+
+    expect(claudeSessionExists("wanted-uuid", cwd)).toBe(false);
+  });
+
+  test("prefers the derived path without scanning", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "btx-cwd-"));
+    created.push(cwd);
+    const derived = claudeTranscriptPath("wanted-uuid", cwd);
+    const dir = join(homedir(), ".claude", "projects", cwd.replace(/\//g, "-"));
+    mkdirSync(dir, { recursive: true });
+    created.push(dir);
+    writeFileSync(derived, "");
+    // A decoy that also claims the id must not win over the derived path.
+    writeFileSync(
+      join(dir, "decoy.jsonl"),
+      JSON.stringify({ sessionId: "wanted-uuid" }) + "\n",
+    );
+
+    expect(findClaudeTranscript("wanted-uuid", cwd)).toBe(derived);
   });
 });
 
