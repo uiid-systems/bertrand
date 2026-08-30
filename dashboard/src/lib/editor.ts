@@ -7,7 +7,7 @@ import { useCallback, useSyncExternalStore } from "react";
  * `<scheme>://file/<abs path>`. That keeps "Open in editor" a pure frontend
  * anchor — no server round-trip — so it works the same whether the dashboard
  * is served by `bertrand serve` or the hosted build. (The path itself is only
- * meaningful on the machine that owns the worktree.)
+ * meaningful on the machine that owns the checkout.)
  *
  * Which editor to target is a per-machine preference — it depends on what's
  * installed here, not on anything worth syncing across machines — so it lives
@@ -67,7 +67,7 @@ function subscribe(onChange: () => void): () => void {
 /**
  * Read/write the preferred editor. Backed by localStorage and shared across
  * every component that calls it — changing it in the picker instantly updates
- * the open-link on every worktree row.
+ * the open-link on every session row.
  */
 export function usePreferredEditor(): [EditorId, (id: EditorId) => void] {
   const editor = useSyncExternalStore(subscribe, read, () => DEFAULT_EDITOR);

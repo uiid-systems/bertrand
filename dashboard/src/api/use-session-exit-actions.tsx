@@ -11,7 +11,7 @@ import type { SessionRow } from "./types";
 /**
  * Reasons worth rewording for the browser. Anything absent here falls through
  * to the server's own message, which is deliberate: `at-capacity`,
- * `already-running`, `no-cwd` and `worktree-gone` all arrive carrying a
+ * `already-running` and `no-cwd` both arrive carrying a
  * sentence that names the remedy, and replacing them with a generic string
  * would throw that away.
  */

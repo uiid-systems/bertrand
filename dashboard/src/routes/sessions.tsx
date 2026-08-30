@@ -112,7 +112,7 @@ function totalTokens(stat: SessionStatsRow | undefined): number {
 }
 
 /**
- * A lightweight sessions overview to sit alongside Worktrees: the most
+ * A lightweight sessions overview: the most
  * recently active sessions, plus the largest by total lines changed. Rows link
  * back to each session; no filtering or sorting controls yet, deliberately.
  */

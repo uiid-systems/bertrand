@@ -92,7 +92,7 @@ const SILENT_FAILURES = new Set<GhFailureReason>([
  * The pull request for a session's branch, as a card: number, title, state,
  * and check rollup, with the whole card linking out to the PR.
  *
- * Lives with "Files changed" rather than with the worktree because the two
+ * Lives with "Files changed" because the two
  * answer the same question — what this session is proposing to merge — and
  * the branch's diff is the PR's diff.
  *

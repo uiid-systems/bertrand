@@ -42,7 +42,7 @@ export type SidebarZoneProps = React.PropsWithChildren<{
 
 /**
  * The sidebar's collapsible section shell, shared by every zone ("Active
- * sessions", the project zone, "Worktree", "Files changed"): a full-width
+ * sessions", the project zone, "Files changed"): a full-width
  * trigger bar we own the styling of — chevron + bold title + optional badge, title
  * underlined on hover via `.sidebar-zone-trigger` — over an instant (no
  * animation) full-width panel. Supports controlled open state for zones that

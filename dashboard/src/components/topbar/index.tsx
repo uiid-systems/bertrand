@@ -16,7 +16,6 @@ export const TopBar = () => {
         weight="medium"
       />
       <Text
-        render={<Link to="/worktrees">Worktrees</Link>}
         size={-1}
         weight="medium"
       />

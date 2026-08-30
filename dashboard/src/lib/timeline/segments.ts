@@ -49,7 +49,8 @@ export type SegmentVitals = {
   model: string | null
   /** Working directory basename, e.g. "bertrand". Null on legacy rows. */
   cwd: string | null
-  /** Git branch, when the conversation ran inside a worktree. */
+  /** Git branch, from a retained `worktree.entered` event. Worktrees are
+   *  gone; these rows are history and still render. */
   branch: string | null
 }
 

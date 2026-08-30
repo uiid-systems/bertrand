@@ -2,7 +2,6 @@ export type {
   SessionRow,
   SessionStatus,
   SessionWithCategory,
-  WorktreeSessionRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -13,7 +12,6 @@ export type {
   DiscardReason,
   SessionActionErrorReason,
   ChangedFile,
-  WorktreeChangedFiles,
   ProjectRepoView,
   ProjectSummary,
   ActiveProjectMeta,
@@ -32,4 +30,3 @@ export type {
 // this build depend on its whole subtree. `src/types-boundary.test.ts` enforces
 // this — see the note there.
 export type { WorkspaceServerStatus } from "@/lib/workspace/types"
-export type { RemoveWorktreeReason } from "@/lib/worktree-remove-types"

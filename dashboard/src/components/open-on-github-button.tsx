@@ -29,7 +29,7 @@ function repoWebUrl(repo: ProjectRepoView): string {
 /**
  * Open a session's project on GitHub in a new tab.
  *
- * The repo *root*, not the session's branch: a session's worktree branch is a
+ * The repo *root*, not the session's branch: a session's branch is a
  * local one until something pushes it, so linking it would send you to a 404
  * for exactly the sessions still in progress. The root is always there.
  *
