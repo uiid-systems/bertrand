@@ -5,6 +5,7 @@ import { getEdgeEventOfType } from "@/db/queries/events";
 import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
+import { recordSessionBranch } from "@/lib/session-branch";
 import { getOrCreateCategoryPath } from "@/db/queries/categories";
 import { finalizeSessionRow } from "./finalize";
 import { resolveActiveProject } from "@/lib/projects/resolve";
@@ -228,6 +229,18 @@ function startClaudePty(opts: {
     status: "active",
     pid: pty.pid,
     pidStartedAt: Date.now(),
+  });
+
+  // Deliberately not awaited: this function is synchronous (it returns the pid)
+  // and reading a branch shells out to git. The record is session metadata, not
+  // something the start depends on, so it settles in the background. It runs
+  // outside the resume guard below because the column is current state — a
+  // session can resume on a different branch than it left.
+  void recordSessionBranch(opts.sessionId, opts.cwd).catch(() => {
+    // The read itself cannot reject — it answers null instead. This catches
+    // the row write, and exists because an unhandled rejection on a floating
+    // promise would take down the server, whereas the TUI path can let the
+    // same failure surface (see the note on recordSessionBranch).
   });
 
   // Only when Claude has no transcript for this conversation — i.e. it is

@@ -61,10 +61,32 @@ export const sessions = sqliteTable(
       .notNull()
       .default(sql`(datetime('now'))`),
     endedAt: text("ended_at"),
-    // Current worktree the session is operating in. Lazy: null until the
-    // session enters one (set by the EnterWorktree hook, cleared on exit).
-    // This is current-state only — the history of entries/exits lives in the
-    // events log, not here.
+    // The git branch this session is running on, read from its cwd at start
+    // (and re-read on resume, since a session can come back on a different
+    // branch). Null when the cwd is not in a repo, does not exist, or HEAD is
+    // detached — bertrand logs non-repo sessions, so null is a normal value and
+    // not an error state.
+    //
+    // Deliberately not named `worktree_*`. The only branch bertrand ever
+    // recorded came from worktrees, which reached ~6% of sessions; this is the
+    // branch every session already had and nobody was writing down.
+    branch: text("branch"),
+    // Retired with the worktree teardown (ELKY-163): nothing writes either
+    // column any more, so every row carrying one is history. They are not
+    // equally dead, and the difference is what a later drop migration has to
+    // respect.
+    //
+    // `worktree_path` is still *read*, in two places, and dropping it means
+    // retiring both first:
+    //   - `resolveSessionCwd` (engine/dashboard-session.ts) consults it only to
+    //     refuse a resume when it disagrees with the last `claude.started` cwd.
+    //     Those rows would otherwise resume isolated work in the main checkout
+    //     — see the rationale there, and the guards in dashboard-resume.test.ts.
+    //   - `migrate-repo.ts` scans it when ranking candidate repo paths.
+    //
+    // `worktree_branch` has no reader left and is the one genuinely safe to
+    // drop today. It was also the only branch source bertrand ever had, which
+    // is what `branch` above replaces.
     worktreePath: text("worktree_path"),
     worktreeBranch: text("worktree_branch"),
     createdAt: text("created_at")

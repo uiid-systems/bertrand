@@ -223,6 +223,7 @@ export function updateSession(
     pid: number | null;
     pidStartedAt: number | null;
     endedAt: string;
+    branch: string | null;
     worktreePath: string | null;
     worktreeBranch: string | null;
   }>,

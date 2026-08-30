@@ -15,6 +15,28 @@ export async function getRepoRoot(): Promise<string> {
   return (await $`git rev-parse --show-toplevel`.text()).trim();
 }
 
+/**
+ * The branch currently checked out in `cwd`, or null when there isn't one.
+ *
+ * Null covers three cases that all mean the same thing to a caller — "this
+ * directory has no branch to record": `cwd` is not in a git repo, it does not
+ * exist, or HEAD is detached. Detached HEAD is the one worth naming, because
+ * `rev-parse --abbrev-ref HEAD` answers it with the literal string `"HEAD"`,
+ * which would otherwise be recorded as a branch name.
+ *
+ * This is the helper worktree teardown deleted as `getWorktreeBranch`. Nothing
+ * about it was worktree-specific — it reads a directory's branch — so it comes
+ * back under a name that says so.
+ */
+export async function getCurrentBranch(cwd: string): Promise<string | null> {
+  try {
+    const out = (await $`git -C ${cwd} rev-parse --abbrev-ref HEAD`.text()).trim();
+    return out && out !== "HEAD" ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 // Declared in the leaf `./git-types` so the dashboard's type graph stops
 // there instead of following this module's `bun` import; re-exported because
 // this is where callers of the git helpers expect them.
