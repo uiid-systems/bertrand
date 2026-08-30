@@ -24,11 +24,13 @@ export interface SessionPrSource {
   /**
    * The branch this session worked on, as recorded on its row.
    *
-   * Nothing populates this yet. It replaced a pair of worktree fields that
-   * were the only branch source there had ever been — and which, measured
-   * across 49 sessions, were set on exactly the 3 that used a worktree. The
-   * card was already dark for the other 46. ELKY-177 records a branch for
-   * every session and lights it up properly.
+   * Written at every session start from the cwd (ELKY-177). It replaced a pair
+   * of worktree fields that were the only branch source there had ever been —
+   * and which, measured across 49 sessions, were set on exactly the 3 that
+   * used a worktree, leaving the card dark for the other 46.
+   *
+   * Still null for two ordinary reasons: sessions that predate the column, and
+   * sessions whose cwd was not in a git repo.
    */
   branch: string | null;
   /** The project's bound repo checkout, absent when the project is unbound. */
@@ -53,8 +55,10 @@ export interface SessionPrDeps {
 /**
  * The branch a session's PR is looked up by.
  *
- * A blank or absent value means there is nothing to ask GitHub about, which is
- * currently every session — see the note on `SessionPrSource.branch`.
+ * A blank or absent value means there is nothing to ask GitHub about — a
+ * pre-ELKY-177 session, or one that ran outside a repo. Blank is folded in
+ * with absent so a row that somehow stored `""` cannot become a lookup for
+ * the empty branch.
  */
 function resolveBranch(source: SessionPrSource): string | null {
   const branch = source.branch ?? "";

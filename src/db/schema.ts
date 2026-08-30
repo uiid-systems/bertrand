@@ -71,9 +71,22 @@ export const sessions = sqliteTable(
     // recorded came from worktrees, which reached ~6% of sessions; this is the
     // branch every session already had and nobody was writing down.
     branch: text("branch"),
-    // Retired with the worktree teardown. No reader remains — the columns are
-    // dropped by a later migration, kept here only so the schema still matches
-    // what is on disk until then.
+    // Retired with the worktree teardown (ELKY-163): nothing writes either
+    // column any more, so every row carrying one is history. They are not
+    // equally dead, and the difference is what a later drop migration has to
+    // respect.
+    //
+    // `worktree_path` is still *read*, in two places, and dropping it means
+    // retiring both first:
+    //   - `resolveSessionCwd` (engine/dashboard-session.ts) consults it only to
+    //     refuse a resume when it disagrees with the last `claude.started` cwd.
+    //     Those rows would otherwise resume isolated work in the main checkout
+    //     — see the rationale there, and the guards in dashboard-resume.test.ts.
+    //   - `migrate-repo.ts` scans it when ranking candidate repo paths.
+    //
+    // `worktree_branch` has no reader left and is the one genuinely safe to
+    // drop today. It was also the only branch source bertrand ever had, which
+    // is what `branch` above replaces.
     worktreePath: text("worktree_path"),
     worktreeBranch: text("worktree_branch"),
     createdAt: text("created_at")

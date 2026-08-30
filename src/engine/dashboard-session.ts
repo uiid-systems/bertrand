@@ -237,7 +237,10 @@ function startClaudePty(opts: {
   // outside the resume guard below because the column is current state — a
   // session can resume on a different branch than it left.
   void recordSessionBranch(opts.sessionId, opts.cwd).catch(() => {
-    // A failed branch read must never take down a session start.
+    // The read itself cannot reject — it answers null instead. This catches
+    // the row write, and exists because an unhandled rejection on a floating
+    // promise would take down the server, whereas the TUI path can let the
+    // same failure surface (see the note on recordSessionBranch).
   });
 
   // Only when Claude has no transcript for this conversation — i.e. it is
