@@ -25,7 +25,7 @@ migrate(drizzle(sqlite), {
 });
 
 const { createCategory } = await import("@/db/queries/categories");
-const { createSession, getSession, renameSession } = await import(
+const { createSession, getSession, renameSession, updateSession } = await import(
   "@/db/queries/sessions"
 );
 const { insertEvent } = await import("@/db/queries/events");
@@ -173,12 +173,104 @@ describe("deriveSlugFromTexts", () => {
     ).toBe("noticed-tooltips-overflowing");
   });
 
+  test("a GitHub issues URL becomes an issue token", () => {
+    expect(
+      deriveSlugFromTexts([
+        "fix the crash in https://github.com/uiid-systems/orca/issues/38",
+      ]),
+    ).toBe("fix-crash-issue-38");
+  });
+
+  test("pull/N inside a non-GitHub URL is not a PR reference", () => {
+    expect(
+      deriveSlugFromTexts(["review https://example.com/pull/220 for me"]),
+    ).toBe("review");
+  });
+
+  test("a protocol-less www GitHub URL still yields its PR token", () => {
+    expect(
+      deriveSlugFromTexts([
+        "fix the flaky test in www.github.com/uiid-systems/orca/pull/5",
+      ]),
+    ).toBe("fix-flaky-test-pr-5");
+  });
+
+  test("a bare pull/220 without a host keeps its lightweight handling", () => {
+    expect(deriveSlugFromTexts(["review pull/220"])).toBe("review-pr-220");
+  });
+
+  test("a GitHub repo URL carries no name signal", () => {
+    expect(
+      deriveSlugFromTexts(["have a look at https://github.com/uiid-systems/orca"]),
+    ).toBeNull();
+  });
+
   test("very long token runs stay under the length cap", () => {
     const slug = deriveSlugFromTexts([
       "synchronization infrastructure reorganization internationalization modernization",
     ])!;
     expect(slug.length).toBeLessThanOrEqual(48);
     expect(slug.split("-").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("branch ticket identifiers", () => {
+  test("branch ticket id leads the slug when the prompt has no identifier", () => {
+    expect(
+      deriveSlugFromTexts(["fix the login bug"], [], {
+        branch: "adamfratino/UI-132-fix-thing",
+      }),
+    ).toBe("ui-132-fix-login-bug");
+  });
+
+  test("a bare ticket-id branch works the same", () => {
+    expect(
+      deriveSlugFromTexts(["refactor our sidebar to use collapsible panels"], [], {
+        branch: "elky-167",
+      }),
+    ).toBe("elky-167-refactor-sidebar-collapsible-panels");
+  });
+
+  test("a prompt PR reference wins over the branch ticket", () => {
+    expect(
+      deriveSlugFromTexts(["have a thorough look at PR 152"], [], {
+        branch: "elky-167",
+      }),
+    ).toBe("pr-152");
+  });
+
+  test("a ticket id anywhere in the prompts wins over the branch", () => {
+    expect(
+      deriveSlugFromTexts(["fix the login bug", "relates to ELKY-150"], [], {
+        branch: "elky-999",
+      }),
+    ).toBe("fix-login-bug");
+  });
+
+  test("a branch without a ticket id changes nothing", () => {
+    expect(
+      deriveSlugFromTexts(["fix the login bug"], [], { branch: "main" }),
+    ).toBe("fix-login-bug");
+    expect(
+      deriveSlugFromTexts(["migrate the events table to drizzle"], [], {
+        branch: "feature/events-cleanup",
+      }),
+    ).toBe("migrate-events-table-drizzle");
+  });
+
+  test("the branch cannot invent a name when no prompt yields tokens", () => {
+    expect(deriveSlugFromTexts([], [], { branch: "elky-167" })).toBeNull();
+    expect(
+      deriveSlugFromTexts(["ok thanks, that was it"], [], { branch: "elky-167" }),
+    ).toBeNull();
+  });
+
+  test("the branch ticket counts toward the token cap", () => {
+    expect(
+      deriveSlugFromTexts(["alpha beta gamma delta epsilon"], [], {
+        branch: "elky-167",
+      }),
+    ).toBe("elky-167-alpha-beta-gamma-delta");
   });
 });
 
@@ -208,6 +300,17 @@ describe("deriveSessionSlug", () => {
       createdAt: "2026-07-10 10:01:00",
     });
     expect(deriveSessionSlug(s.id)).toBe("migrate-events-table-drizzle");
+  });
+
+  test("consults the session's recorded branch for a ticket id", () => {
+    const s = makeSession("derive-branch");
+    updateSession(s.id, { branch: "adamfratino/ELKY-167-derive-slugs" });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the login bug" },
+    });
+    expect(deriveSessionSlug(s.id)).toBe("elky-167-fix-login-bug");
   });
 
   test("session with no prompts derives null", () => {

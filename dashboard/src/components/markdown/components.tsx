@@ -28,7 +28,7 @@ import type {
 import type { Components } from "react-markdown";
 
 import { GithubLinkChip } from "./github-link-chip";
-import { parseGithubUrl } from "./github-url";
+import { parseGithubUrl } from "@/lib/github/web-url";
 import { LinearLinkChip } from "./linear-link-chip";
 import { parseLinearUrl } from "./linear-url";
 

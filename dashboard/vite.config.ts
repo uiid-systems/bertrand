@@ -1,9 +1,17 @@
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
 
 export default defineConfig({
   plugins: [TanStackRouterVite(), react()],
+  resolve: {
+    // Mirrors tsconfig's `@/*` → `../src/*`. Only boundary-safe modules may be
+    // reached this way — src/types-boundary.test.ts polices which.
+    alias: {
+      "@": fileURLToPath(new URL("../src", import.meta.url)),
+    },
+  },
   server: {
     port: 5199,
     proxy: {

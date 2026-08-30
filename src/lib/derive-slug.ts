@@ -15,14 +15,17 @@
  *  - assistant messages count at half weight, a tiebreaker not a source;
  *  - slash-command openings (/agent-skills:…) carry no subject and are
  *    skipped (§4c failure class 2);
- *  - GitHub pull/issue references collapse to pr-N / issue-N tokens before
- *    URLs are stripped — the number is often the best identifier a prompt
- *    contains.
+ *  - GitHub URLs classify through the shared entity parser (ELKY-169):
+ *    pull/issue links collapse to pr-N / issue-N tokens, every other URL
+ *    vanishes — the number is often the best identifier a prompt contains;
+ *  - a ticket id in the session's git branch (elky-167, UI-132) leads the
+ *    slug when the prompts themselves carry no identifier.
  */
 
 import { getDb, type Db } from "@/db/client";
 import { getEventsByType } from "@/db/queries/events";
-import { isSlugTakenByOtherSession } from "@/db/queries/sessions";
+import { getSession, isSlugTakenByOtherSession } from "@/db/queries/sessions";
+import { parseGithubUrl } from "@/lib/github/web-url";
 
 /** Must match SEGMENT_PATTERN in parse-session-name.ts. */
 const SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -85,27 +88,46 @@ const STOPWORDS = new Set([
 ]);
 
 /**
+ * Tokens a URL contributes in place of itself. GitHub URLs classify through
+ * the shared entity parser (web-url.ts) rather than a second URL grammar
+ * here: only pull/issue links name anything, and only when the ref number is
+ * a real number (trailing punctuation rides along in `\S+` matches). Linear
+ * issue URLs carry the best signal a pointer prompt has — the ticket id and
+ * the human-written title slug (§4c failure class 1). Every other URL is
+ * noise and contributes nothing.
+ */
+function urlTokens(url: string): string {
+  const ref = parseGithubUrl(url.startsWith("www.") ? `https://${url}` : url);
+  if (ref?.kind === "pr" || ref?.kind === "issue") {
+    const number = /^\d+/.exec(ref.number)?.[0];
+    return number ? `${ref.kind}-${number}` : "";
+  }
+  const linear = /\bissue\/([a-z]+-\d+)(?:\/([a-z0-9-]+))?/.exec(url);
+  if (linear) {
+    return `${linear[1]} ${linear[2] ? linear[2].replace(/-/g, " ") : ""}`;
+  }
+  return "";
+}
+
+/**
  * Extract naming tokens from one text. Code fences vanish (pasted code is
- * never a name), pull/issue references become pr-N / issue-N *before* URL
- * stripping so the number survives its own URL being deleted, and bare
- * "PR 152" / "issue #38" pairs merge the same way.
+ * never a name), URLs are swapped for whatever their entity is worth
+ * (urlTokens) so the identifier survives its own URL being deleted, and bare
+ * host-less refs — "PR 152", "pull/220", "issue/elky-150" — merge to the
+ * same token shapes.
  */
 function tokenize(text: string): string[] {
   const cleaned = text
     .toLowerCase()
     .replace(/```[\s\S]*?```/g, " ")
+    .replace(/https?:\/\/\S+|\bwww\.\S+/g, (url) => ` ${urlTokens(url)} `)
     .replace(/\b(?:pull|pulls)\/(\d+)/g, " pr-$1 ")
     .replace(/\bissues?\/(\d+)/g, " issue-$1 ")
-    // Linear issue URLs carry the best signal a pointer prompt has: the
-    // ticket id and the human-written title slug. Lift both out before the
-    // surrounding URL is deleted (§4c failure class 1).
     .replace(
       /\bissue\/([a-z]+-\d+)(?:\/([a-z0-9-]+))?/g,
       (_, id: string, title?: string) =>
         ` ${id} ${title ? title.replace(/-/g, " ") : ""} `,
     )
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/\bwww\.\S+/g, " ")
     // "don't" → "dont" so contractions hit the stopword list, not "don"+"t".
     .replace(/([a-z])'([a-z])/g, "$1$2");
 
@@ -152,13 +174,20 @@ function isMachinePrompt(prompt: string): boolean {
   return /^<[a-z][a-z-]*>/.test(prompt.trimStart());
 }
 
+/** Ticket-shaped token: elky-167, UI-132 — and pr-220 / issue-38 fit too. */
+const IDENTIFIER_PATTERN = /^[a-z]{2,10}-\d+$/;
+/** First ticket-shaped run in a branch name (adamfratino/UI-132-fix-thing). */
+const BRANCH_TICKET_PATTERN = /\b[A-Za-z]{2,10}-\d+\b/;
+
 /**
  * Pure core: conversation texts in, slug out. Null when no prompt yields a
- * single meaningful token — a garbage name is worse than no name.
+ * single meaningful token — a garbage name is worse than no name; a branch
+ * ticket alone never invents one.
  */
 export function deriveSlugFromTexts(
   prompts: string[],
   assistantTexts: string[] = [],
+  opts: { branch?: string | null } = {},
 ): string | null {
   const promptTokens = prompts.map((p) =>
     isMachinePrompt(p) ? [] : tokenize(stripSlashCommand(p)),
@@ -206,6 +235,19 @@ export function deriveSlugFromTexts(
     }
   }
 
+  // A ticket id in the branch name is real signal, but the conversation's own
+  // identifiers outrank it (ELKY-169): only lead with the branch ticket when
+  // no prompt mentioned any ticket/PR/issue identifier at all.
+  const branchTicket = opts.branch
+    ?.match(BRANCH_TICKET_PATTERN)?.[0]
+    .toLowerCase();
+  if (
+    branchTicket &&
+    !promptTokens.some((tokens) => tokens.some((t) => IDENTIFIER_PATTERN.test(t)))
+  ) {
+    candidates = [branchTicket, ...candidates].slice(0, MAX_TOKENS);
+  }
+
   const kept: string[] = [];
   let length = 0;
   for (const token of candidates) {
@@ -220,9 +262,10 @@ export function deriveSlugFromTexts(
 }
 
 /**
- * Derive a slug from a session's recorded events. Null when the session has
- * nothing derivable — callers keep the existing name rather than inventing
- * one.
+ * Derive a slug from a session's recorded events, consulting the session's
+ * git branch for a ticket id the prompts didn't mention. Null when the
+ * session has nothing derivable — callers keep the existing name rather than
+ * inventing one.
  */
 export function deriveSessionSlug(
   sessionId: string,
@@ -234,7 +277,8 @@ export function deriveSessionSlug(
   const messages = getEventsByType(sessionId, "assistant.message", db)
     .map((row) => metaStr(row.meta, "text"))
     .filter(Boolean);
-  return deriveSlugFromTexts(prompts, messages);
+  const branch = getSession(sessionId, db)?.branch ?? null;
+  return deriveSlugFromTexts(prompts, messages, { branch });
 }
 
 function metaStr(meta: Record<string, unknown> | null, key: string): string {
