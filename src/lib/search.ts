@@ -16,6 +16,8 @@ import { and, eq, desc, inArray, like, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import type { EventRow } from "@/types";
 import { events, sessions } from "@/db/schema";
+import { getSessionByAlias } from "@/db/queries/session-aliases";
+import { parseSessionName } from "@/lib/parse-session-name";
 import { segmentByConversation } from "@/lib/digest";
 
 export const SEARCH_TYPES = [
@@ -68,7 +70,7 @@ export type SearchHit = {
 export type SearchOpts = {
   terms: string[];
   types?: SearchType[];
-  /** Restrict to one session by slug. */
+  /** Restrict to one session by slug, or by any name it has been known as. */
   session?: string;
   limit?: number;
 };
@@ -123,6 +125,30 @@ function loadSessionIndex(db: Db): Map<string, SessionInfo> {
 }
 
 /**
+ * `--session <name>` → session id, or undefined when this project has no such
+ * session. Retired names resolve too: `log`, `stats`, `archive`, and `rename`
+ * all reach a session by any name it has ever had, and search silently
+ * returning zero hits for one of those names reads as "nothing here" rather
+ * than "wrong name". Db-scoped rather than `resolveSessionByName` because
+ * search runs across every project's database, not just the active one.
+ */
+function resolveSessionFilter(
+  db: Db,
+  sessionIndex: Map<string, SessionInfo>,
+  name: string,
+): string | undefined {
+  let slug: string;
+  try {
+    ({ slug } = parseSessionName(name));
+  } catch {
+    return undefined; // malformed name — no session can match it
+  }
+  const match = [...sessionIndex.entries()].find(([, info]) => info.name === slug);
+  if (match) return match[0];
+  return getSessionByAlias(slug, db)?.session.id;
+}
+
+/**
  * event id → conversation ordinal for the given sessions, derived from event
  * segmentation — the SAME numbering `log --events --conversation N` and the
  * digest use. Deriving from the conversations table instead would disagree
@@ -173,9 +199,8 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
 
   let sessionFilter: string | undefined;
   if (opts.session) {
-    const match = [...sessionIndex.entries()].find(([, info]) => info.name === opts.session);
-    if (!match) return []; // unknown session in this project — no hits here
-    sessionFilter = match[0];
+    sessionFilter = resolveSessionFilter(db, sessionIndex, opts.session);
+    if (!sessionFilter) return []; // unknown session in this project — no hits here
   }
 
   const hits: SearchHit[] = [];

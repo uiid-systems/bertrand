@@ -114,6 +114,16 @@ describe("dashboard session concurrency bound", () => {
     expect(listDashboardSessions()).toEqual([]);
   });
 
+  test("a slugless spawn is accepted by validation — it reaches the cap check", async () => {
+    // The cap error (not a slug complaint) proves the missing slug passed
+    // argument handling; the placeholder is only issued after the guards.
+    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "0";
+    useProject("capped", process.cwd());
+    await expect(spawnDashboardSession({})).rejects.toThrow(
+      DashboardSessionLimitError,
+    );
+  });
+
   test("the error names the limit it enforced", () => {
     const err = new DashboardSessionLimitError(8);
     expect(err.limit).toBe(8);

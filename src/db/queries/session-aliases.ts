@@ -40,10 +40,13 @@ export function getSessionByAlias(
   return { session: row.session, slug: row.session.slug };
 }
 
-/** Whether `alias` is already claimed by a session other than `sessionId`. */
+/**
+ * Whether `alias` is already claimed by a session other than `sessionId`.
+ * `sessionId` null means "nothing is exempt" — the caller has no row yet.
+ */
 export function isAliasTakenByOtherSession(
   alias: string,
-  sessionId: string,
+  sessionId: string | null,
   db: Db = getDb(),
 ): boolean {
   const resolved = getSessionByAlias(alias, db);

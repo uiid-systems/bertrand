@@ -24,7 +24,7 @@
 
 import { getDb, type Db } from "@/db/client";
 import { getEventsByType } from "@/db/queries/events";
-import { getSession, isSlugTakenByOtherSession } from "@/db/queries/sessions";
+import { getSession, isNameTakenByOtherSession } from "@/db/queries/sessions";
 import { parseGithubUrl } from "@/lib/github/web-url";
 
 /** Must match SEGMENT_PATTERN in parse-session-name.ts. */
@@ -78,10 +78,10 @@ const STOPWORDS = new Set([
   // otherwise get started", and none of it names the session. Bare "pr" /
   // "issue" are here too; the numbered pr-N / issue-N forms merge before
   // stopword filtering and are the ones worth keeping.
-  "anything", "ask", "asked", "asking", "begin", "check", "checks",
-  "clarifying", "enough", "id", "if", "important", "issue", "issues",
-  "otherwise", "part", "pr", "previous", "proceed", "question", "questions",
-  "start", "started", "starting", "unclear", "via", "work",
+  "ask", "asked", "asking", "begin", "check", "checks", "clarifying",
+  "enough", "id", "important", "issue", "issues", "otherwise", "part",
+  "pr", "previous", "proceed", "question", "questions", "start", "started",
+  "starting", "unclear", "via", "work",
   // Contractions land here apostrophe-less (tokenize collapses "i've"→"ive").
   "heres", "hes", "ive", "shes", "theres", "theyre", "theyve", "weve",
   "whos", "youre", "youve",
@@ -289,8 +289,12 @@ function metaStr(meta: Record<string, unknown> | null, key: string): string {
 /**
  * Collision rule (decided in ELKY-167): automatic derivation must never take
  * over another session's identity. If any *other* session in the project DB
- * holds the slug — any category — walk -2, -3, … until free. A session
- * re-deriving its own current slug (or suffix) is not a collision, so
+ * holds the name — as its current slug or as a retired alias — walk -2, -3, …
+ * until free. Aliases count: taking a name an alias points at would shadow it
+ * permanently, since `resolveSessionByName` tries slugs first.
+ *
+ * A session re-deriving its own current slug — or one of its own retired
+ * aliases, which is what an earlier pause left behind — is not a collision, so
  * repeated pauses are stable instead of racking up suffixes.
  */
 export function resolveSlugCollision(
@@ -298,9 +302,9 @@ export function resolveSlugCollision(
   sessionId: string,
   db: Db = getDb(),
 ): string {
-  if (!isSlugTakenByOtherSession(slug, sessionId, db)) return slug;
+  if (!isNameTakenByOtherSession(slug, sessionId, db)) return slug;
   for (let n = 2; ; n++) {
     const candidate = `${slug}-${n}`;
-    if (!isSlugTakenByOtherSession(candidate, sessionId, db)) return candidate;
+    if (!isNameTakenByOtherSession(candidate, sessionId, db)) return candidate;
   }
 }

@@ -28,6 +28,7 @@ const { createSession, updateSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { insertEvent } = await import("@/db/queries/events");
 const { searchProject, makeSnippet } = await import("./search");
+const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 
 const s1 = createSession({ slug: "auth-work" });
 const s2 = createSession({ slug: "other" });
@@ -120,6 +121,29 @@ describe("searchProject", () => {
     expect(hits.length).toBe(1);
     expect(hits[0]!.type).toBe("summary");
     expect(hits[0]!.session).toBe("other");
+  });
+
+  test("--session filter accepts a retired name via the alias table", () => {
+    // Same back-compat contract as `log`/`stats`/`archive`: a pre-flatten
+    // "<category>/<slug>" name, or a slug the session has since been renamed
+    // out of, still reaches it. Returning [] would read as "no results".
+    recordSessionAlias("github-projects/other", s2.id);
+    const hits = searchProject(testDb, "p", {
+      terms: ["token"],
+      session: "github-projects/other",
+    });
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.session).toBe("other");
+  });
+
+  test("--session filter still returns nothing for an unknown name", () => {
+    expect(
+      searchProject(testDb, "p", { terms: ["token"], session: "no-such" }),
+    ).toEqual([]);
+    // Malformed names can't match anything either — and must not throw.
+    expect(
+      searchProject(testDb, "p", { terms: ["token"], session: "///" }),
+    ).toEqual([]);
   });
 
   test("limit caps merged results", () => {

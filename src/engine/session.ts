@@ -4,7 +4,9 @@ import {
   updateSession,
   getSession,
   getSessionBySlug,
+  untakenPlaceholderSlug,
 } from "@/db/queries/sessions";
+import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { recordSessionBranch } from "@/lib/session-branch";
@@ -99,9 +101,18 @@ function installExitHandlers(): void {
 }
 
 export interface LaunchOpts {
-  /** Session slug, e.g. "fix-auth-bug" — the session's whole identity. */
-  slug: string;
-  /** Display name (defaults to slug) */
+  /**
+   * Session slug, e.g. "fix-auth-bug" — the session's whole identity.
+   * Omitted means the caller has nothing to name it with yet: the session
+   * starts on a placeholder and pause-time derivation names it for real
+   * (name_source='derived').
+   */
+  slug?: string;
+  /**
+   * Display name (defaults to slug). Requires `slug`: pause-time derivation
+   * sets name and slug together, so a display name on an unnamed session
+   * would be silently overwritten at the first pause.
+   */
   name?: string;
   /** Label names to attach. Created if they don't exist. */
   labelNames?: string[];
@@ -121,16 +132,28 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // finalized (background jobs, an external launcher) before they accumulate.
   pruneStaleContractMarkers();
 
+  const slug = opts.slug ?? untakenPlaceholderSlug();
+
   // Friendly duplicate check ahead of the unique index — the index still
-  // backstops a race, but this is the message users see.
-  const existing = getSessionBySlug(opts.slug);
-  if (existing) {
-    throw new Error(`Session "${opts.slug}" already exists`);
+  // backstops a race, but this is the message users see. A retired name is
+  // refused too: the unique index wouldn't stop it, and taking a name an alias
+  // points at would silently strand the session that alias belongs to.
+  if (opts.slug) {
+    if (getSessionBySlug(opts.slug)) {
+      throw new Error(`Session "${opts.slug}" already exists`);
+    }
+    const aliased = getSessionByAlias(opts.slug);
+    if (aliased) {
+      throw new Error(
+        `"${opts.slug}" is a former name of session "${aliased.slug}" — pick another name.`,
+      );
+    }
   }
 
   const session = createSession({
-    slug: opts.slug,
+    slug,
     name: opts.name,
+    nameSource: opts.slug ? undefined : "derived",
   });
 
   for (const name of opts.labelNames ?? []) {
@@ -154,7 +177,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  const sessionName = opts.slug;
+  const sessionName = slug;
 
   // Recorded on every start, not only the first: the column is current state.
   await recordSessionBranch(session.id, process.cwd());
@@ -174,7 +197,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     sessionId: session.id,
     claudeId,
     sessionName,
-    sessionSlug: opts.slug,
+    sessionSlug: slug,
     contract,
   });
 

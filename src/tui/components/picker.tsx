@@ -14,8 +14,6 @@ export interface PickerItem {
   meta?: string;
   /** Render this instead of the label string when present. Pass a function to react to cursor state. */
   display?: ReactNode | ((isCursor: boolean) => ReactNode);
-  /** Decorative group header — never gets the cursor and is hidden while filtering. */
-  kind?: "item" | "header";
   /** Cursor skips this row; rendered dimmed. */
   disabled?: boolean;
   /** Apply dim styling without disabling selection. */
@@ -53,8 +51,7 @@ const NEW_KEY = "__new__";
 
 function isSelectable(row: PickerItem | { value: typeof NEW_KEY }) {
   if (row.value === NEW_KEY) return true;
-  const item = row as PickerItem;
-  return item.kind !== "header" && !item.disabled;
+  return !(row as PickerItem).disabled;
 }
 
 function findNextSelectable(
@@ -74,57 +71,6 @@ function findFirstSelectable(
   rows: Array<PickerItem | { value: typeof NEW_KEY }>,
 ): number {
   return findNextSelectable(rows, 0, 1);
-}
-
-function isHeader(
-  row: PickerItem | { value: typeof NEW_KEY } | undefined,
-): boolean {
-  return (
-    !!row && row.value !== NEW_KEY && (row as PickerItem).kind === "header"
-  );
-}
-
-/** First selectable row after the header immediately preceding `cursor`. */
-function findCurrentGroupStart(
-  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
-  cursor: number,
-): number {
-  for (let i = cursor; i >= 0; i--) {
-    if (isHeader(rows[i])) {
-      return findNextSelectable(rows, i + 1, 1);
-    }
-  }
-  return findFirstSelectable(rows);
-}
-
-/** First selectable row of the next group, or -1 if cursor is in the last. */
-function findNextGroupStart(
-  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
-  cursor: number,
-): number {
-  for (let i = cursor + 1; i < rows.length; i++) {
-    if (isHeader(rows[i])) {
-      return findNextSelectable(rows, i + 1, 1);
-    }
-  }
-  return -1;
-}
-
-/** First selectable row of the previous group, or -1 if cursor is in the first. */
-function findPrevGroupStart(
-  rows: Array<PickerItem | { value: typeof NEW_KEY }>,
-  cursor: number,
-): number {
-  let i = cursor;
-  for (; i >= 0; i--) {
-    if (isHeader(rows[i])) break;
-  }
-  for (i = i - 1; i >= 0; i--) {
-    if (isHeader(rows[i])) {
-      return findNextSelectable(rows, i + 1, 1);
-    }
-  }
-  return -1;
 }
 
 export function Picker(props: PickerProps) {
@@ -150,18 +96,13 @@ export function Picker(props: PickerProps) {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return items;
-    // Hide headers while filtering — the flat result is easier to scan.
-    return items.filter(
-      (it) => it.kind !== "header" && it.label.toLowerCase().includes(q),
-    );
+    return items.filter((it) => it.label.toLowerCase().includes(q));
   }, [filter, items]);
 
   const exactMatch = useMemo(
     () =>
       filtered.some(
-        (it) =>
-          it.kind !== "header" &&
-          it.label.toLowerCase() === filter.trim().toLowerCase(),
+        (it) => it.label.toLowerCase() === filter.trim().toLowerCase(),
       ),
     [filter, filtered],
   );
@@ -203,18 +144,6 @@ export function Picker(props: PickerProps) {
       } else if (e.key === "down") {
         setCursor((c) => {
           const next = findNextSelectable(visibleRows, c + 1, 1);
-          return next === -1 ? c : next;
-        });
-      } else if (filter.length === 0 && e.key === "left") {
-        setCursor((c) => {
-          const curr = findCurrentGroupStart(visibleRows, c);
-          if (curr !== -1 && curr !== c) return curr;
-          const prev = findPrevGroupStart(visibleRows, c);
-          return prev === -1 ? c : prev;
-        });
-      } else if (filter.length === 0 && e.key === "right") {
-        setCursor((c) => {
-          const next = findNextGroupStart(visibleRows, c);
           return next === -1 ? c : next;
         });
       } else if (e.key === "tab" && ghost) {
@@ -338,16 +267,6 @@ export function Picker(props: PickerProps) {
           }
 
           const item = row as PickerItem;
-
-          if (item.kind === "header") {
-            return (
-              <Box key={`h:${item.value}`} flexDirection="row">
-                <Text dim bold color={item.color ?? undefined}>
-                  {item.label}
-                </Text>
-              </Box>
-            );
-          }
 
           const isSelected = selectedSet.has(item.value);
           const marker =

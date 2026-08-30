@@ -174,6 +174,8 @@ too noisy.
 
 - Scope: all **non-archived** sessions in the active project (not just the
   category), grouped by category, most-recently-updated first.
+  <br>*Superseded by ELKY-171: categories are gone, so the block is one flat
+  list of slugs, most-recently-updated first.*
 - Cap ~12 lines; overflow becomes `+N more — bertrand list`.
 - Archived siblings are dropped from injection (discoverable via
   `list --all` / `search`).

@@ -553,13 +553,20 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  // Slug is nominally optional in the body shape — automatic naming for
-  // slugless spawns arrives with the launch-flow redesign (PR 5 of ELKY-171's
-  // stack). Until then a spawn without one is refused outright.
+  // Slug is optional: a slugless spawn starts on a placeholder and pause-time
+  // derivation names it for real. Present-but-malformed is still refused.
   const { slug } = body
-  if (typeof slug !== "string" || !slug) {
+  if (slug !== undefined && (typeof slug !== "string" || !slug)) {
     return Response.json(
-      { error: "slug is required (automatic naming is not available yet)" },
+      { error: "slug must be a non-empty string when provided" },
+      { status: 400 },
+    )
+  }
+  // A display name on a slugless spawn would be marked 'derived' and replaced
+  // by the derived slug at the first pause. Refuse rather than lose it.
+  if (body.name !== undefined && slug === undefined) {
+    return Response.json(
+      { error: "name requires slug — a slugless session is named at pause" },
       { status: 400 },
     )
   }

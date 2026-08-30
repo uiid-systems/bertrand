@@ -71,6 +71,30 @@ function sessionRow(s: SessionRow): PickerItem {
   };
 }
 
+// Sentinel picker value for the pinned "start unnamed" row. "+" can never
+// appear in a real slug (segments start alphanumeric), so it can't collide.
+const NEW_SESSION = "+new";
+
+const newSessionRow: PickerItem = {
+  value: NEW_SESSION,
+  label: "new session",
+  meta: "named at pause",
+  display: (isCursor: boolean) => (
+    <>
+      <Text color="green" bold>
+        {isCursor ? "❯ " : "  "}
+      </Text>
+      <Text color="green" bold={isCursor}>
+        ＋{" "}
+      </Text>
+      <Text color="green" bold={isCursor}>
+        new session
+      </Text>
+      <Text dim> — named at pause</Text>
+    </>
+  ),
+};
+
 export function Launch({ onSelect }: LaunchProps) {
   const { exit } = useTui();
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +123,7 @@ export function Launch({ onSelect }: LaunchProps) {
   }, [allSessions, showArchived]);
 
   const items: PickerItem[] = useMemo(
-    () => visibleSessions.map(sessionRow),
+    () => [newSessionRow, ...visibleSessions.map(sessionRow)],
     [visibleSessions],
   );
 
@@ -153,6 +177,11 @@ export function Launch({ onSelect }: LaunchProps) {
   };
 
   const handleSubmit = (value: string) => {
+    if (value === NEW_SESSION) {
+      select({ type: "create" });
+      return;
+    }
+
     const existing = sessionByValue.get(value);
     if (existing) {
       if (existing.session.status === "paused") {

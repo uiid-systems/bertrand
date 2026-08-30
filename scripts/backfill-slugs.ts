@@ -19,7 +19,6 @@
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { eq } from "drizzle-orm";
 import { join } from "path";
 import { existsSync } from "fs";
 import * as schema from "../src/db/schema";
@@ -66,14 +65,13 @@ const { deriveSessionSlug, resolveSlugCollision } = await import(
   "../src/lib/derive-slug"
 );
 const { setDerivedSessionSlug } = await import("../src/db/queries/sessions");
+const { recordSessionAlias } = await import(
+  "../src/db/queries/session-aliases"
+);
 
 const rows = db
-  .select({ session: schema.sessions, categoryPath: schema.categories.path })
+  .select({ session: schema.sessions })
   .from(schema.sessions)
-  .innerJoin(
-    schema.categories,
-    eq(schema.sessions.categoryId, schema.categories.id),
-  )
   .orderBy(schema.sessions.startedAt)
   .all();
 
@@ -93,8 +91,8 @@ console.log(
 );
 console.log("-".repeat(96));
 
-for (const { session, categoryPath } of rows) {
-  const currentName = `${categoryPath}/${session.slug}`;
+for (const { session } of rows) {
+  const currentName = session.slug;
   const derived = deriveSessionSlug(session.id);
 
   if (derived) derivedCount++;
@@ -109,6 +107,9 @@ for (const { session, categoryPath } of rows) {
     } else {
       const slug = resolveSlugCollision(derived, session.id);
       if (slug !== session.slug) {
+        // Same contract as the pause path: retire the outgoing name into
+        // session_aliases rather than dropping it.
+        recordSessionAlias(session.slug, session.id);
         setDerivedSessionSlug(session.id, slug);
         appliedCount++;
         result = slug === derived ? "applied" : `applied as ${slug}`;

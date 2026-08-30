@@ -1,8 +1,11 @@
 import { eq, and, inArray, ne, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions } from "@/db/schema";
-import { createId } from "@/lib/id";
-import { getSessionByAlias } from "@/db/queries/session-aliases";
+import { createId, placeholderSlug } from "@/lib/id";
+import {
+  getSessionByAlias,
+  isAliasTakenByOtherSession,
+} from "@/db/queries/session-aliases";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { listProjects } from "@/lib/projects/registry";
 import type { SessionRow, SessionStatus, SessionListRow } from "@/types";
@@ -46,11 +49,24 @@ export function resolveSessionByName(
 
 export function createSession(opts: {
   slug: string;
-  /** Display name (defaults to the slug). */
+  /**
+   * Display name (defaults to the slug). On a 'derived' row it may only
+   * repeat the slug: derivation writes name and slug together, so a display
+   * name of its own would be silently replaced at the first pause.
+   */
   name?: string;
-  /** Omitted means 'manual' — every launch path today is a human-typed name. */
+  /** Omitted means 'manual' — a name the human typed, never re-derived. */
   nameSource?: SessionRow["nameSource"];
 }) {
+  if (
+    opts.nameSource === "derived" &&
+    opts.name !== undefined &&
+    opts.name !== opts.slug
+  ) {
+    throw new Error(
+      "A derived session cannot carry its own display name — it is named at pause.",
+    );
+  }
   const db = getDb();
   const id = createId();
   return db
@@ -72,6 +88,17 @@ export function getSessionBySlug(
   db: Db = getDb(),
 ): SessionRow | undefined {
   return db.select().from(sessions).where(eq(sessions.slug, slug)).get();
+}
+
+/**
+ * A placeholder slug no session currently holds. A collision in the 6-char
+ * space is near-impossible, but the retry costs one indexed lookup and the
+ * unique slug index still backstops a race.
+ */
+export function untakenPlaceholderSlug(db: Db = getDb()): string {
+  let slug = placeholderSlug();
+  while (getSessionBySlug(slug, db)) slug = placeholderSlug();
+  return slug;
 }
 
 export function getActiveSessions(): SessionListRow[] {
@@ -236,19 +263,44 @@ export function renameSession(id: string, slug: string, name?: string) {
  * Whether any *other* session in this project DB holds `slug`. The slug is
  * the session's whole identity (unique index `sessions_slug`), so this is the
  * duplicate check for both the derivation engine and `bertrand rename`.
+ *
+ * `sessionId` null means "nothing is exempt" — the caller has no row yet.
  */
 export function isSlugTakenByOtherSession(
   slug: string,
-  sessionId: string,
+  sessionId: string | null,
   db: Db = getDb(),
 ): boolean {
   const row = db
     .select({ id: sessions.id })
     .from(sessions)
-    .where(and(eq(sessions.slug, slug), ne(sessions.id, sessionId)))
+    .where(
+      and(
+        eq(sessions.slug, slug),
+        sessionId === null ? undefined : ne(sessions.id, sessionId),
+      ),
+    )
     .limit(1)
     .get();
   return row !== undefined;
+}
+
+/**
+ * Whether `name` is another session's identity — its current slug, OR a
+ * retired name still resolving through `session_aliases`. Claiming a name an
+ * alias holds shadows it permanently (`resolveSessionByName` tries slugs
+ * first), so every path that takes a name checks both halves, not just the
+ * slug table.
+ */
+export function isNameTakenByOtherSession(
+  name: string,
+  sessionId: string | null,
+  db: Db = getDb(),
+): boolean {
+  return (
+    isSlugTakenByOtherSession(name, sessionId, db) ||
+    isAliasTakenByOtherSession(name, sessionId, db)
+  );
 }
 
 /**

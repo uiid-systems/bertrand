@@ -105,9 +105,10 @@ function useProjectName(): string {
 
 /**
  * Splat resolves to no session. Old bookmarked `<category>/<slug>` URLs land
- * here too — DB aliases keep those names resolving on the CLI, but the route
- * matches current slugs only (the launch-flow redesign, PR 5, decides whether
- * URLs get the same treatment).
+ * here too: aliases keep every retired name resolving on the CLI, but the
+ * route matches current slugs only — decided in ELKY-172, on the grounds that
+ * CLI recall is the surface that matters and URL-level aliasing wasn't worth
+ * the routing complexity. This page is the recovery path.
  */
 function SessionNotFound({ splat }: { readonly splat: string }) {
   const projectName = useProjectName();

@@ -24,7 +24,10 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createSession, getSession } = await import("@/db/queries/sessions");
+const { createSession, getSession, resolveSessionByName } = await import(
+  "@/db/queries/sessions"
+);
+const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 const { insertEvent } = await import("@/db/queries/events");
 const { deriveSessionSummary, storeSessionSummary } = await import("./summary");
 const { eq } = await import("drizzle-orm");
@@ -261,6 +264,54 @@ describe("storeSessionSummary slug derivation", () => {
     expect(getSession(s.id)?.slug).toBe("stable-slug-2");
     storeSessionSummary(s.id);
     expect(getSession(s.id)?.slug).toBe("stable-slug-2");
+  });
+
+  test("a later pause that lands on a new slug retires the old one as an alias", () => {
+    // The anchor prompt carries more than the 5-token cap, so which tokens
+    // survive is decided by a vote across the WHOLE conversation — adding
+    // prompts genuinely re-ranks it. Whatever name the session wore in
+    // between was visible in `list`, the sidebar and sibling context, so it
+    // has to keep resolving.
+    const s = makeSession("pre-derive-churn", { nameSource: "derived" });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: {
+        prompt:
+          "refactor the sidebar zone panels and collapsible dropdown behaviour",
+      },
+    });
+    storeSessionSummary(s.id);
+    const firstSlug = getSession(s.id)!.slug;
+    expect(firstSlug).toBe("refactor-sidebar-zone-panels-collapsible");
+
+    for (const prompt of [
+      "the dropdown behaviour is wrong",
+      "dropdown behaviour again",
+    ]) {
+      insertEvent({ sessionId: s.id, event: "user.prompt", meta: { prompt } });
+    }
+    storeSessionSummary(s.id);
+
+    const secondSlug = getSession(s.id)!.slug;
+    expect(secondSlug).not.toBe(firstSlug);
+    expect(resolveSessionByName(firstSlug)?.session.id).toBe(s.id);
+    // The alias reports the session's current identity, not the alias text.
+    expect(resolveSessionByName(firstSlug)?.slug).toBe(secondSlug);
+  });
+
+  test("a slug retired by an earlier pause is not a collision for this session", () => {
+    // Re-deriving a name this session already owns as an alias must not walk
+    // to -2: the alias belongs to the same row, so it is not "taken".
+    const s = makeSession("pre-derive-reclaim", { nameSource: "derived" });
+    recordSessionAlias("fix-parser-cache", s.id);
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the parser cache" },
+    });
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("fix-parser-cache");
   });
 
   test("keeps the existing slug when nothing is derivable", () => {
