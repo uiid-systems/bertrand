@@ -331,26 +331,37 @@ type SessionCwdResult =
  * is unrelated to it. The last `claude.started` is the durable answer — the
  * *last* one, since a session already resumed may have moved.
  *
- * `worktree_path` is still consulted first, but only to *refuse*. Nothing
- * writes that column any more (ELKY-163); the rows that carry one are history,
- * written by an `EnterWorktree` hook that set it mid-run without emitting a
- * fresh `claude.started`. Their last event therefore names the main checkout,
- * so falling through would resume isolated work there and commit it to
- * whatever branch that checkout happens to be on — the failure the worktree
- * resume path existed to rule out, and removing the feature does not make the
- * old rows safe to reinterpret.
+ * `worktree_path` is still consulted, but only to *refuse*, and only when it
+ * disagrees with the event. Nothing writes that column any more (ELKY-163), so
+ * every row carrying one is history — but the two ways of acquiring it left
+ * different records behind:
+ *
+ * - `EnterWorktree` set the column mid-run without emitting a fresh
+ *   `claude.started`, so the last event names the **main checkout**. Falling
+ *   through would resume isolated work there and commit it to whatever branch
+ *   that checkout has out — the failure the worktree resume path existed to
+ *   rule out, and dropping the feature does not make those rows safe to
+ *   reinterpret.
+ * - A dashboard spawn (#210) started `claude` *in* the worktree, so the event
+ *   already names it and agreeing records need no special handling.
+ *
+ * Hence the comparison rather than a bare presence check: refusing on presence
+ * alone would also turn away the second kind, whose recorded cwd was correct
+ * all along.
  *
  * Retired with the columns themselves in ELKY-164.
  */
 function resolveSessionCwd(sessionId: string): SessionCwdResult {
   const session = getSession(sessionId);
   if (!session) return { ok: false, reason: "not-found" };
-  if (session.worktreePath) return { ok: false, reason: "worktree-gone" };
 
   const started = getEdgeEventOfType(sessionId, "claude.started", "last");
   const cwd = (started?.meta as Record<string, unknown> | null)?.cwd;
   if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) {
     return { ok: false, reason: "no-cwd" };
+  }
+  if (session.worktreePath && session.worktreePath !== cwd) {
+    return { ok: false, reason: "worktree-gone" };
   }
   return { ok: true, cwd };
 }

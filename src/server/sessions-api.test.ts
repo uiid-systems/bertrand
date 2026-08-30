@@ -2,12 +2,13 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
 import * as schema from "@/db/schema";
-import { _setDb } from "@/db/client";
+import { _setDb, _clearTestDb } from "@/db/client";
+import { emitClaudeStarted } from "@/db/events/emit";
 import { createCategory } from "@/db/queries/categories";
 import { createSession, getSession, updateSession } from "@/db/queries/sessions";
 import type { SessionRow } from "@/types";
@@ -54,6 +55,9 @@ beforeAll(() => {
 
 afterAll(() => {
   server.stop(true);
+  // The `_setDb` override is process-wide, so leaving it installed would hand
+  // this file's handle to whichever suite runs next.
+  _clearTestDb();
   if (originalWorkspace === undefined) {
     delete process.env.BERTRAND_WORKSPACE;
   } else {
@@ -129,15 +133,29 @@ describe("POST /api/sessions/:id/unarchive", () => {
 
 describe("POST /api/sessions/:id/resume — legacy worktree rows", () => {
   // The teardown removed the `worktree_path` arm from `resolveSessionCwd`.
-  // Nothing writes that column any more, but existing rows still carry one, and
-  // their last `claude.started` names the *main checkout* — the EnterWorktree
-  // hook set the column mid-run without emitting a fresh event. Falling through
-  // to it would resume isolated work on whatever branch the main checkout has
-  // out. Refusing is the only honest answer until ELKY-164 drops the columns.
-  test("refuses rather than resuming in the main checkout", async () => {
+  // Nothing writes that column any more, but existing rows still carry one —
+  // acquired two ways that left different records, which is why the guard
+  // compares rather than checking presence. Both arms are covered here.
+  //
+  // Two real directories: `resolveSessionCwd` calls `existsSync` on the
+  // recorded cwd, so a fabricated path would fail as `no-cwd` and the test
+  // would pass for the wrong reason.
+  const mainCheckout = mkdtempSync(join(tmpdir(), "bertrand-checkout-"));
+  const worktreeDir = mkdtempSync(join(tmpdir(), "bertrand-worktree-"));
+
+  afterAll(() => {
+    rmSync(mainCheckout, { recursive: true, force: true });
+    rmSync(worktreeDir, { recursive: true, force: true });
+  });
+
+  test("refuses when the row disagrees with the event (EnterWorktree)", async () => {
+    // The dangerous shape: the hook wrote the column mid-run without emitting a
+    // fresh `claude.started`, so the event names the main checkout. Resuming
+    // there would commit the session's work to the wrong branch.
     const s = makeSession();
+    emitClaudeStarted({ sessionId: s.id, cwd: mainCheckout });
     updateSession(s.id, {
-      worktreePath: "/repo/.claude/worktrees/legacy",
+      worktreePath: worktreeDir,
       worktreeBranch: "worktree-legacy",
     });
 
@@ -147,5 +165,23 @@ describe("POST /api/sessions/:id/resume — legacy worktree rows", () => {
     const body = (await res.json()) as { reason?: string; error?: string };
     expect(body.reason).toBe("worktree-gone");
     expect(body.error).toContain("wrong branch");
+  });
+
+  test("allows a row whose event already names the worktree (dashboard spawn)", async () => {
+    // #210 started `claude` *in* the worktree, so the recorded cwd was right all
+    // along. Refusing on presence alone would turn these away for no reason.
+    const s = makeSession();
+    emitClaudeStarted({ sessionId: s.id, cwd: worktreeDir });
+    updateSession(s.id, {
+      worktreePath: worktreeDir,
+      worktreeBranch: "worktree-spawned",
+    });
+
+    const res = await post(`/api/sessions/${s.id}/resume`);
+
+    // Not the worktree refusal. It fails later for want of a conversation to
+    // attach to, which is this fixture's shape, not the guard's doing.
+    const body = (await res.json()) as { reason?: string };
+    expect(body.reason).not.toBe("worktree-gone");
   });
 });

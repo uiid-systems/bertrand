@@ -495,15 +495,16 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
       "Resume it from the CLI in the right directory.",
   },
   // Legacy rows only: worktrees are gone (ELKY-163), so this session predates
-  // the teardown and its recorded cwd is the main checkout, not the worktree it
-  // actually worked in. Resuming would put its work on the wrong branch.
+  // the teardown and its recorded directory is not the one it worked in.
+  // Deliberately silent on whether that worktree still exists — the guard fires
+  // either way, and half these rows point at a directory already deleted.
   "worktree-gone": {
     status: 409,
     message:
       "This session worked in a worktree, which bertrand no longer manages. " +
-      "Its recorded directory is the main checkout, so resuming here would put " +
-      "its work on the wrong branch — resume it from the CLI inside the " +
-      "worktree instead.",
+      "The directory on record is not the one it worked in, so resuming here " +
+      "would put its work on the wrong branch. Resume it from the CLI, in the " +
+      "directory that work belongs to.",
   },
 }
 
