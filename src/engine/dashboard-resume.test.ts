@@ -129,4 +129,55 @@ describe("resumeDashboardSession refusals", () => {
 
     rmSync(older, { recursive: true, force: true });
   });
+
+  // Legacy `worktree_path` rows (ELKY-163, retired in ELKY-164). Two things
+  // wrote that column and they left different records, so the guard compares
+  // it against the recorded cwd rather than checking presence.
+  test("a row whose worktree disagrees with its recorded cwd is refused", () => {
+    // `EnterWorktree` wrote the column mid-run without emitting a fresh
+    // `claude.started`, so the event names the main checkout. Resuming there
+    // would commit the session's work to whatever branch it has out.
+    const mainCheckout = mkdtempSync(join(tmpdir(), "bertrand-resume-main-"));
+    const worktree = mkdtempSync(join(tmpdir(), "bertrand-resume-wt-"));
+    const s = makeSession("entered-a-worktree");
+    const c = crypto.randomUUID();
+    createConversation({ id: c, sessionId: s.id });
+    emitClaudeStarted({ sessionId: s.id, conversationId: c, cwd: mainCheckout });
+    updateSession(s.id, { worktreePath: worktree, worktreeBranch: "wt-legacy" });
+
+    expect(resumeDashboardSession({ sessionId: s.id })).toEqual({
+      ok: false,
+      reason: "worktree-gone",
+    });
+    expect(listDashboardSessions()).toEqual([]);
+
+    rmSync(mainCheckout, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  test("a row whose recorded cwd is already the worktree is allowed through", () => {
+    // A dashboard spawn (#210) started `claude` *in* the worktree, so the event
+    // names it and the row needs no special handling. Refusing on presence
+    // alone would turn these away for nothing.
+    //
+    // Proven by the refusal it gets *instead*: `conversation-not-found` comes
+    // from `planResume`, which only runs once the cwd resolved. Asserting that
+    // keeps this a refusal test — a genuinely successful resume would spawn.
+    const worktree = mkdtempSync(join(tmpdir(), "bertrand-resume-spawned-"));
+    const s = makeSession("spawned-in-a-worktree");
+    const c = crypto.randomUUID();
+    createConversation({ id: c, sessionId: s.id });
+    emitClaudeStarted({ sessionId: s.id, conversationId: c, cwd: worktree });
+    updateSession(s.id, { worktreePath: worktree, worktreeBranch: "wt-spawned" });
+
+    expect(
+      resumeDashboardSession({
+        sessionId: s.id,
+        conversationId: crypto.randomUUID(),
+      }),
+    ).toEqual({ ok: false, reason: "conversation-not-found" });
+    expect(listDashboardSessions()).toEqual([]);
+
+    rmSync(worktree, { recursive: true, force: true });
+  });
 });
