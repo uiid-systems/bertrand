@@ -25,7 +25,7 @@ import {
 
 import { eventsQuery, projectsQuery } from "../api/queries";
 import { useArchiveAction } from "../api/use-archive-action";
-import type { EventRow, SessionRow, SessionWithCategory } from "../api/types";
+import type { EventRow, SessionRow, SessionListRow } from "../api/types";
 import {
   agentTurnStats,
   eventColor,
@@ -76,30 +76,18 @@ const RouterLink = ({
 type Crumb = { label: string; value: string };
 
 /**
- * Build breadcrumbs from the project name + a category path. Each category
- * segment links to that category's browse view (`/seg1/seg2/...`); the
- * project name links to home.
+ * Two-level breadcrumbs: the project (linking home) and the session. Sessions
+ * are flat (ELKY-171), so there is no category level in between.
  */
-function buildBreadcrumbs(
-  projectName: string,
-  categoryPath: string,
-  leafLabel?: string,
-): Crumb[] {
-  const segments = categoryPath.split("/").filter(Boolean);
-  const items: Crumb[] = [{ label: projectName, value: "/" }];
-  for (let i = 0; i < segments.length; i++) {
-    items.push({
-      label: segments[i],
-      value: `/${segments.slice(0, i + 1).join("/")}`,
-    });
-  }
-  if (leafLabel !== undefined) items.push({ label: leafLabel, value: "" });
-  return items;
+function buildBreadcrumbs(projectName: string, leafLabel: string): Crumb[] {
+  return [
+    { label: projectName, value: "/" },
+    { label: leafLabel, value: "" },
+  ];
 }
 
 function SplatPage() {
   const { _splat = "" } = Route.useParams();
-  const visibleSessions = useSessions();
 
   // Resolve session-detail against the visible list, then a full fallback list
   // (see useMatchedSession), so an archived or filtered-out session opened by
@@ -107,7 +95,7 @@ function SplatPage() {
   const match = useMatchedSession(_splat);
 
   if (match) return <SessionDetail match={match} />;
-  return <CategoryDetail categoryPath={_splat} sessions={visibleSessions} />;
+  return <SessionNotFound splat={_splat} />;
 }
 
 function useProjectName(): string {
@@ -115,17 +103,14 @@ function useProjectName(): string {
   return projects.find((p) => p.active)?.name ?? "bertrand";
 }
 
-function CategoryDetail({
-  categoryPath,
-  sessions,
-}: {
-  readonly categoryPath: string;
-  readonly sessions: SessionWithCategory[];
-}) {
+/**
+ * Splat resolves to no session. Old bookmarked `<category>/<slug>` URLs land
+ * here too — DB aliases keep those names resolving on the CLI, but the route
+ * matches current slugs only (the launch-flow redesign, PR 5, decides whether
+ * URLs get the same treatment).
+ */
+function SessionNotFound({ splat }: { readonly splat: string }) {
   const projectName = useProjectName();
-  const filtered = sessions.filter((s) => s.categoryPath === categoryPath);
-  const breadcrumbs = buildBreadcrumbs(projectName, categoryPath);
-
   return (
     <Stack gap={4} ax="stretch" fullwidth>
       <Stack
@@ -138,21 +123,24 @@ function CategoryDetail({
           zIndex: 1,
         }}
       >
-        <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
+        <Breadcrumbs
+          items={buildBreadcrumbs(projectName, splat)}
+          linkAs={RouterLink}
+        />
       </Stack>
-      <Stack px={8} gap={2} style={{ overflow: "auto" }}>
-        {filtered.length > 0 ? (
-          filtered.map((s) => <SessionItem key={s.session.id} session={s} />)
-        ) : (
-          <Text shade="muted">No sessions in this category.</Text>
-        )}
+      <Stack px={8} gap={2}>
+        <Text shade="muted">No session named "{splat}".</Text>
+        <Text shade="muted" size={-1}>
+          It may have been renamed — check the sidebar, or{" "}
+          <Link to="/sessions">the session list</Link>.
+        </Text>
       </Stack>
     </Stack>
   );
 }
-CategoryDetail.displayName = "CategoryDetail";
+SessionNotFound.displayName = "SessionNotFound";
 
-function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
+function SessionDetail({ match }: { readonly match: SessionListRow }) {
   const activeProjectName = useProjectName();
   const projectSlug = match.project?.slug;
   const projectName = match.project?.name ?? activeProjectName;
@@ -219,11 +207,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
     if (el) el.scrollIntoView({ block: "start" });
   }, [segments, sessionId]);
 
-  const breadcrumbs = buildBreadcrumbs(
-    projectName,
-    match.categoryPath,
-    match.session.name,
-  );
+  const breadcrumbs = buildBreadcrumbs(projectName, match.session.name);
 
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>
@@ -233,10 +217,7 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
           <Breadcrumbs items={breadcrumbs} linkAs={RouterLink} />
         </Group>
         <Group ay="center">
-          <CopyResumeButton
-            session={match.session}
-            categoryPath={match.categoryPath}
-          />
+          <CopyResumeButton session={match.session} />
           <OpenInEditorButton
             session={match.session}
             projectSlug={projectSlug}
@@ -255,7 +236,6 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
             isLive ? null : (
               <SessionExitPanel
                 session={match.session}
-                categoryPath={match.categoryPath}
                 exitCode={exitCode}
                 conversationCount={segments.length}
                 conversations={resumable}

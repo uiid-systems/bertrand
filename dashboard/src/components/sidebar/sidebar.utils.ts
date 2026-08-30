@@ -1,20 +1,20 @@
-import type { SessionWithCategory } from "../../api/types";
+import type { SessionListRow } from "../../api/types";
 import type { SessionGroup } from "./sidebar.types";
 import { LIVE_STATUS_ORDER } from "./sidebar.constants";
 
 /**
  * Last meaningful activity. `updatedAt` is bumped on every status transition
- * (and rename/rate/move), so it reads as "time since this session last did
+ * (and rename/rate), so it reads as "time since this session last did
  * something" — the right clock for both zones, unlike `startedAt` (creation).
  */
-const activityTime = (s: SessionWithCategory): number =>
+const activityTime = (s: SessionListRow): number =>
   new Date(s.session.updatedAt).getTime();
 
 /**
  * Blocked, waiting or active — the states that belong in the pinned "Active
  * sessions" zone (Claude has a process running, or is halted on the user).
  */
-export function isLive(s: SessionWithCategory): boolean {
+export function isLive(s: SessionListRow): boolean {
   const st = s.session.status;
   return st === "active" || st === "waiting" || st === "blocked";
 }
@@ -24,12 +24,11 @@ export function isLive(s: SessionWithCategory): boolean {
  * search only ever narrows a single project's sessions, so matching on the name
  * every row already shares would be a no-op.
  */
-export function matchesQuery(s: SessionWithCategory, q: string): boolean {
+export function matchesQuery(s: SessionListRow, q: string): boolean {
   if (!q) return true;
   return (
     s.session.slug.toLowerCase().includes(q) ||
-    s.session.name.toLowerCase().includes(q) ||
-    s.categoryPath.toLowerCase().includes(q)
+    s.session.name.toLowerCase().includes(q)
   );
 }
 
@@ -44,8 +43,8 @@ export function matchesQuery(s: SessionWithCategory, q: string): boolean {
  * project selector and search below it must not narrow.
  */
 export function selectLiveSessions(
-  sessions: SessionWithCategory[],
-): SessionWithCategory[] {
+  sessions: SessionListRow[],
+): SessionListRow[] {
   return sessions.filter(isLive).sort((a, b) => {
     const pa = LIVE_STATUS_ORDER.indexOf(a.session.status);
     const pb = LIVE_STATUS_ORDER.indexOf(b.session.status);
@@ -66,7 +65,7 @@ export function selectLiveSessions(
  * otherwise vanish from the one zone that must never hide anything.
  */
 export function groupByProject(
-  sessions: SessionWithCategory[],
+  sessions: SessionListRow[],
 ): SessionGroup[] {
   const byProject = new Map<string, SessionGroup>();
   for (const s of sessions) {
@@ -85,9 +84,9 @@ export function groupByProject(
 }
 
 /**
- * Zone B's rows, grouped by category path. Each group is sorted by most-recent
- * activity, and the groups themselves are ordered by their most recently active
- * session, so the category you touched last floats up.
+ * Zone B's rows: the project's sessions as one flat list, most recently active
+ * first. Sessions are flat (ELKY-171), so there is no category level to group
+ * by anymore.
  *
  * Live sessions are normally dropped rather than duplicated — they're already
  * pinned in zone A. `includeLive` is how a search gets them back: zone A ignores
@@ -96,29 +95,12 @@ export function groupByProject(
  * anyone looking for the session they're actually running. While a query is
  * active this zone stops being "the rest of the project" and becomes "results in
  * this project", so a live row appearing in both places is the point.
- *
- * Keying on the category path alone is safe because this zone only ever holds
- * one project's sessions.
  */
-export function groupByCategory(
-  sessions: SessionWithCategory[],
+export function selectProjectSessions(
+  sessions: SessionListRow[],
   { includeLive = false }: { includeLive?: boolean } = {},
-): SessionGroup[] {
-  const byCategory = new Map<string, SessionWithCategory[]>();
-  for (const s of sessions) {
-    if (!includeLive && isLive(s)) continue;
-    const key = s.categoryPath;
-    const list = byCategory.get(key);
-    if (list) list.push(s);
-    else byCategory.set(key, [s]);
-  }
-
-  const groups = Array.from(byCategory, ([key, list]): SessionGroup => {
-    list.sort((a, b) => activityTime(b) - activityTime(a));
-    return { key, label: key, sessions: list };
-  });
-  groups.sort(
-    (a, b) => activityTime(b.sessions[0]) - activityTime(a.sessions[0]),
-  );
-  return groups;
+): SessionListRow[] {
+  return sessions
+    .filter((s) => includeLive || !isLive(s))
+    .sort((a, b) => activityTime(b) - activityTime(a));
 }

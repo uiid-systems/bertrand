@@ -12,7 +12,7 @@ import {
 } from "@uiid/design-system";
 
 import { sessionsQuery } from "../api/queries";
-import type { SessionStatsRow, SessionWithCategory } from "../api/types";
+import type { SessionStatsRow, SessionListRow } from "../api/types";
 import { useSelectedProject } from "../components/sidebar/selected-project";
 import { useAllStats } from "../lib/use-sessions";
 import {
@@ -197,10 +197,10 @@ function SessionsPage() {
 }
 
 function toRow(
-  entry: SessionWithCategory,
+  entry: SessionListRow,
   stat: SessionStatsRow | undefined,
 ): SessionRow {
-  const { session, categoryPath, project } = entry;
+  const { session, project } = entry;
 
   return {
     project: project ? (
@@ -211,14 +211,9 @@ function toRow(
     session: (
       <Text
         weight="medium"
-        render={
-          <Link
-            to="/$"
-            params={{ _splat: `${categoryPath}/${session.slug}` }}
-          />
-        }
+        render={<Link to="/$" params={{ _splat: session.slug }} />}
       >
-        {categoryPath} / {session.slug}
+        {session.slug}
       </Text>
     ),
     status: (

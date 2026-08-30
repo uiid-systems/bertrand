@@ -33,9 +33,8 @@ export type EventRow = Omit<typeof events.$inferSelect, "meta"> & {
 
 export type SessionStatsRow = typeof sessionStats.$inferSelect;
 
-export type SessionWithCategory = {
+export type SessionListRow = {
   session: SessionRow;
-  categoryPath: string;
   /**
    * Which project this session belongs to. Present when the row was produced
    * by a cross-project query (the dashboard's multi-project session list);

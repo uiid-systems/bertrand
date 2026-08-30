@@ -1,6 +1,5 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
-import { getCategory } from "@/db/queries/categories";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
@@ -46,9 +45,7 @@ register("contract", async (args) => {
   const session = getSession(sessionId);
   if (!session) return; // unknown session → emit nothing, hook injects no context
 
-  const category = getCategory(session.categoryId);
-  const categoryPath = category?.path ?? "";
-  const sessionName = categoryPath ? `${categoryPath}/${session.slug}` : session.slug;
+  const sessionName = session.slug;
 
   if (short) {
     process.stdout.write(

@@ -10,12 +10,10 @@ type CopyResumeButtonProps = Omit<
   "pressed" | "onPressedChange" | "icon" | "children"
 > & {
   session: SessionRow;
-  categoryPath: string;
 };
 
 export const CopyResumeButton = ({
   session,
-  categoryPath,
   size = "small",
   variant = "ghost",
   shape = "square",
@@ -25,11 +23,10 @@ export const CopyResumeButton = ({
 
   if (session.status !== "paused") return null;
 
-  const sessionPath = `${categoryPath}/${session.slug}`;
-
   function handlePressedChange(next: boolean) {
     if (!next) return;
-    void navigator.clipboard.writeText(sessionPath);
+    // The bare slug is exactly what `bertrand <slug>` resumes.
+    void navigator.clipboard.writeText(session.slug);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

@@ -2,7 +2,7 @@ import { register } from "@/cli/router";
 import {
   resolveSessionByName,
   renameSession,
-  getSessionByCategorySlug,
+  getSessionBySlug,
 } from "@/db/queries/sessions";
 import {
   recordSessionAlias,
@@ -26,8 +26,8 @@ export type RenameOutcome =
  * previously-typed name keeps resolving.
  */
 export function runRename(sessionName: string, newSlug: string): RenameOutcome {
-  // resolveSessionByName throws on malformed input (single segment, bad
-  // characters) — surface that as a not-found with the parser's own message.
+  // resolveSessionByName throws on malformed input (empty, bad characters) —
+  // surface that as a not-found with the parser's own message.
   let resolved;
   try {
     resolved = resolveSessionByName(sessionName);
@@ -38,13 +38,12 @@ export function runRename(sessionName: string, newSlug: string): RenameOutcome {
     return {
       ok: false,
       reason: "not-found",
-      message: `Session not found: ${sessionName}. <session> is "<category>/<slug>" — see \`bertrand list\`.`,
+      message: `Session not found: ${sessionName}. <session> is the session slug — see \`bertrand list\`.`,
     };
   }
-  const { session, categoryPath } = resolved;
+  const { session } = resolved;
 
-  // Same per-segment rule as parsed names; slashes join segments. The new
-  // slug is a slug only — the session stays in its current category.
+  // Same per-segment rule as parsed names; slashes join segments.
   const segments = newSlug.split("/");
   if (!segments.every(isValidNameSegment)) {
     return {
@@ -54,22 +53,22 @@ export function runRename(sessionName: string, newSlug: string): RenameOutcome {
     };
   }
 
-  const oldName = `${categoryPath}/${session.slug}`;
-  const newName = `${categoryPath}/${newSlug}`;
+  const oldName = session.slug;
+  const newName = newSlug;
 
   if (newSlug === session.slug) {
     return { ok: true, noop: true, oldName, newName };
   }
 
   // Manual renames reject collisions (ELKY-167) — a live session already
-  // holding the slug in this category, or an alias claiming the canonical
+  // holding the slug anywhere in this project DB, or an alias claiming the
   // name for a different session.
-  const holder = getSessionByCategorySlug(session.categoryId, newSlug);
+  const holder = getSessionBySlug(newSlug);
   if (holder && holder.id !== session.id) {
     return {
       ok: false,
       reason: "collision",
-      message: `Cannot rename: session ${categoryPath}/${holder.slug} already holds that name.`,
+      message: `Cannot rename: session ${holder.slug} already holds that name.`,
     };
   }
   const aliased = getSessionByAlias(newName);
@@ -77,7 +76,7 @@ export function runRename(sessionName: string, newSlug: string): RenameOutcome {
     return {
       ok: false,
       reason: "collision",
-      message: `"${newName}" already resolves to session ${aliased.categoryPath}/${aliased.slug} (via an alias).`,
+      message: `"${newName}" already resolves to session ${aliased.slug} (via an alias).`,
     };
   }
 
@@ -94,7 +93,7 @@ register("rename", async (args) => {
 
   if (!sessionName || !newSlug) {
     console.error("Usage: bertrand rename <session> <new-slug>");
-    console.error('       <session> is "<category>/<slug>" (see `list`)');
+    console.error("       <session> is the session slug (see `list`)");
     process.exit(1);
   }
 

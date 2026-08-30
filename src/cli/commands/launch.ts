@@ -30,9 +30,10 @@ register("launch", async (args) => {
     const sessionName = args[0];
 
     if (sessionName) {
-      // Direct create+launch: `bertrand category/my-session`
-      const { categoryPath, slug } = parseSessionName(sessionName);
-      const sessionId = await launch({ categoryPath, slug });
+      // Direct create+launch: `bertrand my-session`. The user typed the name,
+      // so nameSource stays 'manual' (createSession's default).
+      const { slug } = parseSessionName(sessionName);
+      const sessionId = await launch({ slug });
       await runSessionLoop(sessionId);
       return;
     }

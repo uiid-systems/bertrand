@@ -1,12 +1,12 @@
 import { describe, test, expect } from "bun:test";
 
-import type { SessionStatus, SessionWithCategory } from "../../api/types";
+import type { SessionStatus, SessionListRow } from "../../api/types";
 import {
-  groupByCategory,
   groupByProject,
   isLive,
   matchesQuery,
   selectLiveSessions,
+  selectProjectSessions,
 } from "./sidebar.utils";
 
 const acme = { slug: "acme", name: "Acme" };
@@ -17,12 +17,11 @@ function stub(
   status: SessionStatus,
   project?: { slug: string; name: string },
   updatedAt = "2026-01-01T00:00:00.000Z",
-  // Zone B keys off the category path and search reads the display name, so
-  // both are overridable; zone A's tests care about neither and take defaults.
-  extra: { categoryPath?: string; name?: string } = {},
-): SessionWithCategory {
+  // Search reads the display name, so it's overridable; zone A's tests don't
+  // care and take the default.
+  extra: { name?: string } = {},
+): SessionListRow {
   return {
-    categoryPath: extra.categoryPath ?? "cat",
     project,
     session: {
       id: slug,
@@ -30,12 +29,12 @@ function stub(
       name: extra.name ?? slug,
       status,
       updatedAt,
-    } as SessionWithCategory["session"],
+    } as SessionListRow["session"],
   };
 }
 
 const keys = (groups: { key: string }[]) => groups.map((g) => g.key);
-const slugs = (sessions: SessionWithCategory[]) =>
+const slugs = (sessions: SessionListRow[]) =>
   sessions.map((s) => s.session.slug);
 
 describe("groupByProject", () => {
@@ -78,13 +77,8 @@ describe("groupByProject", () => {
   });
 });
 
-/** Every session a set of groups holds, flattened in render order. */
-const groupedSlugs = (groups: { sessions: SessionWithCategory[] }[]) =>
-  groups.flatMap((g) => slugs(g.sessions));
-
 describe("matchesQuery", () => {
   const session = stub("fix-search", "paused", acme, undefined, {
-    categoryPath: "github-projects",
     name: "Fix search",
   });
 
@@ -92,10 +86,9 @@ describe("matchesQuery", () => {
     expect(matchesQuery(session, "")).toBe(true);
   });
 
-  test("matches on slug, name and category path", () => {
+  test("matches on slug and name", () => {
     expect(matchesQuery(session, "fix-")).toBe(true);
     expect(matchesQuery(session, "fix search")).toBe(true);
-    expect(matchesQuery(session, "github")).toBe(true);
   });
 
   test("does not match on unrelated text", () => {
@@ -109,49 +102,38 @@ describe("matchesQuery", () => {
   });
 });
 
-describe("groupByCategory", () => {
+describe("selectProjectSessions", () => {
   test("drops live sessions by default — they're pinned in the live zone", () => {
-    const groups = groupByCategory([
+    const rows = selectProjectSessions([
       stub("paused-one", "paused"),
       stub("running", "active"),
       stub("halted", "blocked"),
       stub("pending", "waiting"),
     ]);
 
-    expect(groupedSlugs(groups)).toEqual(["paused-one"]);
+    expect(slugs(rows)).toEqual(["paused-one"]);
   });
 
   test("includeLive keeps live sessions in the results", () => {
-    const groups = groupByCategory(
+    const rows = selectProjectSessions(
       [stub("paused-one", "paused"), stub("running", "active")],
       { includeLive: true },
     );
 
-    expect(groupedSlugs(groups).sort()).toEqual(["paused-one", "running"]);
+    expect(slugs(rows).sort()).toEqual(["paused-one", "running"]);
   });
 
-  test("groups by category, most recently active group first", () => {
-    const at = (d: string) => `2026-0${d}-01T00:00:00.000Z`;
-    const groups = groupByCategory([
-      stub("a", "paused", acme, at("1"), { categoryPath: "old" }),
-      stub("b", "paused", acme, at("3"), { categoryPath: "new" }),
-      stub("c", "paused", acme, at("2"), { categoryPath: "mid" }),
-    ]);
-
-    expect(keys(groups)).toEqual(["new", "mid", "old"]);
-  });
-
-  test("sorts sessions inside a group by most recent activity", () => {
-    const groups = groupByCategory([
+  test("orders by most recent activity", () => {
+    const rows = selectProjectSessions([
       stub("stale", "paused", acme, "2026-01-01T00:00:00.000Z"),
       stub("fresh", "paused", acme, "2026-05-01T00:00:00.000Z"),
     ]);
 
-    expect(groupedSlugs(groups)).toEqual(["fresh", "stale"]);
+    expect(slugs(rows)).toEqual(["fresh", "stale"]);
   });
 
-  test("returns no groups when nothing is left after filtering", () => {
-    expect(groupByCategory([])).toEqual([]);
+  test("returns nothing when nothing is left after filtering", () => {
+    expect(selectProjectSessions([])).toEqual([]);
   });
 });
 
@@ -161,24 +143,22 @@ describe("searching for a live session", () => {
   // nothing anywhere — searching for the session you're sitting in returned an
   // empty list.
   const sessions = [
-    stub("fix-search", "active", acme, undefined, { categoryPath: "projects" }),
-    stub("mv-sidebar-timeline", "paused", acme, undefined, {
-      categoryPath: "timeline",
-    }),
+    stub("fix-search", "active", acme),
+    stub("mv-sidebar-timeline", "paused", acme),
   ];
 
   const search = (q: string) =>
-    groupByCategory(
+    selectProjectSessions(
       sessions.filter((s) => matchesQuery(s, q)),
       { includeLive: q.length > 0 },
     );
 
   test("finds a live session by name", () => {
-    expect(groupedSlugs(search("search"))).toEqual(["fix-search"]);
+    expect(slugs(search("search"))).toEqual(["fix-search"]);
   });
 
   test("still hides live sessions when no query is active", () => {
-    expect(groupedSlugs(search(""))).toEqual(["mv-sidebar-timeline"]);
+    expect(slugs(search(""))).toEqual(["mv-sidebar-timeline"]);
   });
 });
 

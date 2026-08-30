@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, updateSessionStatus, getSession } = await import(
   "@/db/queries/sessions"
 );
@@ -32,10 +31,9 @@ const { archiveSession, unarchiveSession, archiveAllPaused } = await import(
   "@/lib/session-archive"
 );
 
-const category = createCategory({ slug: "archive-test", name: "Archive Test" });
 
 function makeSession(slug: string, status: "active" | "waiting" | "paused" | "archived") {
-  const s = createSession({ categoryId: category.id, slug, name: slug });
+  const s = createSession({ slug });
   if (status !== "paused") updateSessionStatus(s.id, status);
   return getSession(s.id)!;
 }
@@ -115,9 +113,7 @@ describe("archiveSession / unarchiveSession with explicit db (cross-project)", (
   // Seed a paused session into the other DB by pointing the query layer at it
   // transiently, then restore the active (test) DB.
   _setDb(otherDb);
-  const otherCategory = createCategory({ slug: "other-proj", name: "Other" });
   const otherSession = createSession({
-    categoryId: otherCategory.id,
     slug: "cross-1",
     name: "cross-1",
   });
@@ -145,13 +141,11 @@ describe("archiveSession / unarchiveSession with explicit db (cross-project)", (
 
 describe("archiveAllPaused", () => {
   test("archives only paused sessions, skips active/waiting/archived", () => {
-    // Fresh category to isolate from prior tests
-    const c = createCategory({ slug: "batch", name: "Batch" });
-    const paused1 = createSession({ categoryId: c.id, slug: "p1", name: "p1" });
-    const paused2 = createSession({ categoryId: c.id, slug: "p2", name: "p2" });
-    const active = createSession({ categoryId: c.id, slug: "a1", name: "a1" });
+    const paused1 = createSession({ slug: "p1" });
+    const paused2 = createSession({ slug: "p2" });
+    const active = createSession({ slug: "a1" });
     updateSessionStatus(active.id, "active");
-    const waiting = createSession({ categoryId: c.id, slug: "w1", name: "w1" });
+    const waiting = createSession({ slug: "w1" });
     updateSessionStatus(waiting.id, "waiting");
 
     const { archived } = archiveAllPaused();

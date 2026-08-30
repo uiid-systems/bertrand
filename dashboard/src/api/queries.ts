@@ -1,7 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query"
 import { apiUrl } from "./base"
 import type {
-  SessionWithCategory,
+  SessionListRow,
   SessionRow,
   EventRow,
   SessionStatsRow,
@@ -146,7 +146,7 @@ export const sessionsQuery = (
       if (opts.includeArchived) params.set("excludeArchived", "false")
       if (opts.projects !== undefined) params.set("projects", opts.projects.join(","))
       const qs = params.toString()
-      return fetchJson<SessionWithCategory[]>(
+      return fetchJson<SessionListRow[]>(
         `/api/sessions${qs ? `?${qs}` : ""}`,
       )
     },

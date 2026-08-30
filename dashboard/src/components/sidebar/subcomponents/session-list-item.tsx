@@ -2,7 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 
 import { Card, Group, ListItem, Text } from "@uiid/design-system";
 
-import type { SessionWithCategory } from "@/types";
+import type { SessionListRow } from "@/types";
 
 import { statusColor, formatRelativeTime } from "../../../lib/format";
 
@@ -12,7 +12,7 @@ import { SessionContent } from "./session-content";
 import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionListItemProps = {
-  session: SessionWithCategory;
+  session: SessionListRow;
 };
 
 export const SessionListItem = ({ session: s }: SessionListItemProps) => {
@@ -30,8 +30,8 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   };
 
   // "You are here": the row for the session currently open in the detail view.
-  // The route splat is exactly `<categoryPath>/<slug>` (see findSessionFromSplat).
-  const splat = `${s.categoryPath}/${s.session.slug}`;
+  // The route splat is exactly the slug (see findSessionFromSplat).
+  const splat = s.session.slug;
   const { _splat } = useParams({ strict: false });
   const isCurrent = (_splat ?? "").replace(/^\/+|\/+$/g, "") === splat;
 

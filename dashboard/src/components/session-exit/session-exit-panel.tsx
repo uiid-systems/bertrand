@@ -57,14 +57,12 @@ export type ResumableConversation = {
 
 export function SessionExitPanel({
   session,
-  categoryPath,
   exitCode,
   conversationCount,
   conversations,
   project,
 }: {
   readonly session: SessionRow;
-  readonly categoryPath: string;
   readonly exitCode: number | null;
   readonly conversationCount: number;
   /** Newest first. Empty is fine — resume then only offers a new conversation. */
@@ -77,12 +75,10 @@ export function SessionExitPanel({
   const archive = useArchiveAction(session, project);
   const { rate, discard, resume, describeError } = useSessionExitActions(session, project, {
     // The route is keyed by the session that no longer exists, so staying here
-    // would render a "not found" shell. Fall back to the category it lived in.
+    // would render a "not found" shell. Fall back home.
     onDiscarded: () => {
       setConfirmOpen(false);
-      // Plain path string, matching how every other link in this app addresses
-      // the splat route (see RouterLink in routes/$.tsx).
-      void navigate({ to: `/${categoryPath}` });
+      void navigate({ to: "/" });
     },
   });
 
@@ -221,7 +217,7 @@ export function SessionExitPanel({
       >
         <Stack gap={2} fullwidth>
           <Text size={-1} family="mono" style={{ wordBreak: "break-all" }}>
-            {categoryPath}/{session.slug}
+            {session.slug}
           </Text>
           <Text size={-1} shade="muted">
             {conversationCount} conversation

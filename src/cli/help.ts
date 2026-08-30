@@ -22,7 +22,8 @@ Inspect sessions (read-only):
   bertrand log <session>       Session digest (JSON): per-conversation subject, Q&A
                                decision trail, files touched, and outcome. Start here —
                                ~1-2KB per conversation covers what was decided and tried.
-                               <session> is "<category>/<slug>" (see \`list\`).
+                               <session> is the session slug (see \`list\`); old
+                               "<category>/<slug>" names still resolve.
   bertrand log <session> --events
                                Filtered event timeline when the digest isn't enough.
                                Flags: --conversation <n> --limit <n> --since <ISO|24h|30m>

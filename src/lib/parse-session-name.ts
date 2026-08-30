@@ -1,5 +1,4 @@
 export interface ParsedSessionName {
-  categoryPath: string;
   slug: string;
 }
 
@@ -15,23 +14,17 @@ export function isValidNameSegment(segment: string): boolean {
 }
 
 /**
- * Parse a slash-delimited session name. The first segment is the category;
- * every remaining segment is joined with `/` to form the slug. Each segment
- * is validated individually; slashes inside the slug are preserved.
+ * Parse a session name. Sessions are flat (ELKY-171): the whole trimmed string
+ * is the slug. Slugs may legitimately contain slashes — a name is one or more
+ * valid segments joined by `/` — so each segment is validated individually
+ * while the joined form is returned as one identity.
  */
 export function parseSessionName(input: string): ParsedSessionName {
   const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
-
-  if (!trimmed) {
-    throw new Error("Session name cannot be empty");
-  }
-
   const segments = trimmed.split("/").filter(Boolean);
 
-  if (segments.length < 2) {
-    throw new Error(
-      `Session name must include at least one category: "category/session" (got "${trimmed}")`
-    );
+  if (segments.length === 0) {
+    throw new Error("Session name cannot be empty");
   }
 
   for (const segment of segments) {
@@ -42,8 +35,5 @@ export function parseSessionName(input: string): ParsedSessionName {
     }
   }
 
-  const categoryPath = segments[0]!;
-  const slug = segments.slice(1).join("/");
-
-  return { categoryPath, slug };
+  return { slug: segments.join("/") };
 }

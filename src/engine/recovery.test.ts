@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: import.meta.dir + "/../db/migrations",
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession, updateSession } = await import(
   "@/db/queries/sessions"
 );
@@ -39,8 +38,7 @@ const A_WEEK_AGO = Date.now() - 7 * 24 * 3_600_000;
 let n = 0;
 function makeSession(opts: { pid: number | null; pidStartedAt: number | null }) {
   const slug = `s${n++}`;
-  const category = createCategory({ slug: `c-${slug}`, name: slug });
-  const session = createSession({ categoryId: category.id, slug, name: slug });
+  const session = createSession({ slug });
   updateSession(session.id, {
     status: "active",
     pid: opts.pid,

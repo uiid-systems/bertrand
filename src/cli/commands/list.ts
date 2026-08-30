@@ -1,6 +1,5 @@
 import { register, alias } from "@/cli/router";
-import { getAllSessions, getSessionsByCategory } from "@/db/queries/sessions";
-import { getCategoryByPath } from "@/db/queries/categories";
+import { getAllSessions } from "@/db/queries/sessions";
 import { getSessionStats } from "@/db/queries/stats";
 import { formatAgo, formatDuration } from "@/lib/format";
 import { resolveActiveProject } from "@/lib/projects/resolve";
@@ -29,7 +28,7 @@ function buildRows(sessions: SessionRow[]): ListRow[] {
     .map((row) => {
       const stats = getSessionStats(row.session.id);
       return {
-        name: `${row.categoryPath}/${row.session.slug}`,
+        name: row.session.slug,
         status: row.session.status,
         updatedAt: row.session.updatedAt,
         conversations: stats?.conversationCount ?? 0,
@@ -91,26 +90,8 @@ register("list", async (args) => {
 
   const isJson = argsWithoutProject.includes("--json");
   const showAll = argsWithoutProject.includes("--all") || argsWithoutProject.includes("-a");
-  const categoryFlag = argsWithoutProject.indexOf("--category");
-  const categoryPath = categoryFlag !== -1 ? argsWithoutProject[categoryFlag + 1] : undefined;
 
-  let sessionRows: SessionRow[];
-
-  if (categoryPath) {
-    const category = getCategoryByPath(categoryPath);
-    if (!category) {
-      console.error(`Category not found: ${categoryPath}`);
-      process.exit(1);
-    }
-    const categorySessions = getSessionsByCategory(category.id);
-    sessionRows = categorySessions.map((s) => ({ session: s, categoryPath: category.path }));
-
-    if (!showAll) {
-      sessionRows = sessionRows.filter((r) => r.session.status !== "archived");
-    }
-  } else {
-    sessionRows = getAllSessions(showAll ? undefined : { excludeArchived: true });
-  }
+  const sessionRows = getAllSessions(showAll ? undefined : { excludeArchived: true });
 
   const rows = buildRows(sessionRows);
 

@@ -1,56 +1,46 @@
 import { describe, test, expect } from "bun:test";
 import { findSessionFromSplat } from "./find-session-from-splat";
-import type { SessionWithCategory } from "../api/types";
+import type { SessionListRow } from "../api/types";
 
-function stub(categoryPath: string, slug: string): SessionWithCategory {
+function stub(slug: string): SessionListRow {
   return {
-    categoryPath,
-    session: { id: `${categoryPath}/${slug}`, slug } as SessionWithCategory["session"],
+    session: { id: slug, slug } as SessionListRow["session"],
   };
 }
 
 describe("findSessionFromSplat", () => {
   const sessions = [
-    stub("ssp", "REV-367/fe-determination"),
-    stub("ssp", "REV-200/api"),
-    stub("uiid/bertrand", "fix-auth"),
-    stub("infra", "deploy"),
+    stub("REV-367/fe-determination"),
+    stub("REV-200/api"),
+    stub("fix-auth"),
+    stub("deploy"),
   ];
 
-  test("matches flat category + slash-bearing slug", () => {
-    expect(findSessionFromSplat("ssp/REV-367/fe-determination", sessions)).toBe(
+  test("matches a plain slug", () => {
+    expect(findSessionFromSplat("fix-auth", sessions)).toBe(sessions[2]);
+  });
+
+  test("matches a slash-bearing slug as one identity", () => {
+    expect(findSessionFromSplat("REV-367/fe-determination", sessions)).toBe(
       sessions[0],
     );
   });
 
-  test("matches legacy nested-category path", () => {
-    expect(findSessionFromSplat("uiid/bertrand/fix-auth", sessions)).toBe(
-      sessions[2],
-    );
-  });
-
-  test("matches a two-segment session", () => {
-    expect(findSessionFromSplat("infra/deploy", sessions)).toBe(sessions[3]);
-  });
-
   test("strips leading/trailing slashes", () => {
-    expect(findSessionFromSplat("/ssp/REV-200/api/", sessions)).toBe(sessions[1]);
+    expect(findSessionFromSplat("/REV-200/api/", sessions)).toBe(sessions[1]);
   });
 
-  test("returns null for a category-only path", () => {
-    expect(findSessionFromSplat("ssp", sessions)).toBeNull();
+  test("returns null for an empty splat", () => {
     expect(findSessionFromSplat("", sessions)).toBeNull();
+    expect(findSessionFromSplat("//", sessions)).toBeNull();
   });
 
   test("returns null for a non-existent session", () => {
-    expect(findSessionFromSplat("ssp/no-such-slug", sessions)).toBeNull();
+    expect(findSessionFromSplat("no-such-slug", sessions)).toBeNull();
   });
 
-  test("does not greedily split on the last slash", () => {
-    // Older logic would have matched categoryPath="ssp/REV-367" and missed it.
-    expect(
-      findSessionFromSplat("ssp/REV-367/fe-determination", sessions)
-        ?.categoryPath,
-    ).toBe("ssp");
+  test("does not match on a slug prefix or suffix", () => {
+    // A retired "<category>/<slug>" URL must miss cleanly, not half-match.
+    expect(findSessionFromSplat("old-category/deploy", sessions)).toBeNull();
   });
 });

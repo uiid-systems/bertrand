@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { Badge, Number, Stack, Separator } from "@uiid/design-system";
 
-import type { SessionWithCategory } from "@/types";
+import type { SessionListRow } from "@/types";
 
 import { groupByProject } from "../sidebar.utils";
 import { useCollapsedLiveProjects } from "../use-collapsed";
@@ -10,7 +10,7 @@ import { SessionGroup } from "./session-group";
 import { SidebarZone } from "./sidebar-zone";
 
 type LiveZoneProps = {
-  sessions: SessionWithCategory[];
+  sessions: SessionListRow[];
 };
 
 /**

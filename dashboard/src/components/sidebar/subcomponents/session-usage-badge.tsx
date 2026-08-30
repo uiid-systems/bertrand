@@ -1,12 +1,12 @@
 import { Badge, Group, Text } from "@uiid/design-system";
 
-import type { SessionWithCategory } from "@/types";
+import type { SessionListRow } from "@/types";
 import { formatTokens } from "../../../lib/format";
 import { standingFor, usagePeers } from "../../../lib/usage-standing";
 import { useAllStats } from "../../../lib/use-sessions";
 
 type SessionUsageBadgeProps = {
-  session: SessionWithCategory;
+  session: SessionListRow;
 };
 
 /**

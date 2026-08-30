@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { allStatsQuery, sessionsQuery } from "../api/queries"
-import type { SessionStatsRow, SessionWithCategory } from "../api/types"
+import type { SessionStatsRow, SessionListRow } from "../api/types"
 import { useSelectedProject } from "../components/sidebar/selected-project"
 import { isLive } from "../components/sidebar/sidebar.utils"
 
@@ -17,7 +17,7 @@ import { isLive } from "../components/sidebar/sidebar.utils"
  * regardless of registry order. Consumers must not depend on cross-project row
  * order — the sidebar re-sorts by activity anyway.
  */
-export function useAllSessions(): SessionWithCategory[] {
+export function useAllSessions(): SessionListRow[] {
   const { projects } = useSelectedProject()
   const allSlugs = useMemo(
     () => projects.map((p) => p.slug).sort(),
@@ -64,7 +64,7 @@ export function useSessions(
   opts: {
     includeArchived?: boolean
   } = {},
-): SessionWithCategory[] {
+): SessionListRow[] {
   const all = useAllSessions()
   const { queryProjects, projects } = useSelectedProject()
   const activeSlug = projects.find((p) => p.active)?.slug

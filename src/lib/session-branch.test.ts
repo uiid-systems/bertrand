@@ -18,7 +18,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession } = await import("@/db/queries/sessions");
 const { recordSessionBranch } = await import("./session-branch");
 
@@ -27,7 +26,6 @@ let categoryId: string;
 let n = 0;
 const newSession = () => {
   const s = createSession({
-    categoryId,
     slug: `branch-test-${++n}`,
     name: `branch test ${n}`,
   });
@@ -35,7 +33,6 @@ const newSession = () => {
 };
 
 beforeAll(async () => {
-  categoryId = createCategory({ slug: "branch-cat", name: "branch" }).id;
   await $`mkdir -p ${repo}`.quiet();
   await $`git -C ${repo} init -q -b trunk`.quiet();
   await $`git -C ${repo} config user.email t@example.com`.quiet();

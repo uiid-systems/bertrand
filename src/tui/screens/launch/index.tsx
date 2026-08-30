@@ -39,8 +39,8 @@ function sessionRow(s: SessionRow): PickerItem {
   const isArchived = status === "archived";
 
   return {
-    value: `${s.categoryPath}/${s.session.slug}`,
-    label: `${s.categoryPath}/${s.session.slug} ${status}`,
+    value: s.session.slug,
+    label: `${s.session.slug} ${status}`,
     meta: formatAgo(recencyKey(s)),
     disabled,
     dim: isArchived,
@@ -71,14 +71,6 @@ function sessionRow(s: SessionRow): PickerItem {
   };
 }
 
-function categoryHeader(categoryPath: string): PickerItem {
-  return {
-    value: `__category:${categoryPath}`,
-    label: categoryPath,
-    kind: "header",
-  };
-}
-
 export function Launch({ onSelect }: LaunchProps) {
   const { exit } = useTui();
   const [error, setError] = useState<string | null>(null);
@@ -100,39 +92,23 @@ export function Launch({ onSelect }: LaunchProps) {
         return false;
       })
       .sort((a, b) => {
-        const g = a.categoryPath.localeCompare(b.categoryPath);
-        if (g !== 0) return g;
         const r = statusRank(a.session.status) - statusRank(b.session.status);
         if (r !== 0) return r;
         return recencyKey(b).localeCompare(recencyKey(a));
       });
   }, [allSessions, showArchived]);
 
-  const items: PickerItem[] = useMemo(() => {
-    const rows: PickerItem[] = [];
-    let lastCategory: string | null = null;
-    for (const s of visibleSessions) {
-      if (s.categoryPath !== lastCategory) {
-        rows.push(categoryHeader(s.categoryPath));
-        lastCategory = s.categoryPath;
-      }
-      rows.push(sessionRow(s));
-    }
-    return rows;
-  }, [visibleSessions]);
+  const items: PickerItem[] = useMemo(
+    () => visibleSessions.map(sessionRow),
+    [visibleSessions],
+  );
 
-  // Category prefixes first so "ber" → "bertrand/"; then full names so
-  // "bertrand/" → "bertrand/<slug>". Drawn from every loaded session,
-  // archived included so the suggestion still works when archived is hidden.
-  const suggestions = useMemo(() => {
-    const categories = new Set<string>();
-    const names: string[] = [];
-    for (const s of allSessions) {
-      categories.add(`${s.categoryPath}/`);
-      names.push(`${s.categoryPath}/${s.session.slug}`);
-    }
-    return [...categories, ...names];
-  }, [allSessions]);
+  // Drawn from every loaded session, archived included so the suggestion
+  // still works when archived is hidden.
+  const suggestions = useMemo(
+    () => allSessions.map((s) => s.session.slug),
+    [allSessions],
+  );
 
   // Match against *all* loaded sessions so typing an existing name —
   // even one we don't render (active, waiting) — gets a clear message instead
@@ -140,7 +116,7 @@ export function Launch({ onSelect }: LaunchProps) {
   const sessionByValue = useMemo(() => {
     const map = new Map<string, SessionRow>();
     for (const s of allSessions) {
-      map.set(`${s.categoryPath}/${s.session.slug}`, s);
+      map.set(s.session.slug, s);
     }
     return map;
   }, [allSessions]);
@@ -190,8 +166,8 @@ export function Launch({ onSelect }: LaunchProps) {
     }
 
     try {
-      const { categoryPath, slug } = parseSessionName(value);
-      select({ type: "create", categoryPath, slug });
+      const { slug } = parseSessionName(value);
+      select({ type: "create", slug });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Invalid name");
     }
@@ -222,7 +198,7 @@ export function Launch({ onSelect }: LaunchProps) {
           <Box flexDirection="row" gap={1}>
             <Text bold>Sessions</Text>
             {visibleSessions.length === 0 ? (
-              <Text dim>· none — type category/slug to create</Text>
+              <Text dim>· none — type a name to create</Text>
             ) : (
               <>
                 <Text dim>·</Text>
@@ -253,11 +229,11 @@ export function Launch({ onSelect }: LaunchProps) {
             isFocused
             maxVisible={24}
             suggest={suggestions}
-            placeholder="Filter or type category/slug to create…"
+            placeholder="Filter or type a name to create…"
             emptyHint={
               showArchived
-                ? "No sessions. Type category/slug to create one."
-                : "No paused sessions. Type category/slug to create one."
+                ? "No sessions. Type a name to create one."
+                : "No paused sessions. Type a name to create one."
             }
             onSubmit={handleSubmit}
             onKey={(e, cursorItem) => {
@@ -277,7 +253,7 @@ export function Launch({ onSelect }: LaunchProps) {
           {error && <Text color="red">{error}</Text>}
 
           <Text dim>
-            ↑↓ navigate · ←→ skip category · enter continue/create · ctrl+a{" "}
+            ↑↓ navigate · enter continue/create · ctrl+a{" "}
             {showArchived ? "(un)archive" : "archive"} · tab{" "}
             {showArchived ? "hide" : "show"} archived · ctrl+c quit
           </Text>

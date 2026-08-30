@@ -3,12 +3,11 @@ import {
   createSession,
   updateSession,
   getSession,
-  getSessionByCategorySlug,
+  getSessionBySlug,
 } from "@/db/queries/sessions";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { recordSessionBranch } from "@/lib/session-branch";
-import { getOrCreateCategoryPath, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
   getOrCreateLabelByName,
@@ -100,9 +99,7 @@ function installExitHandlers(): void {
 }
 
 export interface LaunchOpts {
-  /** Category path, e.g. "uiid/bertrand" */
-  categoryPath: string;
-  /** Session slug, e.g. "fix-auth-bug" */
+  /** Session slug, e.g. "fix-auth-bug" — the session's whole identity. */
   slug: string;
   /** Display name (defaults to slug) */
   name?: string;
@@ -124,22 +121,16 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // finalized (background jobs, an external launcher) before they accumulate.
   pruneStaleContractMarkers();
 
-  // Check for duplicate session slug within the target category
-  const existingCategory = getCategoryByPath(opts.categoryPath);
-  if (existingCategory) {
-    const existing = getSessionByCategorySlug(existingCategory.id, opts.slug);
-    if (existing) {
-      throw new Error(
-        `Session "${opts.slug}" already exists in category "${opts.categoryPath}"`
-      );
-    }
+  // Friendly duplicate check ahead of the unique index — the index still
+  // backstops a race, but this is the message users see.
+  const existing = getSessionBySlug(opts.slug);
+  if (existing) {
+    throw new Error(`Session "${opts.slug}" already exists`);
   }
 
-  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
   const session = createSession({
-    categoryId,
     slug: opts.slug,
-    name: opts.name ?? opts.slug,
+    name: opts.name,
   });
 
   for (const name of opts.labelNames ?? []) {
@@ -163,7 +154,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  const sessionName = `${opts.categoryPath}/${opts.slug}`;
+  const sessionName = opts.slug;
 
   // Recorded on every start, not only the first: the column is current state.
   await recordSessionBranch(session.id, process.cwd());

@@ -1,12 +1,11 @@
 import { eq, and, inArray, ne, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
-import { sessions, categories } from "@/db/schema";
+import { sessions } from "@/db/schema";
 import { createId } from "@/lib/id";
-import { getCategoryByPath } from "@/db/queries/categories";
 import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { listProjects } from "@/lib/projects/registry";
-import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
+import type { SessionRow, SessionStatus, SessionListRow } from "@/types";
 
 export type { SessionStatus };
 
@@ -20,73 +19,35 @@ const LIVE_STATUSES: SessionStatus[] = ["active", "waiting", "blocked"];
 
 export interface ResolvedSession {
   session: SessionRow;
-  /**
-   * Category path as actually matched — the flat root for current-model rows,
-   * or the full nested path for legacy rows. Callers use it (joined with the
-   * matched slug) to render the canonical full name.
-   */
-  categoryPath: string;
-  /** Session slug as actually matched. */
+  /** Session slug as actually matched — always the session's CURRENT slug. */
   slug: string;
 }
 
 /**
- * Resolve a slash-delimited session name to its row, tolerating both taxonomy
- * eras. The current model (post-#129) treats the first segment as the category
- * and joins the rest into the slug; the pre-#129 model treated the last segment
- * as the slug and everything before it as a (possibly nested) category path.
+ * Resolve a session name to its row. Sessions are flat (ELKY-171): the slug
+ * alone is a session's identity, so the exact slug match wins. When it misses,
+ * the name may be a retired one — a pre-flatten "<category>/<slug>" or a slug
+ * changed by `bertrand rename` — which `session_aliases` keeps resolving. An
+ * alias hit returns the session's CURRENT identity, not the alias text.
  *
- * #129 deliberately migrated no existing rows ("only newly-created sessions
- * follow the new rule"), so legacy sessions still live under depth>0 category
- * paths and the flat parse can never name them. We try the flat interpretation
- * first (new rows win) and fall back to the legacy split so `bertrand log`,
- * `stats`, and `archive` can still reach those older sessions.
- *
- * When both eras miss, the name may be a retired one: `bertrand rename`
- * records the old canonical name in `session_aliases` (ELKY-170), so a name
- * that once worked keeps working. Aliases come last — a live row that holds
- * the name outranks any historical claim on it. An alias hit returns the
- * session's CURRENT identity, not the alias text.
+ * parseSessionName validates segments and throws on empty/invalid input,
+ * preserving the callers' existing input-validation behavior.
  */
 export function resolveSessionByName(
   name: string,
 ): ResolvedSession | undefined {
-  // Current flat interpretation: first segment = category, rest = slug.
-  // parseSessionName validates the segments and throws on a single-segment
-  // name, preserving the callers' existing input-validation behavior.
-  const flat = parseSessionName(name);
-  const flatCategory = getCategoryByPath(flat.categoryPath);
-  if (flatCategory) {
-    const session = getSessionByCategorySlug(flatCategory.id, flat.slug);
-    if (session) {
-      return { session, categoryPath: flat.categoryPath, slug: flat.slug };
-    }
-  }
+  const { slug } = parseSessionName(name);
 
-  // Legacy interpretation: last segment = slug, everything before = category.
-  // Skipped for two-segment names, where it's identical to the flat parse.
-  const trimmed = name.trim().replace(/^\/+|\/+$/g, "");
-  const segments = trimmed.split("/").filter(Boolean);
-  if (segments.length >= 3) {
-    const legacyCategoryPath = segments.slice(0, -1).join("/");
-    const legacySlug = segments[segments.length - 1]!;
-    const legacyCategory = getCategoryByPath(legacyCategoryPath);
-    if (legacyCategory) {
-      const session = getSessionByCategorySlug(legacyCategory.id, legacySlug);
-      if (session) {
-        return { session, categoryPath: legacyCategoryPath, slug: legacySlug };
-      }
-    }
-  }
+  const session = getSessionBySlug(slug);
+  if (session) return { session, slug: session.slug };
 
-  // Alias fallback: the name may have been retired by a rename.
-  return getSessionByAlias(trimmed);
+  return getSessionByAlias(slug);
 }
 
 export function createSession(opts: {
-  categoryId: string;
   slug: string;
-  name: string;
+  /** Display name (defaults to the slug). */
+  name?: string;
   /** Omitted means 'manual' — every launch path today is a human-typed name. */
   nameSource?: SessionRow["nameSource"];
 }) {
@@ -94,7 +55,7 @@ export function createSession(opts: {
   const id = createId();
   return db
     .insert(sessions)
-    .values({ id, ...opts })
+    .values({ id, ...opts, name: opts.name ?? opts.slug })
     .returning()
     .get();
 }
@@ -106,30 +67,17 @@ export function getSession(
   return db.select().from(sessions).where(eq(sessions.id, id)).get();
 }
 
-export function getSessionByCategorySlug(
-  categoryId: string,
+export function getSessionBySlug(
   slug: string,
+  db: Db = getDb(),
 ): SessionRow | undefined {
-  return getDb()
-    .select()
-    .from(sessions)
-    .where(and(eq(sessions.categoryId, categoryId), eq(sessions.slug, slug)))
-    .get();
+  return db.select().from(sessions).where(eq(sessions.slug, slug)).get();
 }
 
-export function getSessionsByCategory(categoryId: string): SessionRow[] {
+export function getActiveSessions(): SessionListRow[] {
   return getDb()
-    .select()
+    .select({ session: sessions })
     .from(sessions)
-    .where(eq(sessions.categoryId, categoryId))
-    .all();
-}
-
-export function getActiveSessions(): SessionWithCategory[] {
-  return getDb()
-    .select({ session: sessions, categoryPath: categories.path })
-    .from(sessions)
-    .innerJoin(categories, eq(sessions.categoryId, categories.id))
     .where(inArray(sessions.status, LIVE_STATUSES))
     .all();
 }
@@ -167,11 +115,8 @@ export function countLiveSessionsAllProjects(): number {
 function selectSessions(
   db: Db,
   opts?: { excludeArchived?: boolean },
-): SessionWithCategory[] {
-  const query = db
-    .select({ session: sessions, categoryPath: categories.path })
-    .from(sessions)
-    .innerJoin(categories, eq(sessions.categoryId, categories.id));
+): SessionListRow[] {
+  const query = db.select({ session: sessions }).from(sessions);
 
   if (opts?.excludeArchived) {
     // "Exclude archived" means exactly that — everything that isn't archived,
@@ -189,7 +134,7 @@ function selectSessions(
 
 export function getAllSessions(opts?: {
   excludeArchived?: boolean;
-}): SessionWithCategory[] {
+}): SessionListRow[] {
   return selectSessions(getDb(), opts);
 }
 
@@ -202,7 +147,7 @@ export function getAllSessions(opts?: {
 export function getAllSessionsForProject(
   project: { slug: string; name: string },
   opts?: { excludeArchived?: boolean },
-): SessionWithCategory[] {
+): SessionListRow[] {
   return selectSessions(getDbForProject(project.slug), opts).map((s) => ({
     ...s,
     project,
@@ -288,11 +233,9 @@ export function renameSession(id: string, slug: string, name?: string) {
 }
 
 /**
- * Whether any *other* session in this project DB holds `slug`, in any
- * category. Broader than the (categoryId, slug) unique index on purpose:
- * derived names are the session's identity in logs and search, and two
- * sessions answering to the same name across categories is the same
- * confusion the collision rule (ELKY-167) exists to prevent.
+ * Whether any *other* session in this project DB holds `slug`. The slug is
+ * the session's whole identity (unique index `sessions_slug`), so this is the
+ * duplicate check for both the derivation engine and `bertrand rename`.
  */
 export function isSlugTakenByOtherSession(
   slug: string,
@@ -323,15 +266,6 @@ export function setDerivedSessionSlug(
   return db
     .update(sessions)
     .set({ slug, name: slug })
-    .where(eq(sessions.id, id))
-    .returning()
-    .get();
-}
-
-export function moveSession(id: string, categoryId: string) {
-  return getDb()
-    .update(sessions)
-    .set({ categoryId, updatedAt: sql`(datetime('now'))` })
     .where(eq(sessions.id, id))
     .returning()
     .get();

@@ -8,7 +8,6 @@ import { tmpdir } from "os";
 
 import * as schema from "@/db/schema";
 import { _setDb } from "@/db/client";
-import { createCategory } from "@/db/queries/categories";
 import { createSession } from "@/db/queries/sessions";
 import { shouldIgnoreStatusFlip, dispatchHookEvent } from "./update";
 
@@ -65,8 +64,7 @@ describe("dispatchHookEvent — retired worktree events", () => {
   // Historical rows are untouched: `catalog.ts` still renders both types so
   // old timelines read correctly.
   test("worktree.entered is no longer handled", () => {
-    const cat = createCategory({ slug: "wt-cat", name: "wt" });
-    const s = createSession({ categoryId: cat.id, slug: "wt-enter", name: "wt enter" });
+    const s = createSession({ slug: "wt-enter", name: "wt enter" });
 
     const handled = dispatchHookEvent("worktree.entered", {
       sessionId: s.id,
@@ -77,8 +75,7 @@ describe("dispatchHookEvent — retired worktree events", () => {
   });
 
   test("worktree.exited is no longer handled", () => {
-    const cat = createCategory({ slug: "wt-cat2", name: "wt2" });
-    const s = createSession({ categoryId: cat.id, slug: "wt-exit", name: "wt exit" });
+    const s = createSession({ slug: "wt-exit", name: "wt exit" });
 
     expect(dispatchHookEvent("worktree.exited", { sessionId: s.id, meta: {} })).toBe(
       false,

@@ -23,7 +23,6 @@ migrate(drizzle(sqlite), {
 });
 
 // Now import query modules — they'll use the injected test DB
-const { createCategory, getCategoryByPath, getOrCreateCategoryPath } = await import("./queries/categories.ts");
 const { createSession, getSession, getActiveSessions, getAllSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession } = await import("./queries/events.ts");
 const {
@@ -37,39 +36,9 @@ const { computeSessionStats } = await import("../lib/timing");
 const { createLabel, addLabelToSession, getLabelsForSession } = await import("./queries/labels.ts");
 const { upsertSessionStats, getSessionStats } = await import("./queries/stats.ts");
 
-describe("categories", () => {
-  test("create root category", () => {
-    const category = createCategory({ slug: "uiid", name: "UIID" });
-    expect(category.id).toBeTruthy();
-    expect(category.path).toBe("uiid");
-    expect(category.depth).toBe(0);
-  });
-
-  test("create nested category", () => {
-    const root = getCategoryByPath("uiid");
-    const child = createCategory({
-      slug: "bertrand",
-      name: "Bertrand",
-      parentId: root!.id,
-    });
-    expect(child.path).toBe("uiid/bertrand");
-    expect(child.depth).toBe(1);
-  });
-
-  test("getOrCreateCategoryPath creates full tree", () => {
-    const id = getOrCreateCategoryPath("personal/learning");
-    expect(id).toBeTruthy();
-    const category = getCategoryByPath("personal/learning");
-    expect(category).toBeTruthy();
-    expect(category!.depth).toBe(1);
-  });
-});
-
 describe("sessions", () => {
   test("create and retrieve session", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "fix-auth-bug",
       name: "fix-auth-bug",
     });
@@ -82,9 +51,7 @@ describe("sessions", () => {
   });
 
   test("update session status", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "port-hooks",
       name: "port-hooks",
     });
@@ -102,9 +69,7 @@ describe("sessions", () => {
     // Regression: `blocked` was added as a live state (permission request) but
     // the live/list queries still enumerated only active/waiting/paused, so a
     // "needs approval" card silently vanished from the sidebar entirely.
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "needs-approval",
       name: "needs-approval",
     });
@@ -118,9 +83,7 @@ describe("sessions", () => {
   });
 
   test("session rating defaults to null and can be set, updated, and cleared", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "rating-test",
       name: "rating-test",
     });
@@ -141,9 +104,7 @@ describe("sessions", () => {
 
 describe("events", () => {
   test("insert and query events", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "event-test",
       name: "event-test",
     });
@@ -170,9 +131,7 @@ describe("events", () => {
   test("insertEvent honors a createdAt override", () => {
     // Transcript ingestion backdates assistant.message rows to when Claude
     // actually said them, so timeline ordering matches reality.
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "created-at-test",
       name: "created-at-test",
     });
@@ -199,9 +158,7 @@ describe("events", () => {
 
 describe("conversations", () => {
   test("create and query conversations", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "conv-test",
       name: "conv-test",
     });
@@ -218,10 +175,7 @@ describe("labels", () => {
   test("create label and attach to session", () => {
     const label = createLabel({ name: "code-review", color: "#4EA7FC" });
     expect(label.name).toBe("code-review");
-
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "label-test",
       name: "label-test",
     });
@@ -235,9 +189,7 @@ describe("labels", () => {
 
 describe("stats", () => {
   test("upsert session stats", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "stats-test",
       name: "stats-test",
     });
@@ -288,9 +240,7 @@ describe("stats", () => {
 
 describe("token usage rollup", () => {
   test("sums a session's conversations and excludes discarded ones", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "usage-rollup",
       name: "usage-rollup",
     });
@@ -340,9 +290,7 @@ describe("token usage rollup", () => {
   });
 
   test("a session with no conversations rolls up to zero", () => {
-    const category = getCategoryByPath("uiid/bertrand")!;
     const session = createSession({
-      categoryId: category.id,
       slug: "usage-empty",
       name: "usage-empty",
     });

@@ -20,7 +20,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { emitToolApplied } = await import("@/db/events/emit");
@@ -30,13 +29,12 @@ const { computeChangedFiles, resolveChangedFiles } = await import(
 
 afterAll(() => rmSync(TEST_DIR, { recursive: true, force: true }));
 
-const category = createCategory({ slug: "diffstats", name: "Diff Stats" });
 let n = 0;
 
 /** A session with one edit per path, each adding a single line. */
 function sessionEditing(...paths: string[]) {
   const slug = `diffstats-${n++}`;
-  const session = createSession({ categoryId: category.id, slug, name: slug });
+  const session = createSession({ slug });
   const conversationId = crypto.randomUUID();
   createConversation({ id: conversationId, sessionId: session.id });
 

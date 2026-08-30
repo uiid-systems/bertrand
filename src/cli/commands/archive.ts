@@ -12,7 +12,7 @@ function resolveSession(name: string) {
     console.error(`Session not found: ${name}`);
     process.exit(1);
   }
-  return { session: resolved.session, categoryPath: resolved.categoryPath };
+  return { session: resolved.session };
 }
 
 register("archive", async (args) => {
@@ -27,8 +27,8 @@ register("archive", async (args) => {
       console.log("No paused sessions to archive.");
       return;
     }
-    for (const { session, categoryPath } of archived) {
-      console.log(`  archived ${categoryPath}/${session.slug}`);
+    for (const { session } of archived) {
+      console.log(`  archived ${session.slug}`);
     }
     console.log(
       `\nArchived ${archived.length} session${archived.length === 1 ? "" : "s"}.`
@@ -43,8 +43,8 @@ register("archive", async (args) => {
     process.exit(1);
   }
 
-  const { session, categoryPath } = resolveSession(sessionName);
-  const fullName = `${categoryPath}/${session.slug}`;
+  const { session } = resolveSession(sessionName);
+  const fullName = session.slug;
 
   if (isUndo) {
     const result = unarchiveSession(session.id);

@@ -90,10 +90,6 @@ export function useEphemeralCollapsed(active: boolean) {
 export const useCollapsedProjects = () =>
   useCollapsed("bertrand:sidebar:collapsed-projects");
 
-/** Collapsed category groups inside the project zone, keyed by category path. */
-export const useCollapsedCategories = () =>
-  useCollapsed("bertrand:sidebar:collapsed-categories");
-
 /**
  * Collapsed project groups inside the live zone, keyed by project slug.
  *

@@ -48,7 +48,7 @@ export function unarchiveSession(id: string, db?: Db): UnarchiveResult {
   return { ok: true, session: updated };
 }
 
-export type ArchivedRow = { session: SessionRow; categoryPath: string };
+export type ArchivedRow = { session: SessionRow };
 
 export function archiveAllPaused(): { archived: ArchivedRow[] } {
   const rows = getAllSessions({ excludeArchived: true });
@@ -57,7 +57,7 @@ export function archiveAllPaused(): { archived: ArchivedRow[] } {
   const archived: ArchivedRow[] = [];
   for (const row of paused) {
     const updated = updateSessionStatus(row.session.id, "archived");
-    archived.push({ session: updated, categoryPath: row.categoryPath });
+    archived.push({ session: updated });
   }
   return { archived };
 }

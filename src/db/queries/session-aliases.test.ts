@@ -24,22 +24,12 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, deleteSession } = await import("@/db/queries/sessions");
 const { recordSessionAlias, getSessionByAlias, isAliasTakenByOtherSession } =
   await import("@/db/queries/session-aliases");
 
-const cat = createCategory({ slug: "proj", name: "proj" });
-const alpha = createSession({
-  categoryId: cat.id,
-  slug: "alpha",
-  name: "proj/alpha",
-});
-const beta = createSession({
-  categoryId: cat.id,
-  slug: "beta",
-  name: "proj/beta",
-});
+const alpha = createSession({ slug: "alpha" });
+const beta = createSession({ slug: "beta" });
 
 describe("recordSessionAlias / getSessionByAlias", () => {
   test("round-trips an alias to the session's current identity", () => {
@@ -48,7 +38,6 @@ describe("recordSessionAlias / getSessionByAlias", () => {
     const r = getSessionByAlias("proj/old-alpha");
     expect(r?.session.id).toBe(alpha.id);
     // Current identity, not the alias text.
-    expect(r?.categoryPath).toBe("proj");
     expect(r?.slug).toBe("alpha");
   });
 
@@ -88,11 +77,7 @@ describe("isAliasTakenByOtherSession", () => {
 
 describe("session deletion", () => {
   test("cascades away the session's aliases", () => {
-    const doomed = createSession({
-      categoryId: cat.id,
-      slug: "doomed",
-      name: "proj/doomed",
-    });
+    const doomed = createSession({ slug: "doomed" });
     recordSessionAlias("proj/old-doomed", doomed.id);
     expect(getSessionByAlias("proj/old-doomed")?.session.id).toBe(doomed.id);
 
