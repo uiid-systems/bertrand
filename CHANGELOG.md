@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.41.0](https://github.com/uiid-systems/bertrand/compare/v0.40.0...v0.41.0) (2026-08-30)
+
+
+### Features
+
+* add bertrand rename with alias-preserving lookup (ELKY-170) ([#277](https://github.com/uiid-systems/bertrand/issues/277)) ([6b45b15](https://github.com/uiid-systems/bertrand/commit/6b45b15866743705aea31a188a6f53c1437bc518))
+* derive the session slug at pause time (ELKY-168) ([#275](https://github.com/uiid-systems/bertrand/issues/275)) ([830b177](https://github.com/uiid-systems/bertrand/commit/830b17715b21c7685ab9c7b8d9c748b83788e643))
+* flatten categories into flat session slugs with alias back-compat (ELKY-171) ([#279](https://github.com/uiid-systems/bertrand/issues/279)) ([991f5c5](https://github.com/uiid-systems/bertrand/commit/991f5c5972856f4a196f287543a1597b1f11db87))
+* launch sessions unnamed and let pause-time derivation name them (ELKY-172) ([#280](https://github.com/uiid-systems/bertrand/issues/280)) ([ed9b832](https://github.com/uiid-systems/bertrand/commit/ed9b832a69acdb4197450dd4045e3eb10c2a4472))
+* use PR, issue, and branch ticket identifiers in derived slugs (ELKY-169) ([#276](https://github.com/uiid-systems/bertrand/issues/276)) ([cfdc25e](https://github.com/uiid-systems/bertrand/commit/cfdc25e02eb7b4d1ed53aa015870bdf650ec2955))
+
 ## [0.40.0](https://github.com/uiid-systems/bertrand/compare/v0.39.0...v0.40.0) (2026-08-30)
 
 
