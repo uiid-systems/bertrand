@@ -1,7 +1,7 @@
 import { eq, and, inArray, ne, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions } from "@/db/schema";
-import { createId } from "@/lib/id";
+import { createId, placeholderSlug } from "@/lib/id";
 import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { listProjects } from "@/lib/projects/registry";
@@ -72,6 +72,17 @@ export function getSessionBySlug(
   db: Db = getDb(),
 ): SessionRow | undefined {
   return db.select().from(sessions).where(eq(sessions.slug, slug)).get();
+}
+
+/**
+ * A placeholder slug no session currently holds. A collision in the 6-char
+ * space is near-impossible, but the retry costs one indexed lookup and the
+ * unique slug index still backstops a race.
+ */
+export function untakenPlaceholderSlug(db: Db = getDb()): string {
+  let slug = placeholderSlug();
+  while (getSessionBySlug(slug, db)) slug = placeholderSlug();
+  return slug;
 }
 
 export function getActiveSessions(): SessionListRow[] {

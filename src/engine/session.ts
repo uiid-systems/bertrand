@@ -4,6 +4,7 @@ import {
   updateSession,
   getSession,
   getSessionBySlug,
+  untakenPlaceholderSlug,
 } from "@/db/queries/sessions";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
@@ -99,8 +100,13 @@ function installExitHandlers(): void {
 }
 
 export interface LaunchOpts {
-  /** Session slug, e.g. "fix-auth-bug" — the session's whole identity. */
-  slug: string;
+  /**
+   * Session slug, e.g. "fix-auth-bug" — the session's whole identity.
+   * Omitted means the caller has nothing to name it with yet: the session
+   * starts on a placeholder and pause-time derivation names it for real
+   * (name_source='derived').
+   */
+  slug?: string;
   /** Display name (defaults to slug) */
   name?: string;
   /** Label names to attach. Created if they don't exist. */
@@ -121,16 +127,18 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // finalized (background jobs, an external launcher) before they accumulate.
   pruneStaleContractMarkers();
 
+  const slug = opts.slug ?? untakenPlaceholderSlug();
+
   // Friendly duplicate check ahead of the unique index — the index still
   // backstops a race, but this is the message users see.
-  const existing = getSessionBySlug(opts.slug);
-  if (existing) {
+  if (opts.slug && getSessionBySlug(opts.slug)) {
     throw new Error(`Session "${opts.slug}" already exists`);
   }
 
   const session = createSession({
-    slug: opts.slug,
+    slug,
     name: opts.name,
+    nameSource: opts.slug ? undefined : "derived",
   });
 
   for (const name of opts.labelNames ?? []) {
@@ -154,7 +162,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   installExitHandlers();
   await ensureServerStarted();
 
-  const sessionName = opts.slug;
+  const sessionName = slug;
 
   // Recorded on every start, not only the first: the column is current state.
   await recordSessionBranch(session.id, process.cwd());
@@ -174,7 +182,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     sessionId: session.id,
     claudeId,
     sessionName,
-    sessionSlug: opts.slug,
+    sessionSlug: slug,
     contract,
   });
 

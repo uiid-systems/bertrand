@@ -1,6 +1,11 @@
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
-import { createSession, updateSession, getSession } from "@/db/queries/sessions";
+import {
+  createSession,
+  updateSession,
+  getSession,
+  untakenPlaceholderSlug,
+} from "@/db/queries/sessions";
 import { getEdgeEventOfType } from "@/db/queries/events";
 import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
@@ -113,8 +118,12 @@ function buildEnv(vars: Record<string, string>): Record<string, string> {
 }
 
 export interface SpawnDashboardSessionOpts {
-  /** Session slug — the session's whole identity. */
-  slug: string;
+  /**
+   * Session slug — the session's whole identity. Omitted means a placeholder
+   * is issued and pause-time derivation names the session for real
+   * (name_source='derived').
+   */
+  slug?: string;
   name?: string;
 }
 
@@ -286,20 +295,22 @@ export async function spawnDashboardSession(
   // get its own worktree cut from that checkout (#210), which is what made
   // spawn able to fail before any row was written; with worktrees gone there
   // is no pre-row step left to fail, so the row is simply created.
+  const slug = opts.slug ?? untakenPlaceholderSlug();
   const session = createSession({
-    slug: opts.slug,
+    slug,
     name: opts.name,
+    nameSource: opts.slug ? undefined : "derived",
   });
 
   const claudeId = randomUUID();
   createConversation({ id: claudeId, sessionId: session.id });
 
-  const sessionName = opts.slug;
+  const sessionName = slug;
   const pid = startClaudePty({
     sessionId: session.id,
     claudeId,
     sessionName,
-    slug: opts.slug,
+    slug,
     contract: buildContract(
       sessionName,
       helpText({ agent: true }),
