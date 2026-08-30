@@ -15,10 +15,6 @@ export const TopBar = () => {
         size={-1}
         weight="medium"
       />
-      <Text
-        size={-1}
-        weight="medium"
-      />
 
       <Group gap={3} ay="center" ml="auto">
         <Group gap={2} ay="center">

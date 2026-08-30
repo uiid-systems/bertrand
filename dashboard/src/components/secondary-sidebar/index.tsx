@@ -62,7 +62,6 @@ export const SecondarySidebar = ({
         projectSlug={projectSlug}
       />
       <Separator />
-      <Separator />
       <UsageZone
         sessionId={sessionId}
         isLive={isLive}
