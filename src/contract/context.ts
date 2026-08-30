@@ -43,8 +43,7 @@ export function buildSiblingContext(currentSessionId: string): string {
       }
     }
     const summary = summaryText ? ` — "${summaryText}"` : "";
-    const worktree = s.worktreeBranch ? ` [worktree: ${s.worktreeBranch}]` : "";
-    return `- ${categoryPath}/${s.slug}: ${s.status}${worktree}${summary} (${ago})`;
+    return `- ${categoryPath}/${s.slug}: ${s.status}${summary} (${ago})`;
   });
 
   if (rows.length > shown.length) {

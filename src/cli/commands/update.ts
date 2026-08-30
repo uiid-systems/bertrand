@@ -11,8 +11,6 @@ import {
   emitToolApplied,
   emitToolUsed,
   emitUserPrompted,
-  emitWorktreeEntered,
-  emitWorktreeExited,
 } from "@/db/events/emit";
 
 /** Status transitions implied by event types */
@@ -103,29 +101,6 @@ export function dispatchHookEvent(
         outcome: meta.outcome === "approved" ? "approved" : "auto",
       });
       return true;
-    case "worktree.entered": {
-      const path = String(meta.path ?? "");
-      const branch = meta.branch ? String(meta.branch) : undefined;
-      emitWorktreeEntered({ sessionId, conversationId, path, branch });
-      // Mirror the *current* worktree onto the session row so siblings and the
-      // dashboard can see where it's working without scanning the event log.
-      //
-      // This is the writer for sessions that *enter* a worktree mid-run. A
-      // dashboard-created session starts in one instead, so this hook never
-      // fires for it and creation writes these columns directly — see
-      // spawnDashboardSession and docs/pty-wrapper.md.
-      updateSession(sessionId, {
-        worktreePath: path || null,
-        worktreeBranch: branch ?? null,
-      });
-      return true;
-    }
-    case "worktree.exited": {
-      const path = meta.path ? String(meta.path) : undefined;
-      emitWorktreeExited({ sessionId, conversationId, path });
-      updateSession(sessionId, { worktreePath: null, worktreeBranch: null });
-      return true;
-    }
     default:
       return false;
   }

@@ -314,16 +314,12 @@ const getSessionPullRequest = (
   if (!session) return Promise.resolve({ status: "none" })
   return resolveSessionPullRequest(
     {
-      // Worktrees are gone: the branch snapshot on the row is the only
-      // session-scoped signal left, and `repoPath` covers everything else.
-      worktreePath: null,
-      worktreeBranch: session.worktreeBranch,
+      // Nothing records a branch per session yet (ELKY-177), so this is null
+      // for every session and the card stays dark.
+      branch: null,
       repoPath: resolveRepoRoot(url),
     },
     {
-      // Unreachable while `worktreePath` is null — session-pr only calls this
-      // for a worktree-bearing source. Dropped with the param itself.
-      readBranch: async () => null,
       resolveRepo: resolveRepoAt,
       lookupPR: getPRForBranch,
     },

@@ -22,13 +22,15 @@ const NONE: SessionPullRequest = { status: "none" };
 /** What a session row contributes to the lookup. */
 export interface SessionPrSource {
   /**
-   * The session's worktree, when it has one that still exists on disk. Callers
-   * pass `null` for a deleted checkout — the branch snapshot below outlives it
-   * and is what keeps a finished session's PR visible.
+   * The branch this session worked on, as recorded on its row.
+   *
+   * Nothing populates this yet. It replaced a pair of worktree fields that
+   * were the only branch source there had ever been — and which, measured
+   * across 49 sessions, were set on exactly the 3 that used a worktree. The
+   * card was already dark for the other 46. ELKY-177 records a branch for
+   * every session and lights it up properly.
    */
-  worktreePath: string | null;
-  /** `worktree_branch`: the EnterWorktree-time snapshot the DB holds. */
-  worktreeBranch: string | null;
+  branch: string | null;
   /** The project's bound repo checkout, absent when the project is unbound. */
   repoPath?: string | undefined;
 }
@@ -39,8 +41,6 @@ export interface SessionPrSource {
  * {@link resolveSessionPullRequest} can be tested as decisions.
  */
 export interface SessionPrDeps {
-  /** The branch a worktree currently has checked out; null when git can't say. */
-  readBranch: (worktreePath: string) => Promise<string | null>;
   /** The GitHub repo a path belongs to. */
   resolveRepo: (path: string) => Promise<RepoResolution>;
   /** The PR for a branch — {@link import("./pr").getPRForBranch}. */
@@ -51,28 +51,13 @@ export interface SessionPrDeps {
 }
 
 /**
- * Which branch to look the PR up by.
+ * The branch a session's PR is looked up by.
  *
- * Git is asked first and the DB snapshot is the fallback, matching how
- * /api/worktrees reports a branch: `worktree_branch` is written once, at
- * EnterWorktree time, so a session that switched branches mid-life would
- * otherwise be shown the PR for the branch it started on.
- *
- * The snapshot still matters — it is the *only* branch left once the worktree
- * is deleted, which is exactly when a session's PR is most worth seeing.
+ * A blank or absent value means there is nothing to ask GitHub about, which is
+ * currently every session — see the note on `SessionPrSource.branch`.
  */
-async function resolveBranch(
-  source: SessionPrSource,
-  deps: SessionPrDeps,
-): Promise<string | null> {
-  const live = source.worktreePath
-    ? await deps.readBranch(source.worktreePath)
-    : null;
-
-  const branch = live ?? source.worktreeBranch ?? "";
-
-  // A detached HEAD reads as null and a never-set snapshot as null; either way
-  // there is no branch to ask about.
+function resolveBranch(source: SessionPrSource): string | null {
+  const branch = source.branch ?? "";
   return branch.trim() === "" ? null : branch;
 }
 
@@ -90,17 +75,15 @@ export async function resolveSessionPullRequest(
   source: SessionPrSource,
   deps: SessionPrDeps,
 ): Promise<SessionPullRequest> {
-  const branch = await resolveBranch(source, deps);
+  const branch = resolveBranch(source);
 
   if (branch === null) {
     return NONE;
   }
 
-  // The worktree resolves to its main checkout, so either path names the same
-  // repo. Preferring the worktree keeps the answer right for a session whose
-  // project binding is missing, and the binding covers the reverse: a session
-  // whose worktree has already been deleted.
-  const path = source.worktreePath ?? source.repoPath;
+  // The project's bound checkout is the only path left; it names the repo the
+  // branch belongs to.
+  const path = source.repoPath;
 
   if (!path) {
     return NONE;
