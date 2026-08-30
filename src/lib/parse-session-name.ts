@@ -6,6 +6,15 @@ export interface ParsedSessionName {
 const SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 
 /**
+ * Whether a single name segment is well-formed: starts alphanumeric, then
+ * letters, digits, dots, underscores, or dashes. Shared with `bertrand rename`
+ * so a new slug obeys the same per-segment rule as parsed names.
+ */
+export function isValidNameSegment(segment: string): boolean {
+  return SEGMENT_PATTERN.test(segment);
+}
+
+/**
  * Parse a slash-delimited session name. The first segment is the category;
  * every remaining segment is joined with `/` to form the slug. Each segment
  * is validated individually; slashes inside the slug are preserved.

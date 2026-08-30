@@ -93,6 +93,21 @@ export const sessions = sqliteTable(
   ]
 );
 
+// Retired canonical names that must keep resolving. A manual rename
+// (`bertrand rename`, ELKY-170) records the old "<categoryPath>/<slug>" here
+// before the slug changes, so every previously-typed name still reaches the
+// session; the category-flattening migration bulk-populates it the same way.
+// The alias is the primary key — one name can only ever mean one session.
+export const sessionAliases = sqliteTable("session_aliases", {
+  alias: text("alias").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
 // Many-to-many: sessions ↔ labels
 export const sessionLabels = sqliteTable(
   "session_labels",

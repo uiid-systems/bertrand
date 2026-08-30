@@ -41,6 +41,8 @@ Inspect sessions (read-only):
 
 Manage sessions & projects:
   bertrand archive <session>   Archive or unarchive a session.
+  bertrand rename <session> <new-slug>
+                               Rename a session; its old name keeps resolving.
   bertrand project <op>        list | create | switch | current | rename | remove | import
                                (bertrand project --help)
   bertrand sync <op>           onboard | push | pull | status | invite | enable | disable

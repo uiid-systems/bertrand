@@ -9,6 +9,7 @@ const COMMANDS = [
   "search",
   "stats",
   "archive",
+  "rename",
   "project",
   "update",
   "serve",
