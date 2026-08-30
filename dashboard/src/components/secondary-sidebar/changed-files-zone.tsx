@@ -22,9 +22,9 @@ export type ChangedFilesZoneProps = {
  * session changed, with per-file +/- line counts, under the branch's pull
  * request when it has one.
  *
- * The PR sits here because this zone is the
- * session's GitHub-facing view: the files are the branch's diff, which is the
- * PR's diff, and the checks are what CI ran over exactly this list.
+ * The PR sits here because this zone is the session's GitHub-facing view: the
+ * files are the branch's diff, which is the PR's diff, and the checks are what
+ * CI ran over exactly this list.
  *
  * Replayed from the session's `tool.applied` events, uniformly for every
  * session. There was a git arm that took precedence wherever a worktree
