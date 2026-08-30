@@ -15,7 +15,12 @@
  */
 
 import { getEventsByType } from "@/db/queries/events";
-import { setSessionSummary } from "@/db/queries/sessions";
+import {
+  getSession,
+  setSessionSummary,
+  setDerivedSessionSlug,
+} from "@/db/queries/sessions";
+import { deriveSessionSlug, resolveSlugCollision } from "@/lib/derive-slug";
 import type { EventRow } from "@/types";
 import { truncate } from "@/lib/format";
 
@@ -109,6 +114,10 @@ export function deriveSessionSummary(sessionId: string): string | null {
  * latest state; skips the write when nothing can be derived so an existing
  * summary is never clobbered with null. Never throws — every caller is on a
  * session-teardown path where a summary failure must not break the exit.
+ *
+ * Pause is also when the session's derived name lands (ELKY-168): the same
+ * best-effort contract applies, and each side is guarded independently so a
+ * naming failure can't take the summary down with it (or vice versa).
  */
 export function storeSessionSummary(sessionId: string): void {
   try {
@@ -117,4 +126,27 @@ export function storeSessionSummary(sessionId: string): void {
   } catch {
     // Best-effort by design.
   }
+  try {
+    applyDerivedSlug(sessionId);
+  } catch {
+    // Best-effort by design.
+  }
+}
+
+/**
+ * Rename the session to its derived slug. Only 'derived' rows — a manual
+ * name is the user's word and always wins. Skips the write when derivation
+ * fails (keep the name it has; never a garbage slug) and when the resolved
+ * slug already matches, so a no-op pause writes nothing at all.
+ */
+function applyDerivedSlug(sessionId: string): void {
+  const session = getSession(sessionId);
+  if (!session || session.nameSource !== "derived") return;
+
+  const derived = deriveSessionSlug(sessionId);
+  if (!derived) return;
+
+  const slug = resolveSlugCollision(derived, sessionId);
+  if (slug === session.slug) return;
+  setDerivedSessionSlug(sessionId, slug);
 }

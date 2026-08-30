@@ -44,6 +44,14 @@ export const sessions = sqliteTable(
       .references(() => categories.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
+    // Who chose this session's name. Pause-time slug derivation (ELKY-168)
+    // only ever renames 'derived' rows — a manual name is the user's word and
+    // wins permanently. Defaults 'manual' because every creation path today is
+    // a human-typed name; auto-created rows flip this when launch naming goes
+    // automatic.
+    nameSource: text("name_source", { enum: ["manual", "derived"] })
+      .notNull()
+      .default("manual"),
     status: text("status", {
       enum: ["active", "waiting", "blocked", "paused", "archived"],
     })

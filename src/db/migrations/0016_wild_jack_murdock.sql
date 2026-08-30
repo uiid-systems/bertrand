@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `name_source` text DEFAULT 'manual' NOT NULL;
