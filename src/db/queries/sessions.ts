@@ -224,8 +224,6 @@ export function updateSession(
     pidStartedAt: number | null;
     endedAt: string;
     branch: string | null;
-    worktreePath: string | null;
-    worktreeBranch: string | null;
   }>,
   db: Db = getDb(),
 ) {

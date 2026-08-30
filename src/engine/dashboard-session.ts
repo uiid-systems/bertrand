@@ -328,14 +328,13 @@ export type ResumeDashboardSessionResult =
         | "conversation-not-found"
         | "already-running"
         | "no-cwd"
-        | "worktree-gone"
         | "at-capacity";
       limit?: number;
     };
 
 type SessionCwdResult =
   | { ok: true; cwd: string }
-  | { ok: false; reason: "not-found" | "no-cwd" | "worktree-gone" };
+  | { ok: false; reason: "not-found" | "no-cwd" };
 
 /**
  * Recover the directory a session ran in.
@@ -344,25 +343,12 @@ type SessionCwdResult =
  * is unrelated to it. The last `claude.started` is the durable answer — the
  * *last* one, since a session already resumed may have moved.
  *
- * `worktree_path` is still consulted, but only to *refuse*, and only when it
- * disagrees with the event. Nothing writes that column any more (ELKY-163), so
- * every row carrying one is history — but the two ways of acquiring it left
- * different records behind:
- *
- * - `EnterWorktree` set the column mid-run without emitting a fresh
- *   `claude.started`, so the last event names the **main checkout**. Falling
- *   through would resume isolated work there and commit it to whatever branch
- *   that checkout has out — the failure the worktree resume path existed to
- *   rule out, and dropping the feature does not make those rows safe to
- *   reinterpret.
- * - A dashboard spawn (#210) started `claude` *in* the worktree, so the event
- *   already names it and agreeing records need no special handling.
- *
- * Hence the comparison rather than a bare presence check: refusing on presence
- * alone would also turn away the second kind, whose recorded cwd was correct
- * all along.
- *
- * Retired with the columns themselves in ELKY-164.
+ * The `worktree_path` refusal that used to sit here went out with the column
+ * itself (ELKY-164). It was a stopgap: `EnterWorktree` set that column mid-run
+ * without emitting a fresh `claude.started`, so those rows' last event names
+ * the main checkout, and resuming would have committed isolated work to
+ * whatever branch it had out. With worktrees retired every session runs in the
+ * bound checkout, which is exactly what `claude.started` records.
  */
 function resolveSessionCwd(sessionId: string): SessionCwdResult {
   const session = getSession(sessionId);
@@ -372,9 +358,6 @@ function resolveSessionCwd(sessionId: string): SessionCwdResult {
   const cwd = (started?.meta as Record<string, unknown> | null)?.cwd;
   if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) {
     return { ok: false, reason: "no-cwd" };
-  }
-  if (session.worktreePath && session.worktreePath !== cwd) {
-    return { ok: false, reason: "worktree-gone" };
   }
   return { ok: true, cwd };
 }
@@ -406,8 +389,7 @@ export function resumeDashboardSession(opts: {
   }
 
   // Every refusal here means we cannot honestly pick a working directory, and
-  // guessing one would start Claude somewhere the user never worked — or, for
-  // `worktree-gone`, somewhere they specifically arranged not to work.
+  // guessing one would start Claude somewhere the user never worked.
   const resolved = resolveSessionCwd(opts.sessionId);
   if (!resolved.ok) return { ok: false, reason: resolved.reason };
   const { cwd } = resolved;

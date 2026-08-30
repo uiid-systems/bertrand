@@ -71,24 +71,6 @@ export const sessions = sqliteTable(
     // recorded came from worktrees, which reached ~6% of sessions; this is the
     // branch every session already had and nobody was writing down.
     branch: text("branch"),
-    // Retired with the worktree teardown (ELKY-163): nothing writes either
-    // column any more, so every row carrying one is history. They are not
-    // equally dead, and the difference is what a later drop migration has to
-    // respect.
-    //
-    // `worktree_path` is still *read*, in two places, and dropping it means
-    // retiring both first:
-    //   - `resolveSessionCwd` (engine/dashboard-session.ts) consults it only to
-    //     refuse a resume when it disagrees with the last `claude.started` cwd.
-    //     Those rows would otherwise resume isolated work in the main checkout
-    //     — see the rationale there, and the guards in dashboard-resume.test.ts.
-    //   - `migrate-repo.ts` scans it when ranking candidate repo paths.
-    //
-    // `worktree_branch` has no reader left and is the one genuinely safe to
-    // drop today. It was also the only branch source bertrand ever had, which
-    // is what `branch` above replaces.
-    worktreePath: text("worktree_path"),
-    worktreeBranch: text("worktree_branch"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -220,16 +202,6 @@ export const sessionStats = sqliteTable("session_stats", {
   linesAdded: integer("lines_added").notNull().default(0),
   linesRemoved: integer("lines_removed").notNull().default(0),
   filesTouched: integer("files_touched").notNull().default(0),
-  // Where the three counters above came from. `events` replays `tool.applied`
-  // and is recomputable forever; `git` is a snapshot taken while the session's
-  // worktree still existed and is **not** — once the worktree is removed there
-  // is nothing left to measure. The column exists so the event path can tell
-  // the two apart and refuse to overwrite a git snapshot with a replay, which
-  // would silently downgrade a completed session's numbers.
-  diffSource: text("diff_source")
-    .$type<"events" | "git">()
-    .notNull()
-    .default("events"),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),

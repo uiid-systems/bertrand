@@ -2,7 +2,7 @@ import { copyFileSync, existsSync } from "fs";
 import { join } from "path";
 import { eq } from "drizzle-orm";
 import { getDbForProject } from "@/db/client";
-import { events, sessions } from "@/db/schema";
+import { events } from "@/db/schema";
 import { formatIdentity } from "@/lib/github/identity";
 import { resolveRepoAt } from "@/lib/github/resolve";
 import {
@@ -81,12 +81,15 @@ export type RepoMigrationResult =
 /**
  * Ranked candidate checkout paths for a project, most-used first.
  *
- * Sources are the session `cwd` recorded on `claude.started` and the worktree
- * paths on the sessions themselves. Both can be *inside* the repo rather than
- * at its root (`packages/design-system`, `.claude/worktrees/foo`); that's fine,
- * because `resolveRepoAt` walks git up to the main checkout. Ranking by
+ * The source is the session `cwd` recorded on `claude.started`. It can be
+ * *inside* the repo rather than at its root (`packages/design-system`); that's
+ * fine, because `resolveRepoAt` walks git up to the main checkout. Ranking by
  * frequency is what makes the occasional stray path — a session opened in the
  * wrong project — lose to the real one.
+ *
+ * Worktree paths were a second source until ELKY-164 dropped the column. Every
+ * session now runs in the bound checkout, which `claude.started` already
+ * records, so nothing is lost for sessions started since the teardown.
  */
 export type PathScanner = (slug: string) => string[];
 
@@ -105,13 +108,6 @@ const defaultPathScanner: PathScanner = (slug) => {
     .all()) {
     const meta = row.meta as { cwd?: unknown } | null;
     if (meta && typeof meta === "object") bump(meta.cwd as string);
-  }
-
-  for (const row of db
-    .select({ worktreePath: sessions.worktreePath })
-    .from(sessions)
-    .all()) {
-    bump(row.worktreePath);
   }
 
   return [...counts.entries()]
