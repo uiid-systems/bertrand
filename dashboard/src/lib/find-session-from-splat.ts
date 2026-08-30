@@ -1,20 +1,15 @@
-import type { SessionWithCategory } from "../api/types";
+import type { SessionListRow } from "../api/types";
 
 /**
- * Resolve a URL splat (e.g. `ssp/REV-367/fe-determination`) to a session by
- * direct string match against `<categoryPath>/<slug>`. Works for both flat
- * categories with slash-bearing slugs (new model) and legacy nested categories
- * stored as multi-segment paths.
+ * Resolve a URL splat to a session by direct string match against the slug.
+ * Slugs may legitimately contain slashes (e.g. `REV-367/fe-determination`),
+ * so the whole trimmed splat is one identity.
  */
 export function findSessionFromSplat(
   splat: string,
-  sessions: SessionWithCategory[],
-): SessionWithCategory | null {
+  sessions: SessionListRow[],
+): SessionListRow | null {
   const trimmed = splat.replace(/^\/+|\/+$/g, "");
-  if (!trimmed.includes("/")) return null;
-  return (
-    sessions.find(
-      (s) => `${s.categoryPath}/${s.session.slug}` === trimmed,
-    ) ?? null
-  );
+  if (!trimmed) return null;
+  return sessions.find((s) => s.session.slug === trimmed) ?? null;
 }

@@ -2,12 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Group, Text } from "@uiid/design-system";
 import { FilesIcon } from "@uiid/icons";
 
-import type { SessionWithCategory } from "@/types";
+import type { SessionListRow } from "@/types";
 import { useAllStats } from "../../../lib/use-sessions";
 import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionContentProps = {
-  session: SessionWithCategory;
+  session: SessionListRow;
 };
 
 export const SessionContent = ({ session: s }: SessionContentProps) => {

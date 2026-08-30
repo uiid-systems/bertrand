@@ -53,9 +53,9 @@ describe("getDb()", () => {
 
   test("running lazy migrations gives the new DB its schema", () => {
     const db = getDb();
-    // categories table is part of migration 0003 — querying it should
+    // session_aliases arrives in migration 0017 — querying it should
     // succeed (returning [] on a fresh DB), not throw.
-    const result = db.$client.prepare("SELECT count(*) as n FROM categories").get();
+    const result = db.$client.prepare("SELECT count(*) as n FROM session_aliases").get();
     expect(result).toEqual({ n: 0 });
   });
 });

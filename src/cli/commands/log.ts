@@ -32,7 +32,7 @@ import {
 
 const EVENT_SUMMARY_MAX = 500;
 
-const USAGE = `Usage: bertrand log <category>/<slug> [--events | --full]
+const USAGE = `Usage: bertrand log <session> [--events | --full]
   --events flags: --conversation <ordinal|id-prefix> --type <t,…> --since <ISO|24h|30m> --limit <n>
   --type accepts groups (qa, prompt, assistant, tool, lifecycle) or raw event names.
 Run \`bertrand list\` to see sessions.`;
@@ -349,7 +349,7 @@ register("log", async (args) => {
   const resolved = resolveSessionByName(flags.target);
   if (!resolved) fail(`Session not found: ${flags.target}`);
 
-  const sessionName = `${resolved.categoryPath}/${resolved.slug}`;
+  const sessionName = resolved.slug;
 
   // Bare --json means the pre-rework full record; alongside --events it's a
   // no-op so filter flags are never silently discarded.

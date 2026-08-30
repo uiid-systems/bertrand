@@ -1,12 +1,11 @@
-import type { SessionWithCategory } from "../../api/types";
+import type { SessionListRow } from "../../api/types";
 
 /**
- * A collapsible run of sessions under one header. Deliberately agnostic about
- * what `key` names — the project zone groups by category path, the live zone by
- * project slug — so both can render through the same `SessionGroup` component.
+ * A collapsible run of sessions under one header — the live zone's grouping by
+ * project slug.
  */
 export type SessionGroup = {
   key: string;
   label: string;
-  sessions: SessionWithCategory[];
+  sessions: SessionListRow[];
 };

@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { emitClaudeStarted } = await import("@/db/events/emit");
@@ -38,10 +37,9 @@ beforeEach(() => {
   process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "8";
 });
 
-const category = createCategory({ slug: "resume", name: "Resume" });
 
 function makeSession(slug: string) {
-  return createSession({ categoryId: category.id, slug, name: slug });
+  return createSession({ slug });
 }
 
 /**

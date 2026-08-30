@@ -29,7 +29,6 @@ import {
 } from "./project";
 import { _clearTestDb } from "@/db/client";
 import { createSession, updateSessionStatus } from "@/db/queries/sessions";
-import { createCategory } from "@/db/queries/categories";
 
 let tmpRoot: string;
 const originalDir = _getRegistryDir();
@@ -250,8 +249,7 @@ describe("project switch", () => {
     await seedProject("with-live", { activate: true });
     await seedProject("target");
     // Insert an active session into the currently-active project's DB
-    const cat = createCategory({ slug: "test", name: "Test" });
-    const session = createSession({ categoryId: cat.id, slug: "live-1", name: "live-1" });
+    const session = createSession({ slug: "live-1", name: "live-1" });
     updateSessionStatus(session.id, "active");
 
     expect(() => switchSubcommand(["target"])).toThrow(/Pause them first/);
@@ -318,12 +316,11 @@ describe("project remove", () => {
     await seedProject("a", { activate: true });
     await seedProject("with-sessions");
     // Seed a session into the non-active project so countSessions sees it.
-    // We point BERTRAND_PROJECT at the target so createSession/createCategory
-    // (which use `getDb()` → active project) write into "with-sessions".
+    // We point BERTRAND_PROJECT at the target so createSession
+    // (which uses `getDb()` → active project) writes into "with-sessions".
     process.env.BERTRAND_PROJECT = "with-sessions";
     _resetActiveProjectCache();
-    const c = createCategory({ slug: "test", name: "Test" });
-    createSession({ categoryId: c.id, slug: "s1", name: "s1" });
+    createSession({ slug: "s1", name: "s1" });
     delete process.env.BERTRAND_PROJECT;
     _resetActiveProjectCache();
 
@@ -335,8 +332,7 @@ describe("project remove", () => {
     await seedProject("doomed");
     process.env.BERTRAND_PROJECT = "doomed";
     _resetActiveProjectCache();
-    const c = createCategory({ slug: "test", name: "Test" });
-    createSession({ categoryId: c.id, slug: "s1", name: "s1" });
+    createSession({ slug: "s1", name: "s1" });
     delete process.env.BERTRAND_PROJECT;
     _resetActiveProjectCache();
 

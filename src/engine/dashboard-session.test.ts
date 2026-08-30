@@ -97,7 +97,7 @@ describe("dashboard session concurrency bound", () => {
   test("refuses to spawn past the cap", async () => {
     useProject("capped", process.cwd());
     await expect(
-      spawnDashboardSession({ categoryPath: "test", slug: "over-cap" }),
+      spawnDashboardSession({ slug: "over-cap" }),
     ).rejects.toThrow(DashboardSessionLimitError);
   });
 
@@ -107,7 +107,7 @@ describe("dashboard session concurrency bound", () => {
     // later, and no orphaned worktree on disk.
     useProject("capped", process.cwd());
     try {
-      await spawnDashboardSession({ categoryPath: "test", slug: "over-cap-2" });
+      await spawnDashboardSession({ slug: "over-cap-2" });
     } catch {
       // expected
     }
@@ -130,7 +130,6 @@ describe("the repo is derived from the project, not supplied", () => {
     // Asserted by catching rather than `rejects.toThrow`, so the *type* is
     // checked outright — the HTTP layer branches on it to return 409.
     const err = await spawnDashboardSession({
-      categoryPath: "test",
       slug: "nowhere-to-run",
     }).catch((e) => e);
 
@@ -143,7 +142,6 @@ describe("the repo is derived from the project, not supplied", () => {
     useProject("unlinked");
 
     const err = await spawnDashboardSession({
-      categoryPath: "test",
       slug: "nowhere-to-run-2",
     }).catch((e) => e);
 
@@ -159,7 +157,6 @@ describe("the repo is derived from the project, not supplied", () => {
     useProject("unlinked");
 
     const err = await spawnDashboardSession({
-      categoryPath: "test",
       slug: "capped-and-unbound",
     }).catch((e) => e);
 

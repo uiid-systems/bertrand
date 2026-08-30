@@ -127,6 +127,13 @@
       "when": 1788125194596,
       "tag": "0017_sparkling_luckman",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788125900670,
+      "tag": "0018_romantic_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

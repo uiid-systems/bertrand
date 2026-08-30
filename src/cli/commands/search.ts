@@ -21,7 +21,7 @@ import {
  */
 
 const USAGE = `Usage: bertrand search <term…> [--type prompt,question,answer,assistant,summary,tool]
-                                [--session <category>/<slug>] [--limit <n>]
+                                [--session <slug>] [--limit <n>]
                                 [--project <slug> | --all-projects]
 Terms are AND-ed, case-insensitive. Default types: everything except tool.`;
 

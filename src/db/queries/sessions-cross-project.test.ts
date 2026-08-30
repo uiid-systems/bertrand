@@ -15,7 +15,6 @@ import {
   updateSessionStatus,
   countLiveSessionsAllProjects,
 } from "@/db/queries/sessions";
-import { getOrCreateCategoryPath } from "@/db/queries/categories";
 
 /**
  * countLiveSessionsAllProjects backs stopServerIfIdle's shutdown check
@@ -48,8 +47,7 @@ function addLiveSession(slug: string) {
   registerProject({ slug, name: slug });
   process.env.BERTRAND_PROJECT = slug;
   _resetActiveProjectCache();
-  const categoryId = getOrCreateCategoryPath(`${slug}-cat`);
-  const session = createSession({ categoryId, slug: "s", name: `${slug}/s` });
+  const session = createSession({ slug: "s" });
   updateSessionStatus(session.id, "active");
   return session;
 }

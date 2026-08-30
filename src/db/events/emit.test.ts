@@ -21,7 +21,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "migrations"),
 });
 
-const { createCategory } = await import("../queries/categories");
 const { createSession } = await import("../queries/sessions");
 const { createConversation } = await import("../queries/conversations");
 const { getEventsBySession } = await import("../queries/events");
@@ -31,9 +30,7 @@ let sessionId: string;
 let conversationId: string;
 
 beforeAll(() => {
-  const cat = createCategory({ slug: "test-cat", name: "test" });
   const session = createSession({
-    categoryId: cat.id,
     slug: "emit-test",
     name: "emit test",
   });

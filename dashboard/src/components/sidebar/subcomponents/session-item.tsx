@@ -7,7 +7,7 @@ import {
   Status,
   Text,
 } from "@uiid/design-system";
-import type { SessionWithCategory } from "../../../api/types";
+import type { SessionListRow } from "../../../api/types";
 import {
   formatRelativeTime,
   statusColor,
@@ -16,11 +16,11 @@ import {
 import { CopyResumeButton } from "../../copy-resume-button";
 
 export type SessionItem = Omit<GroupProps, "children"> & {
-  session: SessionWithCategory;
+  session: SessionListRow;
 };
 
 export const SessionItem = ({ session: s, ...props }: SessionItem) => {
-  const { categoryPath, session } = s;
+  const { session } = s;
   const color = statusColor(session.status);
 
   return (
@@ -31,15 +31,10 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
         <Stack gap={2}>
           <Text
             data-slot="session-link"
-            render={
-              <Link
-                to="/$"
-                params={{ _splat: `${categoryPath}/${session.slug}` }}
-              />
-            }
+            render={<Link to="/$" params={{ _splat: session.slug }} />}
             weight="bold"
           >
-            {categoryPath} / {session.slug}
+            {session.slug}
           </Text>
         </Stack>
         <Text
@@ -54,7 +49,7 @@ export const SessionItem = ({ session: s, ...props }: SessionItem) => {
       <Badge data-slot="session-badge" color={color} ml="auto">
         {statusLabel(session.status)}
       </Badge>
-      <CopyResumeButton session={session} categoryPath={categoryPath} />
+      <CopyResumeButton session={session} />
     </Group>
   );
 };

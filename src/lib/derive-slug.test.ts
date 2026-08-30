@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession, renameSession, updateSession } = await import(
   "@/db/queries/sessions"
 );
@@ -34,14 +33,12 @@ const { deriveSlugFromTexts, deriveSessionSlug, resolveSlugCollision } =
 
 const SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 
-const category = createCategory({ slug: "cat", name: "cat" });
 
 function makeSession(
   slug: string,
   opts?: { nameSource?: "manual" | "derived" },
 ) {
   return createSession({
-    categoryId: category.id,
     slug,
     name: slug,
     nameSource: opts?.nameSource,
@@ -329,9 +326,7 @@ describe("resolveSlugCollision", () => {
   });
 
   test("suffixes -2 when another session holds the slug, even in another category", () => {
-    const otherCategory = createCategory({ slug: "other", name: "other" });
     createSession({
-      categoryId: otherCategory.id,
       slug: "taken-slug",
       name: "taken-slug",
     });

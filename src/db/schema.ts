@@ -1,29 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-// Nestable containers — any depth, purpose-agnostic
-export const categories = sqliteTable(
-  "categories",
-  {
-    id: text("id").primaryKey(),
-    parentId: text("parent_id").references((): any => categories.id, {
-      onDelete: "cascade",
-    }),
-    slug: text("slug").notNull(),
-    name: text("name").notNull(),
-    path: text("path").notNull(),
-    depth: integer("depth").notNull().default(0),
-    color: text("color"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-  },
-  (t) => [
-    uniqueIndex("categories_parent_slug").on(t.parentId, t.slug),
-    index("categories_path").on(t.path),
-  ]
-);
-
 // Cross-cutting tags — "code-review", "frontend", "planning"
 export const labels = sqliteTable("labels", {
   id: text("id").primaryKey(),
@@ -34,14 +11,13 @@ export const labels = sqliteTable("labels", {
     .default(sql`(datetime('now'))`),
 });
 
-// Sessions belong to a category at any depth
+// Sessions are flat: the slug alone is a session's identity, unique per
+// project DB (ELKY-171). Names retired by the flattening — and by manual
+// renames — keep resolving via `session_aliases`.
 export const sessions = sqliteTable(
   "sessions",
   {
     id: text("id").primaryKey(),
-    categoryId: text("category_id")
-      .notNull()
-      .references(() => categories.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     // Who chose this session's name. Pause-time slug derivation (ELKY-168)
@@ -87,17 +63,18 @@ export const sessions = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
   (t) => [
-    uniqueIndex("sessions_category_slug").on(t.categoryId, t.slug),
+    uniqueIndex("sessions_slug").on(t.slug),
     index("sessions_status").on(t.status),
     index("sessions_started").on(t.startedAt),
   ]
 );
 
 // Retired canonical names that must keep resolving. A manual rename
-// (`bertrand rename`, ELKY-170) records the old "<categoryPath>/<slug>" here
-// before the slug changes, so every previously-typed name still reaches the
-// session; the category-flattening migration bulk-populates it the same way.
-// The alias is the primary key — one name can only ever mean one session.
+// (`bertrand rename`, ELKY-170) records the old slug here before it changes,
+// and the category-flattening migration (ELKY-171) bulk-recorded every
+// pre-flatten "<categoryPath>/<slug>" name, so every previously-typed name
+// still reaches its session. The alias is the primary key — one name can only
+// ever mean one session.
 export const sessionAliases = sqliteTable("session_aliases", {
   alias: text("alias").primaryKey(),
   sessionId: text("session_id")

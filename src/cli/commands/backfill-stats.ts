@@ -21,9 +21,9 @@ register("backfill-stats", async (args) => {
     `Backfilling stats for ${rows.length} session(s)${includeArchived ? "" : " (excluding archived)"}...`,
   );
 
-  for (const { session, categoryPath } of rows) {
+  for (const { session } of rows) {
     computeAndPersist(session.id);
-    console.log(`  ✓ ${categoryPath}/${session.slug}`);
+    console.log(`  ✓ ${session.slug}`);
   }
 
   console.log("Done.");

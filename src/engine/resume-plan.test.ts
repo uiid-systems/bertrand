@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession } = await import("@/db/queries/sessions");
 const { createConversation, getConversationsBySession, discardConversation } =
   await import("@/db/queries/conversations");
@@ -33,10 +32,9 @@ const { planResume, newConversation, resolveSessionName } = await import(
 );
 const { claudeTranscriptPath } = await import("@/lib/transcript");
 
-const category = createCategory({ slug: "resume-test", name: "Resume Test" });
 
 function makeSession(slug: string) {
-  return createSession({ categoryId: category.id, slug, name: slug });
+  return createSession({ slug });
 }
 
 /**
@@ -171,8 +169,8 @@ describe("planResume", () => {
     const result = planResume({ sessionId: s.id, cwd: CWD });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.plan.sessionName).toBe("resume-test/plan-naming");
-    expect(result.plan.contract).toContain("resume-test/plan-naming");
+    expect(result.plan.sessionName).toBe("plan-naming");
+    expect(result.plan.contract).toContain("plan-naming");
   });
 });
 
@@ -186,13 +184,8 @@ describe("newConversation", () => {
 });
 
 describe("resolveSessionName", () => {
-  test("uses category path and slug", () => {
+  test("the canonical name is the slug", () => {
     const s = makeSession("naming-1");
-    expect(resolveSessionName(s)).toBe("resume-test/naming-1");
-  });
-
-  test("falls back to the stored name when the category is missing", () => {
-    const s = makeSession("naming-2");
-    expect(resolveSessionName({ ...s, categoryId: "gone" })).toBe("naming-2");
+    expect(resolveSessionName(s)).toBe("naming-1");
   });
 });

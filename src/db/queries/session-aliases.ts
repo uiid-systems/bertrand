@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
-import { sessionAliases, sessions, categories } from "@/db/schema";
+import { sessionAliases, sessions } from "@/db/schema";
 import type { ResolvedSession } from "@/db/queries/sessions";
 
 /**
@@ -23,23 +23,21 @@ export function recordSessionAlias(
 
 /**
  * Resolve an alias to its session, shaped like `resolveSessionByName`'s
- * result: `categoryPath`/`slug` reflect the session's CURRENT identity (its
- * actual category and slug), never the alias text — callers use them to
- * render the canonical name the alias now points at.
+ * result: `slug` reflects the session's CURRENT identity, never the alias
+ * text — callers use it to render the canonical name the alias now points at.
  */
 export function getSessionByAlias(
   alias: string,
   db: Db = getDb(),
 ): ResolvedSession | undefined {
   const row = db
-    .select({ session: sessions, categoryPath: categories.path })
+    .select({ session: sessions })
     .from(sessionAliases)
     .innerJoin(sessions, eq(sessionAliases.sessionId, sessions.id))
-    .innerJoin(categories, eq(sessions.categoryId, categories.id))
     .where(eq(sessionAliases.alias, alias))
     .get();
   if (!row) return undefined;
-  return { ...row, slug: row.session.slug };
+  return { session: row.session, slug: row.session.slug };
 }
 
 /** Whether `alias` is already claimed by a session other than `sessionId`. */

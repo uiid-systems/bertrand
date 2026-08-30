@@ -15,7 +15,7 @@
 import { and, eq, desc, inArray, like, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import type { EventRow } from "@/types";
-import { events, sessions, categories } from "@/db/schema";
+import { events, sessions } from "@/db/schema";
 import { segmentByConversation } from "@/lib/digest";
 
 export const SEARCH_TYPES = [
@@ -68,7 +68,7 @@ export type SearchHit = {
 export type SearchOpts = {
   terms: string[];
   types?: SearchType[];
-  /** Restrict to one session by "<category>/<slug>" name. */
+  /** Restrict to one session by slug. */
   session?: string;
   limit?: number;
 };
@@ -109,21 +109,17 @@ export function makeSnippet(text: string, firstTerm: string): string {
 
 type SessionInfo = { name: string; status: string };
 
-/** id → "<categoryPath>/<slug>" + status, for hydrating hits. */
+/** id → slug + status, for hydrating hits. */
 function loadSessionIndex(db: Db): Map<string, SessionInfo> {
   const rows = db
     .select({
       id: sessions.id,
       slug: sessions.slug,
       status: sessions.status,
-      categoryPath: categories.path,
     })
     .from(sessions)
-    .innerJoin(categories, eq(sessions.categoryId, categories.id))
     .all();
-  return new Map(
-    rows.map((r) => [r.id, { name: `${r.categoryPath}/${r.slug}`, status: r.status }]),
-  );
+  return new Map(rows.map((r) => [r.id, { name: r.slug, status: r.status }]));
 }
 
 /**

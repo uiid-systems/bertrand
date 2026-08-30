@@ -4,7 +4,6 @@ import {
   createConversation,
   getConversationsBySession,
 } from "@/db/queries/conversations";
-import { getCategory } from "@/db/queries/categories";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
@@ -24,7 +23,7 @@ import type { SessionRow } from "@/types";
  */
 export interface ResumePlan {
   session: SessionRow;
-  /** Canonical "category/slug" name, as the contract and env expect it. */
+  /** Canonical session name (the slug), as the contract and env expect it. */
   sessionName: string;
   contract: string;
   conversationId: string;
@@ -51,13 +50,9 @@ export function newConversation(sessionId: string): string {
   return id;
 }
 
-/**
- * Resolve a session's canonical name. Falls back to the stored display name
- * when the category has gone missing, which is what the CLI has always done.
- */
+/** A session's canonical name is its slug — sessions are flat (ELKY-171). */
 export function resolveSessionName(session: SessionRow): string {
-  const category = getCategory(session.categoryId);
-  return category ? `${category.path}/${session.slug}` : session.name;
+  return session.slug;
 }
 
 /**

@@ -24,15 +24,13 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, updateSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { insertEvent } = await import("@/db/queries/events");
 const { searchProject, makeSnippet } = await import("./search");
 
-const cat = createCategory({ slug: "cli", name: "cli" });
-const s1 = createSession({ categoryId: cat.id, slug: "auth-work", name: "auth-work" });
-const s2 = createSession({ categoryId: cat.id, slug: "other", name: "other" });
+const s1 = createSession({ slug: "auth-work" });
+const s2 = createSession({ slug: "other" });
 updateSession(s2.id, { summary: "refactored the auth token flow → shipped" });
 
 const convoA = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -88,7 +86,7 @@ describe("searchProject", () => {
     expect(types).not.toContain("tool"); // opt-in only
 
     const prompt = hits.find((h) => h.type === "prompt")!;
-    expect(prompt.session).toBe("cli/auth-work");
+    expect(prompt.session).toBe("auth-work");
     expect(prompt.conversation).toBe(1);
     const question = hits.find((h) => h.type === "question")!;
     expect(question.conversation).toBe(2);
@@ -118,10 +116,10 @@ describe("searchProject", () => {
   });
 
   test("--session filter restricts event and summary hits", () => {
-    const hits = searchProject(testDb, "p", { terms: ["token"], session: "cli/other" });
+    const hits = searchProject(testDb, "p", { terms: ["token"], session: "other" });
     expect(hits.length).toBe(1);
     expect(hits[0]!.type).toBe("summary");
-    expect(hits[0]!.session).toBe("cli/other");
+    expect(hits[0]!.session).toBe("other");
   });
 
   test("limit caps merged results", () => {
@@ -135,7 +133,7 @@ describe("searchProject", () => {
   });
 
   test("ordinals match log's event segmentation when legacy events lead the session", () => {
-    const s3 = createSession({ categoryId: cat.id, slug: "legacy-lead", name: "legacy-lead" });
+    const s3 = createSession({ slug: "legacy-lead" });
     const convo = "cccccccc-0000-0000-0000-000000000003";
     // Legacy pre-tracking conversation: null conversationId, own claude.started.
     insertEvent({
@@ -169,7 +167,7 @@ describe("searchProject", () => {
   });
 
   test("a hit in an earlier leg of a re-resumed conversation gets that leg's ordinal", () => {
-    const s5 = createSession({ categoryId: cat.id, slug: "re-resumed", name: "re-resumed" });
+    const s5 = createSession({ slug: "re-resumed" });
     const convoA = "dddddddd-0000-0000-0000-000000000004";
     const convoB = "eeeeeeee-0000-0000-0000-000000000005";
     createConversation({ id: convoA, sessionId: s5.id });
@@ -205,7 +203,7 @@ describe("searchProject", () => {
   });
 
   test("uppercase non-ASCII terms match exact-case text", () => {
-    const s4 = createSession({ categoryId: cat.id, slug: "unicode", name: "unicode" });
+    const s4 = createSession({ slug: "unicode" });
     insertEvent({
       sessionId: s4.id,
       event: "user.prompt",
@@ -213,7 +211,7 @@ describe("searchProject", () => {
     });
     const hits = searchProject(testDb, "p", { terms: ["Übergabe"] });
     expect(hits.length).toBe(1);
-    expect(hits[0]!.session).toBe("cli/unicode");
+    expect(hits[0]!.session).toBe("unicode");
   });
 });
 

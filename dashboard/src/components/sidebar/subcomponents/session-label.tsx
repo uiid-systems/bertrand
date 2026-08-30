@@ -1,27 +1,26 @@
 import { Text } from "@uiid/design-system";
-import type { SessionWithCategory } from "@/types";
+import type { SessionListRow } from "@/types";
 
 type SessionLabelProps = {
-  session: SessionWithCategory;
+  session: SessionListRow;
 };
 
 /**
- * The card's title: the session slug, and nothing else. Every row now sits
- * under a group header that names its category (project zone) or its project
- * (live zone), so repeating either on the card was noise. Both stay in the
- * hover title, which is the only place the full path is spelled out.
+ * The card's title: the session slug, and nothing else — the slug is the
+ * session's whole identity. The project stays in the hover title, which is the
+ * only place the full path is spelled out.
  */
 export const SessionLabel = ({ session: s }: SessionLabelProps) => {
-  const path = `${s.categoryPath}/${s.session.slug}`;
+  const slug = s.session.slug;
 
   return (
     <Text
-      title={s.project ? `${s.project.name}/${path}` : path}
+      title={s.project ? `${s.project.name}/${slug}` : slug}
       weight="semibold"
       size={-1}
       truncate
     >
-      {s.session.slug}
+      {slug}
     </Text>
   );
 };

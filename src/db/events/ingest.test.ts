@@ -17,7 +17,6 @@ sqlite.exec("PRAGMA journal_mode = WAL");
 sqlite.exec("PRAGMA foreign_keys = ON");
 const testDb = drizzle(sqlite, { schema });
 
-const { createCategory } = await import("../queries/categories");
 const { createSession } = await import("../queries/sessions");
 const { createConversation, getConversation } = await import("../queries/conversations");
 const { getEventsBySession } = await import("../queries/events");
@@ -28,9 +27,7 @@ let conversationId: string;
 beforeAll(() => {
   _setDb(testDb);
   migrate(drizzle(sqlite), { migrationsFolder: import.meta.dir + "/../migrations" });
-  const category = createCategory({ slug: "test", name: "Test" });
   const session = createSession({
-    categoryId: category.id,
     slug: "ingest-test",
     name: "ingest-test",
   });

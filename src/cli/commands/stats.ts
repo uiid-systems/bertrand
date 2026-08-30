@@ -1,11 +1,6 @@
 import { register } from "@/cli/router";
-import {
-  getAllSessions,
-  getSessionsByCategory,
-  resolveSessionByName,
-} from "@/db/queries/sessions";
+import { getAllSessions, resolveSessionByName } from "@/db/queries/sessions";
 import { getSessionStats } from "@/db/queries/stats";
-import { getCategoryByPath } from "@/db/queries/categories";
 import { getEventsBySession } from "@/db/queries/events";
 import { computeTimingsLive } from "@/lib/timing";
 import { formatDuration } from "@/lib/format";
@@ -103,53 +98,6 @@ function renderGlobal(
   console.log(`  Interactions:  ${totals.interactions}`);
 }
 
-function renderCategory(
-  metrics: SessionMetrics[],
-  categoryPath: string,
-  isJson: boolean
-) {
-  if (isJson) {
-    console.log(JSON.stringify(metrics, null, 2));
-    return;
-  }
-
-  const dim = "\x1b[2m";
-  const bold = "\x1b[1m";
-  const reset = "\x1b[0m";
-
-  const sorted = [...metrics].sort((a, b) => b.durationS - a.durationS);
-  const maxName = Math.max(...sorted.map((m) => m.name.length), 4);
-
-  console.log(`${bold}${categoryPath}${reset}\n`);
-  console.log(
-    `${dim}${"NAME".padEnd(maxName)}  ${"DURATION".padEnd(8)}  ${"CLAUDE".padEnd(8)}  ${"WAIT".padEnd(8)}  ${"ACT%".padEnd(5)}  CONVOS${reset}`
-  );
-
-  for (const m of sorted) {
-    console.log(
-      `${m.name.padEnd(maxName)}  ${dur(m.durationS).padEnd(8)}  ${dur(m.claudeWorkS).padEnd(8)}  ${dur(m.userWaitS).padEnd(8)}  ${pct(m.activePct).padEnd(5)}  ${m.conversationCount}`
-    );
-  }
-
-  // Totals
-  const totals = sorted.reduce(
-    (acc, m) => ({
-      durationS: acc.durationS + m.durationS,
-      claudeWorkS: acc.claudeWorkS + m.claudeWorkS,
-      userWaitS: acc.userWaitS + m.userWaitS,
-      conversations: acc.conversations + m.conversationCount,
-    }),
-    { durationS: 0, claudeWorkS: 0, userWaitS: 0, conversations: 0 }
-  );
-  const totalTracked = totals.claudeWorkS + totals.userWaitS;
-  const totalPct = totalTracked > 0 ? Math.round((totals.claudeWorkS / totalTracked) * 100) : 0;
-
-  console.log(`${dim}${"─".repeat(maxName + 50)}${reset}`);
-  console.log(
-    `${"TOTAL".padEnd(maxName)}  ${dur(totals.durationS).padEnd(8)}  ${dur(totals.claudeWorkS).padEnd(8)}  ${dur(totals.userWaitS).padEnd(8)}  ${pct(totalPct).padEnd(5)}  ${totals.conversations}`
-  );
-}
-
 function renderSession(m: SessionMetrics, isJson: boolean) {
   if (isJson) {
     console.log(JSON.stringify(m, null, 2));
@@ -180,25 +128,9 @@ register("stats", async (args) => {
   if (!target) {
     const rows = getAllSessions();
     const metrics = rows.map((r) =>
-      getMetrics(r.session.id, `${r.categoryPath}/${r.session.slug}`, r.session.status)
+      getMetrics(r.session.id, r.session.slug, r.session.status)
     );
     renderGlobal(metrics, isJson);
-    return;
-  }
-
-  // Per-category stats (trailing slash)
-  if (target.endsWith("/")) {
-    const categoryPath = target.replace(/\/+$/, "");
-    const category = getCategoryByPath(categoryPath);
-    if (!category) {
-      console.error(`Category not found: ${categoryPath}`);
-      process.exit(1);
-    }
-    const categorySessions = getSessionsByCategory(category.id);
-    const metrics = categorySessions.map((s) =>
-      getMetrics(s.id, s.slug, s.status)
-    );
-    renderCategory(metrics, categoryPath, isJson);
     return;
   }
 
@@ -209,10 +141,6 @@ register("stats", async (args) => {
     process.exit(1);
   }
 
-  const m = getMetrics(
-    resolved.session.id,
-    `${resolved.categoryPath}/${resolved.slug}`,
-    resolved.session.status,
-  );
+  const m = getMetrics(resolved.session.id, resolved.slug, resolved.session.status);
   renderSession(m, isJson);
 });

@@ -53,7 +53,7 @@ import { isValidSlug } from "@/lib/projects/paths"
 import { getDbForProject, invalidateDbCache, closeDbForProject, type Db } from "@/db/client"
 import type {
   SessionRow,
-  SessionWithCategory,
+  SessionListRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -150,7 +150,7 @@ function resolveRepoRoot(url: URL): string | undefined {
   return getProjectRepo(owner)?.path
 }
 
-const listSessions = (_params: object, url: URL): SessionWithCategory[] => {
+const listSessions = (_params: object, url: URL): SessionListRow[] => {
   const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
   return resolveProjectScope(url).flatMap((project) =>
     getAllSessionsForProject(project, { excludeArchived }),
@@ -543,7 +543,6 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
  */
 async function handleSpawnDashboardSession(req: Request): Promise<Response> {
   let body: {
-    categoryPath?: unknown
     slug?: unknown
     name?: unknown
     baseBranch?: unknown
@@ -554,17 +553,19 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { categoryPath, slug } = body
-  if (typeof categoryPath !== "string" || !categoryPath) {
-    return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
-  }
+  // Slug is nominally optional in the body shape — automatic naming for
+  // slugless spawns arrives with the launch-flow redesign (PR 5 of ELKY-171's
+  // stack). Until then a spawn without one is refused outright.
+  const { slug } = body
   if (typeof slug !== "string" || !slug) {
-    return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
+    return Response.json(
+      { error: "slug is required (automatic naming is not available yet)" },
+      { status: 400 },
+    )
   }
 
   try {
     const result = await spawnDashboardSession({
-      categoryPath,
       slug,
       name: typeof body.name === "string" ? body.name : undefined,
     })

@@ -6,7 +6,6 @@ import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { recordSessionBranch } from "@/lib/session-branch";
-import { getOrCreateCategoryPath } from "@/db/queries/categories";
 import { finalizeSessionRow } from "./finalize";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { requireBoundRepo } from "@/lib/projects/policy";
@@ -114,8 +113,7 @@ function buildEnv(vars: Record<string, string>): Record<string, string> {
 }
 
 export interface SpawnDashboardSessionOpts {
-  /** Category path, e.g. "uiid/bertrand". */
-  categoryPath: string;
+  /** Session slug — the session's whole identity. */
   slug: string;
   name?: string;
 }
@@ -288,17 +286,15 @@ export async function spawnDashboardSession(
   // get its own worktree cut from that checkout (#210), which is what made
   // spawn able to fail before any row was written; with worktrees gone there
   // is no pre-row step left to fail, so the row is simply created.
-  const categoryId = getOrCreateCategoryPath(opts.categoryPath);
   const session = createSession({
-    categoryId,
     slug: opts.slug,
-    name: opts.name ?? opts.slug,
+    name: opts.name,
   });
 
   const claudeId = randomUUID();
   createConversation({ id: claudeId, sessionId: session.id });
 
-  const sessionName = `${opts.categoryPath}/${opts.slug}`;
+  const sessionName = opts.slug;
   const pid = startClaudePty({
     sessionId: session.id,
     claudeId,

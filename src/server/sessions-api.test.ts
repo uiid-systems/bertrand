@@ -8,7 +8,6 @@ import { tmpdir } from "os";
 
 import * as schema from "@/db/schema";
 import { _setDb, _clearTestDb } from "@/db/client";
-import { createCategory } from "@/db/queries/categories";
 import { createSession, getSession, updateSession } from "@/db/queries/sessions";
 import type { SessionRow } from "@/types";
 import { startServer } from "./index";
@@ -70,9 +69,7 @@ const post = (path: string) =>
 let seq = 0;
 function makeSession(): SessionRow {
   const n = seq++;
-  const cat = createCategory({ slug: `api-cat-${n}`, name: `api ${n}` });
   return createSession({
-    categoryId: cat.id,
     slug: `api-session-${n}`,
     name: `api session ${n}`,
   });

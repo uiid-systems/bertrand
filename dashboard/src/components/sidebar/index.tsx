@@ -7,9 +7,9 @@ import { useAllSessions, useSessions } from "../../lib/use-sessions";
 
 import { ProjectSelector } from "./subcomponents/project-selector";
 import {
-  groupByCategory,
   matchesQuery,
   selectLiveSessions,
+  selectProjectSessions,
 } from "./sidebar.utils";
 
 import { LiveZone } from "./subcomponents/live-zone";
@@ -42,12 +42,13 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
   const live = useMemo(() => selectLiveSessions(allSessions), [allSessions]);
 
   // A live session still has to be findable. The zone above won't narrow, so
-  // while searching this zone carries live rows too — see `groupByCategory`.
+  // while searching this zone carries live rows too — see
+  // `selectProjectSessions`.
   const searching = q.length > 0;
 
-  const categories = useMemo(
+  const sessions = useMemo(
     () =>
-      groupByCategory(
+      selectProjectSessions(
         projectSessions.filter((s) => matchesQuery(s, q)),
         { includeLive: searching },
       ),
@@ -83,7 +84,7 @@ export const Sidebar = ({ WrapperProps }: SidebarProps) => {
       />
 
       <ProjectZone
-        categories={categories}
+        sessions={sessions}
         searching={searching}
         includeArchived={includeArchived}
         onIncludeArchivedChange={setIncludeArchived}

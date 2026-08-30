@@ -24,7 +24,6 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, updateSessionStatus, getSession } = await import(
   "@/db/queries/sessions"
 );
@@ -33,13 +32,12 @@ const { createConversation, getConversationsBySession } = await import(
 );
 const { rateSession, discardSession } = await import("@/lib/session-actions");
 
-const category = createCategory({ slug: "actions-test", name: "Actions Test" });
 
 function makeSession(
   slug: string,
   status: "active" | "waiting" | "blocked" | "paused" | "archived" = "paused",
 ) {
-  const s = createSession({ categoryId: category.id, slug, name: slug });
+  const s = createSession({ slug });
   if (status !== "paused") updateSessionStatus(s.id, status);
   return getSession(s.id)!;
 }
@@ -156,9 +154,7 @@ describe("with an explicit db (cross-project)", () => {
   });
 
   _setDb(otherDb);
-  const otherCategory = createCategory({ slug: "other-proj", name: "Other" });
   const otherSession = createSession({
-    categoryId: otherCategory.id,
     slug: "cross-1",
     name: "cross-1",
   });

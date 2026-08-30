@@ -24,20 +24,17 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession } = await import("@/db/queries/sessions");
 const { insertEvent } = await import("@/db/queries/events");
 const { deriveSessionSummary, storeSessionSummary } = await import("./summary");
 const { eq } = await import("drizzle-orm");
 
-const category = createCategory({ slug: "cat", name: "cat" });
 
 function makeSession(
   slug: string,
   opts?: { nameSource?: "manual" | "derived" },
 ) {
   return createSession({
-    categoryId: category.id,
     slug,
     name: slug,
     nameSource: opts?.nameSource,
