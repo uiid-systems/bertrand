@@ -538,7 +538,7 @@ attached and serves as the negative control.
 
 Dependency-ordered. **#1 is independent. #3 requires #2. #4 requires all.**
 
-### Workstream 1 — Worktree teardown · risk LOW · 1–2 sessions
+### Workstream 1 — Worktree teardown · risk LOW · **COMPLETE 2026-08-30**
 
 Decided by the user: *"we will most likely remove all worktree-related features
 from bertrand … it has never worked properly and now that i'm using orca i don't
@@ -559,6 +559,7 @@ Scope:
   from retired event types — verify it covers matcher-scoped `PostToolUse` groups.)
 - Remove `bertrand open` from `src/cli/` + `src/cli/help.ts`.
 - Retire `docs/workspaces.md` (24.4K) and the worktree parts of `docs/pty-wrapper.md`.
+  *(Done — `workspaces.md` is deleted; `pty-wrapper.md` keeps its PTY material.)*
 - Check `src/lib/stats-snapshot.ts` and `src/lib/usage-backfill.ts`, which snapshot
   git-derived stats before a worktree is removed (PR #256) — that trigger disappears.
 - Delete `src/lib/stats-snapshot.ts` (missing from the Appendix A list below), and
@@ -579,6 +580,51 @@ the personal laptop** — two live worktrees still exercise it. Treat non-regres
 real test with a real fixture: open a session with changed files against
 `worktree-issue-249-purge-evict` or `worktree-sidebar-live-zone-groups`, capture the
 sidebar before and after, and diff. **Do not merge on the argument alone.**
+
+**Resolved — and then made moot.** 4e proved the non-regression: the file list is
+timeline replay with no git arm, and 46/46 event-sourced sessions agree exactly between
+stored counters and live replay. The only git-provenance values were three stored
+`session_stats` rows nothing recomputes. The sidebar was then removed outright by
+separate decision, so the zone the watch protected no longer exists.
+
+#### What shipped
+
+| Step | Ticket | Landed as |
+|---|---|---|
+| Unwire ~40 referencing sites | ELKY-163 | #262 |
+| Prove Files-changed survives | ELKY-161 | #263 |
+| Hooks + `bertrand open` | ELKY-165 | #264 |
+| Delete the modules (21 files, −3,465 LOC) | ELKY-162 | #265 |
+| Remove the secondary sidebar | ELKY-178 | #266 |
+| Retire the docs | ELKY-166 | this change |
+
+Four corrections the plan above got wrong, kept because the reasoning matters:
+
+1. **`open.ts` could not go with the modules.** It was the last importer of
+   `@/lib/workspace` and `getMainWorktree`, so deleting them first broke typecheck. It
+   moved to ELKY-165, which now lands *before* the deletion.
+2. **The prune-loop worry was unfounded.** `EnterWorktree`/`ExitWorktree` are
+   matcher-scoped on `PostToolUse`, an event type bertrand still installs, so the prune
+   loop skips them by design. Removal rides on the *merge* loop replacing every
+   bertrand-owned group under an installed event type. Correct, but silently
+   load-bearing — it now has a fixture.
+3. **The git-stamped set is not the worktree set.** `worktree-remove.ts` snapshots
+   before nulling the columns, so a cleanly torn-down session keeps git numbers with no
+   `worktree_path`. Any census keyed on that column misses it.
+4. **`sumChangedFiles` does not stay.** The list above keeps it alongside the replay
+   helpers, but its only caller was `gitDiffStats`, so it went with `stats-snapshot.ts`.
+
+#### Still open
+
+- **ELKY-164 — the migration.** Deliberately held. `sessions.worktree_path`,
+  `sessions.worktree_branch` and `session_stats.diff_source` remain on disk, but ELKY-162
+  removed every reader, so they are inert. Running it is a separate, irreversible call.
+- **ELKY-177 — record a branch per session.** Its premise changed: the PR card it was
+  meant to light up lost its home when the sidebar went.
+
+The `withStoredGitDiffs` overlay and the `diff_source` reads were retired in ELKY-162
+rather than kept, reversing the earlier note in 4e's options list — the decision is
+recorded there.
 
 ### Workstream 2 — Naming: drop category, derive slug at pause · risk MED-HIGH · 2–3 sessions
 
