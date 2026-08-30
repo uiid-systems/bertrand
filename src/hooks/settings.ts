@@ -33,14 +33,6 @@ const BERTRAND_HOOKS: HooksByEvent = {
       hooks: [{ type: "command", command: `${paths.hooks}/on-answered.sh` }],
     },
     {
-      matcher: "EnterWorktree",
-      hooks: [{ type: "command", command: `${paths.hooks}/on-enter-worktree.sh` }],
-    },
-    {
-      matcher: "ExitWorktree",
-      hooks: [{ type: "command", command: `${paths.hooks}/on-exit-worktree.sh` }],
-    },
-    {
       matcher: "",
       hooks: [{ type: "command", command: `${paths.hooks}/on-permission-done.sh` }],
     },
@@ -74,11 +66,12 @@ function isBertrandGroup(group: HookGroup): boolean {
  * Preserves all other settings and non-bertrand hook entries.
  * Claude Code schema: hooks is Record<EventType, Array<{matcher, hooks: [...]}>>.
  */
-export function installHookSettings(opts: { quiet?: boolean } = {}) {
+export function installHookSettings(opts: { quiet?: boolean; path?: string } = {}) {
+  const settingsPath = opts.path ?? SETTINGS_PATH;
   let settings: Record<string, unknown> = {};
 
   try {
-    settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
+    settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
   } catch {
     // File doesn't exist or invalid JSON — start fresh
   }
@@ -105,10 +98,10 @@ export function installHookSettings(opts: { quiet?: boolean } = {}) {
 
   settings.hooks = merged;
 
-  mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 
-  if (!opts.quiet) console.log(`Updated ${SETTINGS_PATH} with bertrand hooks`);
+  if (!opts.quiet) console.log(`Updated ${settingsPath} with bertrand hooks`);
 }
 
 /**
@@ -116,10 +109,10 @@ export function installHookSettings(opts: { quiet?: boolean } = {}) {
  * binary would install — per event type, the bertrand-owned groups must match
  * BERTRAND_HOOKS verbatim. Non-bertrand groups are ignored.
  */
-export function hookSettingsAreCurrent(): boolean {
+export function hookSettingsAreCurrent(opts: { path?: string } = {}): boolean {
   let settings: Record<string, unknown>;
   try {
-    settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
+    settings = JSON.parse(readFileSync(opts.path ?? SETTINGS_PATH, "utf-8"));
   } catch {
     return false;
   }
