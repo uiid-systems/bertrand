@@ -1,11 +1,13 @@
 /**
  * Entity-aware parser for GitHub URLs. Pure and network-free: it turns a
- * `github.com` URL into a structured ref based purely on the URL *shape*
- * (the "URL parser" POC — no API calls, no titles fetched). Returns null for
- * anything that isn't a recognizable GitHub entity so callers can fall back
- * to a plain link.
+ * `github.com` URL into a structured ref based purely on the URL *shape* —
+ * no API calls, no titles fetched. Returns null for anything that isn't a
+ * recognizable GitHub entity so callers can fall back to a plain link.
  *
- * The Linear equivalent will follow the same parse → label → chip seam.
+ * The one URL-shape parser in the codebase (ELKY-169): the dashboard's
+ * markdown link chips and slug derivation both classify URLs through it.
+ * It must stay importable from the dashboard's type graph, so no runtime
+ * dependencies (see src/types-boundary.test.ts).
  */
 
 export type GithubRef =

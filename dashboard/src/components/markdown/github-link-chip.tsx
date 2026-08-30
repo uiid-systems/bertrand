@@ -1,6 +1,6 @@
 import { SiGithub } from "@icons-pack/react-simple-icons";
 
-import { githubRefLabel, parseGithubUrl } from "./github-url";
+import { githubRefLabel, parseGithubUrl } from "@/lib/github/web-url";
 import { LinkChip } from "./link-chip";
 
 /**
