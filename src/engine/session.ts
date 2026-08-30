@@ -7,6 +7,7 @@ import {
 } from "@/db/queries/sessions";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
+import { recordSessionBranch } from "@/lib/session-branch";
 import { getOrCreateCategoryPath, getCategoryByPath } from "@/db/queries/categories";
 import {
   addLabelToSession,
@@ -164,6 +165,9 @@ export async function launch(opts: LaunchOpts): Promise<string> {
 
   const sessionName = `${opts.categoryPath}/${opts.slug}`;
 
+  // Recorded on every start, not only the first: the column is current state.
+  await recordSessionBranch(session.id, process.cwd());
+
   emitClaudeStarted({
     sessionId: session.id,
     conversationId: claudeId,
@@ -220,6 +224,11 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   liveSession = { sessionId: session.id, claudeId: opts.conversationId };
   installExitHandlers();
   await ensureServerStarted();
+
+  // Outside the resume guard on purpose. The event must not be re-emitted for
+  // a continuing conversation, but the branch must be re-read: a session can
+  // resume on a different branch than it left.
+  await recordSessionBranch(session.id, process.cwd());
 
   if (!resumeExisting) {
     emitClaudeStarted({

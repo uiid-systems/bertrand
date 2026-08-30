@@ -61,10 +61,19 @@ export const sessions = sqliteTable(
       .notNull()
       .default(sql`(datetime('now'))`),
     endedAt: text("ended_at"),
-    // Current worktree the session is operating in. Lazy: null until the
-    // session enters one (set by the EnterWorktree hook, cleared on exit).
-    // This is current-state only — the history of entries/exits lives in the
-    // events log, not here.
+    // The git branch this session is running on, read from its cwd at start
+    // (and re-read on resume, since a session can come back on a different
+    // branch). Null when the cwd is not in a repo, does not exist, or HEAD is
+    // detached — bertrand logs non-repo sessions, so null is a normal value and
+    // not an error state.
+    //
+    // Deliberately not named `worktree_*`. The only branch bertrand ever
+    // recorded came from worktrees, which reached ~6% of sessions; this is the
+    // branch every session already had and nobody was writing down.
+    branch: text("branch"),
+    // Retired with the worktree teardown. No reader remains — the columns are
+    // dropped by a later migration, kept here only so the schema still matches
+    // what is on disk until then.
     worktreePath: text("worktree_path"),
     worktreeBranch: text("worktree_branch"),
     createdAt: text("created_at")

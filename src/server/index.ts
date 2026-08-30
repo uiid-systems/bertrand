@@ -289,9 +289,9 @@ const getSessionPullRequest = (
   if (!session) return Promise.resolve({ status: "none" })
   return resolveSessionPullRequest(
     {
-      // Nothing records a branch per session yet (ELKY-177), so this is null
-      // for every session and the card stays dark.
-      branch: null,
+      // Recorded at session start from the cwd. Null for sessions that predate
+      // the column, and for any session whose cwd was not in a git repo.
+      branch: session.branch,
       repoPath: resolveRepoRoot(url),
     },
     {
