@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/uiid-systems/bertrand/compare/v0.39.0...v0.40.0) (2026-08-30)
+
+
+### Miscellaneous
+
+* cut 0.40.0 to verify trusted publishing ([27214c3](https://github.com/uiid-systems/bertrand/commit/27214c392cfd7439a8d8df906cb993ab8a62e23d))
+
 ## [0.39.0](https://github.com/uiid-systems/bertrand/compare/v0.38.0...v0.39.0) (2026-08-30)
 
 
