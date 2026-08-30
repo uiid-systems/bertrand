@@ -20,7 +20,6 @@
  */
 
 import { insertEvent } from "@/db/queries/events";
-import type { Db } from "@/db/client";
 
 type EventTarget = {
   sessionId: string;
@@ -231,35 +230,4 @@ export function emitAssistantMessage(args: EventTarget & {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Worktree — hook-emitted (EnterWorktree / ExitWorktree PostToolUse)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function emitWorktreeEntered(
-  args: EventTarget & { path: string; branch?: string },
-) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "worktree.entered",
-    summary: args.branch ? `entered worktree ${args.branch}` : "entered worktree",
-    meta: { path: args.path, branch: args.branch, claude_id: args.conversationId },
-  });
-}
-
-// The db override exists for the dashboard server, which deletes worktrees
-// across projects and must write the event to the owning project's DB, not
-// the active one. Hook-path callers omit it.
-export function emitWorktreeExited(
-  args: EventTarget & { path?: string; branch?: string },
-  db?: Db,
-) {
-  return insertEvent({
-    sessionId: args.sessionId,
-    conversationId: args.conversationId,
-    event: "worktree.exited",
-    summary: args.branch ? `exited worktree ${args.branch}` : "exited worktree",
-    meta: { path: args.path, branch: args.branch, claude_id: args.conversationId },
-  }, db);
-}
 

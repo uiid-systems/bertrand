@@ -1,8 +1,6 @@
-import { existsSync } from "fs";
-
 import { getEventsByType } from "@/db/queries/events";
 import { getDb, type Db } from "@/db/client";
-import { getWorktreeChangedFiles, type ChangedFile } from "@/lib/git";
+import type { ChangedFile } from "@/lib/git";
 
 export interface DiffStats {
   linesAdded: number;
@@ -128,16 +126,6 @@ export function computeChangedFiles(
   return files;
 }
 
-/** Reads a worktree's changed files. Injectable so the server can share its
- *  short-lived cache with `/api/worktrees/:id/files` — both poll the same
- *  git subprocesses — and so tests can stand in a fake. */
-export type WorktreeFilesReader = (
-  worktreePath: string,
-) => Promise<ChangedFile[]>;
-
-const readWorktreeFiles: WorktreeFilesReader = async (worktreePath) =>
-  (await getWorktreeChangedFiles(worktreePath)).files;
-
 /**
  * The files a session changed, replayed from its own timeline. The single
  * source behind the secondary sidebar's "Files changed" list.
@@ -148,11 +136,10 @@ const readWorktreeFiles: WorktreeFilesReader = async (worktreePath) =>
  * is the only per-file answer — and the better one to be left with, since it
  * stays computable forever from immutable event rows.
  *
- * The *aggregate* counters are the exception. Rows already stamped
- * `diff_source = 'git'` keep their branch-accurate totals, which the server
- * overlays in `withStoredGitDiffs`. Those numbers can disagree with the sum of
- * this list for such a session: the snapshot measured a branch, this measures
- * a timeline.
+ * The aggregate counters beside it are derived the same way, so the header and
+ * this list always sum to each other. They did not always: a stored git
+ * snapshot used to override the counters alone, leaving a branch-net header
+ * above a replayed list. That overlay is gone.
  */
 export async function resolveChangedFiles(
   session: { id: string },
@@ -160,37 +147,4 @@ export async function resolveChangedFiles(
   db: Db = getDb(),
 ): Promise<ChangedFile[]> {
   return computeChangedFiles(session.id, root, db);
-}
-
-/** Roll a git changed-file list up into the three aggregate counters.
- *
- *  Untracked files carry `null` counts — `--numstat` never saw them — so they
- *  add to `filesTouched` without moving the line totals. That is the same
- *  arithmetic the changed-files list displays, so the sidebar's `+N/−N` and its
- *  file rows always sum to each other. */
-export function sumChangedFiles(files: ChangedFile[]): DiffStats {
-  let linesAdded = 0;
-  let linesRemoved = 0;
-  for (const f of files) {
-    linesAdded += f.added ?? 0;
-    linesRemoved += f.removed ?? 0;
-  }
-  return { linesAdded, linesRemoved, filesTouched: files.length };
-}
-
-/**
- * A session's diff counters as git sees them, or `null` when git cannot be
- * asked — the session has no worktree, or the directory is already gone.
- *
- * `null` is the important half of the return type. It is what stops a removed
- * worktree from being read as "this session changed nothing": git answers a
- * missing directory with an empty list, so a caller that took that at face
- * value would write zeros over a completed session's history.
- */
-export async function gitDiffStats(
-  session: { worktreePath: string | null },
-  read: WorktreeFilesReader = readWorktreeFiles,
-): Promise<DiffStats | null> {
-  if (!session.worktreePath || !existsSync(session.worktreePath)) return null;
-  return sumChangedFiles(await read(session.worktreePath));
 }

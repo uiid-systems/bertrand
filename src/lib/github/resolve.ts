@@ -79,8 +79,11 @@ const ORIGIN_PREFIX = "origin/";
 /**
  * The main working tree of the repo containing `path`, or null when `path` is
  * not in a repo at all. `git worktree list` always reports the main working
- * tree first, matching {@link import("@/lib/git").getMainWorktree}, and it
- * fails outright outside a repo — so one call both validates and resolves.
+ * tree first, and it fails outright outside a repo — so one call both
+ * validates and resolves.
+ *
+ * This is project binding, not bertrand's retired worktree feature: it shells
+ * `git worktree` only to find a repo's main checkout, and is load-bearing.
  */
 async function findMainWorktree(path: string): Promise<string | null> {
   try {
