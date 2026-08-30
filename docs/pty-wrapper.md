@@ -277,12 +277,12 @@ from `claude`'s own settings regardless of who spawned it (and `BERTRAND_CLAUDE_
 already passed through the environment), so the timeline populates identically — a
 dashboard-created session is a normal session in every view.
 
-The session's cwd, however, is not simply supplied by `src/lib/workspace/`:
-`resolveWorkspace(dir)` resolves *preview-server* run config for a directory, while the
-cwd itself comes from `session.worktreePath`. That column was maintained only by the hook
-path — `worktree.entered` sets it, `worktree.exited` clears it — and `createWorktree()`
-sat in `src/lib/git.ts` with zero callers. The capability existed; the wiring did not.
-Both are resolved now: see **Worktrees for dashboard-created sessions** below.
+A dashboard-created session runs in the project's bound checkout. It once ran in a
+git worktree created at spawn (#210), with its cwd read from `session.worktreePath`;
+worktrees have since been removed from bertrand entirely, along with the
+`src/lib/workspace/` preview layer that resolved dev-server run config for them. The
+bound checkout is now the only place a session runs, which is why the cwd needs no
+resolution step at all.
 
 What is actually new:
 
@@ -340,43 +340,6 @@ Multiple browser tabs on one dashboard-created session still negotiate `min()` a
 their claims — which is correct, and unlike the terminal case it's fixable by closing a
 tab.
 
-### Worktrees for dashboard-created sessions
-
-Every dashboard-created session gets its own git worktree (issue #210). The `cwd` in a
-spawn request is therefore the **repo to branch from**, not the directory `claude` runs
-in — the worktree is the working directory.
-
-- **Layout.** `<main-checkout>/.claude/worktrees/<slug>`, on a branch named for the slug.
-  That is the shape the hook path already produced and that `lib/diff_stats.ts` already
-  collapses for display, so a dashboard-created worktree is indistinguishable from one
-  Claude entered itself — which is the whole point of a dashboard session being a normal
-  session in every view.
-- **Anchoring.** Every git call runs as `git -C <main checkout>`, resolved through
-  `getMainWorktree`. Nothing consults `process.cwd()`: serve runs from wherever it was
-  launched, so the bare `git worktree add` this replaced would have created worktrees
-  relative to an unrelated directory — the same class of bug as
-  `emitClaudeStarted({ cwd: process.cwd() })`. Creation also verifies the target is inside
-  a repo before resolving, because `getMainWorktree` returns *its own input* when it cannot
-  parse `git worktree list`; that fallback is right for its other callers, which all pass a
-  path already known to be in a repo, but would let an unvalidated directory become a root.
-- **Writer.** Creation writes `worktreePath` and `worktreeBranch` at spawn. The
-  `worktree.entered` hook that maintains those columns for CLI sessions fires when Claude
-  *enters* a worktree mid-session; a dashboard session **starts** in its own, so that hook
-  never fires for it. Two writers, disjoint events, no shared state to drift.
-- **Ordering.** The worktree is created before the session row, so a failure surfaces as a
-  typed `WorktreeCreateError` rather than a half-created session pointing at nothing. If
-  the row then fails, the worktree is removed — that is the only window in which it exists
-  with nothing referencing it. Once the row exists, the worktree has an owner.
-- **Disposition.** The worktree **survives session end**, deliberately. Nothing prunes it
-  automatically: a finished session's branch and files stay on disk, because the work is
-  the reason the session existed. Removal is the explicit `removeSessionWorktree` action
-  already exposed at `/api/worktrees/:id/delete`, which refuses live sessions, runs
-  workspace teardown before touching git, and never deletes the branch — so unmerged work
-  stays reachable even after the checkout is gone.
-
-Failures map to statuses a form can act on rather than an opaque 500: a cwd outside a repo
-is a 400, a colliding path or branch is a 409, and only git failing outright is a 500.
-
 ## Explicitly deferred
 
 - **Reconnect / scrollback-restore snapshot** — replaying output after a dropped
@@ -384,11 +347,11 @@ is a 400, a colliding path or branch is a 409, and only git failing outright is 
   the basic loop works.
 - **Remote access via `bertrand.sh`** — raised as a "consider down the line" idea: since
   bertrand is browser-based already, there's a plausible path to reaching a session's
-  terminal from `bertrand.sh` itself, not just `localhost`. This is a **different axis**
-  from the existing `docs/workspaces.md` `*.local.bertrand.sh` design — that doc solves
-  "a nicer URL for a loopback preview," not "reach my machine from elsewhere." Actual
-  remote reachability needs the relay + bridge-daemon pattern both conductor-oss and
-  Orca built (outbound-only connection from the local machine to a relay, so no inbound
+  terminal from `bertrand.sh` itself, not just `localhost`. bertrand once had a
+  loopback-preview design (`*.local.bertrand.sh`) that solved "a nicer URL for a local
+  preview," which is a **different axis** from "reach my machine from elsewhere." That
+  preview layer was removed with the worktree teardown; remote reachability needs the
+  relay + bridge-daemon pattern both conductor-oss and Orca built (outbound-only connection from the local machine to a relay, so no inbound
   port-forwarding/NAT traversal is required) — and needs auth, which is explicitly not
   happening yet. Not designed further here.
 - **Multi-writer arbitration beyond last-wins.**
@@ -415,5 +378,3 @@ is a 400, a colliding path or branch is a 409, and only git failing outright is 
 - [stablyai/orca](https://github.com/stablyai/orca) — custom node-pty + xterm.js,
   frame protocol, input-lease model
 - [Bun v1.3.5 release notes](https://bun.com/blog/bun-v1.3.5) — native PTY API
-- `docs/workspaces.md` — related but distinct: loopback preview URLs, not remote
-  terminal access
