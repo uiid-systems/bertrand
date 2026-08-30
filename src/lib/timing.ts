@@ -171,7 +171,6 @@ export interface SessionStatsData {
   linesAdded: number;
   linesRemoved: number;
   filesTouched: number;
-  diffSource: "events" | "git";
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -210,7 +209,6 @@ export function computeSessionStats(
     linesAdded: diff.linesAdded,
     linesRemoved: diff.linesRemoved,
     filesTouched: diff.filesTouched,
-    diffSource: "events",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheCreationTokens: usage.cacheCreationTokens,

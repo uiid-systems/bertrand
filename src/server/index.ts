@@ -469,18 +469,6 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
       "Cannot tell which directory this session ran in, or it no longer exists. " +
       "Resume it from the CLI in the right directory.",
   },
-  // Legacy rows only: worktrees are gone (ELKY-163), so this session predates
-  // the teardown and its recorded directory is not the one it worked in.
-  // Deliberately silent on whether that worktree still exists — the guard fires
-  // either way, and half these rows point at a directory already deleted.
-  "worktree-gone": {
-    status: 409,
-    message:
-      "This session worked in a worktree, which bertrand no longer manages. " +
-      "The directory on record is not the one it worked in, so resuming here " +
-      "would put its work on the wrong branch. Resume it from the CLI, in the " +
-      "directory that work belongs to.",
-  },
 }
 
 /**
