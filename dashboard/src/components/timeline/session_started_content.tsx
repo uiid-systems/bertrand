@@ -33,7 +33,7 @@ export function SessionStartedContent({
   const { model, cwd, branch } = vitals;
 
   // Prefer branch (more specific — it names the work) over cwd, but fall back
-  // to cwd so a non-worktree session still shows where it ran.
+  // to cwd so the row still shows where the session ran.
   const place = branch ?? cwd;
   const PlaceIcon = branch ? GitBranchIcon : FolderIcon;
 

@@ -120,7 +120,7 @@ function appliedFiles(ev: EventRow): string[] {
 
 /**
  * Strip the session's working directory from an absolute path so digests read
- * repo-relative. Best-effort: worktree moves change cwd mid-session, in which
+ * repo-relative. Best-effort: a session can change cwd mid-run, in which
  * case unmatched paths stay absolute.
  */
 function relativize(path: string, cwd: string | null): string {

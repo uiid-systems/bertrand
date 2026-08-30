@@ -14,8 +14,8 @@
  * ever resumed.
  *
  * Transcripts are located by scanning ~/.claude/projects rather than derived
- * from a session's cwd: a session that ran in a worktree writes under a
- * different project slug than its repo path.
+ * from a session's cwd: a session that ran outside the main checkout writes
+ * under a different project slug than its repo path.
  */
 
 import { existsSync, readdirSync } from "fs";

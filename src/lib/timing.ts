@@ -225,7 +225,7 @@ export function computeSessionStats(
  * Everything here is recomputed from events except the diff counters, which are
  * left alone once a git snapshot has claimed them. The replay and the snapshot
  * measure different things — what the agent typed versus what the branch
- * changed — and only the snapshot survives the worktree being removed, so
+ * changed — and the snapshot outlived the worktree that produced it, so
  * overwriting it with a replay would trade the durable number for a worse one
  * that happens to be cheaper to produce.
  */

@@ -28,7 +28,6 @@ import {
   SidebarWrapper,
   type SidebarWrapperProps,
 } from "../sidebar/subcomponents/sidebar-wrapper";
-import { WorktreeZone } from "../worktrees";
 import { ChangedFilesZone } from "./changed-files-zone";
 import { UsageZone } from "./usage-zone";
 
@@ -62,8 +61,6 @@ export const SecondarySidebar = ({
         isLive={isLive}
         projectSlug={projectSlug}
       />
-      <Separator />
-      <WorktreeZone sessionId={sessionId} />
       <Separator />
       <UsageZone
         sessionId={sessionId}

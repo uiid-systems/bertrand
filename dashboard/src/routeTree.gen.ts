@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WorktreesRouteImport } from './routes/worktrees'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
@@ -17,11 +16,6 @@ import { Route as DevTerminalRouteImport } from './routes/dev/terminal'
 import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
 import { Route as DevDiffRouteImport } from './routes/dev/diff'
 
-const WorktreesRoute = WorktreesRouteImport.update({
-  id: '/worktrees',
-  path: '/worktrees',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SessionsRoute = SessionsRouteImport.update({
   id: '/sessions',
   path: '/sessions',
@@ -57,7 +51,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/sessions': typeof SessionsRoute
-  '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
@@ -66,7 +59,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/sessions': typeof SessionsRoute
-  '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
@@ -76,7 +68,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/sessions': typeof SessionsRoute
-  '/worktrees': typeof WorktreesRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
@@ -87,25 +78,16 @@ export interface FileRouteTypes {
     | '/'
     | '/$'
     | '/sessions'
-    | '/worktrees'
     | '/dev/diff'
     | '/dev/markdown'
     | '/dev/terminal'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/$'
-    | '/sessions'
-    | '/worktrees'
-    | '/dev/diff'
-    | '/dev/markdown'
-    | '/dev/terminal'
+  to: '/' | '/$' | '/sessions' | '/dev/diff' | '/dev/markdown' | '/dev/terminal'
   id:
     | '__root__'
     | '/'
     | '/$'
     | '/sessions'
-    | '/worktrees'
     | '/dev/diff'
     | '/dev/markdown'
     | '/dev/terminal'
@@ -115,7 +97,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
   SessionsRoute: typeof SessionsRoute
-  WorktreesRoute: typeof WorktreesRoute
   DevDiffRoute: typeof DevDiffRoute
   DevMarkdownRoute: typeof DevMarkdownRoute
   DevTerminalRoute: typeof DevTerminalRoute
@@ -123,13 +104,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/worktrees': {
-      id: '/worktrees'
-      path: '/worktrees'
-      fullPath: '/worktrees'
-      preLoaderRoute: typeof WorktreesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sessions': {
       id: '/sessions'
       path: '/sessions'
@@ -179,7 +153,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
   SessionsRoute: SessionsRoute,
-  WorktreesRoute: WorktreesRoute,
   DevDiffRoute: DevDiffRoute,
   DevMarkdownRoute: DevMarkdownRoute,
   DevTerminalRoute: DevTerminalRoute,

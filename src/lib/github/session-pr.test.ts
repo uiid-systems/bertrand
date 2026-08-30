@@ -36,7 +36,6 @@ function deps(overrides: Partial<SessionPrDeps> = {}): SessionPrDeps & {
   const asked = { branches: [] as string[], paths: [] as string[] };
   return {
     asked,
-    readBranch: async () => "live-branch",
     resolveRepo: async (path) => {
       asked.paths.push(path);
       return { ok: true, repo: { path, provider: IDENTITY } };
@@ -50,59 +49,34 @@ function deps(overrides: Partial<SessionPrDeps> = {}): SessionPrDeps & {
 }
 
 const source = (over: Partial<SessionPrSource> = {}): SessionPrSource => ({
-  worktreePath: "/tmp/wt",
-  worktreeBranch: "snapshot-branch",
+  branch: "feature-branch",
   repoPath: "/tmp/repo",
   ...over,
 });
 
 describe("resolveSessionPullRequest", () => {
-  test("looks the PR up by the branch git currently reports", async () => {
+  test("looks the PR up by the branch on the session row", async () => {
     const d = deps();
     const result = await resolveSessionPullRequest(source(), d);
 
     expect(result).toEqual({ status: "ok", pullRequest: PR });
-    // Not `snapshot-branch`: the DB column is an EnterWorktree-time snapshot,
-    // so a session that switched branches would get the wrong PR.
-    expect(d.asked.branches).toEqual(["live-branch"]);
+    expect(d.asked.branches).toEqual(["feature-branch"]);
   });
 
-  test("falls back to the DB snapshot when git can't name a branch", async () => {
-    const d = deps({ readBranch: async () => null });
-    await resolveSessionPullRequest(source(), d);
-
-    expect(d.asked.branches).toEqual(["snapshot-branch"]);
-  });
-
-  test("uses the snapshot and the project repo once the worktree is gone", async () => {
-    const d = deps({
-      readBranch: async () => {
-        throw new Error("must not read a worktree that isn't there");
-      },
-    });
-    const result = await resolveSessionPullRequest(
-      source({ worktreePath: null }),
-      d,
-    );
-
-    expect(result).toEqual({ status: "ok", pullRequest: PR });
-    expect(d.asked.branches).toEqual(["snapshot-branch"]);
-    expect(d.asked.paths).toEqual(["/tmp/repo"]);
-  });
-
-  test("resolves identity from the worktree when it exists", async () => {
+  test("resolves identity from the project's bound checkout", async () => {
     const d = deps();
     await resolveSessionPullRequest(source(), d);
 
-    expect(d.asked.paths).toEqual(["/tmp/wt"]);
+    expect(d.asked.paths).toEqual(["/tmp/repo"]);
   });
 
-  test("reports no PR, and asks nothing, when there is no branch at all", async () => {
-    const d = deps({ readBranch: async () => null });
-    const result = await resolveSessionPullRequest(
-      source({ worktreePath: null, worktreeBranch: null }),
-      d,
-    );
+  // This is every session today: nothing writes a branch since the worktree
+  // teardown, so the card is uniformly dark until ELKY-177 records one. The
+  // point of the assertion is that it costs nothing — no repo resolution, no
+  // `gh` call — rather than merely rendering empty.
+  test("reports no PR, and asks nothing, when there is no branch", async () => {
+    const d = deps();
+    const result = await resolveSessionPullRequest(source({ branch: null }), d);
 
     expect(result).toEqual({ status: "none" });
     expect(d.asked.paths).toEqual([]);
@@ -110,20 +84,17 @@ describe("resolveSessionPullRequest", () => {
   });
 
   test("treats a blank branch as no branch", async () => {
-    const d = deps({ readBranch: async () => "   " });
-    const result = await resolveSessionPullRequest(
-      source({ worktreeBranch: "" }),
-      d,
-    );
+    const d = deps();
+    const result = await resolveSessionPullRequest(source({ branch: "   " }), d);
 
     expect(result).toEqual({ status: "none" });
     expect(d.asked.branches).toEqual([]);
   });
 
-  test("reports no PR when the session has no path to resolve a repo from", async () => {
+  test("reports no PR when the project has no bound checkout", async () => {
     const d = deps();
     const result = await resolveSessionPullRequest(
-      source({ worktreePath: null, repoPath: undefined }),
+      source({ repoPath: undefined }),
       d,
     );
 

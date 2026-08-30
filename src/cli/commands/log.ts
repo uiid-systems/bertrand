@@ -189,7 +189,6 @@ function showDigest(session: SessionRow, sessionName: string) {
           status: session.status,
           summary: session.summary,
           rating: session.rating,
-          worktreeBranch: session.worktreeBranch,
           startedAt: session.startedAt,
           updatedAt: session.updatedAt,
         },

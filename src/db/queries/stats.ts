@@ -57,9 +57,12 @@ export function upsertSessionStats(
  *
  * Separate from `upsertSessionStats` because the two writes answer to different
  * lifetimes. The full computation can be re-run from immutable events at any
- * point; this one can only be taken while the session's worktree is on disk, so
- * it is issued at moments (worktree removal, a dashboard poll that found the
- * directory still there) that have nothing to do with a session ending.
+ * point; this one could only be taken while a session's worktree was on disk,
+ * at moments that had nothing to do with a session ending.
+ *
+ * Nothing calls it since the worktree teardown. The rows it already wrote are
+ * permanent record, though — `withStoredGitDiffs` still serves them, so a
+ * session that had a worktree keeps its branch-accurate counters.
  *
  * Returns the updated row, or `undefined` when the session has no stats row
  * yet — the caller is expected to have materialized one first.

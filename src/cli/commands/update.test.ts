@@ -9,7 +9,7 @@ import { tmpdir } from "os";
 import * as schema from "@/db/schema";
 import { _setDb } from "@/db/client";
 import { createCategory } from "@/db/queries/categories";
-import { createSession, getSession } from "@/db/queries/sessions";
+import { createSession } from "@/db/queries/sessions";
 import { shouldIgnoreStatusFlip, dispatchHookEvent } from "./update";
 
 describe("shouldIgnoreStatusFlip (delayed-hook race guard)", () => {
@@ -53,8 +53,18 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "..", "db", "migrations"),
 });
 
-describe("dispatchHookEvent — worktree tracking", () => {
-  test("worktree.entered mirrors path + branch onto the session row", () => {
+describe("dispatchHookEvent — retired worktree events", () => {
+  // Regression guard for the worktree teardown (ELKY-163). These two event
+  // types were the writers for `worktree_path` / `worktree_branch`: the
+  // EnterWorktree and ExitWorktree hooks shelled `bertrand update` with them
+  // mid-session. Nothing emits them now, and the dispatcher no longer claims
+  // them — a stale hook still installed in someone's settings.json gets a
+  // clean "not handled" rather than silently writing columns that are on
+  // their way out (ELKY-164).
+  //
+  // Historical rows are untouched: `catalog.ts` still renders both types so
+  // old timelines read correctly.
+  test("worktree.entered is no longer handled", () => {
     const cat = createCategory({ slug: "wt-cat", name: "wt" });
     const s = createSession({ categoryId: cat.id, slug: "wt-enter", name: "wt enter" });
 
@@ -63,24 +73,15 @@ describe("dispatchHookEvent — worktree tracking", () => {
       meta: { path: "/repo/.claude/worktrees/feat", branch: "worktree-feat" },
     });
 
-    expect(handled).toBe(true);
-    const after = getSession(s.id)!;
-    expect(after.worktreePath).toBe("/repo/.claude/worktrees/feat");
-    expect(after.worktreeBranch).toBe("worktree-feat");
+    expect(handled).toBe(false);
   });
 
-  test("worktree.exited clears the session's worktree state", () => {
+  test("worktree.exited is no longer handled", () => {
     const cat = createCategory({ slug: "wt-cat2", name: "wt2" });
     const s = createSession({ categoryId: cat.id, slug: "wt-exit", name: "wt exit" });
 
-    dispatchHookEvent("worktree.entered", {
-      sessionId: s.id,
-      meta: { path: "/repo/.claude/worktrees/feat2", branch: "worktree-feat2" },
-    });
-    dispatchHookEvent("worktree.exited", { sessionId: s.id, meta: {} });
-
-    const after = getSession(s.id)!;
-    expect(after.worktreePath).toBeNull();
-    expect(after.worktreeBranch).toBeNull();
+    expect(dispatchHookEvent("worktree.exited", { sessionId: s.id, meta: {} })).toBe(
+      false,
+    );
   });
 });

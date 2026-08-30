@@ -4,28 +4,12 @@ import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import {
   DashboardSessionLimitError,
-  WorktreeCreateError,
   spawnDashboardSession,
   resumeDashboardSession,
   stopDashboardSession,
 } from "@/engine/dashboard-session"
-import type { CreateWorktreeReason } from "@/lib/worktree-create"
 import { recoverStaleSessions } from "@/engine/recovery"
-import {
-  getMainWorktree,
-  getWorktreeBranch,
-  getWorktreeChangedFiles,
-  type ChangedFile,
-  type WorktreeChangedFiles,
-} from "@/lib/git"
-import {
-  startWorkspaceServer,
-  stopWorkspaceServer,
-  getWorkspaceServer,
-  readWorkspaceLog,
-  reapOrphanWorkspaces,
-  type WorkspaceServerStatus,
-} from "@/lib/workspace"
+import { type ChangedFile } from "@/lib/git"
 import {
   getAllSessionsForProject,
   getSession,
@@ -35,7 +19,6 @@ import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats, computeAndPersist } from "@/lib/timing"
 import { resolveChangedFiles } from "@/lib/diff_stats"
-import { snapshotGitDiffStats } from "@/lib/stats-snapshot"
 import { computeEngagementStats } from "@/lib/engagement_stats"
 import {
   archiveSession,
@@ -49,7 +32,6 @@ import {
   type RateResult,
   type DiscardResult,
 } from "@/lib/session-actions"
-import { removeSessionWorktree } from "@/lib/worktree-remove"
 import {
   listProjects,
   setActiveProjectSlug,
@@ -72,7 +54,6 @@ import { getDbForProject, invalidateDbCache, closeDbForProject, type Db } from "
 import type {
   SessionRow,
   SessionWithCategory,
-  WorktreeSessionRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
@@ -124,41 +105,17 @@ function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
 }
 
 /**
- * Keep a session's stored git-derived counters current for as long as its
- * worktree is on disk.
- *
- * Fire-and-forget on purpose. The counters are read from the row, not from this
- * call, so a poll never waits on a git subprocess; a refresh started now lands
- * in the row and the next 2s tick serves it. One tick of lag is invisible, and
- * the alternative — awaiting git inside the stats route — puts a subprocess on
- * the dashboard's hottest path.
- *
- * The read goes through `cachedWorktreeFiles`, so this shares its git
- * subprocesses with the changed-files and worktree routes rather than adding
- * its own, and `snapshotGitDiffStats` skips the write when nothing moved.
- *
- * Runs for live sessions too. Their worktrees are exactly the ones being
- * changed, and refreshing throughout means a session's numbers don't jump the
- * moment it pauses.
- */
-function refreshGitStats(session: SessionRow, db?: Db): void {
-  if (!session.worktreePath) return
-  void snapshotGitDiffStats(session, {
-    db,
-    read: async (path) => (await cachedWorktreeFiles(path, false)).files,
-  }).catch(() => {
-    // Best-effort: a session's line counts never break a stats response.
-  })
-}
-
-/**
  * Overlay a stored git snapshot's diff counters onto a freshly computed row.
  *
  * `liveStats` walks events, so its diff counters measure what the agent typed.
  * Once a git snapshot exists it is the better answer — the branch's net change,
  * matching the changed-files list beside it — and it is the one that will
- * survive the worktree. Only the three counters move; everything else on a live
- * row is event-derived and current by construction.
+ * outlive the worktree that produced it. Only the three counters move;
+ * everything else on a live row is event-derived and current by construction.
+ *
+ * The writer is gone with the worktree teardown, but this reader stays: rows
+ * already stamped `diff_source = 'git'` keep their branch-accurate numbers,
+ * exactly like the retained `worktree.entered` / `worktree.exited` events.
  */
 function withStoredGitDiffs(row: SessionStatsRow, db?: Db): SessionStatsRow {
   const stored = getSessionStats(row.sessionId, db)
@@ -251,7 +208,6 @@ const listAllStats = (
   for (const project of resolveProjectScope(url)) {
     const db = getDbForProject(project.slug)
     for (const { session } of getAllSessionsForProject(project)) {
-      refreshGitStats(session, db)
       const isLive =
         session.status === "active" ||
         session.status === "waiting" ||
@@ -274,7 +230,6 @@ const getStatsBySession = (
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
   if (!session) return null
-  refreshGitStats(session, db)
   const isLive = session.status === "active" ||
         session.status === "waiting" ||
         session.status === "blocked"
@@ -283,15 +238,9 @@ const getStatsBySession = (
 }
 
 // /api/stats/:sessionId/files — the individual files a session changed, with
-// per-file line counts. Git-derived while the session's worktree is on disk
-// (the branch's net change, as a reviewer sees it), falling back to the
-// timeline replay for sessions without one, so the list still covers every
-// session. A missing session answers "nothing changed" so the sidebar can poll
-// quietly.
-//
-// The worktree read goes through `cachedWorktreeFiles`, so this route and
-// /api/worktrees/:id/files share one set of git subprocesses rather than each
-// forking their own on a 5s poll.
+// per-file line counts, replayed from the session's own timeline. Covers every
+// session uniformly now that worktrees are gone. A missing session answers
+// "nothing changed" so the sidebar can poll quietly.
 const getChangedFilesBySession = (
   { sessionId }: { sessionId?: string },
   url: URL,
@@ -299,9 +248,7 @@ const getChangedFilesBySession = (
   const db = resolveDb(url)
   const session = getSession(sessionId!, db)
   if (!session) return Promise.resolve([])
-  return resolveChangedFiles(session, resolveRepoRoot(url), db, async (path) =>
-    (await cachedWorktreeFiles(path, false)).files,
-  )
+  return resolveChangedFiles(session, resolveRepoRoot(url), db)
 }
 
 const getEngagement = (
@@ -347,139 +294,6 @@ const getActiveProjectMeta = (): ActiveProjectMeta => {
   }
 }
 
-// Sessions currently working in a worktree. Derived from the worktree_path
-// column the EnterWorktree hook maintains. Scoped like /api/sessions:
-// `?projects=` merges the named projects, omitting it covers the active
-// project alone.
-const listWorktreeSessions = (
-  _params: object,
-  url: URL,
-): SessionWithCategory[] =>
-  resolveProjectScope(url)
-    .flatMap((project) =>
-      getAllSessionsForProject(project, { excludeArchived: true }),
-    )
-    .filter(({ session }) => session.worktreePath != null)
-
-/**
- * Current checked-out branch per worktree, cached briefly. The lookup is a
- * git subprocess per worktree and sits on the dashboard's 2s poll; branch
- * switches are rare enough that a short TTL trades a few seconds of staleness
- * for not forking git 30× a minute per worktree.
- */
-const BRANCH_TTL_MS = 15_000
-const branchCache = new Map<string, { at: number; branch: string | null }>()
-
-async function cachedWorktreeBranch(worktreePath: string): Promise<string | null> {
-  const cached = branchCache.get(worktreePath)
-  if (cached && Date.now() - cached.at < BRANCH_TTL_MS) return cached.branch
-  const branch = await getWorktreeBranch(worktreePath)
-  branchCache.set(worktreePath, { at: Date.now(), branch })
-  return branch
-}
-
-// /api/worktrees — one scan produces everything the dashboard's worktree UI
-// needs: each row enriched with the branch git *currently* has checked out
-// (worktree_branch in the DB is an EnterWorktree-time snapshot; falls back to
-// it when git can't answer — deleted dir, detached HEAD) plus the dev-server
-// preview status. Status reads have no allocation side effects
-// (getWorkspaceServer never reserves a port), so polling doesn't spin
-// anything up; the observed-port check shells out to lsof, but only for
-// sessions with a live process.
-const listWorktrees = (
-  _params: object,
-  url: URL,
-): Promise<WorktreeSessionRow[]> =>
-  Promise.all(
-    listWorktreeSessions({}, url).map(async (row) => {
-      const { session } = row
-      const exists =
-        session.worktreePath != null && existsSync(session.worktreePath)
-      const [branch, status] = await Promise.all([
-        exists ? cachedWorktreeBranch(session.worktreePath!) : null,
-        getWorkspaceServer(session.id),
-      ])
-      // Self-heal: a worktree dir deleted out from under a session makes its
-      // preview meaningless — reclaim the server + port in the background;
-      // the next poll reports it idle.
-      if (!exists && (status.running || status.port != null)) {
-        void stopWorkspaceServer(session.id)
-      }
-      return { ...row, branch: branch ?? session.worktreeBranch, status }
-    }),
-  )
-
-// Back-compat projection of /api/worktrees for clients that still poll the
-// status map separately (a hosted SPA older than this server).
-const listWorktreeStatus = async (
-  params: object,
-  url: URL,
-): Promise<Record<string, WorkspaceServerStatus>> => {
-  const out: Record<string, WorkspaceServerStatus> = {}
-  for (const row of await listWorktrees(params, url)) {
-    out[row.session.id] = row.status
-  }
-  return out
-}
-
-// Tail of a workspace's dev-server log. `?lines=N` bounds it (default 200,
-// NaN falls back). 404s unknown sessions — the id both scopes the request
-// (via `?project=`, like the other per-session endpoints) and names a file
-// on disk, so it must resolve to a real session before we touch the fs.
-const getWorktreeLogs = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): Response | { logs: string } => {
-  const session = getSession(sessionId!, resolveDb(url))
-  if (!session) {
-    return Response.json({ error: "Session not found" }, { status: 404 })
-  }
-  const requested = Number(url.searchParams.get("lines") ?? 200)
-  const n = Number.isFinite(requested) ? Math.max(1, requested) : 200
-  // Bounded tail read — never the whole file; this is on the 2s poll path.
-  return { logs: readWorkspaceLog(session.id, n) }
-}
-
-/**
- * Changed files for a session's worktree, cached briefly like branches: the
- * lookup forks a few git subprocesses and sits on the secondary sidebar's
- * poll, and diffs don't change faster than the TTL matters.
- */
-const FILES_TTL_MS = 3_000
-const filesCache = new Map<string, { at: number; result: WorktreeChangedFiles }>()
-
-async function cachedWorktreeFiles(
-  worktreePath: string,
-  uncommittedOnly: boolean,
-): Promise<WorktreeChangedFiles> {
-  const key = `${worktreePath}#${uncommittedOnly ? "uncommitted" : "branch"}`
-  const cached = filesCache.get(key)
-  if (cached && Date.now() - cached.at < FILES_TTL_MS) return cached.result
-  const result = await getWorktreeChangedFiles(worktreePath, { uncommittedOnly })
-  filesCache.set(key, { at: Date.now(), result })
-  return result
-}
-
-// /api/worktrees/:sessionId/files — what the session's worktree changed
-// relative to its merge base with the main branch, or `?scope=uncommitted`
-// for only what a force-removal would discard. A missing/deleted worktree
-// answers "nothing changed" rather than erroring: the sidebar keeps polling
-// while a worktree is torn down, and an error there is noise, not signal.
-const getWorktreeFiles = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): Response | Promise<WorktreeChangedFiles> => {
-  const session = getSession(sessionId!, resolveDb(url))
-  if (!session) {
-    return Response.json({ error: "Session not found" }, { status: 404 })
-  }
-  if (!session.worktreePath || !existsSync(session.worktreePath)) {
-    return Promise.resolve({ base: null, files: [] })
-  }
-  const uncommittedOnly = url.searchParams.get("scope") === "uncommitted"
-  return cachedWorktreeFiles(session.worktreePath, uncommittedOnly)
-}
-
 // /api/github/:sessionId/pr — the pull request for the session's branch, with
 // its check rollup. The decisions (which branch, which checkout, and what
 // counts as "GitHub didn't answer") live in @/lib/github/session-pr; this is
@@ -500,17 +314,12 @@ const getSessionPullRequest = (
   if (!session) return Promise.resolve({ status: "none" })
   return resolveSessionPullRequest(
     {
-      // A worktree the session has since deleted must not be read as one it
-      // still has — the branch snapshot below is what covers that session.
-      worktreePath:
-        session.worktreePath && existsSync(session.worktreePath)
-          ? session.worktreePath
-          : null,
-      worktreeBranch: session.worktreeBranch,
+      // Nothing records a branch per session yet (ELKY-177), so this is null
+      // for every session and the card stays dark.
+      branch: null,
       repoPath: resolveRepoRoot(url),
     },
     {
-      readBranch: cachedWorktreeBranch,
       resolveRepo: resolveRepoAt,
       lookupPR: getPRForBranch,
     },
@@ -520,10 +329,6 @@ const getSessionPullRequest = (
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
-  [/^\/api\/worktrees$/, listWorktrees],
-  [/^\/api\/worktrees\/status$/, listWorktreeStatus],
-  [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/logs$/, getWorktreeLogs],
-  [/^\/api\/worktrees\/(?<sessionId>[^/]+)\/files$/, getWorktreeFiles],
   [/^\/api\/github\/(?<sessionId>[^/]+)\/pr$/, getSessionPullRequest],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
   [/^\/api\/stats$/, listAllStats],
@@ -689,12 +494,17 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
       "Cannot tell which directory this session ran in, or it no longer exists. " +
       "Resume it from the CLI in the right directory.",
   },
+  // Legacy rows only: worktrees are gone (ELKY-163), so this session predates
+  // the teardown and its recorded directory is not the one it worked in.
+  // Deliberately silent on whether that worktree still exists — the guard fires
+  // either way, and half these rows point at a directory already deleted.
   "worktree-gone": {
     status: 409,
     message:
-      "This session's worktree no longer exists on disk. Resuming it in the " +
-      "main checkout would put its work on the wrong branch — recreate the " +
-      "worktree, or clear it from the session first.",
+      "This session worked in a worktree, which bertrand no longer manages. " +
+      "The directory on record is not the one it worked in, so resuming here " +
+      "would put its work on the wrong branch. Resume it from the CLI, in the " +
+      "directory that work belongs to.",
   },
 }
 
@@ -758,20 +568,6 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
 }
 
 /**
- * Worktree creation failures, mapped to statuses a caller can act on (#210).
- *
- * Same reasoning as RESUME_ERROR above: a name that collides with an existing
- * branch is the caller's to fix and reads as a conflict, not a server fault.
- * Only git failing outright is a 500.
- */
-const SPAWN_WORKTREE_STATUS: Record<CreateWorktreeReason, number> = {
-  "not-a-repo": 400,
-  "path-exists": 409,
-  "branch-exists": 409,
-  "git-failed": 500,
-}
-
-/**
  * Spawn a session whose PTY this server owns (issue #207). Unlike a
  * CLI-started session there is no terminal involved at all — the browser that
  * attaches becomes the sole sizing authority.
@@ -795,18 +591,12 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { categoryPath, slug, baseBranch } = body
+  const { categoryPath, slug } = body
   if (typeof categoryPath !== "string" || !categoryPath) {
     return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
   }
   if (typeof slug !== "string" || !slug) {
     return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
-  }
-  if (baseBranch !== undefined && (typeof baseBranch !== "string" || !baseBranch)) {
-    return Response.json(
-      { error: "baseBranch must be a non-empty string when provided" },
-      { status: 400 },
-    )
   }
 
   try {
@@ -814,15 +604,15 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       categoryPath,
       slug,
       name: typeof body.name === "string" ? body.name : undefined,
-      baseBranch,
     })
     return Response.json(result)
   } catch (err) {
-    // The project this server is pointed at has no repo, so there is nowhere to
-    // cut a worktree. 409 rather than 500: nothing is broken, a prerequisite is
-    // simply missing, and `err.message` already names the command that fixes
-    // it. `reason` lets a UI offer the link action inline instead of printing
-    // a sentence about the CLI.
+    // The project this server is pointed at has no directory bound at all, so
+    // there is nowhere to start. 409 rather than 500: nothing is broken, a
+    // prerequisite is simply missing, and `err.message` already names the
+    // command that fixes it. `reason` lets a UI offer the link action inline
+    // instead of printing a sentence about the CLI. Note the binding need not
+    // be a git repo — bertrand logs sessions outside version control too.
     if (err instanceof UnboundProjectError) {
       return Response.json(
         { error: err.message, reason: "unbound-project", slug: err.slug },
@@ -834,15 +624,6 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     // surfacing an opaque 500.
     if (err instanceof DashboardSessionLimitError) {
       return Response.json({ error: err.message, limit: err.limit }, { status: 503 })
-    }
-    // The worktree could not be created, so no session exists. The reason
-    // travels with the error so a form can point at the field that caused it
-    // rather than showing a generic failure.
-    if (err instanceof WorktreeCreateError) {
-      return Response.json(
-        { error: err.message, reason: err.reason, detail: err.detail },
-        { status: SPAWN_WORKTREE_STATUS[err.reason] },
-      )
     }
     return Response.json({ error: (err as Error).message }, { status: 500 })
   }
@@ -870,71 +651,6 @@ async function handleOpen(req: Request): Promise<Response> {
       resolve(Response.json({ ok: true }))
     })
   })
-}
-
-// Start a session's workspace dev server (dashboard "start" button — the same
-// lazy trigger as `bertrand open`). Resolves the session against `?project=`
-// like every other per-session endpoint (the archive endpoints' "Session not
-// found" bug is the cautionary tale), resolves the main checkout for
-// BERTRAND_ROOT, then hands off to the 1B manager. Idempotent: a live server
-// returns its existing status.
-async function handleWorktreeStart(sessionId: string, url: URL): Promise<Response> {
-  const session = getSession(sessionId, resolveDb(url))
-  if (!session) return Response.json({ error: "Session not found" }, { status: 404 })
-  if (!session.worktreePath) {
-    return Response.json({ error: "Session has no worktree" }, { status: 409 })
-  }
-  if (!existsSync(session.worktreePath)) {
-    return Response.json({ error: "Worktree path no longer exists" }, { status: 409 })
-  }
-  const root = await getMainWorktree(session.worktreePath)
-  const status = await startWorkspaceServer({
-    sessionId: session.id,
-    worktreePath: session.worktreePath,
-    root,
-    slug: session.slug,
-  })
-  if (!status) {
-    return Response.json(
-      { error: "No dev command found in worktree" },
-      { status: 422 },
-    )
-  }
-  return Response.json(status)
-}
-
-const WORKTREE_DELETE_ERROR: Record<string, { status: number; message: string }> = {
-  "not-found": { status: 404, message: "Session not found" },
-  "no-worktree": { status: 409, message: "Session has no worktree" },
-  active: { status: 409, message: "Session is live — end it before deleting its worktree" },
-  dirty: { status: 409, message: "Worktree has uncommitted changes" },
-  "git-failed": { status: 500, message: "git worktree remove failed" },
-}
-
-// Delete a session's worktree (dashboard "delete" button). The heavy lifting
-// — live-session guard, teardown, git removal, record clearing — lives in
-// removeSessionWorktree; this handler just parses `force` and maps result
-// reasons onto status codes. `dirty` deliberately surfaces as 409 with its
-// reason so the client can gate the force retry behind a second confirmation.
-async function handleWorktreeDelete(
-  sessionId: string,
-  url: URL,
-  req: Request,
-): Promise<Response> {
-  let force = false
-  try {
-    const body = (await req.json()) as { force?: unknown }
-    force = body?.force === true
-  } catch {
-    // no/invalid body — a plain (non-force) delete
-  }
-  const result = await removeSessionWorktree(sessionId, { force, db: resolveDb(url) })
-  if (result.ok) return Response.json({ ok: true })
-  const meta = WORKTREE_DELETE_ERROR[result.reason]!
-  return Response.json(
-    { error: meta.message, reason: result.reason, detail: result.detail },
-    { status: meta.status },
-  )
 }
 
 async function match(pathname: string, url: URL): Promise<Response> {
@@ -986,31 +702,6 @@ async function serveDashboard(pathname: string): Promise<Response | null> {
 }
 
 /**
- * Reap workspace servers and port allocations orphaned while nothing was
- * watching — sessions archived from the TUI, worktrees deleted by hand,
- * reboots. Keep = every non-archived, worktree-bearing session across all
- * projects; everything else in the workspace state dir / port registry is
- * reclaimed. Best-effort: reaping must never block serving.
- */
-function reapOrphanedWorkspaceState(): void {
-  try {
-    const keep: string[] = []
-    for (const project of listProjects()) {
-      const sessions = getAllSessionsForProject(
-        { slug: project.slug, name: project.name },
-        { excludeArchived: true },
-      )
-      for (const { session } of sessions) {
-        if (session.worktreePath != null) keep.push(session.id)
-      }
-    }
-    void reapOrphanWorkspaces(keep)
-  } catch (err) {
-    console.error("[server] workspace reap failed:", err)
-  }
-}
-
-/**
  * Reconcile sessions left `active` with a dead pid (#209).
  *
  * A dashboard-owned `claude` dies with the server that spawned it — its PTY
@@ -1039,7 +730,6 @@ export function startServer(port = PORT) {
   // must not reap other sessions' servers or rewrite the port registry based
   // on the branch's view of the world.
   if (!process.env.BERTRAND_WORKSPACE) {
-    reapOrphanedWorkspaceState()
     recoverStaleSessionRows()
   }
   const server = Bun.serve({
@@ -1112,37 +802,6 @@ export function startServer(port = PORT) {
       }
 
       if (req.method === "POST") {
-        const startMatch = /^\/api\/worktrees\/([^/]+)\/start$/.exec(url.pathname)
-        if (startMatch) {
-          const r = await handleWorktreeStart(startMatch[1]!, url)
-          r.headers.set("Access-Control-Allow-Origin", "*")
-          return r
-        }
-        const stopMatch = /^\/api\/worktrees\/([^/]+)\/stop$/.exec(url.pathname)
-        if (stopMatch) {
-          // Validate the id resolves to a real session (scoped via ?project=
-          // like start) before acting on files/processes keyed by it. Stop
-          // itself stays best-effort — a session whose worktree is already
-          // gone must still be stoppable for cleanup.
-          const session = getSession(stopMatch[1]!, resolveDb(url))
-          if (!session) {
-            const r = Response.json({ error: "Session not found" }, { status: 404 })
-            r.headers.set("Access-Control-Allow-Origin", "*")
-            return r
-          }
-          // Awaited: stop only resolves once the process is confirmed dead
-          // (or SIGKILLed), so the client's follow-up status read is truthful.
-          await stopWorkspaceServer(session.id)
-          const r = Response.json({ ok: true })
-          r.headers.set("Access-Control-Allow-Origin", "*")
-          return r
-        }
-        const deleteMatch = /^\/api\/worktrees\/([^/]+)\/delete$/.exec(url.pathname)
-        if (deleteMatch) {
-          const r = await handleWorktreeDelete(deleteMatch[1]!, url, req)
-          r.headers.set("Access-Control-Allow-Origin", "*")
-          return r
-        }
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
           const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))

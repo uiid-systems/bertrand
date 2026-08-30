@@ -8,9 +8,6 @@ import type {
   EngagementStats,
   ArchiveErrorReason,
   SessionActionErrorReason,
-  RemoveWorktreeReason,
-  WorktreeSessionRow,
-  WorktreeChangedFiles,
   ChangedFile,
   ProjectSummary,
   SessionPullRequest,
@@ -158,95 +155,6 @@ export const sessionsQuery = (
     placeholderData: keepPreviousData,
   })
 
-/** Worktree rows arrive with their dev-server status resolved server-side —
- * one poll covers the whole worktree UI. */
-export const worktreesQuery = queryOptions({
-  queryKey: ["worktrees"],
-  queryFn: () => fetchJson<WorktreeSessionRow[]>("/api/worktrees"),
-  refetchInterval: 2000,
-  placeholderData: keepPreviousData,
-})
-
-/**
- * Changed files for one session's worktree. Slower poll than the worktree
- * list — the server forks git per (cache-missed) request, and the answer only
- * shifts as edits land. Callers gate `enabled` on the worktree existing.
- *
- * Default scope is the whole branch diff (vs the merge base with main);
- * `scope: "uncommitted"` narrows to what a force-removal would discard.
- */
-export const worktreeFilesQuery = (
-  sessionId: string,
-  scope: "branch" | "uncommitted" = "branch",
-) =>
-  queryOptions({
-    queryKey: ["worktree-files", sessionId, scope],
-    queryFn: () =>
-      fetchJson<WorktreeChangedFiles>(
-        `/api/worktrees/${sessionId}/files${scope === "uncommitted" ? "?scope=uncommitted" : ""}`,
-      ),
-    refetchInterval: 5000,
-    placeholderData: keepPreviousData,
-  })
-
-async function postWorktreeAction(id: string, action: "start" | "stop"): Promise<void> {
-  const res = await fetch(apiUrl(`/api/worktrees/${id}/${action}`), { method: "POST" })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`)
-  }
-}
-
-export const startWorktree = (id: string) => postWorktreeAction(id, "start")
-export const stopWorktree = (id: string) => postWorktreeAction(id, "stop")
-
-/**
- * Typed failure for worktree deletion so the confirm modal can branch on the
- * reason — `dirty` in particular flips the primary action to "Force delete"
- * instead of dead-ending on an error string.
- */
-export class WorktreeDeleteError extends Error {
-  reason: RemoveWorktreeReason | "unknown"
-  /** Raw git stderr, when the server had it — shown as fine print. */
-  detail?: string
-  constructor(message: string, reason: RemoveWorktreeReason | "unknown", detail?: string) {
-    super(message)
-    this.name = "WorktreeDeleteError"
-    this.reason = reason
-    this.detail = detail
-  }
-}
-
-export async function deleteWorktree(
-  id: string,
-  opts: { force?: boolean } = {},
-): Promise<void> {
-  const res = await fetch(apiUrl(`/api/worktrees/${id}/delete`), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ force: opts.force === true }),
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: string
-      reason?: RemoveWorktreeReason
-      detail?: string
-    }
-    throw new WorktreeDeleteError(
-      body.error ?? `${res.status} ${res.statusText}`,
-      body.reason ?? "unknown",
-      body.detail,
-    )
-  }
-}
-
-export async function fetchWorktreeLogs(id: string, lines = 200): Promise<string> {
-  const res = await fetch(apiUrl(`/api/worktrees/${id}/logs?lines=${lines}`))
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  const body = (await res.json()) as { logs: string }
-  return body.logs
-}
-
 /** Single-project query string (`?project=slug`) for per-session endpoints. */
 function projectParam(project: string | undefined): string {
   if (!project) return ""
@@ -316,7 +224,7 @@ export const statsQuery = (sessionId: string, isLive = false, project?: string) 
 
 /**
  * Files a session changed, derived from its timeline (not git). Covers every
- * session — worktree or not — and its counts match the primary sidebar's
+ * session, and its counts match the primary sidebar's
  * file-count/+- totals, since both come from the same `tool.applied` events.
  */
 export const changedFilesQuery = (

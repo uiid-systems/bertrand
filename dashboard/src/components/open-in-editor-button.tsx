@@ -39,10 +39,10 @@ type OpenInEditorButtonProps = Omit<ButtonProps, "render" | "children"> & {
 /**
  * Open a session's code in the preferred local editor.
  *
- * Which directory that means is a property of the session, not of the button:
- * a session working in a worktree opens its checkout, and one working directly
- * on the repo opens the project's own checkout. Callers pass the session and
- * get the right target either way, so no surface has to know the rule.
+ * The directory is the project's own checkout. Sessions used to be able to
+ * work in their own worktree and open that instead; with worktrees gone there
+ * is one target, and callers still pass the session so the signature survives
+ * a future where that stops being true again.
  *
  * The project path comes from its repo binding, which is the only place
  * bertrand records where a project lives on this machine. An unbound project
@@ -65,15 +65,8 @@ export const OpenInEditorButton = ({
     ? projects.find((p) => p.slug === projectSlug)
     : projects.find((p) => p.active);
 
-  // A worktree is where the session's work actually is, so it wins whenever
-  // one is recorded; the field is nulled when a worktree is removed, which is
-  // what makes it safe to trust here.
-  const worktreePath = session.worktreePath;
-  const target = worktreePath ?? project?.repo?.path ?? null;
-
-  const label = worktreePath
-    ? `Open worktree in ${editorLabel(editor)}`
-    : `Open project in ${editorLabel(editor)}`;
+  const target = project?.repo?.path ?? null;
+  const label = `Open project in ${editorLabel(editor)}`;
 
   return (
     <Button

@@ -103,7 +103,7 @@ export const ProjectZone = ({
             <SessionGroup
               key={group.key}
               group={group}
-              // Namespaced by project: two projects can both have a `worktrees`
+              // Namespaced by project: two projects can both have a `sessions`
               // category, and collapsing one must not collapse the other.
               open={
                 !categoryCollapse.collapsed.includes(

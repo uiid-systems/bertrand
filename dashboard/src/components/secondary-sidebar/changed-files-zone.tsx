@@ -5,7 +5,7 @@ import { Badge, Group, Number, Stack, Text } from "@uiid/design-system";
 import { changedFilesQuery } from "../../api/queries";
 import { useSettledKeys } from "../../lib/use-settled-keys";
 import { SidebarZone } from "../sidebar/subcomponents/sidebar-zone";
-import { ChangedFileRow } from "../worktrees/changed-file-row";
+import { ChangedFileRow } from "./changed-file-row";
 import { PullRequestCard } from "./pull-request-card";
 
 export type ChangedFilesZoneProps = {
@@ -22,16 +22,15 @@ export type ChangedFilesZoneProps = {
  * session changed, with per-file +/- line counts, under the branch's pull
  * request when it has one.
  *
- * The PR sits here rather than with the worktree because this zone is the
- * session's GitHub-facing view: the files are the branch's diff, which is the
- * PR's diff, and the checks are what CI ran over exactly this list.
+ * The PR sits here because this zone is the session's GitHub-facing view: the
+ * files are the branch's diff, which is the PR's diff, and the checks are what
+ * CI ran over exactly this list.
  *
- * Git-derived while the session has a worktree — the branch's net change
- * against its merge base, so these counts are the ones a reviewer sees on the
- * PR. Sessions without a worktree fall back to a replay of the session's
- * `tool.applied` events, so the list still appears for every session; that arm
- * counts each rewrite of a file separately and can read higher. The server
- * picks between them, so the two never appear at once.
+ * Replayed from the session's `tool.applied` events, uniformly for every
+ * session. There was a git arm that took precedence wherever a worktree
+ * existed, reporting the branch's net change against its merge base; it went
+ * with the worktrees. The replay counts each rewrite of a file separately, so
+ * these numbers can read higher than a reviewer sees on the PR.
  *
  * The zone always renders, a count of zero included: the sidebar's sections
  * are fixed landmarks, so "nothing changed yet" is stated in place rather than

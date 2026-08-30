@@ -480,6 +480,18 @@ Scope:
 - Retire `docs/workspaces.md` (24.4K) and the worktree parts of `docs/pty-wrapper.md`.
 - Check `src/lib/stats-snapshot.ts` and `src/lib/usage-backfill.ts`, which snapshot
   git-derived stats before a worktree is removed (PR #256) — that trigger disappears.
+- Delete `src/lib/stats-snapshot.ts` (missing from the Appendix A list below), and
+  with it three exports in `src/lib/diff_stats.ts` that it is the last caller of:
+  `gitDiffStats`, `WorktreeFilesReader`, `readWorktreeFiles`. ELKY-163 cut
+  `resolveChangedFiles`'s git arm, so `stats-snapshot` is all that keeps them
+  reachable. `resolveChangedFiles`, `computeChangedFiles` and `sumChangedFiles`
+  stay — they are the timeline replay every session now uses.
+- Drop the resume refusal for legacy worktree rows in `src/engine/dashboard-session.ts`
+  (`resolveSessionCwd`'s `worktree-gone` arm) and its `RESUME_ERROR` entry in
+  `src/server/index.ts`. ELKY-163 kept it because rows carrying a `worktree_path`
+  record the *main checkout* on their last `claude.started`, so resuming one would
+  commit its work to the wrong branch. Once the migration above drops the columns
+  there is nothing left to refuse on.
 
 Watch: Files-changed sidebar. 4a's "it never used the git path here" **was wrong on
 the personal laptop** — two live worktrees still exercise it. Treat non-regression as a
