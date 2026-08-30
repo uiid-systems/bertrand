@@ -583,18 +583,12 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { categoryPath, slug, baseBranch } = body
+  const { categoryPath, slug } = body
   if (typeof categoryPath !== "string" || !categoryPath) {
     return Response.json({ error: "categoryPath must be a non-empty string" }, { status: 400 })
   }
   if (typeof slug !== "string" || !slug) {
     return Response.json({ error: "slug must be a non-empty string" }, { status: 400 })
-  }
-  if (baseBranch !== undefined && (typeof baseBranch !== "string" || !baseBranch)) {
-    return Response.json(
-      { error: "baseBranch must be a non-empty string when provided" },
-      { status: 400 },
-    )
   }
 
   try {
@@ -602,15 +596,15 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       categoryPath,
       slug,
       name: typeof body.name === "string" ? body.name : undefined,
-      baseBranch,
     })
     return Response.json(result)
   } catch (err) {
-    // The project this server is pointed at has no repo, so there is nowhere to
-    // cut a worktree. 409 rather than 500: nothing is broken, a prerequisite is
-    // simply missing, and `err.message` already names the command that fixes
-    // it. `reason` lets a UI offer the link action inline instead of printing
-    // a sentence about the CLI.
+    // The project this server is pointed at has no directory bound at all, so
+    // there is nowhere to start. 409 rather than 500: nothing is broken, a
+    // prerequisite is simply missing, and `err.message` already names the
+    // command that fixes it. `reason` lets a UI offer the link action inline
+    // instead of printing a sentence about the CLI. Note the binding need not
+    // be a git repo — bertrand logs sessions outside version control too.
     if (err instanceof UnboundProjectError) {
       return Response.json(
         { error: err.message, reason: "unbound-project", slug: err.slug },

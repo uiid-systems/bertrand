@@ -144,37 +144,21 @@ describe("computeChangedFiles display paths", () => {
   });
 });
 
-describe("resolveChangedFiles picks its source", () => {
-  test("no worktree falls back to the timeline replay", async () => {
+describe("resolveChangedFiles replays the timeline", () => {
+  test("returns the files the session's events touched", async () => {
     const id = sessionEditing(`${REPO}/src/a.ts`);
-    const files = await resolveChangedFiles({ id, worktreePath: null }, REPO);
+    const files = await resolveChangedFiles({ id }, REPO);
     expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
   });
 
-  test("a worktree path whose directory is gone falls back rather than zeroing", async () => {
-    // The row outlives the directory between `worktree remove` and the column
-    // being cleared. Git reads a missing worktree as "nothing changed", so
-    // trusting the column here would blank a completed session's file list.
-    const id = sessionEditing(`${REPO}/src/a.ts`);
-    const files = await resolveChangedFiles(
-      { id, worktreePath: join(TEST_DIR, "worktree-that-never-existed") },
-      REPO,
-    );
-    expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
-  });
-
-  test("an existing worktree is read from git, not from the timeline", async () => {
-    // The session's events claim one file; git is asked instead and answers
-    // with its own, so we can tell which arm produced the list.
+  // Regression guard for the worktree teardown (ELKY-163). There was once a
+  // git arm that took precedence whenever a worktree existed on disk; a
+  // session whose events and working tree disagreed would be served git's
+  // answer. Now there is one arm, so the events are always what is rendered
+  // — including for sessions that still carry a stale worktree_path.
+  test("ignores any path on the session and always uses the events", async () => {
     const id = sessionEditing(`${REPO}/src/only-in-events.ts`);
-    const files = await resolveChangedFiles(
-      { id, worktreePath: TEST_DIR },
-      REPO,
-      undefined,
-      async () => [
-        { path: "src/from-git.ts", added: 1, removed: 0, status: "added" },
-      ],
-    );
-    expect(files.map((f) => f.path)).toEqual(["src/from-git.ts"]);
+    const files = await resolveChangedFiles({ id }, REPO);
+    expect(files.map((f) => f.path)).toEqual(["src/only-in-events.ts"]);
   });
 });

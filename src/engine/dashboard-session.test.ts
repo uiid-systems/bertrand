@@ -13,7 +13,6 @@ import { UnboundProjectError } from "@/lib/projects/policy";
 
 const {
   DashboardSessionLimitError,
-  WorktreeCreateError,
   dashboardSessionLimit,
   spawnDashboardSession,
   resumeDashboardSession,
@@ -115,30 +114,6 @@ describe("dashboard session concurrency bound", () => {
     expect(listDashboardSessions()).toEqual([]);
   });
 
-  test("a project bound to a non-repo is refused before any session exists", async () => {
-    // Raised past the guard so the spawn actually reaches worktree creation —
-    // the point being that the *next* gate also runs before createSession.
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
-    useProject("bad-binding", tempDir("bertrand-spawn-"));
-
-    await expect(
-      spawnDashboardSession({ categoryPath: "test", slug: "no-repo-here" }),
-    ).rejects.toThrow(WorktreeCreateError);
-    expect(listDashboardSessions()).toEqual([]);
-  });
-
-  test("the refusal names the reason so the API can map it", async () => {
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
-    useProject("bad-binding", tempDir("bertrand-spawn-"));
-
-    const err = await spawnDashboardSession({
-      categoryPath: "test",
-      slug: "no-repo-either",
-    }).catch((e) => e);
-    expect(err).toBeInstanceOf(WorktreeCreateError);
-    expect(err.reason).toBe("not-a-repo");
-  });
-
   test("the error names the limit it enforced", () => {
     const err = new DashboardSessionLimitError(8);
     expect(err.limit).toBe(8);
@@ -192,24 +167,6 @@ describe("the repo is derived from the project, not supplied", () => {
     expect(err).not.toBeInstanceOf(DashboardSessionLimitError);
   });
 
-  test("the bound repo is what the worktree is cut from", async () => {
-    // The binding is the only path input, so a binding that is not a repo has
-    // to surface as `not-a-repo` against *that* path — proof the resolver read
-    // the project rather than falling back to the server's own cwd, which is a
-    // real repo and would have succeeded.
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
-    const bound = tempDir("bertrand-bound-");
-    useProject("points-at-junk", bound);
-
-    const err = await spawnDashboardSession({
-      categoryPath: "test",
-      slug: "derives-from-binding",
-    }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(WorktreeCreateError);
-    expect(err.reason).toBe("not-a-repo");
-    expect(err.message).toContain(bound);
-  });
 });
 
 describe("resume under the same bound (#214)", () => {

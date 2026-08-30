@@ -139,39 +139,26 @@ const readWorktreeFiles: WorktreeFilesReader = async (worktreePath) =>
   (await getWorktreeChangedFiles(worktreePath)).files;
 
 /**
- * The files a session changed — git's answer when it has one, the timeline's
- * when it doesn't. The single source behind the secondary sidebar's "Files
- * changed" list.
+ * The files a session changed, replayed from its own timeline. The single
+ * source behind the secondary sidebar's "Files changed" list.
  *
- * Git is the better answer wherever it can be had. Diffing the branch against
- * its merge base reports the session's *net* effect, which is what a reviewer
- * sees on the PR; replaying `tool.applied` reports what the agent typed, so a
- * file rewritten three times counts three times and an edit made outside the
- * session isn't counted at all.
+ * There used to be a git arm here, preferred wherever a worktree was on disk
+ * because diffing a branch against its merge base reports the session's *net*
+ * effect rather than what the agent typed. Worktrees are gone, so the replay
+ * is the only per-file answer — and the better one to be left with, since it
+ * stays computable forever from immutable event rows.
  *
- * It cannot always be had. Once a worktree is removed there is nothing for git
- * to read, so those sessions fall back to the event replay, which stays
- * computable forever from immutable rows. The *aggregate* counters survive
- * removal — `snapshotGitDiffStats` writes them into `session_stats` while the
- * worktree still exists — but the per-file breakdown has no such home, so this
- * arm remains the only answer for a session whose worktree is gone.
- *
- * Note the two arms disagree by design — git's counts are the correct ones, so
- * a session's numbers may shift the first time it is served from git.
+ * The *aggregate* counters are the exception. Rows already stamped
+ * `diff_source = 'git'` keep their branch-accurate totals, which the server
+ * overlays in `withStoredGitDiffs`. Those numbers can disagree with the sum of
+ * this list for such a session: the snapshot measured a branch, this measures
+ * a timeline.
  */
 export async function resolveChangedFiles(
-  session: { id: string; worktreePath: string | null },
+  session: { id: string },
   root: string | undefined,
   db: Db = getDb(),
-  read: WorktreeFilesReader = readWorktreeFiles,
 ): Promise<ChangedFile[]> {
-  // `existsSync` rather than trusting the column: `worktreePath` outlives the
-  // directory between a `worktree remove` and the row being cleared, and git
-  // reports a missing worktree as "nothing changed" — indistinguishable from a
-  // clean one, and it would silently zero the list.
-  if (session.worktreePath && existsSync(session.worktreePath)) {
-    return read(session.worktreePath);
-  }
   return computeChangedFiles(session.id, root, db);
 }
 
