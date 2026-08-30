@@ -120,6 +120,13 @@
       "when": 1788124077385,
       "tag": "0016_wild_jack_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788125194596,
+      "tag": "0017_sparkling_luckman",
+      "breakpoints": true
     }
   ]
 }

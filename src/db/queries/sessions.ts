@@ -3,6 +3,7 @@ import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions, categories } from "@/db/schema";
 import { createId } from "@/lib/id";
 import { getCategoryByPath } from "@/db/queries/categories";
+import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { listProjects } from "@/lib/projects/registry";
 import type { SessionRow, SessionStatus, SessionWithCategory } from "@/types";
@@ -40,6 +41,12 @@ export interface ResolvedSession {
  * paths and the flat parse can never name them. We try the flat interpretation
  * first (new rows win) and fall back to the legacy split so `bertrand log`,
  * `stats`, and `archive` can still reach those older sessions.
+ *
+ * When both eras miss, the name may be a retired one: `bertrand rename`
+ * records the old canonical name in `session_aliases` (ELKY-170), so a name
+ * that once worked keeps working. Aliases come last — a live row that holds
+ * the name outranks any historical claim on it. An alias hit returns the
+ * session's CURRENT identity, not the alias text.
  */
 export function resolveSessionByName(
   name: string,
@@ -58,11 +65,8 @@ export function resolveSessionByName(
 
   // Legacy interpretation: last segment = slug, everything before = category.
   // Skipped for two-segment names, where it's identical to the flat parse.
-  const segments = name
-    .trim()
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
-    .filter(Boolean);
+  const trimmed = name.trim().replace(/^\/+|\/+$/g, "");
+  const segments = trimmed.split("/").filter(Boolean);
   if (segments.length >= 3) {
     const legacyCategoryPath = segments.slice(0, -1).join("/");
     const legacySlug = segments[segments.length - 1]!;
@@ -75,7 +79,8 @@ export function resolveSessionByName(
     }
   }
 
-  return undefined;
+  // Alias fallback: the name may have been retired by a rename.
+  return getSessionByAlias(trimmed);
 }
 
 export function createSession(opts: {
