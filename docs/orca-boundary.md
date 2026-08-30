@@ -7,6 +7,11 @@
 > **Produced in:** bertrand session `spike/orca-usage`, 2026-08-28 — the first
 > session run inside [Orca](https://www.onorca.dev) (v1.4.191, `com.stablyai.orca`).
 > **Recover the full discussion with:** `bertrand log spike/orca-usage`
+> **Amended:** 2026-08-30 from the user's **personal laptop** (bertrand session
+> `teardown/receive-doc`). Three claims turned out to be scoped to the machine the
+> spike ran on rather than universal, and are corrected in place: the adoption table
+> (4a), the changed-files "never executed" corollary (4a), and the Linear
+> availability claim (Part 7). Grep this doc for `2026-08-30`.
 
 ## How to use this document
 
@@ -24,8 +29,9 @@ Every number here is reproducible; Appendix B gives the exact command for each.
 1. **Bertrand and Orca are fully compatible.** Running claude inside a bertrand
    shell blocks nothing from Orca. Proven live, not inferred (Part 1).
 2. **Remove all worktree/preview features from bertrand.** Not because Orca does
-   them better, but because they have **3.9% adoption across 154 sessions** and have
-   never worked properly. (User decision, this session.)
+   them better, but because adoption is **3.9%–8.3%** (3.9% over 154 sessions on the
+   work machine; 8.3% over 96 on the personal laptop — see 4a) and they have never
+   worked properly. (User decision, this session.)
 3. **Derive session names instead of prompting for them.** The `category`
    taxonomy is empirically fragmenting; `slug` is auto-derivable at parity or
    better from the first prompt, at pause time. (User accepted.)
@@ -281,7 +287,9 @@ Keying off the payload instead of an injected env var makes bertrand
 
 ## Part 4 — Evidence base
 
-### 4a. Worktrees have 3.9% adoption
+### 4a. Worktree adoption is low on every machine measured (3.9%–8.3%)
+
+Measured on the **work machine**, 2026-08-28:
 
 | Project | Sessions | With a worktree |
 |---|---|---|
@@ -291,15 +299,45 @@ Keying off the payload instead of an injected env var makes bertrand
 | tabs-backend | 22 | 1 |
 | **Total** | **154** | **6 (3.9%)** |
 
-The most expensive, most Orca-overlapped surface in bertrand isn't losing a
-competition — **it was never used.** This is a stronger justification for removal
-than any comparison to Orca.
+Re-derived on the **personal laptop**, 2026-08-30 — a different project registry, not
+a correction of the table above:
 
-**Corollary that de-risks teardown:** `server/index.ts`'s `cachedWorktreeFiles`
-guards on `if (!session.worktreePath) return`, and that column is null for all 52
-bertrand sessions. Git enrichment of changed-files has **never executed** in this
-project. Changed-files is purely timeline-derived (`diff_stats` accumulator over
-`tool.applied` events) and survives teardown untouched.
+| Project | Sessions | With a worktree |
+|---|---|---|
+| bertrand | 49 | **3** |
+| design-system | 38 | 5 |
+| shuff-app | 7 | 0 |
+| `default` / `self-hosted` / `elky149-unbound-probe` | 2 | 0 |
+| **Total** | **96** | **8 (8.3%)** |
+
+`balance` and `tabs-backend` are not registered on the personal laptop; `shuff-app` is
+not registered on the work machine. **The session corpus is split across two machines**,
+so every number in Parts 2 and 4 describes whichever registry it was run against.
+Re-derive on the machine you are acting from — Appendix B's commands are machine-local.
+
+The most expensive, most Orca-overlapped surface in bertrand isn't losing a
+competition — **at 3.9%–8.3% it was barely used.** This is a stronger justification for
+removal than any comparison to Orca, and it holds on both machines.
+
+**CORRECTED 2026-08-30 — the corollary that was supposed to de-risk teardown does not
+hold.** An earlier draft argued that `server/index.ts`'s `cachedWorktreeFiles` guard
+(`if (!session.worktreePath) return`, `src/server/index.ts:145`, plus the `existsSync`
+guard at `:476`) had **never** been passed in this project, because `worktree_path` was
+null for all 52 bertrand sessions on the work machine.
+
+On the personal laptop, three bertrand sessions carry a `worktree_path` and two of
+those worktrees are **live right now**:
+
+```
+.claude/worktrees/issue-249-purge-evict      [worktree-issue-249-purge-evict]
+.claude/worktrees/sidebar-live-zone-groups   [worktree-sidebar-live-zone-groups]
+.claude/worktrees/diff-fix-colors            [fix/diff-palette-colors]   ← no session
+```
+
+So the git-enrichment path for changed-files **has executed, and still can.** That
+changed-files is purely timeline-derived (`diff_stats` accumulator over `tool.applied`
+events) is now an **assertion to prove, not a given** — see Workstream 1 and Part 6.
+The upside: those two live worktrees are a ready-made fixture for proving it.
 
 ### 4b. The `category` taxonomy is fragmenting
 
@@ -443,8 +481,11 @@ Scope:
 - Check `src/lib/stats-snapshot.ts` and `src/lib/usage-backfill.ts`, which snapshot
   git-derived stats before a worktree is removed (PR #256) — that trigger disappears.
 
-Watch: Files-changed sidebar. See 4a — it never used the git path here, so it should
-survive untouched. **Verify with a session that has changed files before merging.**
+Watch: Files-changed sidebar. 4a's "it never used the git path here" **was wrong on
+the personal laptop** — two live worktrees still exercise it. Treat non-regression as a
+real test with a real fixture: open a session with changed files against
+`worktree-issue-249-purge-evict` or `worktree-sidebar-live-zone-groups`, capture the
+sidebar before and after, and diff. **Do not merge on the argument alone.**
 
 ### Workstream 2 — Naming: drop category, derive slug at pause · risk MED-HIGH · 2–3 sessions
 
@@ -525,7 +566,9 @@ Everything host-shaped becomes optional. Requires no Orca decision.
 - [x] **`orca agent hooks off` does not remove bertrand's hook entries.** VERIFIED by
       reading Orca's source — the predicate matches its own script filename (Part 1,
       soft edge 3). Not live-tested.
-- [ ] **Teardown doesn't regress Files-changed.** 4a argues it can't; prove it.
+- [ ] **Teardown doesn't regress Files-changed.** 4a **no longer argues it can't**
+      (corrected 2026-08-30): the git path has executed on the personal laptop and two
+      live worktrees still exercise it. Prove it against one of them — Workstream 1.
 
 ### What could kill this
 
@@ -552,11 +595,17 @@ Everything host-shaped becomes optional. Requires no Orca decision.
 - **Not building a `Host` adapter (`orca`/`git`/`none`) yet.** One host used for one
   session is not a pattern; that's speculative generality. Revisit only if a second
   host becomes real.
-- **Not creating Linear projects.** The connected Linear workspace is
-  **Tabs-Platform** (the user's employer) — no `uiid` team, no `bertrand` project
-  exists, and only one workspace is reachable via the MCP connection. Personal
-  open-source planning does not belong there. GitHub issues/milestones on
-  `uiid-systems/bertrand` are the natural home; release-please already lives there.
+- ~~**Not creating Linear projects.**~~ **REVERSED 2026-08-30 — Linear is the right
+  home.** The original claim (connected workspace is **Tabs-Platform**, the user's
+  employer; no `uiid` team; no `bertrand` project; one workspace reachable) was an
+  artifact of the **work machine's** MCP connection. From the personal laptop the
+  `uiid` workspace is reachable and team key **`ELKY` resolves to "Bertrand"**,
+  already holding *GitHub-Attached Projects* (Backlog) and *TypeScript rebuild*
+  (Completed). The user's five most recent bertrand sessions ran as
+  `github-projects/ELKY-150…156` off that board.
+  **Plan the workstreams as one Linear project each on the ELKY board**, tasks in
+  Todo/Backlog (never Triage), with PRs on `uiid-systems/bertrand` as today —
+  release-please still lives there.
 - **Not competing on terminals, previews, projects, or orchestration.** Table stakes
   every host builds.
 - **Not deleting `src/engine` / `src/tui`.** Demote, don't destroy — they're the only
