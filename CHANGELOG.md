@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.39.0](https://github.com/uiid-systems/bertrand/compare/v0.38.0...v0.39.0) (2026-08-30)
+
+
+### Features
+
+* **dashboard:** let a turn card hide its tool work so the prose reads as one reply ([#259](https://github.com/uiid-systems/bertrand/issues/259)) ([c93da3e](https://github.com/uiid-systems/bertrand/commit/c93da3e088abb171742220cbcfb8988f194d7beb))
+* record the git branch a session runs on ([#268](https://github.com/uiid-systems/bertrand/issues/268)) ([da92e6f](https://github.com/uiid-systems/bertrand/commit/da92e6fc04dff4265118a2536292714d76d5bcf2))
+
+
+### Bug Fixes
+
+* **transcript:** find a transcript whose filename disagrees with the session id ([d75f6fe](https://github.com/uiid-systems/bertrand/commit/d75f6fe5df5d8a5f7b8ba361cae1e20a019d5761))
+
+
+### Refactoring
+
+* **dashboard:** remove the secondary sidebar ([#266](https://github.com/uiid-systems/bertrand/issues/266)) ([3b6b9fc](https://github.com/uiid-systems/bertrand/commit/3b6b9fc77eeddfa59b444a8ec103b26ec1352599))
+* delete the workspace and worktree modules ([#265](https://github.com/uiid-systems/bertrand/issues/265)) ([ae50730](https://github.com/uiid-systems/bertrand/commit/ae50730e58b7d35eeacce50374187d32a0a7dec9))
+* drop the retired worktree and diff_source columns ([#272](https://github.com/uiid-systems/bertrand/issues/272)) ([c5f16c8](https://github.com/uiid-systems/bertrand/commit/c5f16c8798b4589c7c0a3eec6cbd4a5e74765b76))
+* remove the worktree hooks and the bertrand open command ([#264](https://github.com/uiid-systems/bertrand/issues/264)) ([175e02d](https://github.com/uiid-systems/bertrand/commit/175e02d9f984928b2a2e487906f4e0d4f98adbfc))
+* unwire worktrees from the server, engine, src and dashboard ([#262](https://github.com/uiid-systems/bertrand/issues/262)) ([19e8fa5](https://github.com/uiid-systems/bertrand/commit/19e8fa57692cdbdecfbbdd01e16bdb17170d4705))
+
 ## [0.38.0](https://github.com/uiid-systems/bertrand/compare/v0.37.0...v0.38.0) (2026-08-11)
 
 
