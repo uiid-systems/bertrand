@@ -105,31 +105,6 @@ function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
 }
 
 /**
- * Overlay a stored git snapshot's diff counters onto a freshly computed row.
- *
- * `liveStats` walks events, so its diff counters measure what the agent typed.
- * Once a git snapshot exists it is the better answer — the branch's net change,
- * matching the changed-files list beside it — and it is the one that will
- * outlive the worktree that produced it. Only the three counters move;
- * everything else on a live row is event-derived and current by construction.
- *
- * The writer is gone with the worktree teardown, but this reader stays: rows
- * already stamped `diff_source = 'git'` keep their branch-accurate numbers,
- * exactly like the retained `worktree.entered` / `worktree.exited` events.
- */
-function withStoredGitDiffs(row: SessionStatsRow, db?: Db): SessionStatsRow {
-  const stored = getSessionStats(row.sessionId, db)
-  if (stored?.diffSource !== "git") return row
-  return {
-    ...row,
-    linesAdded: stored.linesAdded,
-    linesRemoved: stored.linesRemoved,
-    filesTouched: stored.filesTouched,
-    diffSource: "git",
-  }
-}
-
-/**
  * Which projects a list/stats request covers. `?projects=a,b,c` names them
  * explicitly (unknown slugs dropped, empty string → no projects); omitting the
  * param falls back to the active project alone, preserving the single-project
@@ -213,7 +188,7 @@ const listAllStats = (
         session.status === "waiting" ||
         session.status === "blocked"
       if (isLive) {
-        result[session.id] = withStoredGitDiffs(liveStats(session.id, db), db)
+        result[session.id] = liveStats(session.id, db)
         continue
       }
       result[session.id] =
@@ -233,7 +208,7 @@ const getStatsBySession = (
   const isLive = session.status === "active" ||
         session.status === "waiting" ||
         session.status === "blocked"
-  if (isLive) return withStoredGitDiffs(liveStats(sessionId!, db), db)
+  if (isLive) return liveStats(sessionId!, db)
   return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
 }
 

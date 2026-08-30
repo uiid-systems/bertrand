@@ -1,59 +1,5 @@
 import { $ } from "bun";
-import type { ChangedFile, WorktreeChangedFiles } from "./git-types";
-
-export interface Worktree {
-  path: string;
-  branch: string;
-  head: string;
-  bare: boolean;
-}
-
-/** List all git worktrees in the current repo */
-export async function listWorktrees(): Promise<Worktree[]> {
-  const result =
-    await $`git worktree list --porcelain`.text();
-
-  const worktrees: Worktree[] = [];
-  let current: Partial<Worktree> = {};
-
-  for (const line of result.split("\n")) {
-    if (line.startsWith("worktree ")) {
-      if (current.path) worktrees.push(current as Worktree);
-      current = { path: line.slice(9), bare: false };
-    } else if (line.startsWith("HEAD ")) {
-      current.head = line.slice(5);
-    } else if (line.startsWith("branch ")) {
-      current.branch = line.slice(7).replace("refs/heads/", "");
-    } else if (line === "bare") {
-      current.bare = true;
-    }
-  }
-  if (current.path) worktrees.push(current as Worktree);
-
-  return worktrees;
-}
-
-/**
- * Create a worktree on a new branch, anchored at `cwd` — required, and
- * typically the repo's main checkout.
- *
- * It is required because the `process.cwd()` default it replaced produced a
- * real bug: called from `bertrand serve`, which runs from wherever it happened
- * to be launched, this created worktrees in whatever repo the server was
- * started in. A caller that cannot name the repo cannot safely guess it, so
- * the omission is now a type error rather than a wrong-repo worktree.
- *
- * `baseBranch` defaults to whatever the resolved repo has checked out; pass it
- * explicitly when the base matters.
- */
-export async function createWorktree(
-  path: string,
-  branch: string,
-  opts: { cwd: string; baseBranch?: string },
-): Promise<void> {
-  const baseBranch = opts.baseBranch ?? "HEAD";
-  await $`git -C ${opts.cwd} worktree add -b ${branch} ${path} ${baseBranch}`.quiet();
-}
+import type { ChangedFile } from "./git-types";
 
 /** Prefer git's stderr over Bun's generic "exited with code 128" message. */
 export function shellDetail(err: unknown): string {
@@ -64,59 +10,15 @@ export function shellDetail(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * Remove a worktree, anchored at `cwd` — required, for the reason
- * `createWorktree` gives above, plus one of its own: the dashboard server runs
- * from wherever `bertrand serve` was launched, and git refuses to remove the
- * worktree the process is standing in.
- */
-export async function removeWorktree(
-  path: string,
-  opts: { cwd: string; force?: boolean }
-): Promise<void> {
-  if (opts.force) {
-    await $`git -C ${opts.cwd} worktree remove --force ${path}`.quiet();
-  } else {
-    await $`git -C ${opts.cwd} worktree remove ${path}`.quiet();
-  }
-}
-
 /** Get the root of the current git repo */
 export async function getRepoRoot(): Promise<string> {
   return (await $`git rev-parse --show-toplevel`.text()).trim();
 }
 
-/**
- * The branch a worktree currently has checked out. The DB records the branch
- * at EnterWorktree time, but a worktree can switch branches over its life —
- * display must follow git, not the entry-time snapshot. Null when detached
- * or unreadable; callers fall back to the recorded value.
- */
-export async function getWorktreeBranch(cwd: string): Promise<string | null> {
-  try {
-    const out = (await $`git -C ${cwd} rev-parse --abbrev-ref HEAD`.text()).trim();
-    return out && out !== "HEAD" ? out : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The main working tree for the repo a worktree belongs to. `git worktree
- * list` always reports the main working tree first, so we take that entry.
- * Used to resolve `BERTRAND_ROOT` (for symlinking shared files) from a
- * session's worktree path. Falls back to the given path if parsing fails.
- */
-export async function getMainWorktree(cwd: string): Promise<string> {
-  const out = await $`git -C ${cwd} worktree list --porcelain`.text();
-  const first = out.split("\n").find((l) => l.startsWith("worktree "));
-  return first ? first.slice(9).trim() : cwd;
-}
-
 // Declared in the leaf `./git-types` so the dashboard's type graph stops
 // there instead of following this module's `bun` import; re-exported because
 // this is where callers of the git helpers expect them.
-export type { ChangedFile, WorktreeChangedFiles } from "./git-types";
+export type { ChangedFile } from "./git-types";
 
 /** Parse `git diff --numstat` lines: `<added>\t<removed>\t<path>`, `-` for binary. */
 export function parseNumstat(
@@ -145,60 +47,4 @@ export function parseNameStatus(out: string): Map<string, ChangedFile["status"]>
     statuses.set(path, letter[0] === "A" ? "added" : letter[0] === "D" ? "deleted" : "modified");
   }
   return statuses;
-}
-
-/**
- * What a worktree changed, as `git diff` sees it: commits since branching off
- * the main checkout's branch plus uncommitted edits, plus untracked files.
- * Diffing against the merge base (not the main branch's tip) keeps the list
- * "what this session did" even after main moves on. Renames are disabled so
- * a rename reads as delete + add — no `old => new` path parsing. Falls back
- * to uncommitted-only (vs HEAD) when no base is resolvable, and to an empty
- * list when git itself fails (deleted dir, not a repo).
- *
- * `uncommittedOnly` skips the merge base and diffs against HEAD: exactly what
- * a force-removal of the worktree would discard (commits survive on the
- * branch). Untracked files are included either way — `worktree remove
- * --force` deletes those too.
- */
-export async function getWorktreeChangedFiles(
-  cwd: string,
-  opts: { uncommittedOnly?: boolean } = {},
-): Promise<WorktreeChangedFiles> {
-  let base: string | null = null;
-  if (!opts.uncommittedOnly) {
-    try {
-      const mainPath = await getMainWorktree(cwd);
-      const mainBranch = mainPath === cwd ? null : await getWorktreeBranch(mainPath);
-      if (mainBranch) {
-        const mb = (await $`git -C ${cwd} merge-base HEAD ${mainBranch}`.text()).trim();
-        base = mb || null;
-      }
-    } catch {
-      base = null;
-    }
-  }
-
-  try {
-    const target = base ?? "HEAD";
-    const [numstatOut, statusOut, untrackedOut] = await Promise.all([
-      $`git -C ${cwd} diff --numstat --no-renames ${target}`.text(),
-      $`git -C ${cwd} diff --name-status --no-renames ${target}`.text(),
-      $`git -C ${cwd} ls-files --others --exclude-standard`.text(),
-    ]);
-    const counts = parseNumstat(numstatOut);
-    const statuses = parseNameStatus(statusOut);
-    const files: ChangedFile[] = [];
-    for (const [path, { added, removed }] of counts) {
-      files.push({ path, added, removed, status: statuses.get(path) ?? "modified" });
-    }
-    for (const line of untrackedOut.split("\n")) {
-      const path = line.trim();
-      if (path) files.push({ path, added: null, removed: null, status: "untracked" });
-    }
-    files.sort((a, b) => a.path.localeCompare(b.path));
-    return { base, files };
-  } catch {
-    return { base: null, files: [] };
-  }
 }

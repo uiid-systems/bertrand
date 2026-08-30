@@ -11,12 +11,11 @@
  * or `bun`. `types-boundary.test.ts` enforces this.
  */
 import type { sessions, events, sessionStats } from "./db/schema";
-import type { WorkspaceServerStatus } from "./lib/workspace/types";
 import type { ProjectRepo } from "./lib/projects/types";
 import type { GhFailureReason } from "./lib/github/errors";
 import type { PullRequest } from "./lib/github/types";
 
-export type { ChangedFile, WorktreeChangedFiles } from "./lib/git-types";
+export type { ChangedFile } from "./lib/git-types";
 export type {
   CheckBucket,
   CheckRollupState,
@@ -43,16 +42,6 @@ export type SessionWithCategory = {
    * omitted for single-project/active-DB reads where the project is implicit.
    */
   project?: { slug: string; name: string };
-};
-
-export type WorktreeSessionRow = SessionWithCategory & {
-  branch: string | null;
-  /**
-   * Dev-server preview state for this worktree, resolved in the same
-   * /api/worktrees scan — one poll serves the whole worktree UI instead of a
-   * separate /status request re-running the session scan.
-   */
-  status: WorkspaceServerStatus;
 };
 
 /**

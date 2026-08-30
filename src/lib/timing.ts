@@ -234,13 +234,6 @@ export function computeAndPersist(
   db: Db = getDb(),
 ): SessionStatsData {
   const data = computeSessionStats(sessionId, db);
-  const stored = getSessionStats(sessionId, db);
-  if (stored?.diffSource === "git") {
-    data.linesAdded = stored.linesAdded;
-    data.linesRemoved = stored.linesRemoved;
-    data.filesTouched = stored.filesTouched;
-    data.diffSource = "git";
-  }
   upsertSessionStats(sessionId, data, db);
   return data;
 }
