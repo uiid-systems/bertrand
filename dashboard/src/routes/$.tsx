@@ -17,9 +17,6 @@ import {
   Card,
   Group,
   Number,
-  Resizable,
-  ResizableHandle,
-  ResizablePanel,
   Stack,
   Status,
   type StatusProps,
@@ -52,7 +49,6 @@ import { AgentTurnWorkToggle } from "../components/timeline/agent_turn_work_togg
 import { TimelineActions } from "../components/timeline/timeline-actions";
 import { hasWorkDetail, workTitle } from "../components/timeline/work_content";
 import { SessionStartedContent } from "../components/timeline/session_started_content";
-import { SecondarySidebar } from "../components/secondary-sidebar";
 import { ContentZone, useOpenZone } from "../components/content-zone";
 import {
   SessionTerminal,
@@ -250,36 +246,24 @@ function SessionDetail({ match }: { readonly match: SessionWithCategory }) {
         </Group>
       </Group>
       <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
-        <Resizable direction="horizontal">
-          <ResizablePanel>
-            <SessionZones
-              sessionId={sessionId}
-              segments={segments}
-              // A finished session has no PTY to attach to; the same zone
-              // carries its exit panel instead (#214).
-              exit={
-                isLive ? null : (
-                  <SessionExitPanel
-                    session={match.session}
-                    categoryPath={match.categoryPath}
-                    exitCode={exitCode}
-                    conversationCount={segments.length}
-                    conversations={resumable}
-                    project={projectSlug}
-                  />
-                )
-              }
-            />
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize={460} minSize={360} maxSize={640}>
-            <SecondarySidebar
-              sessionId={sessionId}
-              isLive={isLive}
-              projectSlug={projectSlug}
-            />
-          </ResizablePanel>
-        </Resizable>
+        <SessionZones
+          sessionId={sessionId}
+          segments={segments}
+          // A finished session has no PTY to attach to; the same zone
+          // carries its exit panel instead (#214).
+          exit={
+            isLive ? null : (
+              <SessionExitPanel
+                session={match.session}
+                categoryPath={match.categoryPath}
+                exitCode={exitCode}
+                conversationCount={segments.length}
+                conversations={resumable}
+                project={projectSlug}
+              />
+            )
+          }
+        />
       </Stack>
     </Stack>
   );
