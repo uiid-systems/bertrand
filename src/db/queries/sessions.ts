@@ -82,6 +82,8 @@ export function createSession(opts: {
   categoryId: string;
   slug: string;
   name: string;
+  /** Omitted means 'manual' — every launch path today is a human-typed name. */
+  nameSource?: SessionRow["nameSource"];
 }) {
   const db = getDb();
   const id = createId();
@@ -262,10 +264,60 @@ export function setSessionRating(
     .get();
 }
 
+/**
+ * A rename is the user speaking, so it stamps nameSource 'manual' — from here
+ * on, pause-time derivation must never touch this session's name again.
+ */
 export function renameSession(id: string, slug: string, name?: string) {
   return getDb()
     .update(sessions)
-    .set({ slug, name: name ?? slug, updatedAt: sql`(datetime('now'))` })
+    .set({
+      slug,
+      name: name ?? slug,
+      nameSource: "manual",
+      updatedAt: sql`(datetime('now'))`,
+    })
+    .where(eq(sessions.id, id))
+    .returning()
+    .get();
+}
+
+/**
+ * Whether any *other* session in this project DB holds `slug`, in any
+ * category. Broader than the (categoryId, slug) unique index on purpose:
+ * derived names are the session's identity in logs and search, and two
+ * sessions answering to the same name across categories is the same
+ * confusion the collision rule (ELKY-167) exists to prevent.
+ */
+export function isSlugTakenByOtherSession(
+  slug: string,
+  sessionId: string,
+  db: Db = getDb(),
+): boolean {
+  const row = db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.slug, slug), ne(sessions.id, sessionId)))
+    .limit(1)
+    .get();
+  return row !== undefined;
+}
+
+/**
+ * Set slug and name from pause-time derivation WITHOUT bumping updatedAt.
+ * Same rationale as setSessionSummary: derivation is metadata upkeep, not
+ * session activity, and must not push old sessions to the top of recency
+ * sorts. nameSource is deliberately untouched — callers only reach this for
+ * rows already marked 'derived'.
+ */
+export function setDerivedSessionSlug(
+  id: string,
+  slug: string,
+  db: Db = getDb(),
+) {
+  return db
+    .update(sessions)
+    .set({ slug, name: slug })
     .where(eq(sessions.id, id))
     .returning()
     .get();

@@ -28,11 +28,20 @@ const { createCategory } = await import("@/db/queries/categories");
 const { createSession, getSession } = await import("@/db/queries/sessions");
 const { insertEvent } = await import("@/db/queries/events");
 const { deriveSessionSummary, storeSessionSummary } = await import("./summary");
+const { eq } = await import("drizzle-orm");
 
 const category = createCategory({ slug: "cat", name: "cat" });
 
-function makeSession(slug: string) {
-  return createSession({ categoryId: category.id, slug, name: slug });
+function makeSession(
+  slug: string,
+  opts?: { nameSource?: "manual" | "derived" },
+) {
+  return createSession({
+    categoryId: category.id,
+    slug,
+    name: slug,
+    nameSource: opts?.nameSource,
+  });
 }
 
 describe("deriveSessionSummary", () => {
@@ -191,5 +200,79 @@ describe("storeSessionSummary", () => {
     storeSessionSummary(empty.id);
     expect(getSession(empty.id)?.summary).toBeNull();
     expect(getSession(s.id)?.summary).toBe("original subject");
+  });
+});
+
+describe("storeSessionSummary slug derivation", () => {
+  /** Pin updatedAt to a sentinel so any bump is observable. */
+  function pinUpdatedAt(sessionId: string) {
+    testDb
+      .update(schema.sessions)
+      .set({ updatedAt: "2020-01-01 00:00:00" })
+      .where(eq(schema.sessions.id, sessionId))
+      .run();
+  }
+
+  test("applies the derived slug to a derived-source session without bumping updatedAt", () => {
+    const s = makeSession("pre-derive", { nameSource: "derived" });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the flaky archive test" },
+    });
+    pinUpdatedAt(s.id);
+    storeSessionSummary(s.id);
+
+    const after = getSession(s.id)!;
+    expect(after.slug).toBe("fix-flaky-archive-test");
+    expect(after.name).toBe("fix-flaky-archive-test");
+    expect(after.updatedAt).toBe("2020-01-01 00:00:00");
+  });
+
+  test("never renames a manually named session", () => {
+    const s = makeSession("hand-picked-name");
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the sidebar overflow" },
+    });
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("hand-picked-name");
+  });
+
+  test("suffixes on collision with another session's slug", () => {
+    makeSession("fix-broken-build");
+    const s = makeSession("pre-derive-collide", { nameSource: "derived" });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the broken build" },
+    });
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("fix-broken-build-2");
+  });
+
+  test("re-derivation is stable — a second pause is a no-op, not -3", () => {
+    makeSession("stable-slug");
+    const s = makeSession("pre-derive-stable", { nameSource: "derived" });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "the stable slug please" },
+    });
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("stable-slug-2");
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("stable-slug-2");
+  });
+
+  test("keeps the existing slug when nothing is derivable", () => {
+    const s = makeSession("keep-me", { nameSource: "derived" });
+    storeSessionSummary(s.id);
+    expect(getSession(s.id)?.slug).toBe("keep-me");
+  });
+
+  test("never throws, even for a nonexistent session", () => {
+    expect(() => storeSessionSummary("no-such-session")).not.toThrow();
   });
 });
