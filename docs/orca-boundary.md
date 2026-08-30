@@ -338,6 +338,8 @@ So the git-enrichment path for changed-files **has executed, and still can.** Th
 changed-files is purely timeline-derived (`diff_stats` accumulator over `tool.applied`
 events) is now an **assertion to prove, not a given** — see Workstream 1 and Part 6.
 The upside: those two live worktrees are a ready-made fixture for proving it.
+**Proven 2026-08-30 in 4e:** it holds for the file list; the header's aggregate
+counters are the one place a stored git number survives, and nothing recomputes them.
 
 ### 4b. The `category` taxonomy is fragmenting
 
@@ -452,6 +454,85 @@ Event names in use: `tool.used` 5292 · `assistant.message` 1498 ·
 `assistant.recap` 28. Prompt text lives at `events.meta` → `$.prompt`.
 
 ---
+
+### 4e. Files-changed provenance — resolved 2026-08-30 (ELKY-161)
+
+§4a left open whether the Files-changed sidebar has any git-only provenance. Traced
+against the post-#262 code and measured against every session in the personal laptop's
+`bertrand` registry. **Answer: the file list has none. Three aggregate counters do, and
+they are stored, not recomputed.**
+
+**Two rendered values, two different paths.** The sidebar draws a header (`+N −N`, files
+touched) and a file list beneath it. Different endpoints serve them:
+
+| Rendered value | Endpoint | Source, post-#262 |
+|---|---|---|
+| File list + per-file counts | `/api/stats/:id/files` | `resolveChangedFiles` → `computeChangedFiles` — timeline replay over `tool.applied`. **No git arm.** |
+| Header counters, live session | `/api/stats`, `/api/stats/:id` | `liveStats` (replay), then `withStoredGitDiffs` overlays a stored `diff_source='git'` row if one exists |
+| Header counters, archived/paused | same | `getSessionStats` — the stored row verbatim, git-stamped or not |
+
+`getWorktreeChangedFiles` no longer reaches any rendered value. #262 removed the git arm
+from `resolveChangedFiles`; its only surviving caller is `readWorktreeFiles` →
+`gitDiffStats` → `stats-snapshot.ts`, which is a **writer**, not a reader.
+
+**The writer is already dead.** `snapshotGitDiffStats` has exactly one live caller left,
+`src/lib/worktree-remove.ts:63` — `refreshGitStats` went in #262. No new
+`diff_source='git'` row can be written unless someone tears a worktree down through
+bertrand. ELKY-162 deletes that caller and the snapshot module; it removes no reader.
+
+**What is stored, measured.** `bertrand` registry, 50 sessions:
+
+- **46** stamped `diff_source='events'` — stored counters and a live replay agree
+  **exactly, 46/46**. Header and list share one source and cannot drift.
+- **1** has no stats row yet (in flight).
+- **3** stamped `diff_source='git'` — and these disagree with the replay:
+
+| Session | Stored (git) | Replay (events) |
+|---|---|---|
+| `add-group-collapse-to-live-zones` | +228 −115, 10 files | +329 −36, 9 files |
+| `249-fix-project-remove-purge` | +600 −28, 12 files | +701 −148, 11 files |
+| `ELKY-156/p514-pr-status-and-checks…` | +627 −25, 8 files | +803 −139, 11 files |
+
+`design-system` has 5 worktree sessions and **zero** git-stamped rows. Every other
+registry has zero of both.
+
+**The git-stamped set is not the worktree set.** `worktree-remove.ts` snapshots (`:63`)
+and *then* nulls the columns (`:93`), so a cleanly torn-down session keeps git numbers
+with no `worktree_path` — `ELKY-156/p514` is exactly that, and it never appears in any
+`worktree_path IS NOT NULL` census. Conversely `refactor-project-selector` still carries
+a `worktree_path` and never got a snapshot. Treating "has a `worktree_path`" and "has
+git-provenance data" as the same three rows is wrong; they overlap in two.
+
+**Verdict against the acceptance criteria.** No rendered value has a git-only provenance
+that deletion can break, because nothing recomputes these numbers — they are frozen rows
+in `session_stats`, retained on the same principle as the `worktree.entered` /
+`worktree.exited` events. **No replacement path is required. ELKY-162 and ELKY-164 are
+cleared to proceed.**
+
+What does remain is a **cosmetic inconsistency introduced by #262**: for those three
+archived sessions the header shows git's branch-net figures while the list beneath
+replays the timeline, so the rows no longer sum to the header. Before #262 both arms were
+git and agreed. It affects 3 of 50 sessions, all archived, none reachable by new work.
+**DECIDED 2026-08-30 — retire the overlay.** `withStoredGitDiffs` and the
+`session_stats.diff_source` column go, so every session is uniformly event-derived and
+the header always sums to the list beneath it. The three stored git snapshots lose their
+branch-net figures and fall back to timeline replay; that is accepted. The alternatives
+considered were leaving the disagreement in place (each number is individually correct,
+just differently defined) and labelling the header's provenance in the UI — both rejected
+as carrying a worktree-shaped concept past the teardown that removed it.
+
+This widens two tickets: ELKY-162 removes the reader, and ELKY-164's migration drops
+`session_stats.diff_source` alongside the two `sessions` worktree columns. Note the
+asymmetry — the `worktree.entered` / `worktree.exited` **event rows** are still retained,
+because they are history; `diff_source` is a *derived* column that changes how a value
+renders today, which is why it goes and they stay.
+
+**Adoption re-derived 2026-08-30 — unchanged.** `bertrand` 3/50, `design-system` 5/39:
+the same worktree rows as before, with the totals moved only by new non-worktree
+sessions. Newest worktree session is 2026-08-25 (`design-system`) and 2026-08-11
+(`bertrand`). **No new worktree session has been created since the teardown was planned.**
+Three worktrees remain on disk, including `diff-fix-colors`, which has no session
+attached and serves as the negative control.
 
 ## Part 5 — Workstreams
 
@@ -578,9 +659,12 @@ Everything host-shaped becomes optional. Requires no Orca decision.
 - [x] **`orca agent hooks off` does not remove bertrand's hook entries.** VERIFIED by
       reading Orca's source — the predicate matches its own script filename (Part 1,
       soft edge 3). Not live-tested.
-- [ ] **Teardown doesn't regress Files-changed.** 4a **no longer argues it can't**
-      (corrected 2026-08-30): the git path has executed on the personal laptop and two
-      live worktrees still exercise it. Prove it against one of them — Workstream 1.
+- [x] **Teardown doesn't regress Files-changed.** PROVEN 2026-08-30 — see **4e**. The
+      file list is timeline replay with no git arm; only three archived sessions carry
+      git-provenance *aggregates*, and those are stored rows nothing recomputes, so
+      deletion cannot move them. 46/46 event-sourced sessions agree exactly between
+      stored counters and live replay. No replacement path needed. One cosmetic
+      header-vs-list disagreement on those three sessions is documented in 4e.
 
 ### What could kill this
 
