@@ -28,6 +28,7 @@ const { createSession, getSession, renameSession, updateSession } = await import
   "@/db/queries/sessions"
 );
 const { insertEvent } = await import("@/db/queries/events");
+const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 const { deriveSlugFromTexts, deriveSessionSlug, resolveSlugCollision } =
   await import("./derive-slug");
 
@@ -344,6 +345,25 @@ describe("resolveSlugCollision", () => {
   test("a session keeps a slug it already owns", () => {
     const s = makeSession("self-owned");
     expect(resolveSlugCollision("self-owned", s.id)).toBe("self-owned");
+  });
+
+  test("suffixes past a name another session holds only as an alias", () => {
+    // Taking it would shadow the alias permanently — resolveSessionByName
+    // tries slugs before aliases.
+    const holder = makeSession("alias-holder");
+    recordSessionAlias("retired-name", holder.id);
+    const s = makeSession("collision-aliased");
+    expect(resolveSlugCollision("retired-name", s.id)).toBe("retired-name-2");
+  });
+
+  test("a session keeps a name it holds as its own alias", () => {
+    // An earlier pause retired this name into the alias table; re-deriving it
+    // is a reclaim, not a collision.
+    const s = makeSession("self-aliased");
+    recordSessionAlias("own-retired-name", s.id);
+    expect(resolveSlugCollision("own-retired-name", s.id)).toBe(
+      "own-retired-name",
+    );
   });
 });
 

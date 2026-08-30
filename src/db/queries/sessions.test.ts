@@ -24,9 +24,8 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "migrations"),
 });
 
-const { createSession, resolveSessionByName } = await import(
-  "@/db/queries/sessions"
-);
+const { createSession, resolveSessionByName, isNameTakenByOtherSession } =
+  await import("@/db/queries/sessions");
 const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 
 // A slash-bearing slug — legal, and one identity despite the slashes.
@@ -92,5 +91,60 @@ describe("resolveSessionByName — alias fallback", () => {
 
   test("misses still return undefined with aliases present", () => {
     expect(resolveSessionByName("still-not-a-session")).toBeUndefined();
+  });
+});
+
+describe("isNameTakenByOtherSession", () => {
+  const owner = createSession({ slug: "name-owner" });
+  recordSessionAlias("name-owner-retired", owner.id);
+
+  test("a live slug is taken", () => {
+    expect(isNameTakenByOtherSession("name-owner", null)).toBe(true);
+  });
+
+  test("a name held only as an alias is taken too", () => {
+    // The unique index doesn't cover it, so nothing else would stop a create
+    // path from claiming it and stranding the session it points at.
+    expect(isNameTakenByOtherSession("name-owner-retired", null)).toBe(true);
+  });
+
+  test("a free name is not taken", () => {
+    expect(isNameTakenByOtherSession("nobody-holds-this", null)).toBe(false);
+  });
+
+  test("the holder itself is exempt, by slug and by alias", () => {
+    expect(isNameTakenByOtherSession("name-owner", owner.id)).toBe(false);
+    expect(isNameTakenByOtherSession("name-owner-retired", owner.id)).toBe(
+      false,
+    );
+  });
+});
+
+describe("createSession name/nameSource contract", () => {
+  test("rejects a derived row carrying its own display name", () => {
+    // Sync throw: bun's toThrow is vacuous on an async fn, so this assertion
+    // only means anything because createSession is synchronous.
+    expect(() =>
+      createSession({
+        slug: "derived-with-name",
+        name: "My Session",
+        nameSource: "derived",
+      }),
+    ).toThrow(/named at pause/);
+  });
+
+  test("allows a derived row whose name merely repeats the slug", () => {
+    const s = createSession({
+      slug: "derived-echoing-slug",
+      name: "derived-echoing-slug",
+      nameSource: "derived",
+    });
+    expect(s.nameSource).toBe("derived");
+  });
+
+  test("a manual row may carry any display name", () => {
+    const s = createSession({ slug: "manual-named", name: "Manual Named" });
+    expect(s.name).toBe("Manual Named");
+    expect(s.nameSource).toBe("manual");
   });
 });

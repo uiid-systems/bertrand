@@ -562,6 +562,14 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       { status: 400 },
     )
   }
+  // A display name on a slugless spawn would be marked 'derived' and replaced
+  // by the derived slug at the first pause. Refuse rather than lose it.
+  if (body.name !== undefined && slug === undefined) {
+    return Response.json(
+      { error: "name requires slug — a slugless session is named at pause" },
+      { status: 400 },
+    )
+  }
 
   try {
     const result = await spawnDashboardSession({

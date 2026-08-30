@@ -6,6 +6,7 @@ import {
   getSessionBySlug,
   untakenPlaceholderSlug,
 } from "@/db/queries/sessions";
+import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { recordSessionBranch } from "@/lib/session-branch";
@@ -107,7 +108,11 @@ export interface LaunchOpts {
    * (name_source='derived').
    */
   slug?: string;
-  /** Display name (defaults to slug) */
+  /**
+   * Display name (defaults to slug). Requires `slug`: pause-time derivation
+   * sets name and slug together, so a display name on an unnamed session
+   * would be silently overwritten at the first pause.
+   */
   name?: string;
   /** Label names to attach. Created if they don't exist. */
   labelNames?: string[];
@@ -130,9 +135,19 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   const slug = opts.slug ?? untakenPlaceholderSlug();
 
   // Friendly duplicate check ahead of the unique index — the index still
-  // backstops a race, but this is the message users see.
-  if (opts.slug && getSessionBySlug(opts.slug)) {
-    throw new Error(`Session "${opts.slug}" already exists`);
+  // backstops a race, but this is the message users see. A retired name is
+  // refused too: the unique index wouldn't stop it, and taking a name an alias
+  // points at would silently strand the session that alias belongs to.
+  if (opts.slug) {
+    if (getSessionBySlug(opts.slug)) {
+      throw new Error(`Session "${opts.slug}" already exists`);
+    }
+    const aliased = getSessionByAlias(opts.slug);
+    if (aliased) {
+      throw new Error(
+        `"${opts.slug}" is a former name of session "${aliased.slug}" — pick another name.`,
+      );
+    }
   }
 
   const session = createSession({

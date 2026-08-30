@@ -22,7 +22,6 @@ const { createSession, getSession } = await import("@/db/queries/sessions");
 const { recordSessionBranch } = await import("./session-branch");
 
 const repo = join(WORK, "repo");
-let categoryId: string;
 let n = 0;
 const newSession = () => {
   const s = createSession({

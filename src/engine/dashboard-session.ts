@@ -124,6 +124,7 @@ export interface SpawnDashboardSessionOpts {
    * (name_source='derived').
    */
   slug?: string;
+  /** Display name (defaults to the slug). Requires `slug` — see createSession. */
   name?: string;
 }
 

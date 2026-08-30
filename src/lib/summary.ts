@@ -20,6 +20,7 @@ import {
   setSessionSummary,
   setDerivedSessionSlug,
 } from "@/db/queries/sessions";
+import { recordSessionAlias } from "@/db/queries/session-aliases";
 import { deriveSessionSlug, resolveSlugCollision } from "@/lib/derive-slug";
 import type { EventRow } from "@/types";
 import { truncate } from "@/lib/format";
@@ -138,6 +139,14 @@ export function storeSessionSummary(sessionId: string): void {
  * name is the user's word and always wins. Skips the write when derivation
  * fails (keep the name it has; never a garbage slug) and when the resolved
  * slug already matches, so a no-op pause writes nothing at all.
+ *
+ * Derivation reads the WHOLE conversation, so a later pause can legitimately
+ * land on a different slug than an earlier one did (the token vote reshuffles
+ * as prompts accumulate). Every slug this session has worn was visible to the
+ * user in the meantime — the sidebar, `bertrand list`, the sibling-context
+ * block other agents read — so the outgoing one is retired into
+ * `session_aliases` rather than dropped, exactly as `bertrand rename` does.
+ * Without that, a name bertrand itself handed out stops resolving.
  */
 function applyDerivedSlug(sessionId: string): void {
   const session = getSession(sessionId);
@@ -148,5 +157,6 @@ function applyDerivedSlug(sessionId: string): void {
 
   const slug = resolveSlugCollision(derived, sessionId);
   if (slug === session.slug) return;
+  recordSessionAlias(session.slug, sessionId);
   setDerivedSessionSlug(sessionId, slug);
 }
