@@ -494,6 +494,17 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
       "Cannot tell which directory this session ran in, or it no longer exists. " +
       "Resume it from the CLI in the right directory.",
   },
+  // Legacy rows only: worktrees are gone (ELKY-163), so this session predates
+  // the teardown and its recorded cwd is the main checkout, not the worktree it
+  // actually worked in. Resuming would put its work on the wrong branch.
+  "worktree-gone": {
+    status: 409,
+    message:
+      "This session worked in a worktree, which bertrand no longer manages. " +
+      "Its recorded directory is the main checkout, so resuming here would put " +
+      "its work on the wrong branch — resume it from the CLI inside the " +
+      "worktree instead.",
+  },
 }
 
 /**
@@ -790,6 +801,20 @@ export function startServer(port = PORT) {
       }
 
       if (req.method === "POST") {
+        const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
+        if (archiveMatch) {
+          const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))
+          response.headers.set("Access-Control-Allow-Origin", "*")
+          return response
+        }
+        const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
+        if (unarchiveMatch) {
+          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!, resolveDb(url)))
+          response.headers.set("Access-Control-Allow-Origin", "*")
+          return response
+        }
+        // End-of-session actions the TUI exit screen has always had and the
+        // dashboard did not (#214). Archive above is shared with it as-is.
         const rateMatch = /^\/api\/sessions\/([^/]+)\/rating$/.exec(url.pathname)
         if (rateMatch) {
           const r = await handleRateSession(rateMatch[1]!, url, req)
