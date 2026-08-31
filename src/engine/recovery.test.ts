@@ -36,11 +36,15 @@ const DEAD_PID = 2_147_483_600;
 const A_WEEK_AGO = Date.now() - 7 * 24 * 3_600_000;
 
 let n = 0;
-function makeSession(opts: { pid: number | null; pidStartedAt: number | null }) {
+function makeSession(opts: {
+  pid: number | null;
+  pidStartedAt: number | null;
+  status?: "active" | "paused" | "archived";
+}) {
   const slug = `s${n++}`;
   const session = createSession({ slug });
   updateSession(session.id, {
-    status: "active",
+    status: opts.status ?? "active",
     pid: opts.pid,
     pidStartedAt: opts.pidStartedAt,
   });
@@ -113,6 +117,63 @@ describe("recoverStaleSessions", () => {
     const id = makeSession({ pid: null, pidStartedAt: null });
     await recoverStaleSessions();
     expect(getSession(id)!.status).toBe("active");
+  });
+
+  test("finalizes a paused session whose process is gone", async () => {
+    // How an adopted session ends: the Stop hook pauses it and there is no
+    // bertrand process to finalize it, so recovery is the only thing that
+    // ever will. Scoped to live statuses, this row was invisible — it kept a
+    // pid and an empty endedAt forever, and never materialized its stats.
+    const id = makeSession({
+      pid: DEAD_PID,
+      pidStartedAt: Date.now(),
+      status: "paused",
+    });
+
+    await recoverStaleSessions();
+
+    const row = getSession(id)!;
+    expect(row.pid).toBeNull();
+    expect(row.endedAt).toBeTruthy();
+  });
+
+  test("leaves a paused session alone while its process runs", async () => {
+    // `paused` is where every turn that didn't end on AskUserQuestion lands,
+    // with claude still very much alive. Finalizing on status alone would end
+    // sessions mid-conversation.
+    const id = makeSession({
+      pid: process.pid,
+      pidStartedAt: Date.now(),
+      status: "paused",
+    });
+
+    await recoverStaleSessions();
+
+    expect(getSession(id)!.endedAt).toBeNull();
+    expect(getSession(id)!.pid).toBe(process.pid);
+  });
+
+  test("never finalizes the same session twice", async () => {
+    makeSession({ pid: DEAD_PID, pidStartedAt: Date.now(), status: "paused" });
+
+    expect(await recoverStaleSessions()).toBe(1);
+    // Finalizing nulls the pid, which is what takes the row out of the
+    // candidate set — otherwise every sweep would re-end every paused session.
+    expect(await recoverStaleSessions()).toBe(0);
+  });
+
+  test("leaves archived sessions alone", async () => {
+    const id = makeSession({
+      pid: DEAD_PID,
+      pidStartedAt: Date.now(),
+      status: "archived",
+    });
+
+    await recoverStaleSessions();
+
+    // Archiving is deliberate. Reanimating one to emit an ended event would
+    // resurrect it in every view that filters on status.
+    expect(getSession(id)!.status).toBe("archived");
   });
 
   test("returns the number of sessions it recovered", async () => {

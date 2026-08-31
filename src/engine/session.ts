@@ -21,7 +21,7 @@ import { launchClaude, isClaudeRunning } from "./process";
 import { finalizeSessionRow } from "./finalize";
 import { ensureServerStarted } from "@/lib/server-lifecycle";
 import { planResume } from "./resume-plan";
-import { pruneStaleContractMarkers } from "@/hooks/runtime";
+import { pruneStaleMarkers } from "@/hooks/runtime";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -128,9 +128,10 @@ export interface ResumeOpts {
  * Returns session ID when the Claude process exits.
  */
 export async function launch(opts: LaunchOpts): Promise<string> {
-  // Sweep orphaned contract-sent markers left by sessions bertrand never
-  // finalized (background jobs, an external launcher) before they accumulate.
-  pruneStaleContractMarkers();
+  // Sweep orphaned contract-sent and adoption markers left by sessions
+  // bertrand never finalized (background jobs, an external launcher) before
+  // they accumulate.
+  pruneStaleMarkers();
 
   const slug = opts.slug ?? untakenPlaceholderSlug();
 
@@ -210,7 +211,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
  * Returns session ID when the Claude process exits.
  */
 export async function resume(opts: ResumeOpts): Promise<string> {
-  pruneStaleContractMarkers();
+  pruneStaleMarkers();
 
   // Shared with the server-hosted path so the two can't drift on which
   // conversation to attach to or whether Claude has ever seen it. A CLI process

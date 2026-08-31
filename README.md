@@ -82,7 +82,15 @@ applies the contract from that turn on. Pass work along with it
 you're already in.
 
 An attached session goes in unnamed and is named from its own transcript at the
-first pause, exactly like a launched one.
+first pause, exactly like a launched one. Bertrand ends it when Claude Code
+exits — there's no bertrand process watching an attached session, so that
+happens on the next `bertrand` launch or dashboard start rather than instantly.
+
+Resuming one (`claude --resume`) picks up where it left off, but only once you
+run `/bertrand` again: attaching leaves a marker keyed to the conversation, and
+ending the session clears it. The second `/bertrand` re-attaches to the same
+session — same name, same timeline — and back-fills anything said in between.
+Archived sessions are the exception; those stay closed.
 
 ### Resume
 

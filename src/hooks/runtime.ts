@@ -8,6 +8,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
+import { isProcessAlive } from "@/lib/process-identity";
 
 /**
  * Runtime-marker housekeeping.
@@ -27,9 +28,10 @@ import { paths } from "@/lib/paths";
  *
  * Two cleanup paths cover both cases:
  *   - pruneSessionMarkers: immediate, happy-path cleanup keyed to the session
- *     and conversation bertrand owns.
- *   - pruneStaleContractMarkers: an mtime sweep that catches orphans left by
- *     sessions bertrand never finalized.
+ *     and conversation bertrand owns. Adopted sessions reach it too, since
+ *     session recovery finalizes them once claude exits (ELKY-183).
+ *   - pruneStaleMarkers: an mtime sweep that catches orphans left by sessions
+ *     bertrand never finalized.
  */
 
 const CONTRACT_MARKER_PREFIX = "contract-sent-";
@@ -88,16 +90,29 @@ export function pruneSessionMarkers(
   rmMarker(`auq-nudge-${sessionId}`);
   rmMarker(`working-${sessionId}`);
   rmMarker(`worktree-${sessionId}`);
-  if (conversationId) rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
+  if (conversationId) {
+    rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
+    // The session this marker points at has just been finalized, so leaving it
+    // would let a `claude --resume` of the same conversation keep writing
+    // events onto a row that already has an endedAt and materialized stats.
+    // Re-running `adopt` re-attaches and rewrites it.
+    rmMarker(`${ADOPTION_MARKER_PREFIX}${conversationId}`);
+  }
 }
 
 /**
- * Sweep `contract-sent-*` markers older than `maxAgeMs`. Catches markers left
- * by sessions bertrand never spawned (and therefore never finalized). Safe to
- * call on every launch — it only touches contract-sent markers and tolerates a
- * missing runtime dir.
+ * Sweep orphaned `contract-sent-*` and `adopted-*` markers older than
+ * `maxAgeMs`. The backstop for markers whose session bertrand never finalized;
+ * the happy path is pruneSessionMarkers. Safe to call on every launch — it
+ * touches only those two prefixes and tolerates a missing runtime dir.
+ *
+ * Age alone can't decide an adoption marker's fate. A contract marker has done
+ * its job the moment the conversation moves on, but an adopted claude can sit
+ * open for days, and sweeping its marker would silently stop recording a
+ * session the user is still in — a worse failure than the stale file. So the
+ * marker carries claude's pid, and a live pid vetoes the sweep outright.
  */
-export function pruneStaleContractMarkers(maxAgeMs: number = STALE_MS): void {
+export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
   let entries: string[];
   try {
     entries = readdirSync(runtimeDir);
@@ -107,7 +122,18 @@ export function pruneStaleContractMarkers(maxAgeMs: number = STALE_MS): void {
 
   const cutoff = Date.now() - maxAgeMs;
   for (const name of entries) {
-    if (!name.startsWith(CONTRACT_MARKER_PREFIX)) continue;
+    const isContract = name.startsWith(CONTRACT_MARKER_PREFIX);
+    const isAdoption = name.startsWith(ADOPTION_MARKER_PREFIX);
+    if (!isContract && !isAdoption) continue;
+
+    if (isAdoption) {
+      // Liveness only, no identity check: a recycled pid at worst keeps a dead
+      // marker around one more sweep, while treating a live claude as dead
+      // un-tracks a session in progress.
+      const pid = readAdoptionMarker(name.slice(ADOPTION_MARKER_PREFIX.length))?.pid;
+      if (pid != null && isProcessAlive(pid)) continue;
+    }
+
     try {
       if (statSync(join(runtimeDir, name)).mtimeMs < cutoff) rmMarker(name);
     } catch {
@@ -122,6 +148,12 @@ export interface AdoptionMarker {
   sessionId: string;
   /** Project slug whose DB holds that session. */
   project: string;
+  /**
+   * Claude's pid, when adoption could determine it. Read only by the stale
+   * sweep, which uses it to leave a still-running session's marker alone; the
+   * hook guards ignore the field entirely.
+   */
+  pid?: number;
 }
 
 /**
@@ -151,10 +183,12 @@ export function writeAdoptionMarker(
   marker: AdoptionMarker,
 ): void {
   mkdirSync(runtimeDir, { recursive: true });
-  writeFileSync(
-    adoptionMarkerPath(claudeSessionId),
-    `session=${marker.sessionId}\nproject=${marker.project}\n`,
-  );
+  const lines = [`session=${marker.sessionId}`, `project=${marker.project}`];
+  // Omitted rather than written empty when unknown: the sweep distinguishes
+  // "claude is alive" from "we can't tell", and an empty value reads as the
+  // latter either way, but a missing key says so without parsing.
+  if (marker.pid != null) lines.push(`pid=${marker.pid}`);
+  writeFileSync(adoptionMarkerPath(claudeSessionId), `${lines.join("\n")}\n`);
 }
 
 /**
@@ -183,5 +217,11 @@ export function readAdoptionMarker(
   const sessionId = fields.get("session");
   const project = fields.get("project");
   if (!sessionId || !project) return null;
-  return { sessionId, project };
+
+  // `> 0` matters: `kill(0, 0)` targets the caller's whole process group and
+  // always succeeds, so a `pid=0` marker would read as permanently alive and
+  // never be swept.
+  const rawPid = Number(fields.get("pid"));
+  const pid = Number.isInteger(rawPid) && rawPid > 0 ? rawPid : undefined;
+  return { sessionId, project, ...(pid == null ? {} : { pid }) };
 }
