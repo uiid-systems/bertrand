@@ -22,6 +22,7 @@ import { finalizeSessionRow } from "./finalize";
 import { ensureServerStarted } from "@/lib/server-lifecycle";
 import { planResume } from "./resume-plan";
 import { pruneStaleMarkers } from "@/hooks/runtime";
+import { formatDbTime } from "@/lib/format";
 
 // Tracks the session currently owned by this bertrand process. Set when
 // the row flips to "active" and cleared by finalizeSession on the happy
@@ -50,7 +51,9 @@ function forceFinalizeLive(): void {
       status: "paused",
       pid: null,
       pidStartedAt: null,
-      endedAt: new Date().toISOString(),
+      // The `datetime('now')` shape `startedAt` uses — the two are subtracted
+      // for a session's duration, and mixing shapes skews it (see finalize).
+      endedAt: formatDbTime(Date.now()),
     });
   } catch {
     // Best-effort — bertrand is on its way out.

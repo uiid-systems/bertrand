@@ -227,9 +227,13 @@ export async function runAdopt(opts: AdoptOpts): Promise<AdoptOutcome> {
  *
  * Everything here is a rewrite of state that has gone stale while nothing was
  * watching: the marker (pruned at finalize), the pid (claude has a new one
- * after a resume), and the status (`paused`, from the last Stop hook). The
- * rows themselves are left exactly as they are — this is the same session
- * continuing, not a new one.
+ * after a resume), the branch (a resume can land on a different one), and the
+ * status (`paused`, from the last Stop hook). The rows themselves are left
+ * exactly as they are — this is the same session continuing, not a new one.
+ *
+ * Everything except the marker is gated on knowing claude's pid; without one
+ * the session could never be closed again, so its previous close is left
+ * standing rather than undone for nothing.
  */
 async function reattach(
   owner: { project: string; sessionId: string },
@@ -267,14 +271,27 @@ async function reattach(
   const pidStartedAt =
     opts.pid == null ? null : await processStartedAt(opts.pid);
 
-  updateSession(session.id, {
-    status: "active",
-    pid: opts.pid,
-    pidStartedAt,
-    // Cleared because the session is running again. Left set, it would read as
-    // finished everywhere duration and stats are computed from it.
-    endedAt: null,
-  });
+  // Re-opening the row is gated on knowing claude's pid. `getRecoverableSessions`
+  // keys on a non-null pid, so without one nothing can ever finalize this
+  // session again — clearing `endedAt` here would strand it `active` forever,
+  // trading a correctly closed record for one that never closes. The marker is
+  // still worth rewriting: the hooks resolve and record events, they just can't
+  // flip status (`update` refuses that on a null pid).
+  if (opts.pid != null) {
+    updateSession(session.id, {
+      status: "active",
+      pid: opts.pid,
+      pidStartedAt,
+      // Cleared because the session is running again. Left set, it would read as
+      // finished everywhere duration and stats are computed from it.
+      endedAt: null,
+    });
+
+    // Re-read, not carried over: a resumed conversation can come back on a
+    // different branch than it left. `resume` records it outside its own
+    // resume guard for exactly this reason (engine/session.ts).
+    await recordSessionBranch(session.id, opts.cwd);
+  }
 
   writeAdoptionMarker(opts.claudeSessionId, {
     sessionId: session.id,

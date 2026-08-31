@@ -1,5 +1,6 @@
 import { getRecoverableSessions } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
+import { getLastEventAt } from "@/db/queries/events";
 import { isRecordedProcessAlive } from "@/lib/process-identity";
 import { triggerBackgroundPush } from "@/sync/trigger";
 import { finalizeSessionRow } from "./finalize";
@@ -39,6 +40,13 @@ const CRASHED_EXIT_CODE = 1;
  * hit when the dashboard path had its own finalize; there should only ever be
  * one.
  *
+ * The one thing it cannot share is *when*. A clean exit is observed as it
+ * happens; recovery finds out on whatever schedule the next launch or dashboard
+ * start sets — which for an adopted session is the normal case, not a crash.
+ * Stamping the sweep's own clock would write that entire delay into the session
+ * as work or wait time, so the end is dated to the session's last recorded
+ * event instead.
+ *
  * Scoped to the active project's DB, which is where every recoverable session
  * lives: the CLI recovers the project it was launched in, and dashboard
  * sessions are always created in serve's active project
@@ -66,6 +74,11 @@ export async function recoverStaleSessions(): Promise<number> {
       stopServerWhenIdle: false,
       // One push after the sweep, not one per session — see the option's docs.
       triggerSyncPush: false,
+      // The session ended when it stopped recording, not when this sweep
+      // noticed — see the option's docs. Undefined for a session with no
+      // events at all, which falls back to now; there is nothing else to go on
+      // and no open period for it to inflate.
+      endedAt: getLastEventAt(session.id),
     });
     recovered++;
   }

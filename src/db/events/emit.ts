@@ -42,12 +42,23 @@ export function emitClaudeStarted(args: EventTarget & { cwd: string }) {
   });
 }
 
-export function emitClaudeEnded(args: EventTarget & { exitCode: number }) {
+export function emitClaudeEnded(
+  args: EventTarget & {
+    exitCode: number;
+    /**
+     * When claude actually exited (`datetime('now')` shape), for a caller that
+     * found out after the fact. Omitted means now, which is right for anyone
+     * who watched it happen. See FinalizeSessionOptions.endedAt.
+     */
+    createdAt?: string;
+  },
+) {
   return insertEvent({
     sessionId: args.sessionId,
     conversationId: args.conversationId,
     event: "claude.ended",
     meta: { claude_id: args.conversationId, exit_code: args.exitCode },
+    createdAt: args.createdAt,
   });
 }
 

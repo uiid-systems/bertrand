@@ -2,6 +2,7 @@ import { getSession, updateSession } from "@/db/queries/sessions";
 import { endConversation, getConversation } from "@/db/queries/conversations";
 import { emitClaudeEnded } from "@/db/events/emit";
 import { computeAndPersist } from "@/lib/timing";
+import { formatDbTime, parseDbTime } from "@/lib/format";
 import { storeSessionSummary } from "@/lib/summary";
 import { stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
@@ -27,6 +28,21 @@ export interface FinalizeSessionOptions {
    * sync processes at once. The caller pushes once when it's done instead.
    */
   triggerSyncPush?: boolean;
+  /**
+   * When claude actually exited, as a stored timestamp in either shape
+   * (`parseDbTime` reads both). Defaults to now — correct for every caller that
+   * was standing over the process and watched it go.
+   *
+   * Recovery is the exception, and the reason this option exists. It notices an
+   * adopted session's exit whenever the next `bertrand launch` or `serve`
+   * happens to run, which can be days later. `computeTimings` closes the open
+   * period at the `claude.ended` event, so stamping the sweep's own clock
+   * writes the entire gap into the session as work or wait: a session
+   * abandoned five days ago records five days of user_wait, an activePct of 0,
+   * and a five-day duration. Passing the last recorded event instead keeps
+   * that fabricated tail at zero.
+   */
+  endedAt?: string;
 }
 
 /**
@@ -57,17 +73,27 @@ export function finalizeSessionRow(
     endConversation(conversationId);
   }
 
+  // Emitted in the `datetime('now')` shape rather than the ISO one the session
+  // column uses: the timing FSM compares this event against its neighbours with
+  // a bare `new Date()`, which reads the two formats in different zones.
+  const endedMs = opts.endedAt ? parseDbTime(opts.endedAt) : Date.now();
+
   emitClaudeEnded({
     sessionId,
     conversationId: safeConversationId,
     exitCode,
+    createdAt: opts.endedAt ? formatDbTime(endedMs) : undefined,
   });
 
   updateSession(sessionId, {
     status: "paused",
     pid: null,
     pidStartedAt: null,
-    endedAt: new Date().toISOString(),
+    // Same shape as `startedAt`, which is a column default. The two are
+    // subtracted to get a session's duration, and SQLite's zone-less strings
+    // read as local time — so an ISO `endedAt` against a `datetime('now')`
+    // `startedAt` came out short by the machine's UTC offset.
+    endedAt: formatDbTime(endedMs),
   });
   storeSessionSummary(sessionId);
 

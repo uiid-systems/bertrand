@@ -14,6 +14,7 @@ import { useArchiveAction } from "../../api/use-archive-action";
 import { useSessionExitActions } from "../../api/use-session-exit-actions";
 import type { SessionRow } from "../../api/types";
 import { formatDuration } from "../../lib/format";
+import { parseDbTime } from "@/lib/format";
 import { StarRating } from "./star-rating";
 
 /**
@@ -85,9 +86,7 @@ export function SessionExitPanel({
   const exit = describeExit(exitCode);
   const durationSeconds =
     session.endedAt && session.startedAt
-      ? (new Date(session.endedAt).getTime() -
-          new Date(session.startedAt).getTime()) /
-        1000
+      ? (parseDbTime(session.endedAt) - parseDbTime(session.startedAt)) / 1000
       : null;
 
   return (

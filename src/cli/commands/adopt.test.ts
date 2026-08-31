@@ -2,8 +2,14 @@ import { describe, test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { spawn } from "child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { execFileSync, spawn } from "child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -40,6 +46,23 @@ let counter = 0;
 /** A distinct claude session id per test — each one is adopted at most once. */
 function claudeId(): string {
   return `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`;
+}
+
+/**
+ * A real repo on a known branch. The branch column is read by shelling out to
+ * git, so there is no seam to fake — and `rev-parse --abbrev-ref HEAD` needs a
+ * commit, since an unborn HEAD is an ambiguous argument.
+ */
+function makeRepo(name: string, branch: string): string {
+  const dir = join(workdir, name);
+  mkdirSync(dir, { recursive: true });
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", dir, ...args], { stdio: "ignore" });
+  git("init", "-q", "-b", branch);
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "test");
+  git("commit", "-q", "--allow-empty", "-m", "init");
+  return dir;
 }
 
 /**
@@ -367,7 +390,7 @@ describe("runAdopt — re-attachment", () => {
     const first = await runAdopt({
       claudeSessionId: cid,
       cwd: workdir,
-      pid: null,
+      pid: process.pid,
       backfill: false,
     });
     expect(first.ok).toBe(true);
@@ -381,13 +404,74 @@ describe("runAdopt — re-attachment", () => {
     await runAdopt({
       claudeSessionId: cid,
       cwd: workdir,
-      pid: null,
+      pid: process.pid,
       backfill: false,
     });
 
     const session = getSession(first.sessionId)!;
     expect(session.endedAt).toBeNull();
     expect(session.status).toBe("active");
+  });
+
+  test("leaves a closed session closed when claude's pid is unknown", async () => {
+    const cid = claudeId();
+
+    const first = await runAdopt({
+      claudeSessionId: cid,
+      cwd: workdir,
+      pid: null,
+      backfill: false,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const endedAt = new Date().toISOString();
+    updateSession(first.sessionId, { status: "paused", endedAt });
+
+    const second = await runAdopt({
+      claudeSessionId: cid,
+      cwd: workdir,
+      pid: null,
+      backfill: false,
+    });
+    expect(second.ok).toBe(true);
+
+    // Recovery only considers rows with a pid, so re-opening this one would
+    // strand it `active` with an empty endedAt forever — a correctly closed
+    // record traded for one that never closes.
+    const session = getSession(first.sessionId)!;
+    expect(session.endedAt).toBe(endedAt);
+    expect(session.status).toBe("paused");
+    // The marker is still rewritten: the hooks can resolve and record, they
+    // just can't flip status on a null pid.
+    expect(readAdoptionMarker(cid)?.sessionId).toBe(first.sessionId);
+  });
+
+  test("re-reads the branch, which a resume can land on a different one", async () => {
+    const cid = claudeId();
+
+    const first = await runAdopt({
+      claudeSessionId: cid,
+      cwd: workdir,
+      pid: process.pid,
+      backfill: false,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    // Adopted outside a repo, so the column starts empty.
+    expect(getSession(first.sessionId)!.branch).toBeNull();
+
+    const repo = makeRepo("resumed-repo", "elky-183-resumed");
+    await runAdopt({
+      claudeSessionId: cid,
+      cwd: repo,
+      pid: process.pid,
+      backfill: false,
+    });
+
+    // Carried over instead of re-read, the column would still say "no branch"
+    // for a session now running on one.
+    expect(getSession(first.sessionId)!.branch).toBe("elky-183-resumed");
   });
 
   test("refuses to reanimate an archived session", async () => {

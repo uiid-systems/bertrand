@@ -5,7 +5,7 @@ import { AppDetails, Logo } from "@/tui/components";
 import { Picker, type PickerItem } from "@/tui/components/picker";
 import { getAllSessions } from "@/db/queries/sessions";
 import { archiveSession, unarchiveSession } from "@/lib/session-archive";
-import { formatAgo } from "@/lib/format";
+import { formatAgo, parseDbTime } from "@/lib/format";
 import { parseSessionName } from "@/lib/parse-session-name";
 
 import type { LaunchSelection, LaunchProps } from "./launch.types";
@@ -28,8 +28,14 @@ function statusRank(status: string): number {
   return STATUS_RANK[status] ?? 99;
 }
 
-function recencyKey(s: SessionRow): string {
-  return s.session.endedAt ?? s.session.startedAt;
+/**
+ * Newest-activity sort key, as epoch ms rather than the stored string. The two
+ * columns are written in different shapes — `startedAt` is a `datetime('now')`
+ * default, `endedAt` was ISO until this release — and comparing those as text
+ * sorts on the separator (" " before "T") rather than on the time.
+ */
+function recencyMs(s: SessionRow): number {
+  return parseDbTime(s.session.endedAt ?? s.session.startedAt);
 }
 
 function sessionRow(s: SessionRow): PickerItem {
@@ -41,7 +47,7 @@ function sessionRow(s: SessionRow): PickerItem {
   return {
     value: s.session.slug,
     label: `${s.session.slug} ${status}`,
-    meta: formatAgo(recencyKey(s)),
+    meta: formatAgo(new Date(recencyMs(s))),
     disabled,
     dim: isArchived,
     display: (isCursor: boolean) => {
@@ -118,7 +124,7 @@ export function Launch({ onSelect }: LaunchProps) {
       .sort((a, b) => {
         const r = statusRank(a.session.status) - statusRank(b.session.status);
         if (r !== 0) return r;
-        return recencyKey(b).localeCompare(recencyKey(a));
+        return recencyMs(b) - recencyMs(a);
       });
   }, [allSessions, showArchived]);
 
