@@ -11,7 +11,7 @@ import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { recordSessionBranch } from "@/lib/session-branch";
-import { finalizeSessionRow } from "./finalize";
+import { finalizeSessionRow } from "@/lib/session-finalize";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { requireBoundRepo } from "@/lib/projects/policy";
 import { buildContract } from "@/contract/template";

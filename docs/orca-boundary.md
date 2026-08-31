@@ -698,6 +698,18 @@ Open design questions: dedupe when both env and payload identify a session;
 `--resume` handling; how `claude_id` relates to the payload `session_id` (today
 they are the same value — bertrand passes `--session-id $claudeId`).
 
+**The demotion landed** as ELKY-176. `src/engine` and `src/tui` are still there and
+still the nicer path; nothing on the recording path reaches them. Three things moved:
+`finalize.ts` and `recovery.ts` left `src/engine` for `src/lib` (neither touches a PTY,
+and recovery is the only thing that ever finalizes an adopted session, so it has to stay
+reachable from `serve`); `bertrand launch` and the server's three dashboard-session
+routes now `await import(…)` instead of importing at the top; and `launchClaude`'s env
+construction is extracted as `buildClaudeEnv` so the `...process.env` spread — the
+channel every `ORCA_*` var rides into claude and its hooks — has a test standing over it
+(`src/engine/process.test.ts`). `src/layer-boundary.test.ts` enforces the boundary two
+ways: a static import walk from every Layer 1 module, and a probed run of the real
+entrypoint that fails if either directory is so much as loaded.
+
 ### Workstream 4 — Layer extraction (open-source packaging) · risk MED · 2–3 sessions · DEFER
 
 Make the user's own layering structural:

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { join, resolve } from "path";
+import { resolveSpec, specifiersOf, tsFilesUnder } from "./import-graph";
 
 /**
  * The dashboard's TypeScript program is `include: ["src", "../src/types.ts"]`
@@ -43,42 +43,6 @@ const FORBIDDEN = new Set([
 const normalize = (spec: string) =>
   spec.startsWith("node:") ? spec.slice("node:".length) : spec;
 
-/** Resolve a relative or `@/`-aliased specifier to a file on disk. */
-function resolveSpec(spec: string, fromFile: string): string | null {
-  const base = spec.startsWith("@/")
-    ? join(SRC, spec.slice(2))
-    : spec.startsWith(".")
-      ? resolve(dirname(fromFile), spec)
-      : null;
-  if (base === null) return null; // bare package — not ours to walk
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
-    if (candidate.endsWith(".ts") || candidate.endsWith(".tsx")) {
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return null;
-}
-
-/**
- * Every `from "..."` specifier in a module, type-only imports included.
- *
- * The gap between the keyword and `from` is `[^;]*?` rather than `[\s\S]*?`:
- * an import statement never contains a `;` before its `from`, so this still
- * spans a multi-line clause but can't run from an unrelated `export` through
- * paragraphs of prose to a `from "…"` inside a comment. (It did: a JSDoc line
- * in `workspace/server.ts` reading `… from "up" (listening)` parsed as an
- * import of `up`. Harmless there, but a comment saying `from "fs"` would have
- * failed this test for no reason.)
- */
-function specifiersOf(file: string): string[] {
-  const source = readFileSync(file, "utf8");
-  const found: string[] = [];
-  const re = /(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s+["']([^"']+)["']/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source)) !== null) found.push(match[1]!);
-  return found;
-}
-
 const rel = (file: string) => file.replace(`${resolve(SRC, "..")}/`, "");
 
 /** Import chains from `entry` that end at a forbidden specifier. */
@@ -95,7 +59,7 @@ function forbiddenReachableFrom(entry: string): string[] {
         violations.push(`${chain.map(rel).join(" → ")} imports "${spec}"`);
         continue;
       }
-      const next = resolveSpec(spec, file);
+      const next = resolveSpec(spec, file, SRC);
       if (next !== null) walk(next, chain);
     }
   };
@@ -108,17 +72,10 @@ function forbiddenReachableFrom(entry: string): string[] {
  * Dashboard modules that reach into the root `src` via `@/`. Discovered rather
  * than listed so a new `@/` import is covered the day it's written.
  */
-function dashboardEntryPoints(dir = DASHBOARD_SRC): string[] {
-  const entries: string[] = [];
-  for (const item of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, item.name);
-    if (item.isDirectory()) {
-      entries.push(...dashboardEntryPoints(full));
-    } else if (/\.tsx?$/.test(item.name)) {
-      if (specifiersOf(full).some((s) => s.startsWith("@/"))) entries.push(full);
-    }
-  }
-  return entries;
+function dashboardEntryPoints(): string[] {
+  return tsFilesUnder(DASHBOARD_SRC).filter((file) =>
+    specifiersOf(file).some((s) => s.startsWith("@/")),
+  );
 }
 
 describe("dashboard type-graph boundary", () => {
