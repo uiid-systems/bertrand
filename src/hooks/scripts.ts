@@ -47,15 +47,26 @@ const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*
  * Defines `sid` and `cid` for the rest of the script. On an adopted session
  * the conversation id *is* claude's session id — that is what `adopt` keyed
  * the conversation row on.
+ *
+ * `autoCreate` adds a third rung to the ladder for the one hook that may
+ * create a session rather than only resolve one — see {@link autoCreateGate}.
+ * That rung consumes stdin, so a script passing it must read `$input` only if
+ * the guard left it empty.
  */
-function sessionGuard(runtimeDir: string): string {
+function sessionGuard(
+  runtimeDir: string,
+  opts: { autoCreate?: boolean } = {},
+): string {
+  const noMarker = opts.autoCreate
+    ? autoCreateGate(runtimeDir)
+    : `  [ -f "$adopted" ] || exit 0`;
   return `sid="\${BERTRAND_SESSION:-}"
 cid="\${BERTRAND_CLAUDE_ID:-}"
 if [ -z "$sid" ]; then
   ccid="\${CLAUDE_CODE_SESSION_ID:-}"
   [ -z "$ccid" ] && exit 0
   adopted="${runtimeDir}/adopted-$ccid"
-  [ -f "$adopted" ] || exit 0
+${noMarker}
   while IFS='=' read -r k v || [ -n "$k" ]; do
     case "$k" in
       session) sid="$v" ;;
@@ -66,6 +77,57 @@ if [ -z "$sid" ]; then
   [ -n "\${BERTRAND_PROJECT:-}" ] && export BERTRAND_PROJECT
   cid="$ccid"
 fi`;
+}
+
+/**
+ * Auto-create a session for an unseen claude session id (ELKY-175).
+ *
+ * This runs in place of the guard's `exit 0` for an unadopted conversation,
+ * and it is the *only* place bertrand records a claude it neither launched nor
+ * was explicitly pointed at. Three things keep it from being the noisy
+ * always-on capture `docs/session-identity.md` argues against:
+ *
+ * **It is on UserPromptSubmit alone.** Not the four hot hooks — a claude that
+ * is not ours must keep costing nothing on the path that fires dozens of times
+ * a turn. And a user prompt is a signal no subagent can produce, which retires
+ * the doc's open question about auto-creation minting a session per Task call.
+ *
+ * **It waits for the second prompt.** `$gate` absent means this conversation
+ * has said nothing yet; the hook creates it empty and returns. A conversation
+ * that ends after one prompt therefore leaves a row nowhere. That is the
+ * materiality gate, and it costs two bash builtins. Nothing is lost by
+ * waiting: the back-fill is cursor-based and imports the earlier turns at
+ * creation time.
+ *
+ * **A decline is remembered.** `bertrand auto-adopt` writes the reason into
+ * `$gate` when the answer will not change — the directory belongs to no
+ * project, or its project has not opted in — and `[ -s ]` short-circuits every
+ * later prompt before anything is spawned. A directory nobody registered
+ * therefore pays for exactly one bin invocation per conversation, and every
+ * prompt after it costs a file test.
+ *
+ * `cwd` comes from the payload rather than `$PWD`. They agree today, but the
+ * payload is the value Claude Code documents, and picking the wrong project is
+ * a silent failure — the session lands in another project's log and nothing
+ * says so.
+ */
+function autoCreateGate(runtimeDir: string): string {
+  return `  if [ ! -f "$adopted" ]; then
+    gate="${runtimeDir}/autocreate-$ccid"
+    # Non-empty: auto-adopt already declined for good. Empty: one prompt seen.
+    [ -s "$gate" ] && exit 0
+    if [ ! -f "$gate" ]; then : > "$gate"; exit 0; fi
+    # Read here rather than at the top of the script, so a claude that is not
+    # eligible exits above without paying for it. The body reuses this.
+    input="$(cat)"
+    bq auto-adopt --claude-id "$ccid" \\
+      --cwd "$(printf '%s' "$input" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)" \\
+      --transcript-path "$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | head -1 | cut -d'"' -f4)" \\
+      >/dev/null
+    # Declined, or failed transiently. Either way there is no session to write
+    # to; a transient failure left $gate empty and the next prompt retries.
+    [ -f "$adopted" ] || exit 0
+  fi`;
 }
 
 /**
@@ -274,6 +336,11 @@ wait
  * UserPromptSubmit → record user free-text prompt as user.prompt event.
  * Fires once per user turn (not hot-path), so jq for safe multi-line/escape
  * handling is fine — grep would mangle prompts containing quotes or newlines.
+ *
+ * The one hook whose guard may *create* a session rather than only resolve
+ * one, because a user prompt is the cheapest honest signal that a
+ * conversation is real work: it is rare enough to spend a process on, and no
+ * subagent can produce one. See {@link autoCreateGate}.
  */
 export function userPromptScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
@@ -287,9 +354,11 @@ export function userPromptScript(bin: string, runtimeDir: string): string {
 # Full contract on the first prompt of each conversation, a one-line reminder
 # thereafter, to keep the per-turn token cost low.
 ${quietHelper(bin)}
-${sessionGuard(runtimeDir)}
+${sessionGuard(runtimeDir, { autoCreate: true })}
 
-input="$(cat)"
+# Already set when the guard's auto-create rung read it; still empty on every
+# other path, including the launched one this hook was originally written for.
+[ -z "$input" ] && input="$(cat)"
 
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).

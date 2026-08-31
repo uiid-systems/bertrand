@@ -48,8 +48,11 @@ Manage sessions & projects:
                                as a bertrand session, back-filling the conversation
                                so far. For claudes bertrand didn't launch (an ADE,
                                or \`claude\` by hand). (bertrand adopt --help)
-  bertrand project <op>        list | create | switch | current | rename | remove | import
-                               (bertrand project --help)
+  bertrand project <op>        list | create | link | switch | current | auto | rename
+                               | remove | import  (bertrand project --help)
+                               \`auto <slug> on\` records claude sessions started in
+                               that project's repo without bertrand, from their
+                               second prompt on — no \`adopt\` needed.
   bertrand sync <op>           onboard | push | pull | status | invite | enable | disable
                                (bertrand sync --help)
   bertrand serve               Start the local dashboard HTTP server.

@@ -8,6 +8,7 @@ import { _resetRepoCache, _setGitRunner, type GitRunner } from "@/lib/github/res
 import {
   requireBoundRepo,
   findProjectByRepo,
+  resolveProjectForCwd,
   resolveBindableRepo,
   RepoBindError,
   UnboundProjectError,
@@ -227,5 +228,45 @@ describe("resolveBindableRepo", () => {
 
     const repo = await resolveBindableRepo("/src/acme/../acme/wt-feature");
     expect(repo.path).toBe("/src/acme");
+  });
+});
+
+describe("resolveProjectForCwd", () => {
+  test("matches by git origin, not by path prefix", async () => {
+    seedRegistry([entry("acme", { path: "/src/acme", owner: "acme", repo: "web" })]);
+    // A linked worktree living under no registered checkout — 13 of the 22
+    // cwds measured in docs/session-identity.md look like this, and prefix
+    // matching misses every one.
+    _setGitRunner(async (cwd, args) => {
+      if (args[0] === "worktree") return `worktree /src/acme\nHEAD abc\n`;
+      if (args[0] === "config") return "git@github.com:acme/web.git";
+      return "origin/main";
+    });
+
+    const project = await resolveProjectForCwd("/orca/workspaces/acme/feature-x");
+    expect(project?.slug).toBe("acme");
+  });
+
+  test("null for a directory that is not a repo", async () => {
+    seedRegistry([entry("acme", { path: "/src/acme", owner: "acme", repo: "web" })]);
+    _setGitRunner(fakeGit({ "/src/acme": "git@github.com:acme/web.git" }));
+
+    expect(await resolveProjectForCwd("/tmp/scratch")).toBeNull();
+  });
+
+  test("null for a repo with no origin", async () => {
+    seedRegistry([entry("acme", { path: "/src/acme", owner: "acme", repo: "web" })]);
+    _setGitRunner(fakeGit({ "/src/loose": null }));
+
+    expect(await resolveProjectForCwd("/src/loose")).toBeNull();
+  });
+
+  test("null for a GitHub repo no project is bound to", async () => {
+    seedRegistry([entry("acme", { path: "/src/acme", owner: "acme", repo: "web" })]);
+    _setGitRunner(fakeGit({ "/src/other": "git@github.com:acme/other.git" }));
+
+    // Resolves cleanly to an identity; there is just no project for it.
+    // Inventing one is a decision reserved to the human.
+    expect(await resolveProjectForCwd("/src/other")).toBeNull();
   });
 });

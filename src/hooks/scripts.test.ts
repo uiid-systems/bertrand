@@ -23,7 +23,7 @@ let stubBin: string;
  * subcommand (update/ingest-transcript) is a silent no-op so it can't
  * pollute a hook's stdout.
  */
-const STUB = `#!/usr/bin/env bash
+const stubScript = (runtimeDir: string) => `#!/usr/bin/env bash
 # When BERTRAND_STUB_LOG points somewhere, record the call so the guard tests
 # can assert which session the hook resolved and which project it targeted.
 # Unset for every other test, so the stub stays silent for them.
@@ -34,6 +34,19 @@ if [ "$1" = "contract" ]; then
   case "$*" in
     *--short*) printf 'SHORT_CONTRACT' ;;
     *) printf 'FULL_CONTRACT' ;;
+  esac
+fi
+# Stands in for the real \`auto-adopt\`, whose only observable effect on the
+# hook is which marker it leaves behind. BERTRAND_STUB_AUTO picks the outcome;
+# unset means the transient-failure case, where it writes nothing at all.
+if [ "$1" = "auto-adopt" ]; then
+  case "\${BERTRAND_STUB_AUTO:-}" in
+    create)
+      printf 'session=auto-sid\\nproject=auto-project\\n' \\
+        > "${runtimeDir}/adopted-$CLAUDE_CODE_SESSION_ID" ;;
+    decline)
+      printf 'declined=not-opted-in\\n' \\
+        > "${runtimeDir}/autocreate-$CLAUDE_CODE_SESSION_ID" ;;
   esac
 fi
 `;
@@ -70,7 +83,7 @@ beforeEach(() => {
   runtimeDir = join(workDir, "run");
   mkdirSync(runtimeDir, { recursive: true });
   stubBin = join(workDir, "stub-bertrand");
-  writeFileSync(stubBin, STUB);
+  writeFileSync(stubBin, stubScript(runtimeDir));
   chmodSync(stubBin, 0o755);
 });
 
@@ -328,5 +341,152 @@ describe("session guard — adoption marker fallback", () => {
     expect(guard).not.toContain("grep");
     expect(guard).not.toContain("$(cat)");
     expect(guard).not.toContain("session_id\":");
+  });
+});
+
+describe("session guard — auto-create (ELKY-175)", () => {
+  // Automatic adoption of an unseen claude session id. Unlike the marker
+  // fallback above, this rung may *create*, so the tests here are mostly about
+  // what stops it: one prompt is not enough, and a refusal must stick.
+  const CLAUDE_SID = "99999999-8888-4777-8666-555555555555";
+  const PROMPT = JSON.stringify({
+    prompt: "do the thing",
+    cwd: "/work/repo",
+    transcript_path: "/transcripts/x.jsonl",
+    session_id: CLAUDE_SID,
+  });
+
+  let stubLog: string;
+
+  beforeEach(() => {
+    stubLog = join(workDir, "stub.log");
+  });
+
+  const calls = (): string =>
+    existsSync(stubLog) ? readFileSync(stubLog, "utf-8") : "";
+
+  /** Env of a claude bertrand neither launched nor was pointed at. */
+  const untracked = (auto?: "create" | "decline") => ({
+    CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+    BERTRAND_STUB_LOG: stubLog,
+    ...(auto ? { BERTRAND_STUB_AUTO: auto } : {}),
+  });
+
+  const gate = () => marker(`autocreate-${CLAUDE_SID}`);
+
+  test("first prompt arms the gate and spawns nothing", () => {
+    const { code, stdout } = run("on-user-prompt.sh", PROMPT, untracked("create"));
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    // One prompt is not yet work worth recording — that is the materiality
+    // gate, and it must cost nothing but a file test and a truncate.
+    expect(calls()).toBe("");
+    expect(existsSync(gate())).toBe(true);
+    expect(readFileSync(gate(), "utf-8")).toBe("");
+  });
+
+  test("second prompt asks auto-adopt, passing the payload's cwd and transcript", () => {
+    writeFileSync(gate(), "");
+
+    run("on-user-prompt.sh", PROMPT, untracked("create"));
+
+    expect(calls()).toContain("auto-adopt");
+    expect(calls()).toContain(`--claude-id ${CLAUDE_SID}`);
+    // From the payload, not $PWD: picking the wrong project files the session
+    // in another project's log with nothing to say so.
+    expect(calls()).toContain("--cwd /work/repo");
+    expect(calls()).toContain("--transcript-path /transcripts/x.jsonl");
+  });
+
+  test("a created session records this very prompt and gets the contract", () => {
+    writeFileSync(gate(), "");
+
+    const { stdout } = run("on-user-prompt.sh", PROMPT, untracked("create"));
+
+    // The marker the stub wrote is re-read by the same guard invocation, so
+    // the prompt that triggered creation is not lost.
+    expect(calls()).toContain("--session-id auto-sid --event user.prompt");
+    expect(calls()).toContain("project=auto-project");
+    expect(stdout).toContain("FULL_CONTRACT");
+  });
+
+  test("a remembered decline short-circuits before anything is spawned", () => {
+    writeFileSync(gate(), "declined=not-opted-in\n");
+
+    const { code, stdout } = run("on-user-prompt.sh", PROMPT, untracked("create"));
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    // Every prompt in every unregistered directory on the machine takes this
+    // path; it has to stay a file test.
+    expect(calls()).toBe("");
+  });
+
+  test("auto-adopt declining writes the reason, so the next prompt is free", () => {
+    writeFileSync(gate(), "");
+
+    run("on-user-prompt.sh", PROMPT, untracked("decline"));
+    expect(calls()).toContain("auto-adopt");
+    expect(readFileSync(gate(), "utf-8")).toContain("declined=");
+
+    // Second run: the gate is non-empty now, so nothing is spawned at all.
+    writeFileSync(stubLog, "");
+    run("on-user-prompt.sh", PROMPT, untracked("decline"));
+    expect(calls()).toBe("");
+  });
+
+  test("a transient failure leaves the gate armed so the next prompt retries", () => {
+    writeFileSync(gate(), "");
+
+    // No BERTRAND_STUB_AUTO: the stub writes neither marker, standing in for a
+    // locked DB or a git that didn't answer.
+    const { code, stdout } = run("on-user-prompt.sh", PROMPT, untracked());
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    expect(calls()).toContain("auto-adopt");
+    // Empty, not declined: a failure we might recover from must not be
+    // remembered as a refusal.
+    expect(readFileSync(gate(), "utf-8")).toBe("");
+  });
+
+  test("an already-adopted conversation skips the gate entirely", () => {
+    writeFileSync(
+      marker(`adopted-${CLAUDE_SID}`),
+      "session=adopted-sid\nproject=some-project\n",
+    );
+
+    run("on-user-prompt.sh", PROMPT, untracked("create"));
+
+    expect(calls()).toContain("--session-id adopted-sid");
+    expect(calls()).not.toContain("auto-adopt");
+    expect(existsSync(gate())).toBe(false);
+  });
+
+  test("a launched session never touches the gate", () => {
+    run("on-user-prompt.sh", PROMPT, {
+      ...untracked("create"),
+      BERTRAND_SESSION: "env-sid",
+      BERTRAND_CLAUDE_ID: "env-cid",
+    });
+
+    expect(calls()).toContain("--session-id env-sid");
+    expect(calls()).not.toContain("auto-adopt");
+    // No duplicate row for a claude bertrand already owns, and no marker
+    // pointing the hooks somewhere else.
+    expect(existsSync(gate())).toBe(false);
+    expect(existsSync(marker(`adopted-${CLAUDE_SID}`))).toBe(false);
+  });
+
+  test("only the user-prompt hook may create; the other five still no-op", () => {
+    for (const name of Object.keys(HOOK_SCRIPTS) as (keyof typeof HOOK_SCRIPTS)[]) {
+      const script = HOOK_SCRIPTS[name]("BIN", "RUNTIME");
+      const hasGate = script.includes("autocreate-$ccid");
+      // The four hot hooks fire dozens of times a turn for every claude on the
+      // machine, and Stop fires on every one of them too. Creation belongs on
+      // the one event a subagent cannot produce.
+      expect(hasGate).toBe(name === "on-user-prompt.sh");
+    }
   });
 });

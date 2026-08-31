@@ -319,9 +319,13 @@ function normalizeRepo(value: unknown): ProjectRepo | undefined {
 function normalizeEntry(entry: ProjectEntry): ProjectEntry {
   // `entry` is only structurally checked, so `repo` is `unknown` in practice
   // whatever the declared type claims.
-  const { repo, ...rest } = entry;
+  const { repo, autoAdopt, ...rest } = entry;
   const normalized = normalizeRepo(repo);
-  return normalized ? { ...rest, repo: normalized } : rest;
+  const base = normalized ? { ...rest, repo: normalized } : rest;
+  // Strictly `=== true`. Every other value — "false", 0, a hand-typed "yes" —
+  // reads as off, because this flag decides whether bertrand starts recording
+  // sessions nobody asked it to record. Ambiguity resolves toward silence.
+  return autoAdopt === true ? { ...base, autoAdopt: true } : base;
 }
 
 /**
@@ -331,6 +335,39 @@ function normalizeEntry(entry: ProjectEntry): ProjectEntry {
  */
 export function getProjectRepo(slug: string): ProjectRepo | undefined {
   return listProjects().find((p) => p.slug === slug)?.repo;
+}
+
+/**
+ * Whether this project records claude sessions bertrand did not launch.
+ *
+ * Defaults to `false` for an unknown slug as well as an opted-out one: the
+ * caller is asking "may I create a session here?", and no project is not a
+ * yes.
+ */
+export function getProjectAutoAdopt(slug: string): boolean {
+  return listProjects().find((p) => p.slug === slug)?.autoAdopt === true;
+}
+
+/**
+ * Turn auto-adoption on or off for a project.
+ *
+ * Turning it off deletes the key rather than storing `false`, so an untouched
+ * registry and an explicitly-disabled one serialize identically — there is
+ * only one representation of "off" to reason about.
+ */
+export function setProjectAutoAdopt(slug: string, enabled: boolean): void {
+  const registry = loadRegistry();
+  if (!registry) {
+    throw new Error(`No registry to update — create a project first`);
+  }
+  const entry = registry.projects.find((p) => p.slug === slug);
+  if (!entry) {
+    throw new Error(`Unknown project slug "${slug}"`);
+  }
+
+  if (enabled) entry.autoAdopt = true;
+  else delete entry.autoAdopt;
+  writeRegistry(registry);
 }
 
 /**

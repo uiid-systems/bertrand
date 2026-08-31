@@ -19,6 +19,8 @@ import {
   loadRegistry,
   getProjectRepo,
   setProjectRepo,
+  getProjectAutoAdopt,
+  setProjectAutoAdopt,
   type ProjectRegistry,
   type ProjectRepo,
 } from "./registry";
@@ -441,5 +443,76 @@ describe("setProjectRepo", () => {
       /Invalid repo binding/,
     );
     expect(getProjectRepo("acme")).toBeUndefined();
+  });
+});
+
+describe("auto-adopt opt-in", () => {
+  test("defaults to off, including for a slug that doesn't exist", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(getProjectAutoAdopt("acme")).toBe(false);
+    // The caller is asking "may I create a session here?", and no project is
+    // not a yes.
+    expect(getProjectAutoAdopt("nope")).toBe(false);
+  });
+
+  test("round-trips on, and off removes the key rather than storing false", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+
+    setProjectAutoAdopt("acme", true);
+    expect(getProjectAutoAdopt("acme")).toBe(true);
+    expect(readFileSync(join(tmpRoot, "projects.json"), "utf8")).toContain(
+      '"autoAdopt": true',
+    );
+
+    setProjectAutoAdopt("acme", false);
+    expect(getProjectAutoAdopt("acme")).toBe(false);
+    // One representation of "off", so an untouched registry and an explicitly
+    // disabled one are the same file.
+    expect(readFileSync(join(tmpRoot, "projects.json"), "utf8")).not.toContain(
+      "autoAdopt",
+    );
+  });
+
+  test("anything but literal true reads as off", () => {
+    // This flag decides whether bertrand starts recording sessions nobody
+    // asked it to record, so a hand-edited registry resolves toward silence.
+    for (const value of ["true", 1, "yes", {}, null]) {
+      writeFileSync(
+        join(tmpRoot, "projects.json"),
+        JSON.stringify({
+          activeProjectSlug: "acme",
+          projects: [
+            {
+              slug: "acme",
+              name: "Acme",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              lastUsedAt: "2026-01-01T00:00:00.000Z",
+              autoAdopt: value,
+            },
+          ],
+        }),
+      );
+      expect(getProjectAutoAdopt("acme")).toBe(false);
+    }
+  });
+
+  test("throws on an unknown slug and on a missing registry", () => {
+    expect(() => setProjectAutoAdopt("acme", true)).toThrow(/No registry to update/);
+    registerProject({ slug: "acme", name: "Acme" });
+    expect(() => setProjectAutoAdopt("nope", true)).toThrow(/Unknown project slug/);
+  });
+
+  test("survives alongside a repo binding", () => {
+    registerProject({ slug: "acme", name: "Acme" });
+    setProjectRepo("acme", {
+      path: "/Users/dev/acme",
+      provider: { provider: "github", owner: "acme", repo: "app" },
+    });
+    setProjectAutoAdopt("acme", true);
+
+    // normalizeEntry rebuilds the entry field by field, so this is what keeps
+    // the two optional fields from evicting each other.
+    expect(getProjectRepo("acme")?.path).toBe("/Users/dev/acme");
+    expect(getProjectAutoAdopt("acme")).toBe(true);
   });
 });
