@@ -1,3 +1,10 @@
+/**
+ * End-of-session bookkeeping. Lived in `src/engine` until ELKY-176; it is pure
+ * DB/stats work with no PTY in it, and both hosts of a session — the CLI
+ * launcher and the server — plus crash recovery need it, so it sits in `lib`
+ * with the rest of the session lifecycle. See `session-recovery.ts` and
+ * `src/layer-boundary.test.ts`.
+ */
 import { getSession, updateSession } from "@/db/queries/sessions";
 import { endConversation, getConversation } from "@/db/queries/conversations";
 import { emitClaudeEnded } from "@/db/events/emit";

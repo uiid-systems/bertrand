@@ -18,7 +18,7 @@ import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { launchClaude, isClaudeRunning } from "./process";
-import { finalizeSessionRow } from "./finalize";
+import { finalizeSessionRow } from "@/lib/session-finalize";
 import { ensureServerStarted } from "@/lib/server-lifecycle";
 import { planResume } from "./resume-plan";
 import { pruneStaleMarkers } from "@/hooks/runtime";

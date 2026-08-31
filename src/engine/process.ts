@@ -15,6 +15,45 @@ export interface ClaudeLaunchOpts {
 let activePty: PtyHandle | null = null;
 
 /**
+ * The environment the `claude` child is spawned with: **the whole of
+ * bertrand's own environment**, plus the `BERTRAND_*` vars identifying this
+ * session.
+ *
+ * The `...process.env` spread is load-bearing and must never become an
+ * allowlist. Everything downstream inherits through the chain
+ * bertrand → claude → hook subprocess → `bertrand update`, so it is the only
+ * reason a host's variables survive the launch at all: `ORCA_*` is what made
+ * bertrand and Orca compose without either knowing about the other
+ * (docs/orca-boundary.md), and any comparable host goes blind to
+ * bertrand-launched sessions the moment this is narrowed. bertrand's own
+ * `BERTRAND_PROJECT`/`BERTRAND_PROJECT_DB` ride the same channel.
+ *
+ * Extracted from `launchClaude` so `process.test.ts` can assert the
+ * passthrough without spawning `claude`.
+ */
+export function buildClaudeEnv(
+  opts: Pick<ClaudeLaunchOpts, "sessionId" | "claudeId" | "sessionName" | "sessionSlug">,
+) {
+  // Capture the active project at spawn time so the running session keeps
+  // writing to the right DB even if the user runs `bertrand project switch`
+  // in another terminal. Hooks inherit this env via the chain
+  // bertrand → claude → hook subprocess → bertrand update, so every
+  // hook-triggered write resolves to the same project the session started
+  // in — not whatever's active on disk at hook-fire time.
+  const active = resolveActiveProject();
+
+  return {
+    ...process.env,
+    BERTRAND_CLAUDE_ID: opts.claudeId,
+    BERTRAND_SESSION: opts.sessionId,
+    BERTRAND_SESSION_NAME: opts.sessionName,
+    BERTRAND_SESSION_SLUG: opts.sessionSlug,
+    BERTRAND_PROJECT: active.slug,
+    BERTRAND_PROJECT_DB: active.db,
+  };
+}
+
+/**
  * Spawn a Claude Code subprocess attached to a PTY bertrand owns (instead of
  * `stdio: "inherit"`), with the appropriate flags and env vars. The local
  * terminal is wired up as one consumer of that PTY (raw-mode passthrough on
@@ -41,23 +80,7 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   args.push("--append-system-prompt", opts.contract);
 
-  // Capture the active project at spawn time so the running session keeps
-  // writing to the right DB even if the user runs `bertrand project switch`
-  // in another terminal. Hooks inherit this env via the chain
-  // bertrand → claude → hook subprocess → bertrand update, so every
-  // hook-triggered write resolves to the same project the session started
-  // in — not whatever's active on disk at hook-fire time.
-  const active = resolveActiveProject();
-
-  const env = {
-    ...process.env,
-    BERTRAND_CLAUDE_ID: opts.claudeId,
-    BERTRAND_SESSION: opts.sessionId,
-    BERTRAND_SESSION_NAME: opts.sessionName,
-    BERTRAND_SESSION_SLUG: opts.sessionSlug,
-    BERTRAND_PROJECT: active.slug,
-    BERTRAND_PROJECT_DB: active.db,
-  };
+  const env = buildClaudeEnv(opts);
 
   return new Promise((resolve, reject) => {
     let pty: PtyHandle;

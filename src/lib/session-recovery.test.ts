@@ -33,7 +33,7 @@ const { createConversation, getConversation } = await import(
 const { insertEvent } = await import("@/db/queries/events");
 const { getSessionStats } = await import("@/db/queries/stats");
 const { formatDbTime, parseDbTime } = await import("@/lib/format");
-const { recoverStaleSessions } = await import("./recovery");
+const { recoverStaleSessions } = await import("./session-recovery");
 
 const DEAD_PID = 2_147_483_600;
 const A_WEEK_AGO = Date.now() - 7 * 24 * 3_600_000;

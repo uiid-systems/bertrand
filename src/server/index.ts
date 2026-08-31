@@ -2,13 +2,7 @@ import { execFile } from "child_process"
 import { existsSync } from "fs"
 import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
-import {
-  DashboardSessionLimitError,
-  spawnDashboardSession,
-  resumeDashboardSession,
-  stopDashboardSession,
-} from "@/engine/dashboard-session"
-import { recoverStaleSessions } from "@/engine/recovery"
+import { recoverStaleSessions } from "@/lib/session-recovery"
 import { type ChangedFile } from "@/lib/git"
 import {
   getAllSessionsForProject,
@@ -64,6 +58,21 @@ import type {
 } from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
+
+/**
+ * The PTY engine, loaded on demand (ELKY-176).
+ *
+ * `bertrand serve` runs for the whole of every recorded session — the
+ * UserPromptSubmit hook restarts it if it goes away — so a static import here
+ * would put `src/engine` on the recording path of every session, including the
+ * ones bertrand never launched. Only the three dashboard-owned-session routes
+ * below need it, and each already runs in an async context.
+ *
+ * `import()` caches, so the repeat cost after the first spawn is a resolved
+ * promise. Keep this the only door into `src/engine` from the server;
+ * `src/layer-boundary.test.ts` fails if a static one comes back.
+ */
+const dashboardSessions = () => import("@/engine/dashboard-session")
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
 
@@ -494,6 +503,7 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
     )
   }
 
+  const { resumeDashboardSession } = await dashboardSessions()
   const result = resumeDashboardSession({ sessionId: id, conversationId })
   if (result.ok) {
     return Response.json({
@@ -570,6 +580,10 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       { status: 400 },
     )
   }
+
+  // Resolved before the try so the catch below can reach the error class the
+  // same module exports.
+  const { spawnDashboardSession, DashboardSessionLimitError } = await dashboardSessions()
 
   try {
     const result = await spawnDashboardSession({
@@ -746,6 +760,7 @@ export function startServer(port = PORT) {
       if (req.method === "POST") {
         const stopSessionMatch = /^\/api\/sessions\/([^/]+)\/stop$/.exec(url.pathname)
         if (stopSessionMatch) {
+          const { stopDashboardSession } = await dashboardSessions()
           const stopped = stopDashboardSession(stopSessionMatch[1]!)
           return Response.json(
             { stopped },

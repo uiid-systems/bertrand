@@ -1,9 +1,17 @@
+/**
+ * Crash recovery for session rows. Lived in `src/engine` until ELKY-176, and
+ * moved because it does not belong to the launcher: it reads and writes DB rows
+ * and touches no PTY. Recovery is the *only* thing that ever finalizes an
+ * adopted session (nothing stands over one to watch it exit), so it has to stay
+ * reachable from `bertrand serve` and the hook path — which is exactly what a
+ * demoted `src/engine` must not be. See `src/layer-boundary.test.ts`.
+ */
 import { getRecoverableSessions } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import { getLastEventAt } from "@/db/queries/events";
 import { isRecordedProcessAlive } from "@/lib/process-identity";
 import { triggerBackgroundPush } from "@/sync/trigger";
-import { finalizeSessionRow } from "./finalize";
+import { finalizeSessionRow } from "./session-finalize";
 
 /**
  * Exit code recorded for a session whose process vanished without going

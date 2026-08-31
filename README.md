@@ -165,6 +165,8 @@ Key tables ([`src/db/schema.ts`](src/db/schema.ts)):
 
 Stats are computed live for `active`/`waiting` sessions and read from the materialized row otherwise — see [`src/server/index.ts`](src/server/index.ts).
 
+`src/engine` and `src/tui` — the PTY relay and the launcher UI — are **optional**. Recording a session needs only the hooks, the database and the CLI, which is why `bertrand adopt` can pick up a `claude` that bertrand never started. Nothing on the recording path may import either directory; the two are reached through `await import(…)` from `bertrand launch` and the dashboard's session routes, and [`src/layer-boundary.test.ts`](src/layer-boundary.test.ts) fails if that changes.
+
 ## File layout
 
 ### Repo
@@ -174,11 +176,11 @@ src/
   cli/         # Command router and command handlers
   contract/    # System-prompt contract (AskUserQuestion loop, sibling context)
   db/          # Drizzle schema, migrations, query functions
-  engine/      # Session lifecycle (launch, resume, finalize)
+  engine/      # Optional launcher: the PTY relay `bertrand launch` runs Claude under
   hooks/       # Hook script generation (bash templates)
-  lib/         # Timing FSM, diff stats, engagement, formatting, tests
+  lib/         # Session lifecycle (finalize, recovery), timing FSM, diff stats, formatting
   server/      # Bun HTTP server (/api/*)
-  tui/         # Ink-based TUI screens
+  tui/         # Optional launcher: Storm TUI screens
 dashboard/
   src/
     api/         # Typed TanStack Query hooks
