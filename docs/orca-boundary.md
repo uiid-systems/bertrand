@@ -626,7 +626,7 @@ The `withStoredGitDiffs` overlay and the `diff_source` reads were retired in ELK
 rather than kept, reversing the earlier note in 4e's options list — the decision is
 recorded there.
 
-### Workstream 2 — Naming: drop category, derive slug at pause · risk MED-HIGH · 2–3 sessions
+### Workstream 2 — Naming: drop category, derive slug at pause · risk MED-HIGH · **COMPLETE 2026-08-30**
 
 Scope:
 - Migration flattening `categories` + `sessions.category_id` across **4 DBs /
@@ -646,10 +646,17 @@ Scope:
 
 Risk: this changes the identity of every session. Needs a back-compat story.
 
-### Workstream 3 — Launcher-optional · risk HIGH · 2–4 sessions + design doc
+**Landed** as ELKY-167–172 (commits `830b177`…`ed9b832`, released in 0.41.0). Categories are
+flattened to a single `slug`; `getOrCreateCategoryPath` is gone. Sessions are created
+unnamed with `nameSource: "derived"` and named at the first pause by `src/lib/summary.ts` —
+`createSession` throws if a `derived` row carries its own display name
+(`src/db/queries/sessions.ts:50`). `bertrand rename` is the manual escape hatch, and
+legacy `category/slug` names resolve through an alias table.
+
+### Workstream 3 — Launcher-optional · Phase 1 risk LOW / Phase 2 risk HIGH · IN PROGRESS
 
 Scope:
-- Rewrite all 8 hook scripts to key off the payload's `session_id` (and
+- Rewrite all 6 hook scripts to key off the payload's `session_id` (and
   `transcript_path`) instead of `BERTRAND_SESSION`. Orca's
   `agent-hook-listener` is a working reference implementation — see
   `extractAgentProviderSession` in `out/shared/agent-session-resume.js`.
@@ -664,7 +671,28 @@ Scope:
   convenience. **Do not delete** — the PTY relay is the only path to Layer 3.
 - Keep `BERTRAND_*` env vars as an override when bertrand *is* the launcher.
 
-**Blocked on #2:** a hook-created session cannot prompt anyone for a name.
+**No longer blocked on #2** — Workstream 2 is complete, and a hook-created session is
+simply created unnamed and named at pause like every other session.
+
+**Re-planned by ELKY-179 (2026-08-30).** The workstream now splits at the *trigger*, not
+the plumbing:
+
+- **Phase 1 — explicit adoption (low risk, committed).** A `/bertrand` slash command runs
+  `bertrand adopt`, which writes a durable `~/.bertrand/run/adopted-<session_id>` marker.
+  The hook guards gain a marker-consulting fallback; env still wins. This sidesteps
+  project resolution (cwd is passed in) and drift (the user opted in deliberately).
+- **Phase 2 — implicit auto-create (HIGH risk, not committed).** Everything above, but
+  triggered by the first unseen `session_id` rather than by a human. Decide after Phase 1
+  has run in practice. Phase 1 makes this incremental: the marker fallback becomes the
+  default path.
+
+Also note: the guard count is **6**, not 8 — the worktree hooks were deleted in
+Workstream 1. Current sites are `src/hooks/scripts.ts` lines 41, 84, 129, 164, 252, 294.
+
+One blocker not listed above: `shouldIgnoreStatusFlip` (`src/cli/commands/update.ts:33-41`)
+refuses `active`/`waiting`/`blocked` flips whenever `session.pid === null`, which is the
+state of every session bertrand did not launch. Payload-keyed sessions never change status
+until that is fixed.
 
 Open design questions: dedupe when both env and payload identify a session;
 `--resume` handling; how `claude_id` relates to the payload `session_id` (today
