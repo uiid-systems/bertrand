@@ -24,6 +24,12 @@ let stubBin: string;
  * pollute a hook's stdout.
  */
 const STUB = `#!/usr/bin/env bash
+# When BERTRAND_STUB_LOG points somewhere, record the call so the guard tests
+# can assert which session the hook resolved and which project it targeted.
+# Unset for every other test, so the stub stays silent for them.
+if [ -n "\${BERTRAND_STUB_LOG:-}" ]; then
+  printf 'argv=%s project=%s\\n' "$*" "\${BERTRAND_PROJECT:-<unset>}" >> "$BERTRAND_STUB_LOG"
+fi
 if [ "$1" = "contract" ]; then
   case "$*" in
     *--short*) printf 'SHORT_CONTRACT' ;;
@@ -189,5 +195,138 @@ describe("transcript ingestion ticks", () => {
     expect(script).toContain("ingest-transcript");
     expect(script).toContain("--flush");
     expect(script).not.toContain("assistant-message");
+  });
+});
+
+describe("session guard — adoption marker fallback", () => {
+  // A claude bertrand launched exports BERTRAND_SESSION; one that was adopted
+  // cannot be given env at all, so the guard keys off CLAUDE_CODE_SESSION_ID
+  // (which claude exports into every hook subprocess) and the marker written
+  // by `bertrand adopt`.
+  const CLAUDE_SID = "11111111-2222-4333-8444-555555555555";
+  const TOOL_INPUT = JSON.stringify({
+    tool_name: "Bash",
+    tool_input: { command: "ls" },
+    transcript_path: "",
+  });
+
+  let stubLog: string;
+
+  beforeEach(() => {
+    stubLog = join(workDir, "stub.log");
+  });
+
+  const calls = (): string =>
+    existsSync(stubLog) ? readFileSync(stubLog, "utf-8") : "";
+
+  function adopt(sessionId: string, project: string, claudeId = CLAUDE_SID) {
+    writeFileSync(
+      marker(`adopted-${claudeId}`),
+      `session=${sessionId}\nproject=${project}\n`,
+    );
+  }
+
+  test("no marker → total no-op, and the binary is never invoked", () => {
+    const { stdout, code } = run("on-permission-done.sh", TOOL_INPUT, {
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    // This is the path every unadopted claude on the machine takes, so it has
+    // to cost nothing — not even a process spawn.
+    expect(calls()).toBe("");
+  });
+
+  test("marker present → resolves the session and its project", () => {
+    adopt("adopted-sid", "some-project");
+
+    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(code).toBe(0);
+    expect(calls()).toContain("--session-id adopted-sid");
+    // Without the project the bin would write into whichever project happens
+    // to be active in the registry when the hook fires.
+    expect(calls()).toContain("project=some-project");
+  });
+
+  test("marker present → conversation id is claude's own session id", () => {
+    adopt("adopted-sid", "some-project");
+
+    run("on-permission-done.sh", TOOL_INPUT, {
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    // `bertrand adopt` keyed the conversation row on claude's session id, so
+    // events have to carry that same value as claude_id.
+    expect(calls()).toContain(CLAUDE_SID);
+  });
+
+  test("env wins over the marker, and never leaks the marker's project", () => {
+    adopt("adopted-sid", "marker-project");
+
+    run("on-permission-done.sh", TOOL_INPUT, {
+      BERTRAND_SESSION: "env-sid",
+      BERTRAND_CLAUDE_ID: "env-cid",
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(calls()).toContain("--session-id env-sid");
+    expect(calls()).not.toContain("adopted-sid");
+    expect(calls()).toContain("project=<unset>");
+  });
+
+  test("no CLAUDE_CODE_SESSION_ID → no-op, even with markers around", () => {
+    adopt("adopted-sid", "some-project");
+
+    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(code).toBe(0);
+    expect(calls()).toBe("");
+  });
+
+  test("marker missing its session field → no-op, not a half-resolved session", () => {
+    // A partial write must not resolve: a session id without its project would
+    // land the events in the wrong DB.
+    writeFileSync(marker(`adopted-${CLAUDE_SID}`), "project=orphan\n");
+
+    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(code).toBe(0);
+    expect(calls()).toBe("");
+  });
+
+  test("every hook carries the fallback, not just the one under test", () => {
+    // The guard is shared, so this is what keeps a future hook from being
+    // added with the old two-line BERTRAND_SESSION-only check.
+    for (const name of Object.keys(HOOK_SCRIPTS) as (keyof typeof HOOK_SCRIPTS)[]) {
+      const script = HOOK_SCRIPTS[name]("BIN", "RUNTIME");
+      expect(script).toContain('ccid="${CLAUDE_CODE_SESSION_ID:-}"');
+      expect(script).toContain('adopted="RUNTIME/adopted-$ccid"');
+      expect(script).toContain("export BERTRAND_PROJECT");
+    }
+  });
+
+  test("the no-op path spawns nothing and parses no payload", () => {
+    // Hooks are hot-path: every claude on the machine fires them. The guard
+    // must stay bash builtins only — no jq, no grep, no subshell — before it
+    // knows the session is ours.
+    const guard = HOOK_SCRIPTS["on-done.sh"]("BIN", "RUNTIME")
+      .split("\nfi\n")[0]!;
+    expect(guard).not.toContain("jq");
+    expect(guard).not.toContain("grep");
+    expect(guard).not.toContain("$(cat)");
+    expect(guard).not.toContain("session_id\":");
   });
 });
