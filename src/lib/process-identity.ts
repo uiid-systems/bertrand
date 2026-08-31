@@ -26,6 +26,33 @@ export function parseEtimeMs(etime: string): number | null {
   );
 }
 
+/**
+ * Epoch ms when `pid` started, derived as `now − etime` — the same arithmetic
+ * {@link verifyPidIdentity} runs against the recorded value, so the two agree
+ * by construction.
+ *
+ * Every other caller records `Date.now()`, which is correct for them: they
+ * spawn the process and write the pid and the timestamp in the same breath.
+ * Adoption records a pid for a process it did not spawn and that may have been
+ * running for a while — `Date.now()` there is off by the process's whole age,
+ * which blows past `verifyPidIdentity`'s 120s tolerance. `isFreshClaim` masks
+ * that for the first minute; after it lapses, session recovery reaps a session
+ * that is very much alive.
+ *
+ * Null when the process is gone or `ps` cannot be read. The caller then stores
+ * a null `pidStartedAt`, degrading identity to a bare liveness probe rather
+ * than recording a timestamp known to be wrong.
+ */
+export function processStartedAt(pid: number): Promise<number | null> {
+  return new Promise((resolve) => {
+    execFile("ps", ["-o", "etime=", "-p", String(pid)], (err, stdout) => {
+      if (err) return resolve(null); // process gone
+      const elapsed = parseEtimeMs(stdout);
+      resolve(elapsed == null ? null : Date.now() - elapsed);
+    });
+  });
+}
+
 /** Liveness only — says nothing about whether it's still *our* process. */
 export function isProcessAlive(pid: number): boolean {
   try {

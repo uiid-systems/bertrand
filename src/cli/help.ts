@@ -44,6 +44,10 @@ Manage sessions & projects:
   bertrand archive <session>   Archive or unarchive a session.
   bertrand rename <session> <new-slug>
                                Rename a session; its old name keeps resolving.
+  bertrand adopt               Record the claude session running in this terminal
+                               as a bertrand session, back-filling the conversation
+                               so far. For claudes bertrand didn't launch (an ADE,
+                               or \`claude\` by hand). (bertrand adopt --help)
   bertrand project <op>        list | create | switch | current | rename | remove | import
                                (bertrand project --help)
   bertrand sync <op>           onboard | push | pull | status | invite | enable | disable
