@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.42.0](https://github.com/uiid-systems/bertrand/compare/v0.41.0...v0.42.0) (2026-08-31)
+
+
+### Features
+
+* add bertrand adopt for claude sessions bertrand didn't launch (ELKY-180) ([#284](https://github.com/uiid-systems/bertrand/issues/284)) ([9074429](https://github.com/uiid-systems/bertrand/commit/907442976e78c03ad38cf314567ccb09948f765f))
+* add the /bertrand slash command (ELKY-182) ([#286](https://github.com/uiid-systems/bertrand/issues/286)) ([2f46400](https://github.com/uiid-systems/bertrand/commit/2f464009c63cc9b241c789f4ff92297f6409ecaa))
+* auto-create a session on the first unseen session_id (ELKY-175) ([#290](https://github.com/uiid-systems/bertrand/issues/290)) ([a018b7a](https://github.com/uiid-systems/bertrand/commit/a018b7af946ddb7642aa6ea059f5052c12e72f57))
+* key the hook guards off the payload session_id (ELKY-174) ([#292](https://github.com/uiid-systems/bertrand/issues/292)) ([0bc6e1f](https://github.com/uiid-systems/bertrand/commit/0bc6e1f5b29c36d37543218043190b34e6cb7b98))
+* resolve adopted sessions in the hook guards (ELKY-181) ([#285](https://github.com/uiid-systems/bertrand/issues/285)) ([45d527d](https://github.com/uiid-systems/bertrand/commit/45d527de1e4729a7d9f5c91a0511ce521c09e4a0))
+
+
+### Bug Fixes
+
+* end and clean up adopted sessions when claude exits (ELKY-183) ([#287](https://github.com/uiid-systems/bertrand/issues/287)) ([312e503](https://github.com/uiid-systems/bertrand/commit/312e503bc062938b7a00f439645644bf4f1892fa))
+
+
+### Refactoring
+
+* demote src/engine and src/tui from foundation to optional (ELKY-176) ([#291](https://github.com/uiid-systems/bertrand/issues/291)) ([865b86b](https://github.com/uiid-systems/bertrand/commit/865b86bcba881dd9ffffc6c725d47f31c3938956))
+
 ## [0.41.0](https://github.com/uiid-systems/bertrand/compare/v0.40.0...v0.41.0) (2026-08-30)
 
 
