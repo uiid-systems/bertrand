@@ -24,6 +24,51 @@
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
 
 /**
+ * Session resolution — the first thing every hook does, and the only thing
+ * most of them ever do.
+ *
+ * `BERTRAND_SESSION` is exported by bertrand's own claude spawn, so its
+ * presence means this claude is launched-and-tracked. It wins outright.
+ *
+ * Otherwise the session may have been *adopted* (`bertrand adopt`, ELKY-179).
+ * Adoption cannot export anything into an already-running claude — hook
+ * subprocesses inherit claude's spawn-time environment — so it leaves a marker
+ * keyed by claude's own session id instead. Claude exports that id to every
+ * hook subprocess as `CLAUDE_CODE_SESSION_ID`, so the lookup is a path built
+ * from an env var and one `[ -f ]` test: no payload parsing, no subprocess, no
+ * measurable cost on the path that matters. Which is the no-op path — every
+ * claude on the machine fires these hooks, and almost none of them are ours.
+ *
+ * The marker carries the project as well as the session because an adopted
+ * claude never inherited `BERTRAND_PROJECT` either. Without exporting it, the
+ * bin would write into whichever project happens to be active in the registry
+ * when the hook fires, which has no relation to the session it just resolved.
+ *
+ * Defines `sid` and `cid` for the rest of the script. On an adopted session
+ * the conversation id *is* claude's session id — that is what `adopt` keyed
+ * the conversation row on.
+ */
+function sessionGuard(runtimeDir: string): string {
+  return `sid="\${BERTRAND_SESSION:-}"
+cid="\${BERTRAND_CLAUDE_ID:-}"
+if [ -z "$sid" ]; then
+  ccid="\${CLAUDE_CODE_SESSION_ID:-}"
+  [ -z "$ccid" ] && exit 0
+  adopted="${runtimeDir}/adopted-$ccid"
+  [ -f "$adopted" ] || exit 0
+  while IFS='=' read -r k v || [ -n "$k" ]; do
+    case "$k" in
+      session) sid="$v" ;;
+      project) BERTRAND_PROJECT="$v" ;;
+    esac
+  done < "$adopted"
+  [ -z "$sid" ] && exit 0
+  [ -n "\${BERTRAND_PROJECT:-}" ] && export BERTRAND_PROJECT
+  cid="$ccid"
+fi`;
+}
+
+/**
  * Quiet-bertrand helper. Every hook prepends this so all `bq <subcommand>` calls
  * route stderr to /dev/null and never exit non-zero. Internal failures (DB
  * locks, schema races, bun panics) stay invisible to Claude. Deliberate
@@ -38,8 +83,7 @@ export function waitingScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
 
@@ -52,7 +96,6 @@ if printf '%s' "$input" | jq -e '.tool_input.questions[]? | select(.multiSelect 
   exit 2
 fi
 
-cid="\${BERTRAND_CLAUDE_ID:-}"
 
 # Extract question — grep for simple field extraction (~1ms vs jq ~15ms)
 question="$(printf '%s' "$input" | grep -o '"question":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-2000)"
@@ -81,11 +124,9 @@ export function answeredScript(bin: string, runtimeDir: string): string {
 # This is the mechanical enforcement of the contract's loop-exit rule — the
 # contract prose is a soft hint, this JSON is the guarantee.
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
-cid="\${BERTRAND_CLAUDE_ID:-}"
 
 # Capture the full AskUserQuestion payload so the UI can render picked vs
 # unpicked options alongside the user's answer. tool_input.questions carries
@@ -126,8 +167,7 @@ export function permissionWaitScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PermissionRequest → mark pending, flip session to blocked
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
 ${EXTRACT_TOOL}
@@ -161,8 +201,7 @@ export function permissionDoneScript(bin: string, runtimeDir: string): string {
 #      PostToolUse, so absence of a tool.used after a permission.request means
 #      the user said no.
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
 ${EXTRACT_TOOL}
@@ -185,7 +224,6 @@ if [ -f "$marker" ]; then
   bq update --session-id "$sid" --event session.active &
 fi
 
-cid="\${BERTRAND_CLAUDE_ID:-}"
 
 case "$tool" in
   Edit|Write|MultiEdit)
@@ -249,11 +287,9 @@ export function userPromptScript(bin: string, runtimeDir: string): string {
 # Full contract on the first prompt of each conversation, a one-line reminder
 # thereafter, to keep the per-turn token cost low.
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
-cid="\${BERTRAND_CLAUDE_ID:-}"
 
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
@@ -291,11 +327,9 @@ export function doneScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: Stop → enforce AUQ loop, else flip session status to paused.
 ${quietHelper(bin)}
-sid="\${BERTRAND_SESSION:-}"
-[ -z "$sid" ] && exit 0
+${sessionGuard(runtimeDir)}
 
 input="$(cat)"
-cid="\${BERTRAND_CLAUDE_ID:-}"
 
 done_marker="${runtimeDir}/done-$sid"
 nudge_marker="${runtimeDir}/auq-nudge-$sid"
