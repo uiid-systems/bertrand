@@ -35,6 +35,20 @@ export interface ProjectEntry {
   lastUsedAt: string;
   color?: string;
   repo?: ProjectRepo;
+  /**
+   * Record claude sessions started outside bertrand in this project (ELKY-175).
+   *
+   * Off unless the user turns it on, and per project rather than global,
+   * because the cost of being wrong is asymmetric: a project that wants
+   * everything captured says so once, while every other repo on the machine
+   * stays untouched. Opt-in is also what keeps auto-creation from re-opening
+   * the curation question the TUI's launch step used to answer —
+   * `docs/session-identity.md`, "Drift: the required position".
+   *
+   * Meaningful only on a project with a `repo` binding: a cwd is matched to a
+   * project by git origin, so an unbound project can never be the answer.
+   */
+  autoAdopt?: boolean;
 }
 
 export interface ProjectRegistry {

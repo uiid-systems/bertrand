@@ -65,6 +65,29 @@ export function findProjectByRepo(identity: ProviderIdentity): ProjectEntry | un
 }
 
 /**
+ * The project a directory belongs to, resolved by git origin.
+ *
+ * Deliberately *not* a path-prefix match against each project's `repo.path`.
+ * 13 of the 22 cwds on the machine this was measured against are Orca
+ * workspaces — linked worktrees living under no registered checkout — and
+ * prefix matching misses every one of them. Origin matching gets all 101
+ * transcripts, because `resolveRepoAt` normalizes a linked worktree to its
+ * main checkout before reading the remote (`docs/session-identity.md`, Q4).
+ *
+ * Null for a directory that is not a git repo, has no GitHub `origin`, or
+ * whose origin no project is bound to. Callers must treat that as "not our
+ * business" — never as license to invent a project, which is a policy
+ * decision reserved to the human (see {@link UnboundProjectError}).
+ */
+export async function resolveProjectForCwd(
+  cwd: string,
+): Promise<ProjectEntry | null> {
+  const resolution = await resolveRepoAt(resolvePath(cwd));
+  if (!resolution.ok) return null;
+  return findProjectByRepo(resolution.repo.provider) ?? null;
+}
+
+/**
  * Strip `user:token@` from a remote before it is echoed back.
  *
  * A remote can carry an embedded credential, and this message goes to stdout —

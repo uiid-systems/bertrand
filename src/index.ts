@@ -12,6 +12,8 @@ const hotPath: Record<string, () => Promise<unknown>> = {
   contract: () => import("./cli/commands/contract"),
   serve: () => import("./cli/commands/serve"),
   "ensure-server": () => import("./cli/commands/ensure-server"),
+  // Hook-fired, so it loads on its own rather than dragging in the TUI.
+  "auto-adopt": () => import("./cli/commands/auto-adopt"),
   sync: () => import("./cli/commands/sync"),
 };
 
@@ -29,6 +31,7 @@ if (command && command in hotPath) {
     import("./cli/commands/archive"),
     import("./cli/commands/rename"),
     import("./cli/commands/adopt"),
+    import("./cli/commands/auto-adopt"),
     import("./cli/commands/update"),
     import("./cli/commands/ingest-transcript"),
     import("./cli/commands/contract"),

@@ -11,6 +11,8 @@ import {
   removeProject,
   getProjectRepo,
   setProjectRepo,
+  getProjectAutoAdopt,
+  setProjectAutoAdopt,
   type ProjectRepo,
 } from "@/lib/projects/registry";
 import { projectPaths, isValidSlug } from "@/lib/projects/paths";
@@ -145,6 +147,7 @@ export function listSubcommand(args: string[]): void {
     // Null when unbound. False marks a binding stored before enterprise hosts
     // had to be declared, whose host nothing in config vouches for now.
     repoHostTrusted: p.repo ? isDeclaredHost(p.repo.provider.host) : null,
+    autoAdopt: p.autoAdopt === true,
   }));
 
   if (isJson) {
@@ -171,9 +174,16 @@ export function listSubcommand(args: string[]): void {
       ? `${formatIdentity(r.repo.provider)}${r.repoHostTrusted ? "" : " (!)"}`
       : "unlinked";
   const maxRepo = Math.max(...rows.map((r) => repoLabel(r).length), 4);
+  // Only shown once something is opted in. Off is the default and the
+  // overwhelmingly common state, and a column of blanks would cost every
+  // reader a glance to learn it says nothing.
+  const showAuto = rows.some((r) => r.autoAdopt);
+  const autoHeader = showAuto ? `${"AUTO".padEnd(5)}  ` : "";
+  const autoCell = (r: (typeof rows)[number]) =>
+    showAuto ? `${(r.autoAdopt ? "on" : "").padEnd(5)}  ` : "";
 
   console.log(
-    `${dim}  ${"SLUG".padEnd(maxSlug)}  ${"NAME".padEnd(maxName)}  ${"REPO".padEnd(maxRepo)}  ${"SESSIONS".padEnd(10)}  LAST USED${reset}`,
+    `${dim}  ${"SLUG".padEnd(maxSlug)}  ${"NAME".padEnd(maxName)}  ${"REPO".padEnd(maxRepo)}  ${autoHeader}${"SESSIONS".padEnd(10)}  LAST USED${reset}`,
   );
   for (const r of rows) {
     const marker = r.active ? `${bold}*${reset}` : " ";
@@ -185,7 +195,7 @@ export function listSubcommand(args: string[]): void {
       ? repoLabel(r).padEnd(maxRepo)
       : `${dim}${repoLabel(r).padEnd(maxRepo)}${reset}`;
     console.log(
-      `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${repoCell}  ${sessionStr}  ${ago}`,
+      `${marker} ${r.slug.padEnd(maxSlug)}  ${r.name.padEnd(maxName)}  ${repoCell}  ${autoCell(r)}${sessionStr}  ${ago}`,
     );
   }
 
@@ -312,9 +322,12 @@ export function currentSubcommand(args: string[]): void {
   const repo = getProjectRepo(active.slug) ?? null;
 
   const repoHostTrusted = repo ? isDeclaredHost(repo.provider.host) : null;
+  const autoAdopt = getProjectAutoAdopt(active.slug);
 
   if (isJson) {
-    console.log(JSON.stringify({ ...active, repo, repoHostTrusted }, null, 2));
+    console.log(
+      JSON.stringify({ ...active, repo, repoHostTrusted, autoAdopt }, null, 2),
+    );
     return;
   }
   console.log(`Active project: ${active.slug} (${active.name})`);
@@ -332,6 +345,62 @@ export function currentSubcommand(args: string[]): void {
     }
   } else {
     console.log(`  Repo:    unlinked (bertrand project link ${active.slug} <path>)`);
+  }
+  console.log(
+    `  Auto:    ${autoAdopt ? "on" : "off"} (bertrand project auto ${active.slug} ${autoAdopt ? "off" : "on"})`,
+  );
+}
+
+/**
+ * `bertrand project auto <slug> [on|off]` — read or set whether this project
+ * records claude sessions bertrand did not launch.
+ *
+ * Bare (no on/off) reports rather than toggling. A toggle would make the
+ * command's effect depend on state the user can't see from the command line,
+ * which is the wrong shape for something that changes what gets recorded.
+ */
+export function autoSubcommand(args: string[]): void {
+  const [slug, state] = positional(args);
+  if (!slug) {
+    throw new UsageError("Usage: bertrand project auto <slug> [on|off]");
+  }
+  const entry = listProjects().find((p) => p.slug === slug);
+  if (!entry) {
+    throw new UsageError(`Unknown project slug "${slug}".`);
+  }
+
+  if (state === undefined) {
+    console.log(
+      `Auto-adopt is ${entry.autoAdopt === true ? "on" : "off"} for "${slug}".`,
+    );
+    return;
+  }
+  if (state !== "on" && state !== "off") {
+    throw new UsageError(
+      `Expected "on" or "off", got "${state}". Usage: bertrand project auto <slug> [on|off]`,
+    );
+  }
+
+  // Refused rather than stored-and-ignored. A cwd is matched to a project by
+  // its git origin (`resolveProjectForCwd`), so an unbound project is one no
+  // directory can ever resolve to — turning the flag on there would look like
+  // it worked and then never fire.
+  if (state === "on" && !entry.repo) {
+    throw new UsageError(
+      `Cannot enable auto-adopt for "${slug}": it is not attached to a repository.\n` +
+        `  Sessions are matched to a project by git origin, so an unlinked project\n` +
+        `  can never be resolved from a directory.\n` +
+        `  Attach one with: bertrand project link ${slug} <path-to-repo>`,
+    );
+  }
+
+  setProjectAutoAdopt(slug, state === "on");
+  console.log(`Auto-adopt is now ${state} for "${slug}".`);
+  if (state === "on") {
+    console.log(
+      `  claude sessions started in ${formatIdentity(entry.repo!.provider)} outside bertrand\n` +
+        `  will be recorded from their second prompt onward.`,
+    );
   }
 }
 
@@ -449,6 +518,7 @@ Usage:
   bertrand project link <slug> <path>             Attach a project to a GitHub checkout
   bertrand project switch <slug>                  Set the active project
   bertrand project current [--json]               Show the active project
+  bertrand project auto <slug> [on|off]           Record claude sessions bertrand didn't launch
   bertrand project rename <slug> <new-name>       Rename a project (display name only)
   bertrand project remove <slug> [--force] [--purge]
                                                   Remove a project entry
@@ -462,6 +532,7 @@ const KNOWN_SUBS = new Set([
   "link",
   "switch",
   "current",
+  "auto",
   "rename",
   "remove",
   "import",
@@ -483,6 +554,8 @@ register("project", async (args) => {
         return switchSubcommand(args.slice(1));
       case "current":
         return currentSubcommand(args.slice(1));
+      case "auto":
+        return autoSubcommand(args.slice(1));
       case "rename":
         return renameSubcommand(args.slice(1));
       case "remove":

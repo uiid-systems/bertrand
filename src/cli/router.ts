@@ -25,6 +25,7 @@ const HOOK_COMMANDS = new Set([
   "ingest-transcript",
   "contract",
   "ensure-server",
+  "auto-adopt",
 ]);
 
 export function register(name: string, handler: CommandHandler) {

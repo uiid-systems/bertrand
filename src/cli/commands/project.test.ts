@@ -9,6 +9,7 @@ import {
   listProjects,
   getActiveProjectSlug,
   getProjectRepo,
+  getProjectAutoAdopt,
 } from "@/lib/projects/registry";
 import { _resetRepoCache, _setGitRunner, type GitRunner } from "@/lib/github/resolve";
 import { projectPaths } from "@/lib/projects/paths";
@@ -23,6 +24,7 @@ import {
   linkSubcommand,
   switchSubcommand,
   currentSubcommand,
+  autoSubcommand,
   renameSubcommand,
   removeSubcommand,
   _UsageError,
@@ -584,5 +586,78 @@ describe("repo binding in list and current", () => {
     const { out } = withCapturedOutput(() => currentSubcommand(["--json"]));
     const parsed = JSON.parse(out.join("\n")) as { repo: { path: string } | null };
     expect(parsed.repo?.path).toBe("/src/acme");
+  });
+});
+
+describe("project auto", () => {
+  /** Seed an activated project already linked to a GitHub remote. */
+  async function seedLinked(slug = "acme"): Promise<void> {
+    await seedProject(slug, { activate: true });
+    _setGitRunner(fakeGit({ [`/src/${slug}`]: `git@github.com:acme/${slug}.git` }));
+    await withCapturedOutputAsync(() => linkSubcommand([slug, `/src/${slug}`]));
+  }
+
+  test("reports the current state without changing it", async () => {
+    await seedLinked();
+    const { out } = withCapturedOutput(() => autoSubcommand(["acme"]));
+    expect(out.join("\n")).toContain("off");
+    expect(getProjectAutoAdopt("acme")).toBe(false);
+  });
+
+  test("on then off round-trips", async () => {
+    await seedLinked();
+
+    const on = withCapturedOutput(() => autoSubcommand(["acme", "on"]));
+    expect(getProjectAutoAdopt("acme")).toBe(true);
+    // The message has to say what was just turned on, since the effect is
+    // invisible until some claude starts somewhere else.
+    expect(on.out.join("\n")).toContain("second prompt");
+
+    withCapturedOutput(() => autoSubcommand(["acme", "off"]));
+    expect(getProjectAutoAdopt("acme")).toBe(false);
+  });
+
+  test("refuses to enable on an unlinked project", async () => {
+    await seedProject("loose", { activate: true });
+    // A cwd is matched to a project by git origin, so an unlinked project is
+    // one no directory can ever resolve to — storing the flag would look like
+    // it worked and then never fire.
+    expect(() => autoSubcommand(["loose", "on"])).toThrow(/not attached to a repository/);
+    expect(getProjectAutoAdopt("loose")).toBe(false);
+  });
+
+  test("disabling an unlinked project is still allowed", async () => {
+    await seedProject("loose", { activate: true });
+    withCapturedOutput(() => autoSubcommand(["loose", "off"]));
+    expect(getProjectAutoAdopt("loose")).toBe(false);
+  });
+
+  test("rejects an unknown slug and an unrecognized state", async () => {
+    await seedLinked();
+    expect(() => autoSubcommand(["nope", "on"])).toThrow(/Unknown project slug/);
+    expect(() => autoSubcommand(["acme", "yes"])).toThrow(/Expected "on" or "off"/);
+    expect(() => autoSubcommand([])).toThrow(/Usage/);
+  });
+
+  test("list surfaces the column only once something is opted in", async () => {
+    await seedLinked();
+
+    const before = withCapturedOutput(() => listSubcommand([]));
+    expect(before.out.join("\n")).not.toContain("AUTO");
+
+    withCapturedOutput(() => autoSubcommand(["acme", "on"]));
+    const after = withCapturedOutput(() => listSubcommand([]));
+    expect(after.out.join("\n")).toContain("AUTO");
+  });
+
+  test("list --json and current --json both carry the flag", async () => {
+    await seedLinked();
+    withCapturedOutput(() => autoSubcommand(["acme", "on"]));
+
+    const list = withCapturedOutput(() => listSubcommand(["--json"]));
+    expect(JSON.parse(list.out.join("\n"))[0].autoAdopt).toBe(true);
+
+    const current = withCapturedOutput(() => currentSubcommand(["--json"]));
+    expect(JSON.parse(current.out.join("\n")).autoAdopt).toBe(true);
   });
 });

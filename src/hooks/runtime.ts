@@ -26,6 +26,13 @@ import { isProcessAlive } from "@/lib/process-identity";
  * to a session: the hook guards fall back to it when `BERTRAND_SESSION` is
  * absent from their env, keying off the `session_id` in their own payload.
  *
+ * `autocreate-$cid` is the gate in front of *automatic* adoption (ELKY-175),
+ * and it is a three-state file read entirely with bash builtins: absent means
+ * this conversation has submitted no prompt yet, present-and-empty means it
+ * has submitted exactly one (the materiality gate — one prompt is not yet work
+ * worth recording), and non-empty means auto-adoption has already declined for
+ * a reason that will not change. See {@link markAutoCreateDeclined}.
+ *
  * Two cleanup paths cover both cases:
  *   - pruneSessionMarkers: immediate, happy-path cleanup keyed to the session
  *     and conversation bertrand owns. Adopted sessions reach it too, since
@@ -36,6 +43,7 @@ import { isProcessAlive } from "@/lib/process-identity";
 
 const CONTRACT_MARKER_PREFIX = "contract-sent-";
 const ADOPTION_MARKER_PREFIX = "adopted-";
+const AUTO_CREATE_MARKER_PREFIX = "autocreate-";
 
 /** Default age past which an orphaned contract-sent marker is swept. */
 const STALE_MS = 24 * 60 * 60 * 1000;
@@ -92,6 +100,11 @@ export function pruneSessionMarkers(
   rmMarker(`worktree-${sessionId}`);
   if (conversationId) {
     rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
+    // Dropped along with the adoption marker so a `claude --resume` of this
+    // conversation re-arms the same way a fresh one does: one prompt to prove
+    // materiality, then a re-attach. Left behind, an already-declined gate
+    // would keep a resumed session unrecorded forever.
+    rmMarker(`${AUTO_CREATE_MARKER_PREFIX}${conversationId}`);
     // The session this marker points at has just been finalized, so leaving it
     // would let a `claude --resume` of the same conversation keep writing
     // events onto a row that already has an endedAt and materialized stats.
@@ -101,10 +114,10 @@ export function pruneSessionMarkers(
 }
 
 /**
- * Sweep orphaned `contract-sent-*` and `adopted-*` markers older than
- * `maxAgeMs`. The backstop for markers whose session bertrand never finalized;
+ * Sweep orphaned `contract-sent-*`, `adopted-*` and `autocreate-*` markers
+ * older than `maxAgeMs`. The backstop for markers whose session bertrand never finalized;
  * the happy path is pruneSessionMarkers. Safe to call on every launch — it
- * touches only those two prefixes and tolerates a missing runtime dir.
+ * touches only those three prefixes and tolerates a missing runtime dir.
  *
  * Age alone can't decide an adoption marker's fate. A contract marker has done
  * its job the moment the conversation moves on, but an adopted claude can sit
@@ -124,7 +137,12 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
   for (const name of entries) {
     const isContract = name.startsWith(CONTRACT_MARKER_PREFIX);
     const isAdoption = name.startsWith(ADOPTION_MARKER_PREFIX);
-    if (!isContract && !isAdoption) continue;
+    // Swept on age like a contract marker rather than on liveness like an
+    // adoption one. It holds no session state — only "we already decided" —
+    // so the worst a premature sweep costs is one more `auto-adopt` spawn that
+    // reaches the same conclusion.
+    const isAutoCreate = name.startsWith(AUTO_CREATE_MARKER_PREFIX);
+    if (!isContract && !isAdoption && !isAutoCreate) continue;
 
     if (isAdoption) {
       // Liveness only, no identity check: a recycled pid at worst keeps a dead
@@ -164,6 +182,35 @@ export interface AdoptionMarker {
  */
 export function adoptionMarkerPath(claudeSessionId: string): string {
   return join(runtimeDir, `${ADOPTION_MARKER_PREFIX}${claudeSessionId}`);
+}
+
+/**
+ * Path of the gate that decides whether automatic adoption may run for this
+ * claude session. Keyed by claude's own session id, like the adoption marker,
+ * because the hook that reads it has that id in its environment and nothing
+ * else to key on.
+ */
+export function autoCreateGatePath(claudeSessionId: string): string {
+  return join(runtimeDir, `${AUTO_CREATE_MARKER_PREFIX}${claudeSessionId}`);
+}
+
+/**
+ * Record that automatic adoption has declined this conversation for good.
+ *
+ * Content over existence: the hook already writes this file *empty* on the
+ * first user prompt to arm the materiality gate, so "we decided no" has to be
+ * distinguishable from "we've seen one prompt". Non-empty is that signal, and
+ * it costs the hook a `[ -s ]` — a bash builtin — rather than a `grep`.
+ *
+ * The reason is written for the human debugging why a session never appeared;
+ * nothing parses it.
+ */
+export function markAutoCreateDeclined(
+  claudeSessionId: string,
+  reason: string,
+): void {
+  mkdirSync(runtimeDir, { recursive: true });
+  writeFileSync(autoCreateGatePath(claudeSessionId), `declined=${reason}\n`);
 }
 
 /**
