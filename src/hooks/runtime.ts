@@ -53,6 +53,30 @@ function rmMarker(name: string): void {
 }
 
 /**
+ * Path of the once-per-conversation marker that downgrades contract delivery
+ * from the full text to a one-line reminder. Keyed by conversation id, falling
+ * back to the session id for a session with no conversation of its own —
+ * exactly the `${cid:-$sid}` the UserPromptSubmit hook builds.
+ */
+export function contractMarkerPath(conversationId: string): string {
+  return join(runtimeDir, `${CONTRACT_MARKER_PREFIX}${conversationId}`);
+}
+
+/**
+ * Record that the full contract has been delivered for this conversation.
+ *
+ * Normally the UserPromptSubmit hook writes this as it prints the contract.
+ * The `/bertrand` command has to print the contract itself — an adopted
+ * session's first user interaction is often an AskUserQuestion answer, which
+ * is a tool result and fires no UserPromptSubmit — so it marks it here
+ * instead, and the hook correctly degrades to the reminder from then on.
+ */
+export function markContractSent(conversationId: string): void {
+  mkdirSync(runtimeDir, { recursive: true });
+  writeFileSync(contractMarkerPath(conversationId), "");
+}
+
+/**
  * Remove the markers owned by a finished session/conversation. Best-effort —
  * a missing file is a no-op, and a missing runtime dir is ignored.
  */

@@ -45,6 +45,20 @@ export function applyProjectFlag(slug: string | undefined): void {
     );
     process.exit(1);
   }
+  useProject(slug);
+}
+
+/**
+ * Switch project without the registry check.
+ *
+ * For slugs bertrand produced itself rather than read off a command line — an
+ * adoption marker's `project=`, say. Those name a project that was active when
+ * it was written, which on a fresh install is `default`: real, in use, and not
+ * in the registry, because nothing has called `project create`. Routing them
+ * through {@link applyProjectFlag} would exit(1) on a perfectly good session.
+ * A typo can't reach here; only a mistyped flag needs to fail loudly.
+ */
+export function useProject(slug: string): void {
   process.env.BERTRAND_PROJECT = slug;
   _resetActiveProjectCache();
 }
