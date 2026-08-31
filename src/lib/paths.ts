@@ -24,6 +24,13 @@ export const paths = {
    * Created lazily by the hook scripts themselves via `mkdir -p`.
    */
   runtime: join(homedir(), BERTRAND_DIR, "run"),
+  /**
+   * Claude Code's own user-level directories. bertrand writes two things here:
+   * the hook wiring in `settings.json` and the `/bertrand` slash command in
+   * `commands/`. Both are shared with the user's own configuration, so every
+   * write into them is surgical — see hooks/settings.ts and claude/commands.ts.
+   */
+  claudeCommands: join(homedir(), ".claude", "commands"),
   /** @deprecated Use `resolveActiveProject().db`. Removed in PR2. */
   db: join(homedir(), BERTRAND_DIR, "bertrand.db"),
   /** @deprecated Use `resolveActiveProject().syncEnv`. Removed in PR6. */

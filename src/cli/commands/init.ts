@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, chmodSync } from "fs";
 import { join } from "path";
 import { register } from "@/cli/router";
 import { runMigrations } from "@/db/migrate";
+import { installClaudeCommands } from "@/claude/commands";
 import { installHookScripts } from "@/hooks/install";
 import { installHookSettings } from "@/hooks/settings";
 import { paths } from "@/lib/paths";
@@ -80,7 +81,11 @@ register("init", async () => {
   installHookScripts(bin);
   installHookSettings();
 
-  // 6. Completions
+  // 6. The /bertrand slash command. Same bin, because it tells the model what
+  // to run and the Bash tool's PATH is the user's, not ours.
+  installClaudeCommands(bin);
+
+  // 7. Completions
   generateCompletions();
 
   console.log("\nDone. Run `bertrand` to get started.");

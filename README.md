@@ -50,7 +50,8 @@ This:
 1. Creates `~/.bertrand/` with `config.json` and `bertrand.db`.
 2. Installs hook scripts to `~/.bertrand/hooks/`.
 3. Registers them in `~/.claude/settings.json`.
-4. Writes shell completions to `~/.bertrand/completions/`.
+4. Installs the `/bertrand` slash command to `~/.claude/commands/bertrand.md`.
+5. Writes shell completions to `~/.bertrand/completions/`.
 
 Re-run `init` whenever bertrand updates — hook scripts are versioned and may need refreshing.
 
@@ -63,6 +64,25 @@ bertrand
 ```
 
 Opens an Ink TUI to type a session name (e.g. `bertrand/fix-recap-render`, `frontend/ENG-142-auth`). Slashes nest the session under group folders. Claude Code launches with the bertrand contract applied.
+
+### Attach a session you didn't launch through bertrand
+
+If Claude Code is already running — you opened it directly, or an ADE like orca
+spawned it — type:
+
+```
+/bertrand
+```
+
+That records the conversation so far, starts capturing the rest of it, and
+applies the contract from that turn on. Pass work along with it
+(`/bertrand fix the flaky test`) and the session starts on it immediately.
+
+`bertrand adopt` is the same thing without the slash command, for a terminal
+you're already in.
+
+An attached session goes in unnamed and is named from its own transcript at the
+first pause, exactly like a launched one.
 
 ### Resume
 

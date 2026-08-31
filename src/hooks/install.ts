@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "fs";
 import { join } from "path";
+import { claudeCommandsAreCurrent, installClaudeCommands } from "@/claude/commands";
 import { readConfig } from "@/lib/config";
 import { paths } from "@/lib/paths";
 import { HOOK_SCRIPTS } from "./scripts";
@@ -84,7 +85,8 @@ export function hookScriptsAreCurrent(bin: string, opts: InstallOptions = {}): b
 }
 
 /**
- * Self-heal installed hooks when they drift from this binary.
+ * Self-heal installed hooks — and the /bertrand command — when they drift from
+ * this binary.
  *
  * The TS rebuild dropped the Go version's install-on-upgrade behavior, and a
  * binary upgrade alone doesn't refresh ~/.bertrand/hooks — stale scripts kept
@@ -105,8 +107,15 @@ export function ensureHooksCurrent(): boolean {
   } catch {
     return false;
   }
-  if (hookScriptsAreCurrent(bin) && hookSettingsAreCurrent()) return false;
+  if (
+    hookScriptsAreCurrent(bin) &&
+    hookSettingsAreCurrent() &&
+    claudeCommandsAreCurrent(bin)
+  ) {
+    return false;
+  }
   installHookScripts(bin, { quiet: true });
   installHookSettings({ quiet: true });
+  installClaudeCommands(bin, { quiet: true });
   return true;
 }
