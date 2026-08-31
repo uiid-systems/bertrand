@@ -63,8 +63,8 @@ Two of these carry most of the design:
 ### The ladder
 
 1. **`BERTRAND_SESSION` (env).** Bertrand launched this claude. Always wins; the
-   hook never consults a marker when it is set (`src/hooks/scripts.ts:41, 84, 129,
-   164, 252, 294`).
+   hook never consults a marker when it is set (`sessionGuard`,
+   `src/hooks/scripts.ts` — one shared guard, emitted into all six scripts).
 2. **`adopted-<session_id>` marker.** Someone adopted this claude. Read the bertrand
    session id and project slug out of it.
 3. **Auto-create** (Phase 2 only, and only through the gates in
@@ -322,9 +322,44 @@ actually cares about.
 - **Whether to hook `SessionStart`** (ELKY-175's own question). This doc constrains
   it only to being a detection point, not a creation point.
 - **Preferences** (ELKY-179 Phase 3). Nothing here creates a place to hang them.
-- **The greedy-match caveat from the ELKY-179 spike:** grep-based extraction takes
-  the first `"session_id"` in the payload. Confirm no event type nests a second one
-  before the fallback ships (ELKY-174).
+
+---
+
+---
+
+## Closed since: the greedy-match caveat (ELKY-174, 2026-08-31)
+
+The ELKY-179 spike left one question open — extraction takes the *first*
+`"session_id"` in the payload, so does any event type nest a second one? Measured
+against six concurrent claude sessions on the personal laptop:
+
+- **`session_id` is the payload's first field.** Key order, identical in every
+  capture: `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+  `effort`, `hook_event_name`, `tool_name`, `tool_input`, `tool_response`,
+  `tool_use_id`, `duration_ms`.
+- **A nested occurrence cannot collide.** Payload strings arrive escaped, so a
+  `tool_input` carrying the literal text `{"session_id":"…"}` — this repo's own hook
+  tests do — appears as `\"session_id\":\"` and never matches the unescaped
+  pattern. Verified by firing a hook with a decoy id in `tool_input.command`.
+- **`CLAUDE_CODE_SESSION_ID` is absent from claude's own process env**, so Claude
+  injects it per hook spawn. It matched the payload in 6/6 sessions. It is
+  undocumented where `session_id` is published, so `sessionGuard` reads the payload
+  and keeps the env var only as the fallback for a payload it cannot parse.
+
+The guard reads a bounded 512-byte head with the `read` builtin rather than
+`$(cat)`. Measured as paired per-invocation runs of the rendered scripts, 200
+pairs per cell, against the env-var-only guard it replaced:
+
+| Path | 3 KB payload | 120 KB payload |
+|---|---|---|
+| No-op (no marker — every unadopted claude) | +0.17 ms/hook | +0.21 ms/hook |
+| Resolved (adopted session) | +0.10 ms/hook | +0.11 ms/hook (within noise) |
+
+The number to look at is the second column, not the first: the cost is **flat in
+payload size**, where the obvious implementation — `input="$(cat)"` piped through
+`grep`, the one the issue's no-new-`jq` constraint is really aimed at — costs
+**+7.7 ms** on a 120 KB Edit payload and grows with it. That is paid on a path
+every claude on the machine takes and almost none of them are ours.
 
 ---
 
