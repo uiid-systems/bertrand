@@ -211,13 +211,32 @@ describe("transcript ingestion ticks", () => {
   });
 });
 
-describe("session guard — adoption marker fallback", () => {
+describe("session guard — payload identity", () => {
   // A claude bertrand launched exports BERTRAND_SESSION; one that was adopted
-  // cannot be given env at all, so the guard keys off CLAUDE_CODE_SESSION_ID
-  // (which claude exports into every hook subprocess) and the marker written
-  // by `bertrand adopt`.
+  // cannot be given env at all, so the guard reads claude's session id out of
+  // the hook payload and looks up the marker `bertrand adopt` left for it.
+  // CLAUDE_CODE_SESSION_ID is kept only as a fallback for a payload the guard
+  // can't parse.
   const CLAUDE_SID = "11111111-2222-4333-8444-555555555555";
-  const TOOL_INPUT = JSON.stringify({
+  const PAYLOAD_SID = "99999999-8888-4777-8666-555555555555";
+
+  /**
+   * A PostToolUse payload with the field order Claude Code actually emits —
+   * session_id first, tool_input last. JSON.stringify preserves insertion
+   * order, so these fixtures reproduce the shape the guard's bounded read
+   * depends on.
+   */
+  const payload = (fields: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      session_id: PAYLOAD_SID,
+      transcript_path: "",
+      ...fields,
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+    });
+
+  /** The pre-payload fixture: no session_id at all, so the env fallback runs. */
+  const NO_SID_INPUT = JSON.stringify({
     tool_name: "Bash",
     tool_input: { command: "ls" },
     transcript_path: "",
@@ -232,16 +251,32 @@ describe("session guard — adoption marker fallback", () => {
   const calls = (): string =>
     existsSync(stubLog) ? readFileSync(stubLog, "utf-8") : "";
 
-  function adopt(sessionId: string, project: string, claudeId = CLAUDE_SID) {
+  function adopt(sessionId: string, project: string, claudeId = PAYLOAD_SID) {
     writeFileSync(
       marker(`adopted-${claudeId}`),
       `session=${sessionId}\nproject=${project}\n`,
     );
   }
 
+  test("payload session_id resolves the session, with no env at all", () => {
+    adopt("adopted-sid", "some-project");
+
+    const { code } = run("on-permission-done.sh", payload(), {
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
+    expect(code).toBe(0);
+    expect(calls()).toContain("--session-id adopted-sid");
+    // Without the project the bin would write into whichever project happens
+    // to be active in the registry when the hook fires.
+    expect(calls()).toContain("project=some-project");
+    // `bertrand adopt` keyed the conversation row on claude's session id, so
+    // events have to carry that same value as claude_id.
+    expect(calls()).toContain(PAYLOAD_SID);
+  });
+
   test("no marker → total no-op, and the binary is never invoked", () => {
-    const { stdout, code } = run("on-permission-done.sh", TOOL_INPUT, {
-      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+    const { stdout, code } = run("on-permission-done.sh", payload(), {
       BERTRAND_STUB_LOG: stubLog,
     });
 
@@ -252,41 +287,104 @@ describe("session guard — adoption marker fallback", () => {
     expect(calls()).toBe("");
   });
 
-  test("marker present → resolves the session and its project", () => {
-    adopt("adopted-sid", "some-project");
+  test("payload wins over CLAUDE_CODE_SESSION_ID", () => {
+    // Both resolve to a real marker, so only precedence decides the outcome.
+    adopt("payload-sid", "payload-project", PAYLOAD_SID);
+    adopt("env-sid", "env-project", CLAUDE_SID);
 
-    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
+    run("on-permission-done.sh", payload(), {
       CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
       BERTRAND_STUB_LOG: stubLog,
     });
 
-    expect(code).toBe(0);
+    expect(calls()).toContain("--session-id payload-sid");
+    expect(calls()).not.toContain("env-sid");
+  });
+
+  test("unparseable payload → falls back to CLAUDE_CODE_SESSION_ID", () => {
+    // The env var is undocumented, so it can't be the source of identity — but
+    // dropping it would turn a payload shape we don't recognise into silence.
+    adopt("adopted-sid", "some-project", CLAUDE_SID);
+
+    run("on-permission-done.sh", NO_SID_INPUT, {
+      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+      BERTRAND_STUB_LOG: stubLog,
+    });
+
     expect(calls()).toContain("--session-id adopted-sid");
-    // Without the project the bin would write into whichever project happens
-    // to be active in the registry when the hook fires.
-    expect(calls()).toContain("project=some-project");
   });
 
-  test("marker present → conversation id is claude's own session id", () => {
+  test("whitespace after the colon parses the same as compact JSON", () => {
+    // Claude emits compact JSON today, so this is insurance rather than a
+    // requirement — but the alternative to parsing it is silently reverting to
+    // env-var identity, which is the fragility this issue removes.
     adopt("adopted-sid", "some-project");
 
-    run("on-permission-done.sh", TOOL_INPUT, {
-      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
-      BERTRAND_STUB_LOG: stubLog,
-    });
+    const spaced = `{"session_id": "${PAYLOAD_SID}", "tool_name": "Bash"}`;
+    run("on-permission-done.sh", spaced, { BERTRAND_STUB_LOG: stubLog });
 
-    // `bertrand adopt` keyed the conversation row on claude's session id, so
-    // events have to carry that same value as claude_id.
-    expect(calls()).toContain(CLAUDE_SID);
+    expect(calls()).toContain("--session-id adopted-sid");
   });
 
-  test("env wins over the marker, and never leaks the marker's project", () => {
+  test("a session_id with a path separator never builds a marker path", () => {
+    adopt("adopted-sid", "some-project", CLAUDE_SID);
+
+    run(
+      "on-permission-done.sh",
+      JSON.stringify({ session_id: "../../etc/passwd", tool_name: "Bash" }),
+      { CLAUDE_CODE_SESSION_ID: CLAUDE_SID, BERTRAND_STUB_LOG: stubLog },
+    );
+
+    // Rejected outright and resolved through the env fallback instead.
+    expect(calls()).toContain("--session-id adopted-sid");
+  });
+
+  test("an escaped session_id inside tool_input can't hijack identity", () => {
+    // The greedy-match caveat ELKY-173 left open. Payload strings arrive
+    // escaped (\"session_id\":\"…), so a tool argument carrying the literal
+    // text — as this repo's own hook tests do — never matches the pattern.
+    adopt("real-sid", "real-project", PAYLOAD_SID);
+    adopt("decoy-sid", "decoy-project", CLAUDE_SID);
+
+    const input = JSON.stringify({
+      session_id: PAYLOAD_SID,
+      transcript_path: "",
+      tool_name: "Bash",
+      tool_input: { command: `echo '{"session_id":"${CLAUDE_SID}"}'` },
+    });
+
+    run("on-permission-done.sh", input, { BERTRAND_STUB_LOG: stubLog });
+
+    expect(calls()).toContain("--session-id real-sid");
+    expect(calls()).not.toContain("decoy-sid");
+  });
+
+  test("payload past the 512-byte read window is still parsed downstream", () => {
+    // The guard consumes a fixed head off stdin; every script rebuilds the
+    // whole payload as "$phead$(cat)". Get that wrong and fields beyond the
+    // window silently vanish — here, the transcript path that ticks ingestion.
+    adopt("adopted-sid", "some-project");
+
+    const input = JSON.stringify({
+      session_id: PAYLOAD_SID,
+      pad: "p".repeat(700),
+      transcript_path: "/tmp/late-transcript.jsonl",
+      tool_name: "Bash",
+      tool_input: { command: "ls" },
+    });
+    expect(input.indexOf("transcript_path")).toBeGreaterThan(512);
+
+    run("on-permission-done.sh", input, { BERTRAND_STUB_LOG: stubLog });
+
+    expect(calls()).toContain("--transcript-path /tmp/late-transcript.jsonl");
+  });
+
+  test("env wins over the payload, and never leaks the marker's project", () => {
     adopt("adopted-sid", "marker-project");
 
-    run("on-permission-done.sh", TOOL_INPUT, {
+    run("on-permission-done.sh", payload(), {
       BERTRAND_SESSION: "env-sid",
       BERTRAND_CLAUDE_ID: "env-cid",
-      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
       BERTRAND_STUB_LOG: stubLog,
     });
 
@@ -295,10 +393,10 @@ describe("session guard — adoption marker fallback", () => {
     expect(calls()).toContain("project=<unset>");
   });
 
-  test("no CLAUDE_CODE_SESSION_ID → no-op, even with markers around", () => {
+  test("no session id anywhere → no-op, even with markers around", () => {
     adopt("adopted-sid", "some-project");
 
-    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
+    const { code } = run("on-permission-done.sh", NO_SID_INPUT, {
       BERTRAND_STUB_LOG: stubLog,
     });
 
@@ -309,10 +407,9 @@ describe("session guard — adoption marker fallback", () => {
   test("marker missing its session field → no-op, not a half-resolved session", () => {
     // A partial write must not resolve: a session id without its project would
     // land the events in the wrong DB.
-    writeFileSync(marker(`adopted-${CLAUDE_SID}`), "project=orphan\n");
+    writeFileSync(marker(`adopted-${PAYLOAD_SID}`), "project=orphan\n");
 
-    const { code } = run("on-permission-done.sh", TOOL_INPUT, {
-      CLAUDE_CODE_SESSION_ID: CLAUDE_SID,
+    const { code } = run("on-permission-done.sh", payload(), {
       BERTRAND_STUB_LOG: stubLog,
     });
 
@@ -320,27 +417,31 @@ describe("session guard — adoption marker fallback", () => {
     expect(calls()).toBe("");
   });
 
-  test("every hook carries the fallback, not just the one under test", () => {
+  test("every hook resolves identity the same way, not just the one under test", () => {
     // The guard is shared, so this is what keeps a future hook from being
-    // added with the old two-line BERTRAND_SESSION-only check.
+    // added with the old env-only check — or from reading stdin with a bare
+    // $(cat), which would drop the 512 bytes the guard already consumed.
     for (const name of Object.keys(HOOK_SCRIPTS) as (keyof typeof HOOK_SCRIPTS)[]) {
       const script = HOOK_SCRIPTS[name]("BIN", "RUNTIME");
+      expect(script).toContain(`IFS= read -r -d '' -n 512 phead`);
+      expect(script).toContain(`ccid="\${phead#*\\"session_id\\":}"`);
       expect(script).toContain('ccid="${CLAUDE_CODE_SESSION_ID:-}"');
       expect(script).toContain('adopted="RUNTIME/adopted-$ccid"');
       expect(script).toContain("export BERTRAND_PROJECT");
+      expect(script).not.toContain('input="$(cat)"');
     }
   });
 
-  test("the no-op path spawns nothing and parses no payload", () => {
-    // Hooks are hot-path: every claude on the machine fires them. The guard
-    // must stay bash builtins only — no jq, no grep, no subshell — before it
-    // knows the session is ours.
-    const guard = HOOK_SCRIPTS["on-done.sh"]("BIN", "RUNTIME")
-      .split("\nfi\n")[0]!;
-    expect(guard).not.toContain("jq");
-    expect(guard).not.toContain("grep");
-    expect(guard).not.toContain("$(cat)");
-    expect(guard).not.toContain("session_id\":");
+  test("the no-op path forks nothing", () => {
+    // Hooks are hot-path: every claude on the machine fires them, and almost
+    // none are ours. The guard must stay bash builtins only — no jq, no grep,
+    // no command substitution — before it knows the session is ours. A bounded
+    // `read` is what buys payload identity at zero fork cost.
+    const guard = HOOK_SCRIPTS["on-done.sh"]("BIN", "RUNTIME").split("\nfi\n")[0]!;
+    expect(guard).toContain("read -r -d '' -n 512 phead");
+    for (const fork of ["jq", "grep", "cut", "$(", "`"]) {
+      expect(guard).not.toContain(fork);
+    }
   });
 });
 
@@ -395,6 +496,30 @@ describe("session guard — auto-create (ELKY-175)", () => {
     expect(calls()).toContain(`--claude-id ${CLAUDE_SID}`);
     // From the payload, not $PWD: picking the wrong project files the session
     // in another project's log with nothing to say so.
+    expect(calls()).toContain("--cwd /work/repo");
+    expect(calls()).toContain("--transcript-path /transcripts/x.jsonl");
+  });
+
+  test("auto-adopt still sees cwd when the guard consumed the payload head", () => {
+    // The seam between ELKY-174 and ELKY-175. The guard reads a fixed 512-byte
+    // head off stdin; the auto-create rung then reads the rest and greps it for
+    // cwd and transcript_path — both of which live in that head, in Claude's
+    // real field order. Read the tail alone and auto-adopt is handed two empty
+    // strings and files the session under the wrong project, silently.
+    writeFileSync(gate(), "");
+
+    const realistic = JSON.stringify({
+      session_id: CLAUDE_SID,
+      transcript_path: "/transcripts/x.jsonl",
+      cwd: "/work/repo",
+      permission_mode: "default",
+      hook_event_name: "UserPromptSubmit",
+      prompt: "do the thing ".repeat(60),
+    });
+    expect(realistic.length).toBeGreaterThan(512);
+
+    run("on-user-prompt.sh", realistic, untracked("create"));
+
     expect(calls()).toContain("--cwd /work/repo");
     expect(calls()).toContain("--transcript-path /transcripts/x.jsonl");
   });

@@ -2,7 +2,8 @@
  * Bash hook script templates.
  *
  * Architecture: Claude Code hooks → bash scripts → `${BIN} update` → SQLite
- * The hooks read BERTRAND_SESSION (session ID) and BERTRAND_CLAUDE_ID from env.
+ * Identity comes from the payload's `session_id`, with BERTRAND_SESSION /
+ * BERTRAND_CLAUDE_ID as the launched-path override (see sessionGuard).
  *
  * Two stderr channels by design:
  *   - `bq <subcommand>` runs the bertrand binary with stderr discarded and
@@ -17,11 +18,55 @@
  *   - jq -n kept for building meta JSON (safe escaping, acceptable cost)
  *   - permissionDoneScript folds diff extraction into the existing jq invocation
  *     so adding old_str/new_str capture costs nothing extra
+ *   - the session guard reads the payload with a bounded `read` builtin, so
+ *     resolving identity costs no fork and no time proportional to payload size
  *   - activeScript has a debounce guard to skip redundant updates
  */
 
 /** Extract a JSON string field via grep — ~1ms vs jq's ~15ms */
 const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)"`;
+
+/**
+ * Pull the head of the hook payload off stdin with a bash builtin.
+ *
+ * Identity lives in the payload's `session_id`, and the payload is the only
+ * interface Claude Code documents — so that, not an env var, is what the guard
+ * below keys off. Reading it has to stay free: every claude on the machine
+ * fires these hooks and almost none of them are ours.
+ *
+ * Hence a bounded builtin read rather than `input="$(cat)"`. `session_id` is
+ * the payload's first field (measured 2026-08-31 across six concurrent claude
+ * sessions — session_id, transcript_path, cwd, prompt_id, permission_mode,
+ * effort, hook_event_name, tool_name, tool_input, tool_response, tool_use_id,
+ * duration_ms), so 512 bytes is ~9x the room it needs and the cost is flat in
+ * payload size — which is the property that matters. Paired per-invocation runs
+ * of the rendered scripts, 200 pairs per cell: +0.17 ms/hook on the no-op path
+ * at 3 KB and +0.21 ms at 120 KB, against +7.7 ms for `$(cat)` piped through
+ * grep at 120 KB. On the resolved path the difference is not measurable.
+ *
+ * The match is on `"session_id":` and then the quotes around the value, rather
+ * than on the whole `"session_id":"` in one step, so whitespace after the colon
+ * parses too — Claude emits compact JSON today, and a value we cannot parse
+ * falls through to the env var rather than to silence either way.
+ *
+ * `-n 512`, not `-N 512`: `-N` is bash 4.1+ and /bin/bash on macOS is 3.2.
+ * `-d ''` makes NUL the delimiter so a newline can never end the read early,
+ * and `IFS=` keeps leading whitespace. Verified on bash 3.2.57 and 5.3.3.
+ */
+const READ_PAYLOAD_HEAD = `IFS= read -r -d '' -n 512 phead`;
+
+/**
+ * The rest of the payload, appended to the head the guard already consumed.
+ * Every script that parses `$input` must use this instead of `$(cat)`, which
+ * alone would silently drop the first 512 bytes — including `cwd` and
+ * `transcript_path`, which live in them. Byte-identical to the old
+ * `input="$(cat)"` otherwise — both drop trailing newlines.
+ *
+ * Two callers read conditionally rather than unconditionally: the auto-create
+ * rung consumes stdin inside the guard, so `userPromptScript` reads only when
+ * the guard left `$input` empty.
+ */
+const READ_PAYLOAD_REST = `input="$phead$(cat)"`;
 
 /**
  * Session resolution — the first thing every hook does, and the only thing
@@ -30,14 +75,27 @@ const EXTRACT_TOOL = `tool="$(printf '%s' "$input" | grep -o '"tool_name":"[^"]*
  * `BERTRAND_SESSION` is exported by bertrand's own claude spawn, so its
  * presence means this claude is launched-and-tracked. It wins outright.
  *
- * Otherwise the session may have been *adopted* (`bertrand adopt`, ELKY-179).
- * Adoption cannot export anything into an already-running claude — hook
- * subprocesses inherit claude's spawn-time environment — so it leaves a marker
- * keyed by claude's own session id instead. Claude exports that id to every
- * hook subprocess as `CLAUDE_CODE_SESSION_ID`, so the lookup is a path built
- * from an env var and one `[ -f ]` test: no payload parsing, no subprocess, no
- * measurable cost on the path that matters. Which is the no-op path — every
- * claude on the machine fires these hooks, and almost none of them are ours.
+ * Otherwise identity is the payload's `session_id` — claude's own session id,
+ * which is what `bertrand adopt` (ELKY-179) keyed both its marker and its
+ * conversation row on. Adoption cannot export anything into an already-running
+ * claude — hook subprocesses inherit claude's spawn-time environment — so the
+ * marker is the whole lookup: a path built from the payload id and one `[ -f ]`
+ * test. No fork, no jq, and a cost that does not grow with the payload — which
+ * is what the path that matters needs, that being the no-op path.
+ *
+ * `CLAUDE_CODE_SESSION_ID` stays as a fallback rather than the source. Claude
+ * injects it per hook spawn — it is absent from claude's own process env — and
+ * it matched the payload in all six concurrent sessions measured on
+ * 2026-08-31. But it is undocumented, where `session_id` is part of the
+ * published hook schema, so it belongs behind the payload rather than in front
+ * of it. Keeping it means a payload we cannot parse degrades to exactly the
+ * previous behaviour instead of to silence.
+ *
+ * A nested `"session_id"` cannot hijack this. Payload strings arrive escaped
+ * (`\"session_id\":\"…`), so a tool_input that happens to contain the literal
+ * text — this file's own tests do — never matches the unescaped pattern, and
+ * the 512-byte window keeps the search in the header regardless. That closes
+ * the greedy-match caveat ELKY-173 left open.
  *
  * The marker carries the project as well as the session because an adopted
  * claude never inherited `BERTRAND_PROJECT` either. Without exporting it, the
@@ -62,8 +120,20 @@ function sessionGuard(
     : `  [ -f "$adopted" ] || exit 0`;
   return `sid="\${BERTRAND_SESSION:-}"
 cid="\${BERTRAND_CLAUDE_ID:-}"
+${READ_PAYLOAD_HEAD}
 if [ -z "$sid" ]; then
-  ccid="\${CLAUDE_CODE_SESSION_ID:-}"
+  ccid="\${phead#*\\"session_id\\":}"
+  if [ "$ccid" = "$phead" ]; then
+    ccid=""
+  else
+    # Split on the key, then on the quotes around the value, so an encoder that
+    # pads after the colon parses the same as Claude's own compact JSON.
+    ccid="\${ccid#*\\"}"
+    ccid="\${ccid%%\\"*}"
+  fi
+  # No id in the payload, or one that could escape the runtime dir, falls back
+  # to the env var: degrade to the pre-payload behaviour, never to silence.
+  case "$ccid" in ""|*/*) ccid="\${CLAUDE_CODE_SESSION_ID:-}" ;; esac
   [ -z "$ccid" ] && exit 0
   adopted="${runtimeDir}/adopted-$ccid"
 ${noMarker}
@@ -119,7 +189,10 @@ function autoCreateGate(runtimeDir: string): string {
     if [ ! -f "$gate" ]; then : > "$gate"; exit 0; fi
     # Read here rather than at the top of the script, so a claude that is not
     # eligible exits above without paying for it. The body reuses this.
-    input="$(cat)"
+    # "$phead" is the head the guard already consumed off stdin; without it
+    # both extractions below come back empty, since cwd and transcript_path
+    # sit in the first 512 bytes.
+    ${READ_PAYLOAD_REST}
     bq auto-adopt --claude-id "$ccid" \\
       --cwd "$(printf '%s' "$input" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)" \\
       --transcript-path "$(printf '%s' "$input" | grep -o '"transcript_path":"[^"]*"' | head -1 | cut -d'"' -f4)" \\
@@ -147,7 +220,7 @@ export function waitingScript(bin: string, runtimeDir: string): string {
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
-input="$(cat)"
+${READ_PAYLOAD_REST}
 
 # Block AUQ calls that omit multiSelect:true on any question. multiSelect is a
 # UX-safety mechanism in bertrand (prevents submit-on-focus), not a cardinality
@@ -188,7 +261,7 @@ export function answeredScript(bin: string, runtimeDir: string): string {
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
-input="$(cat)"
+${READ_PAYLOAD_REST}
 
 # Capture the full AskUserQuestion payload so the UI can render picked vs
 # unpicked options alongside the user's answer. tool_input.questions carries
@@ -231,7 +304,7 @@ export function permissionWaitScript(bin: string, runtimeDir: string): string {
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
-input="$(cat)"
+${READ_PAYLOAD_REST}
 ${EXTRACT_TOOL}
 [ "$tool" = "AskUserQuestion" ] && exit 0
 
@@ -265,7 +338,7 @@ export function permissionDoneScript(bin: string, runtimeDir: string): string {
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
-input="$(cat)"
+${READ_PAYLOAD_REST}
 ${EXTRACT_TOOL}
 
 # Don't double-log: AskUserQuestion has its own waiting/answered events.
@@ -358,7 +431,7 @@ ${sessionGuard(runtimeDir, { autoCreate: true })}
 
 # Already set when the guard's auto-create rung read it; still empty on every
 # other path, including the launched one this hook was originally written for.
-[ -z "$input" ] && input="$(cat)"
+[ -z "$input" ] && ${READ_PAYLOAD_REST}
 
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
@@ -398,7 +471,7 @@ export function doneScript(bin: string, runtimeDir: string): string {
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
-input="$(cat)"
+${READ_PAYLOAD_REST}
 
 done_marker="${runtimeDir}/done-$sid"
 nudge_marker="${runtimeDir}/auq-nudge-$sid"

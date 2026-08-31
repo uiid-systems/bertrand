@@ -39,6 +39,7 @@ _setRegistryDir(join(workdir, "registry"));
 
 const { runAdopt } = await import("./adopt");
 const { getSession, updateSession } = await import("@/db/queries/sessions");
+const { shouldIgnoreStatusFlip } = await import("./update");
 const { getConversation } = await import("@/db/queries/conversations");
 const { getEventsBySession } = await import("@/db/queries/events");
 
@@ -525,4 +526,52 @@ describe("runAdopt — refusals", () => {
     expect(existsSync(adoptionMarkerPath(cid))).toBe(false);
   });
 
+});
+
+describe("runAdopt — status flips on a payload-keyed session", () => {
+  // `update` refuses active/waiting/blocked on a row with a null pid, to stop a
+  // reparented hook resurrecting a session bertrand already finalized. Every
+  // row bertrand did not launch used to sit in exactly that state, which would
+  // have left adopted sessions permanently stuck at whatever status they were
+  // created with. Recording claude's own pid is what buys them back — so these
+  // two tests pin the property the guard depends on, from both directions.
+  const FLIPS = ["active", "waiting", "blocked"] as const;
+
+  test("adopting with claude's pid lets its hooks flip status", async () => {
+    const result = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: workdir,
+      pid: process.pid,
+      backfill: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const session = getSession(result.sessionId)!;
+    expect(session.pid).toBe(process.pid);
+    for (const status of FLIPS) {
+      expect(shouldIgnoreStatusFlip(status, session.pid)).toBe(false);
+    }
+  });
+
+  test("adopting without a pid is the state that cannot flip", async () => {
+    // Why `bertrand adopt` warns out loud when it can't determine the pid: the
+    // session still records events, it just never changes status again.
+    const result = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: workdir,
+      pid: null,
+      backfill: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const session = getSession(result.sessionId)!;
+    expect(session.pid).toBeNull();
+    for (const status of FLIPS) {
+      expect(shouldIgnoreStatusFlip(status, session.pid)).toBe(true);
+    }
+    // Pausing still works, which is what lets recovery close the row.
+    expect(shouldIgnoreStatusFlip("paused", session.pid)).toBe(false);
+  });
 });
