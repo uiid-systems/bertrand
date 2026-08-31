@@ -1,5 +1,9 @@
 import type { EventRow, SessionRow } from "../api/types";
 import { colorOf, labelOf } from "./timeline/categories";
+// Shared with the CLI and TUI: event rows mix the `datetime('now')` shape the
+// hooks write with the ISO one transcript ingestion backdates, and only this
+// reads both. `src/lib/format` has no imports, so it is boundary-safe.
+import { parseDbTime } from "@/lib/format";
 
 type SessionStatus = SessionRow["status"];
 
@@ -63,15 +67,15 @@ export function formatTokens(n: number): string {
   }).format(n);
 }
 
-export function formatRelativeTime(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+export function formatRelativeTime(stored: string): string {
+  const diff = (Date.now() - parseDbTime(stored)) / 1000;
 
   if (diff < 60) return "now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
 
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(parseDbTime(stored)).toLocaleDateString(undefined, {
     month: "numeric",
     day: "numeric",
     year: "2-digit",
@@ -319,8 +323,8 @@ export function eventTocTitle(event: EventRow): string {
   }
 }
 
-export function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
+export function formatTimestamp(stored: string): string {
+  return new Date(parseDbTime(stored)).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",

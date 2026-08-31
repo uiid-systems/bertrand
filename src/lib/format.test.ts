@@ -1,5 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import { formatDuration, formatAgo, truncate, formatTime } from "./format";
+import {
+  formatDuration,
+  formatAgo,
+  truncate,
+  formatTime,
+  parseDbTime,
+  formatDbTime,
+} from "./format";
 
 describe("formatDuration", () => {
   test("seconds", () => {
@@ -41,6 +48,42 @@ describe("formatAgo", () => {
   test("accepts ISO string", () => {
     const recent = new Date(Date.now() - 10 * 60_000).toISOString();
     expect(formatAgo(recent)).toBe("10m");
+  });
+
+  test("accepts the stored shape, which carries no zone", () => {
+    // What `startedAt` and `updatedAt` actually hold. Read as local time this
+    // is off by the machine's UTC offset — "10m" becomes "8h" west of it.
+    const recent = formatDbTime(Date.now() - 10 * 60_000);
+    expect(formatAgo(recent)).toBe("10m");
+  });
+});
+
+describe("db timestamps", () => {
+  test("reads the stored shape as UTC, not local", () => {
+    expect(parseDbTime("2026-08-31 12:00:00")).toBe(
+      Date.parse("2026-08-31T12:00:00Z"),
+    );
+  });
+
+  test("reads ISO as-is", () => {
+    expect(parseDbTime("2026-08-31T12:00:00.000Z")).toBe(
+      Date.parse("2026-08-31T12:00:00Z"),
+    );
+  });
+
+  test("formatDbTime is parseDbTime's inverse to the second", () => {
+    const ms = Date.UTC(2026, 7, 31, 12, 0, 0);
+    expect(formatDbTime(ms)).toBe("2026-08-31 12:00:00");
+    expect(parseDbTime(formatDbTime(ms))).toBe(ms);
+  });
+
+  test("the two shapes of one instant subtract to zero", () => {
+    // A session whose startedAt is a column default and whose endedAt was
+    // written ISO before this release still has to measure a real duration.
+    const ms = Date.UTC(2026, 7, 31, 12, 0, 0);
+    expect(
+      parseDbTime(new Date(ms).toISOString()) - parseDbTime(formatDbTime(ms)),
+    ).toBe(0);
   });
 });
 

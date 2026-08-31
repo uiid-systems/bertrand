@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
 import { getSession, setSessionRating } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, parseDbTime } from "@/lib/format";
 import { StatusDot } from "@/tui/components/status-dot";
 
 type ExitAction = "save" | "archive" | "discard" | "resume";
@@ -78,8 +78,7 @@ export function Exit({ sessionId, onAction }: ExitProps) {
   const duration =
     session.endedAt && session.startedAt
       ? formatDuration(
-          new Date(session.endedAt).getTime() -
-            new Date(session.startedAt).getTime(),
+          parseDbTime(session.endedAt) - parseDbTime(session.startedAt),
         )
       : null;
 

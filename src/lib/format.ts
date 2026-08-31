@@ -16,10 +16,19 @@ export function formatDuration(ms: number): string {
   return `${minutes}m`;
 }
 
-/** Format an ISO timestamp as relative time: "2m ago", "3h ago", "yesterday" */
-export function formatAgo(isoOrDate: string | Date): string {
-  const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
-  const ms = Date.now() - date.getTime();
+/**
+ * Format a stored timestamp as relative time: "2m ago", "3h ago", "yesterday".
+ *
+ * Parsed with {@link parseDbTime}, not `new Date` — its callers pass columns
+ * (`startedAt`, `updatedAt`) that are written in SQLite's zone-less shape, and
+ * reading those as local time shifts every label by the machine's UTC offset.
+ */
+export function formatAgo(storedOrDate: string | Date): string {
+  const at =
+    typeof storedOrDate === "string"
+      ? parseDbTime(storedOrDate)
+      : storedOrDate.getTime();
+  const ms = Date.now() - at;
 
   if (ms < MINUTE) return "now";
   if (ms < HOUR) return `${Math.floor(ms / MINUTE)}m`;
@@ -27,7 +36,10 @@ export function formatAgo(isoOrDate: string | Date): string {
   if (ms < 2 * DAY) return "yesterday";
   if (ms < 7 * DAY) return `${Math.floor(ms / DAY)}d`;
 
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return new Date(at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /**
@@ -42,6 +54,21 @@ export function parseDbTime(timestamp: string): number {
     return Date.parse(timestamp.replace(" ", "T") + "Z");
   }
   return Date.parse(timestamp);
+}
+
+/**
+ * Inverse of {@link parseDbTime}: epoch ms → the `datetime('now')` shape
+ * ("YYYY-MM-DD HH:MM:SS", UTC) that events are stored and sorted in.
+ *
+ * Lives here rather than at the callsite because the two formats must not be
+ * mixed within one comparison. `computeTimings` measures its segments with a
+ * bare `new Date()`, which reads a zone-less string as LOCAL — so a backdated
+ * event written in ISO and compared against a `datetime('now')` neighbour comes
+ * out skewed by the machine's UTC offset. Emitting in this shape keeps every
+ * timestamp the timing FSM sees in the same one.
+ */
+export function formatDbTime(ms: number): string {
+  return new Date(ms).toISOString().replace("T", " ").slice(0, 19);
 }
 
 /** Truncate text to maxLen, adding ellipsis if needed */

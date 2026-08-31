@@ -74,6 +74,31 @@ export function getMaxEventId(sessionId: string, db: Db = getDb()): number {
   return row?.maxId ?? 0;
 }
 
+/**
+ * When a session last recorded anything, in whatever shape the row was written
+ * in — undefined for a session with no events.
+ *
+ * `max()` rather than an ordered read: transcript ingestion backdates rows, so
+ * the highest id is not necessarily the latest timestamp. Mixed formats sort
+ * correctly here because both are UTC and " " sorts before "T", so a
+ * `datetime('now')` row and an ISO row for the same second stay in write order.
+ *
+ * Recovery reads this as its stand-in for "when claude exited". Nothing was
+ * watching the process, so the last thing we wrote down is the best evidence
+ * available — and it is bounded by the truth, unlike the sweep's own clock.
+ */
+export function getLastEventAt(
+  sessionId: string,
+  db: Db = getDb(),
+): string | undefined {
+  const row = db
+    .select({ last: sql<string | null>`max(${events.createdAt})` })
+    .from(events)
+    .where(eq(events.sessionId, sessionId))
+    .get();
+  return row?.last ?? undefined;
+}
+
 export function getEventsByConversation(conversationId: string): EventRow[] {
   return getDb()
     .select()

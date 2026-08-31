@@ -20,6 +20,7 @@
  */
 
 import { register } from "@/cli/router";
+import { getDbForProject } from "@/db/client";
 import { emitClaudeStarted } from "@/db/events/emit";
 import { ingestTranscript } from "@/db/events/ingest";
 import {
@@ -34,7 +35,12 @@ import {
 } from "@/db/queries/sessions";
 import { writeAdoptionMarker } from "@/hooks/runtime";
 import { processStartedAt } from "@/lib/process-identity";
-import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
+import {
+  applyProjectFlag,
+  extractProjectFlag,
+  useProject,
+} from "@/lib/projects/cli-flag";
+import { listProjects } from "@/lib/projects/registry";
 import { resolveActiveProject } from "@/lib/projects/resolve";
 import { recordSessionBranch } from "@/lib/session-branch";
 import { findClaudeTranscript } from "@/lib/transcript";
@@ -78,6 +84,11 @@ export interface AdoptOpts {
 export type AdoptOutcome =
   | {
       ok: true;
+      /**
+       * True when the conversation was already known and this call re-pointed
+       * the hooks at its existing session rather than creating one.
+       */
+      reattached: boolean;
       sessionId: string;
       slug: string;
       claudeSessionId: string;
@@ -88,16 +99,56 @@ export type AdoptOutcome =
     }
   | {
       ok: false;
-      reason: "already-launched" | "already-adopted";
+      reason: "already-launched" | "archived";
       sessionId: string;
       message: string;
     };
 
 /**
- * Adopt `claudeSessionId` into a new session.
+ * Locate the session that already owns `claudeSessionId`, in any project.
  *
- * Both refusals report the session that already owns the conversation, so a
- * caller can carry on with it instead of treating adoption as failed.
+ * Adoption reads the *active* project, but re-attachment can't: a user who
+ * switched projects since adopting, or who resumes an old conversation from a
+ * different directory, would otherwise get a second session built around a
+ * conversation id another project's DB already holds — precisely the split
+ * timeline the already-adopted check exists to prevent. The scan is a handful
+ * of indexed lookups on a command that runs once per session.
+ */
+function findOwningSession(
+  claudeSessionId: string,
+): { project: string; sessionId: string } | null {
+  // The active project first. It is the overwhelmingly common answer, and on a
+  // machine with no registry yet it is the *only* one — `listProjects()`
+  // returns nothing there, so a scan alone would report an existing
+  // conversation as new and try to build a second session around it.
+  const active = resolveActiveProject().slug;
+  const here = getConversation(claudeSessionId);
+  if (here) return { project: active, sessionId: here.sessionId };
+
+  for (const entry of listProjects()) {
+    if (entry.slug === active) continue;
+    try {
+      const row = getConversation(claudeSessionId, getDbForProject(entry.slug));
+      if (row) return { project: entry.slug, sessionId: row.sessionId };
+    } catch {
+      // A project registered but never migrated, or a DB we can't open. Not
+      // this conversation's home either way.
+    }
+  }
+  return null;
+}
+
+/**
+ * Adopt `claudeSessionId`, creating a session for it or re-attaching the one it
+ * already has.
+ *
+ * Re-attaching is what makes `claude --resume` work. Finalizing an adopted
+ * session prunes its marker (there is no bertrand process to keep it fresh),
+ * so a resumed conversation comes back with rows but no marker: the hooks
+ * can't resolve it and the session silently stops recording. Refusing on the
+ * conversation row — the obvious reading of "already adopted" — would leave it
+ * that way while reporting success-ish. Rewriting the marker instead is
+ * idempotent, and it heals a hand-deleted marker for free.
  */
 export async function runAdopt(opts: AdoptOpts): Promise<AdoptOutcome> {
   if (opts.launchedSessionId) {
@@ -111,21 +162,11 @@ export async function runAdopt(opts: AdoptOpts): Promise<AdoptOutcome> {
     };
   }
 
-  // The conversation row is the source of truth for "already adopted": the
+  // The conversation row is the source of truth for "already known": the
   // marker can be swept or hand-deleted, the row cannot. A second session
   // around one conversation would split its timeline in two.
-  const existing = getConversation(opts.claudeSessionId);
-  if (existing) {
-    const session = getSession(existing.sessionId);
-    return {
-      ok: false,
-      reason: "already-adopted",
-      sessionId: existing.sessionId,
-      message:
-        `This conversation is already recorded as session ` +
-        `${session?.slug ?? existing.sessionId} — nothing to adopt.`,
-    };
-  }
+  const owner = findOwningSession(opts.claudeSessionId);
+  if (owner) return reattach(owner, opts);
 
   const project = resolveActiveProject().slug;
 
@@ -162,37 +203,139 @@ export async function runAdopt(opts: AdoptOpts): Promise<AdoptOutcome> {
   // Written after the rows exist. The marker is what makes the hooks start
   // resolving this session, and a hook that fires against a half-built
   // session would record events with nowhere to hang them.
-  writeAdoptionMarker(opts.claudeSessionId, { sessionId: session.id, project });
-
-  let backfilledEvents = 0;
-  if (opts.backfill !== false) {
-    const transcriptPath =
-      opts.transcriptPath ??
-      findClaudeTranscript(opts.claudeSessionId, opts.cwd) ??
-      undefined;
-    if (transcriptPath) {
-      // flush: true — adoption is a turn boundary from the transcript's point
-      // of view, so trailing thinking with no text after it should land rather
-      // than sit pending until the next hook tick.
-      backfilledEvents = ingestTranscript({
-        sessionId: session.id,
-        conversationId: opts.claudeSessionId,
-        transcriptPath,
-        flush: true,
-      }).emitted;
-    }
-  }
+  writeAdoptionMarker(opts.claudeSessionId, {
+    sessionId: session.id,
+    project,
+    pid: opts.pid ?? undefined,
+  });
 
   return {
     ok: true,
+    reattached: false,
     sessionId: session.id,
     slug: session.slug,
     claudeSessionId: opts.claudeSessionId,
     project,
     pid: opts.pid,
     pidStartedAt,
-    backfilledEvents,
+    backfilledEvents: backfill(session.id, opts),
   };
+}
+
+/**
+ * Point the hooks back at the session that already owns this conversation.
+ *
+ * Everything here is a rewrite of state that has gone stale while nothing was
+ * watching: the marker (pruned at finalize), the pid (claude has a new one
+ * after a resume), the branch (a resume can land on a different one), and the
+ * status (`paused`, from the last Stop hook). The rows themselves are left
+ * exactly as they are — this is the same session continuing, not a new one.
+ *
+ * Everything except the marker is gated on knowing claude's pid; without one
+ * the session could never be closed again, so its previous close is left
+ * standing rather than undone for nothing.
+ */
+async function reattach(
+  owner: { project: string; sessionId: string },
+  opts: AdoptOpts,
+): Promise<AdoptOutcome> {
+  useProject(owner.project);
+
+  const session = getSession(owner.sessionId);
+  if (!session) {
+    // A conversation whose session was deleted out from under it. Nothing to
+    // re-attach to, and creating one here would resurrect a deliberate delete.
+    return {
+      ok: false,
+      reason: "archived",
+      sessionId: owner.sessionId,
+      message:
+        `This conversation belongs to session ${owner.sessionId}, which no ` +
+        `longer exists. Start a new claude session to record fresh work.`,
+    };
+  }
+
+  if (session.status === "archived") {
+    // Archiving is how a user says "this one is done". Re-opening it because
+    // an old conversation was resumed would undo that silently.
+    return {
+      ok: false,
+      reason: "archived",
+      sessionId: session.id,
+      message:
+        `This conversation belongs to ${session.slug}, which is archived. ` +
+        `Un-archive it first, or start a new claude session.`,
+    };
+  }
+
+  const pidStartedAt =
+    opts.pid == null ? null : await processStartedAt(opts.pid);
+
+  // Re-opening the row is gated on knowing claude's pid. `getRecoverableSessions`
+  // keys on a non-null pid, so without one nothing can ever finalize this
+  // session again — clearing `endedAt` here would strand it `active` forever,
+  // trading a correctly closed record for one that never closes. The marker is
+  // still worth rewriting: the hooks resolve and record events, they just can't
+  // flip status (`update` refuses that on a null pid).
+  if (opts.pid != null) {
+    updateSession(session.id, {
+      status: "active",
+      pid: opts.pid,
+      pidStartedAt,
+      // Cleared because the session is running again. Left set, it would read as
+      // finished everywhere duration and stats are computed from it.
+      endedAt: null,
+    });
+
+    // Re-read, not carried over: a resumed conversation can come back on a
+    // different branch than it left. `resume` records it outside its own
+    // resume guard for exactly this reason (engine/session.ts).
+    await recordSessionBranch(session.id, opts.cwd);
+  }
+
+  writeAdoptionMarker(opts.claudeSessionId, {
+    sessionId: session.id,
+    project: owner.project,
+    pid: opts.pid ?? undefined,
+  });
+
+  return {
+    ok: true,
+    reattached: true,
+    sessionId: session.id,
+    slug: session.slug,
+    claudeSessionId: opts.claudeSessionId,
+    project: owner.project,
+    pid: opts.pid,
+    pidStartedAt,
+    // Catches anything the transcript gained while the session was untracked —
+    // the ingest cursor makes it a no-op when there is nothing new.
+    backfilledEvents: backfill(session.id, opts),
+  };
+}
+
+/**
+ * Import the conversation so far. Cursor-based, so it is safe to run on every
+ * adoption and re-attachment: it emits only what it hasn't seen.
+ */
+function backfill(sessionId: string, opts: AdoptOpts): number {
+  if (opts.backfill === false) return 0;
+
+  const transcriptPath =
+    opts.transcriptPath ??
+    findClaudeTranscript(opts.claudeSessionId, opts.cwd) ??
+    undefined;
+  if (!transcriptPath) return 0;
+
+  // flush: true — adoption is a turn boundary from the transcript's point of
+  // view, so trailing thinking with no text after it should land rather than
+  // sit pending until the next hook tick.
+  return ingestTranscript({
+    sessionId,
+    conversationId: opts.claudeSessionId,
+    transcriptPath,
+    flush: true,
+  }).emitted;
 }
 
 /** `--name value` or `--name=value`, whichever form the caller used. */
@@ -253,7 +396,11 @@ register("adopt", async (args) => {
   } else if (!outcome.ok) {
     console.log(outcome.message);
   } else {
-    console.log(`Adopted this claude session as ${outcome.slug}.`);
+    console.log(
+      outcome.reattached
+        ? `Re-attached this claude session to ${outcome.slug}.`
+        : `Adopted this claude session as ${outcome.slug}.`,
+    );
     console.log(`  project: ${outcome.project}`);
     if (outcome.backfilledEvents > 0) {
       console.log(
@@ -270,7 +417,10 @@ register("adopt", async (args) => {
     }
   }
 
-  // Both refusals mean the conversation is already recorded — the state the
-  // caller wanted holds, so this is not a failure to report as one. `--json`
-  // still carries `ok: false` for callers that need to tell them apart.
+  // `already-launched` exits 0: the conversation is being recorded, just not by
+  // adoption, so the state the caller wanted holds. `archived` does not —
+  // nothing is recording and the user has to choose what to do about it, so it
+  // has to be distinguishable without parsing prose. `--json` carries
+  // `ok: false` and the reason either way.
+  if (!outcome.ok && outcome.reason === "archived") process.exit(1);
 });

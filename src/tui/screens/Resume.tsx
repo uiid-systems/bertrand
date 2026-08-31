@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Box, Text, useInput, useTui } from "@orchetron/storm";
 import { getSession } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
-import { formatAgo, formatDuration } from "@/lib/format";
+import { formatAgo, formatDuration, parseDbTime } from "@/lib/format";
 
 export type ResumeSelection =
   | { type: "conversation"; conversationId: string }
@@ -70,7 +70,7 @@ export function Resume({ sessionId, onSelect }: ResumeProps) {
           const idx = i + 1;
           const isSelected = cursor === idx;
           const duration = conv.endedAt
-            ? formatDuration(new Date(conv.endedAt).getTime() - new Date(conv.startedAt).getTime())
+            ? formatDuration(parseDbTime(conv.endedAt) - parseDbTime(conv.startedAt))
             : "active";
           const ago = formatAgo(conv.startedAt);
 

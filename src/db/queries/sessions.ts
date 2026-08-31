@@ -1,4 +1,4 @@
-import { eq, and, inArray, ne, sql, desc } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, ne, sql, desc } from "drizzle-orm";
 import { getDb, getDbForProject, type Db } from "@/db/client";
 import { sessions } from "@/db/schema";
 import { createId, placeholderSlug } from "@/lib/id";
@@ -110,6 +110,28 @@ export function getActiveSessions(): SessionListRow[] {
 }
 
 /**
+ * Sessions that still name a process, and so might need finalizing.
+ *
+ * Deliberately wider than {@link LIVE_STATUSES}. `paused` is not a terminal
+ * state — the Stop hook sets it at the end of every turn that doesn't call
+ * AskUserQuestion, while claude keeps running — so a paused row with a pid is
+ * an ordinary mid-session state, not a finished session. What makes it
+ * *finished* is the process being gone, which is the caller's check, not this
+ * query's.
+ *
+ * Finalizing nulls the pid, so a session that already ended can never come
+ * back through here. Archived rows are excluded outright: they were retired
+ * on purpose and must not be reanimated to emit an ended event.
+ */
+export function getRecoverableSessions(): SessionListRow[] {
+  return getDb()
+    .select({ session: sessions })
+    .from(sessions)
+    .where(and(isNotNull(sessions.pid), ne(sessions.status, "archived")))
+    .all();
+}
+
+/**
  * How many sessions are currently live (running or awaiting the user) in a
  * project's DB. Powers the dashboard's "projects with live sessions" default
  * view, so it's a cheap COUNT rather than materializing the rows.
@@ -201,7 +223,9 @@ export function updateSession(
     summary: string;
     pid: number | null;
     pidStartedAt: number | null;
-    endedAt: string;
+    // Nullable: re-attaching a finalized session (`bertrand adopt` on a resumed
+    // conversation) has to clear it, or the row reads as finished while it runs.
+    endedAt: string | null;
     branch: string | null;
   }>,
   db: Db = getDb(),

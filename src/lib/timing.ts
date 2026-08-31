@@ -3,6 +3,7 @@ import { getSessionUsage } from "@/db/queries/conversations";
 import { getSessionStats, upsertSessionStats } from "@/db/queries/stats";
 import { computeDiffStats } from "@/lib/diff_stats";
 import { getDb, type Db } from "@/db/client";
+import { parseDbTime } from "@/lib/format";
 
 // --- Types ---
 
@@ -43,8 +44,14 @@ function getClaudeId(row: EventRow): string | undefined {
   return (meta?.claude_id as string) ?? undefined;
 }
 
-function tsMs(iso: string): number {
-  return new Date(iso).getTime();
+/**
+ * Event timestamps arrive in both stored shapes — the hooks write SQLite's
+ * zone-less `datetime('now')`, transcript ingestion backdates rows to the
+ * entry's own ISO timestamp — so a bare `new Date` would read half of them as
+ * local time and skew any segment that spans the two.
+ */
+function tsMs(stored: string): number {
+  return parseDbTime(stored);
 }
 
 function pushSegment(

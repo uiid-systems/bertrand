@@ -72,13 +72,14 @@ environment, so neither takes arguments and there is nothing to fill in.
 
 1. Run \`${bin} adopt\`. Expect one of:
    - \`Adopted this claude session as <slug>.\` — bertrand is recording now.
-   - \`This conversation is already recorded as …\` or \`This claude was launched
-     by bertrand …\` — it was already being recorded. Nothing is wrong; carry on
-     to step 2.
+   - \`Re-attached this claude session to <slug>.\` — this conversation already
+     had a session and is recording again.
+   - \`This claude was launched by bertrand …\` — it was already being recorded.
 
-   Anything else — a non-zero exit, \`command not found\`, an error — means this
-   session is **not** being recorded. Report the output verbatim, tell the user
-   nothing was attached, and stop.
+   All three are fine; carry on to step 2. Anything else — a non-zero exit,
+   \`command not found\`, an error — means this session is **not** being
+   recorded. Report the output verbatim, tell the user nothing was attached,
+   and stop.
 
 2. Run \`${bin} contract --mark-sent\`. It prints the session contract. Read it
    and follow it for the rest of this session; it governs how every turn ends,

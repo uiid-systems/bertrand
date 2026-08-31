@@ -13,8 +13,8 @@ export function createConversation(opts: {
     .get();
 }
 
-export function getConversation(id: string) {
-  return getDb()
+export function getConversation(id: string, db: Db = getDb()) {
+  return db
     .select()
     .from(conversations)
     .where(eq(conversations.id, id))
