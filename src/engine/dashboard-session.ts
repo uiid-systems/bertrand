@@ -444,8 +444,7 @@ function finalize(sessionId: string, conversationId: string, exitCode: number): 
   sessions.delete(sessionId);
 
   // Shared with the CLI path so summaries, timing, marker pruning and sync push
-  // can't silently diverge. stopServerWhenIdle is false because this runs
-  // inside the server: stopping it would kill the process executing this line,
-  // along with every other dashboard-owned session and any attached browser.
-  finalizeSessionRow(sessionId, conversationId, exitCode, { stopServerWhenIdle: false });
+  // can't silently diverge. Nothing here touches the server's lifetime: it runs
+  // *inside* the server, and the server is no longer stopped by anyone.
+  finalizeSessionRow(sessionId, conversationId, exitCode);
 }

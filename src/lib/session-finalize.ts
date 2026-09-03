@@ -11,20 +11,10 @@ import { emitClaudeEnded } from "@/db/events/emit";
 import { computeAndPersist } from "@/lib/timing";
 import { formatDbTime, parseDbTime } from "@/lib/format";
 import { storeSessionSummary } from "@/lib/summary";
-import { stopServerIfIdle } from "@/lib/server-lifecycle";
 import { triggerBackgroundPush } from "@/sync/trigger";
 import { pruneSessionMarkers } from "@/hooks/runtime";
 
 export interface FinalizeSessionOptions {
-  /**
-   * Whether to shut the shared server down once no sessions remain.
-   *
-   * True for a CLI process, which owns neither the server nor any other
-   * session. **False when called from inside `bertrand serve`** — there it
-   * would SIGTERM the very process running this code, taking down every other
-   * dashboard-owned session and any attached browser with it.
-   */
-  stopServerWhenIdle: boolean;
   /**
    * Whether to kick a background sync push. Defaults to true — a session
    * ending is exactly when a push should happen.
@@ -69,7 +59,7 @@ export function finalizeSessionRow(
   sessionId: string,
   conversationId: string,
   exitCode: number,
-  opts: FinalizeSessionOptions,
+  opts: FinalizeSessionOptions = {},
 ): void {
   if (!getSession(sessionId)) return;
 
@@ -107,7 +97,6 @@ export function finalizeSessionRow(
   pruneSessionMarkers(sessionId, safeConversationId);
 
   computeAndPersist(sessionId);
-  if (opts.stopServerWhenIdle) stopServerIfIdle();
 
   // Sync push on session end. Detached fire-and-forget — won't block exit.
   if (opts.triggerSyncPush !== false) triggerBackgroundPush();

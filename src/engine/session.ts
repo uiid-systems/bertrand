@@ -282,6 +282,5 @@ function finalizeSession(
 ): void {
   if (liveSession?.sessionId === sessionId) liveSession = null;
 
-  // A CLI process owns no other session, so it may stop an idle server.
-  finalizeSessionRow(sessionId, conversationId, exitCode, { stopServerWhenIdle: true });
+  finalizeSessionRow(sessionId, conversationId, exitCode);
 }

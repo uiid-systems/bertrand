@@ -76,10 +76,6 @@ export async function recoverStaleSessions(): Promise<number> {
     const conversationId = getConversationsBySession(session.id)[0]?.id ?? "";
 
     finalizeSessionRow(session.id, conversationId, CRASHED_EXIT_CODE, {
-      // Recovery runs either inside `bertrand serve` (stopping the server
-      // would kill the process executing this) or at the head of `bertrand
-      // launch`, which is about to need the server anyway. Never tear it down.
-      stopServerWhenIdle: false,
       // One push after the sweep, not one per session — see the option's docs.
       triggerSyncPush: false,
       // The session ended when it stopped recording, not when this sweep

@@ -1,11 +1,13 @@
 import { register } from "@/cli/router";
-import { ensureServerForActiveSessions } from "@/lib/server-lifecycle";
+import { ensureServerStarted } from "@/lib/server-lifecycle";
 
-// Recovery command: spawn a detached `bertrand serve` only if a session still
-// needs the dashboard, otherwise a no-op. Invoked by the dashboard dev script
-// on exit (handing the port back to bertrand) and by the UserPromptSubmit hook
-// (so a server that went away mid-session is back by the next turn). Hot-path:
-// loads minimal deps and skips the migration check via HOOK_COMMANDS.
+// Spawn a detached `bertrand serve` unless one is already up. Invoked by the
+// UserPromptSubmit hook, so every launch path converges here: the TUI, a
+// `/bertrand`-adopted session, an Orca session, a bare `claude`. Whichever
+// gets a prompt first brings the server up; nothing ever takes it down.
+//
+// Hot-path: loads minimal deps and skips the migration check via HOOK_COMMANDS.
+// A healthy server costs one `kill(pid, 0)` here.
 register("ensure-server", async () => {
-  await ensureServerForActiveSessions();
+  await ensureServerStarted({ waitForReady: false });
 });

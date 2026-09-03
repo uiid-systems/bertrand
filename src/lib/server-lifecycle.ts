@@ -2,13 +2,11 @@ import { spawn } from "child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { paths } from "@/lib/paths";
-import { countLiveSessionsAllProjects } from "@/db/queries/sessions";
 
 interface Deps {
   pidFile: string;
   port: number;
   resolveBin: () => string | null;
-  getActiveCount: () => number;
   /**
    * How long to wait for a freshly spawned server to start accepting
    * connections. A cold Bun process binds well inside this; the cap only exists
@@ -30,10 +28,6 @@ const defaultDeps: Deps = {
       return null;
     }
   },
-  // `bertrand serve` is one shared process across every project, so "is
-  // anything still live" must check all of them — not just whichever
-  // project the calling session's own process happens to be pinned to.
-  getActiveCount: () => countLiveSessionsAllProjects(),
   readyTimeoutMs: 5_000,
 };
 
@@ -106,11 +100,30 @@ function removePidFile(): void {
  * already listening. Idempotent: a live PID file or a responsive port both
  * count as "already running" and short-circuit the spawn.
  *
+ * **The server is never stopped.** It used to be reference-counted against the
+ * number of live sessions across every project, which meant only the launch
+ * paths that decrement that count could ever shut it down — the TUI did, while
+ * `bertrand adopt` (an Orca session, a bare `claude`, the `/bertrand` skill)
+ * neither started nor stopped one. Three independent lifecycles racing over a
+ * single shared process produced both failure modes at once: no server when a
+ * session needed one, and an orphan server long after the last session ended.
+ *
+ * Availability is also the point. The dashboard is meant to pair with the
+ * hosted page at https://bertrand.sh, which is opened precisely when no session
+ * is running — so session-scoped lifetime is the wrong shape for it. An idle
+ * Bun process serving read-only SQLite queries is cheap enough that "always up"
+ * beats any amount of refcounting.
+ *
+ * Cost on the hot path is one `kill(pid, 0)` when a server is already healthy;
+ * the port probe only runs once the recorded PID is gone.
+ *
  * If the user is running `bertrand serve` themselves (e.g. via the dashboard
- * dev script), the port probe sees it and we skip — no PID file is written,
- * so `stopServerIfIdle` won't try to kill it later either.
+ * dev script), the port probe sees it and we skip — no PID file is written, so
+ * we never claim ownership of a process we didn't spawn.
  */
-export async function ensureServerStarted(): Promise<void> {
+export async function ensureServerStarted(
+  opts: { waitForReady?: boolean } = {},
+): Promise<void> {
   const existingPid = readPidFile();
   if (existingPid && isProcessAlive(existingPid)) return;
   if (existingPid) removePidFile();
@@ -128,49 +141,16 @@ export async function ensureServerStarted(): Promise<void> {
   child.unref();
   if (child.pid) writeFileSync(deps.pidFile, String(child.pid));
 
-  // Callers launch a session within milliseconds of this returning, and that
-  // session immediately connects to the server's terminal relay. Returning as
-  // soon as the process is spawned handed them a port nothing was listening on
+  // The engine launches a session within milliseconds of this returning, and
+  // that session immediately connects to the server's terminal relay. Returning
+  // as soon as the process is spawned handed it a port nothing was listening on
   // yet, so wait until it actually accepts. The relay client retries anyway —
   // this makes the common case deterministic rather than merely recoverable.
+  //
+  // The UserPromptSubmit hook opts out: it has nothing to connect, and a cold
+  // start would otherwise stall the user's first prompt after boot for as long
+  // as the readiness timeout. Spawning is enough there; the dashboard is opened
+  // by hand long after.
+  if (opts.waitForReady === false) return;
   await waitForPortListening(deps.port, deps.readyTimeoutMs);
-}
-
-/**
- * Recovery path: ensure a server is running *iff* a session still needs one.
- *
- * When the user runs the dashboard `bun dev` script, its API server holds the
- * port and `ensureServerStarted` defers to it (no spawn, no PID file). If that
- * dev server later goes away mid-session — Ctrl+C, crash — nothing is left to
- * serve the dashboard even though a bertrand session is still live. Calling
- * this hands ownership back to bertrand: it spawns a detached `bertrand serve`
- * (with a PID file, so `stopServerIfIdle` reclaims it at session end).
- *
- * No-op when no session is active, so it never resurrects a server nothing
- * needs — "always running when needed, never running when it isn't".
- */
-export async function ensureServerForActiveSessions(): Promise<void> {
-  if (deps.getActiveCount() === 0) return;
-  await ensureServerStarted();
-}
-
-/**
- * Stop the auto-started server if there are no active sessions left.
- * Caller must have already transitioned its own session out of active state
- * before invoking this so the count reflects post-shutdown reality.
- *
- * No-op when the PID file is missing — we only manage servers we spawned.
- */
-export function stopServerIfIdle(): void {
-  if (deps.getActiveCount() > 0) return;
-
-  const pid = readPidFile();
-  if (!pid) return;
-
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch {
-    // already gone
-  }
-  removePidFile();
 }

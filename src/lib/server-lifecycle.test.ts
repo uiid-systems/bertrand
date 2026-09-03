@@ -4,8 +4,6 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   ensureServerStarted,
-  ensureServerForActiveSessions,
-  stopServerIfIdle,
   _setTestDeps,
   _resetTestDeps,
 } from "@/lib/server-lifecycle";
@@ -63,7 +61,6 @@ describe("ensureServerStarted", () => {
       resolveBin: () => {
         throw new Error("resolveBin should not be called");
       },
-      getActiveCount: () => 0,
     });
 
     await ensureServerStarted();
@@ -78,7 +75,6 @@ describe("ensureServerStarted", () => {
       pidFile,
       port: TEST_PORT, // nothing listening here in CI
       resolveBin: makeFakeBin,
-      getActiveCount: () => 0,
       // The fake bin never binds a port, so cap the readiness wait rather than
       // spending the production timeout proving it.
       readyTimeoutMs: 50,
@@ -107,7 +103,6 @@ describe("ensureServerStarted", () => {
         resolveBin: () => {
           throw new Error("resolveBin should not be called");
         },
-        getActiveCount: () => 0,
       });
 
       await ensureServerStarted();
@@ -123,112 +118,32 @@ describe("ensureServerStarted", () => {
       pidFile,
       port: TEST_PORT,
       resolveBin: () => null,
-      getActiveCount: () => 0,
     });
 
     await ensureServerStarted();
     expect(existsSync(pidFile)).toBe(false);
   });
-});
 
-describe("ensureServerForActiveSessions", () => {
-  beforeEach(() => _resetTestDeps());
-
-  test("no-op when no session is active — never resolves bin or spawns", async () => {
-    const pidFile = pidPath("recover-idle");
-    _setTestDeps({
-      pidFile,
-      port: TEST_PORT,
-      resolveBin: () => {
-        throw new Error("resolveBin should not be called when idle");
-      },
-      getActiveCount: () => 0,
-    });
-
-    await ensureServerForActiveSessions();
-    expect(existsSync(pidFile)).toBe(false);
-  });
-
-  test("spawns a server when a session is active and nothing is listening", async () => {
-    const pidFile = pidPath("recover-active");
+  test("waitForReady:false returns without waiting for the port to accept", async () => {
+    const pidFile = pidPath("no-wait");
     _setTestDeps({
       pidFile,
       port: TEST_PORT, // nothing listening here in CI
       resolveBin: makeFakeBin,
-      getActiveCount: () => 1,
-      readyTimeoutMs: 50,
+      // Deliberately long: the point is that the opt-out path never reaches it.
+      // The UserPromptSubmit hook calls this on every turn, so a cold start
+      // must not stall the user behind a readiness probe.
+      readyTimeoutMs: 10_000,
     });
 
-    await ensureServerForActiveSessions();
+    const start = Date.now();
+    await ensureServerStarted({ waitForReady: false });
+    const elapsed = Date.now() - start;
 
     const newPid = Number(readFileSync(pidFile, "utf-8").trim());
     cleanupPids.push(newPid);
     expect(newPid).toBeGreaterThan(0);
-    expect(isAlive(newPid)).toBe(true);
-  });
-});
-
-describe("stopServerIfIdle", () => {
-  beforeEach(() => _resetTestDeps());
-
-  test("kills the spawned process and removes the PID file when no active sessions", async () => {
-    const pidFile = pidPath("idle-kill");
-    const child = Bun.spawn(["sleep", "30"], { stdio: ["ignore", "ignore", "ignore"] });
-    const pid = child.pid;
-    cleanupPids.push(pid);
-    writeFileSync(pidFile, String(pid));
-
-    _setTestDeps({
-      pidFile,
-      port: TEST_PORT,
-      resolveBin: () => null,
-      getActiveCount: () => 0,
-    });
-
-    stopServerIfIdle();
-
-    expect(existsSync(pidFile)).toBe(false);
-    const start = Date.now();
-    while (isAlive(pid) && Date.now() - start < 2000) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    expect(isAlive(pid)).toBe(false);
-  });
-
-  test("does nothing when active sessions remain", () => {
-    const pidFile = pidPath("idle-keep");
-    const child = Bun.spawn(["sleep", "30"], { stdio: ["ignore", "ignore", "ignore"] });
-    const pid = child.pid;
-    cleanupPids.push(pid);
-    writeFileSync(pidFile, String(pid));
-
-    _setTestDeps({
-      pidFile,
-      port: TEST_PORT,
-      resolveBin: () => null,
-      getActiveCount: () => 2,
-    });
-
-    stopServerIfIdle();
-
-    expect(existsSync(pidFile)).toBe(true);
-    expect(isAlive(pid)).toBe(true);
-
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {}
-  });
-
-  test("no-op when PID file is absent (someone else runs bertrand serve)", () => {
-    const pidFile = pidPath("no-pidfile");
-    _setTestDeps({
-      pidFile,
-      port: TEST_PORT,
-      resolveBin: () => null,
-      getActiveCount: () => 0,
-    });
-
-    expect(() => stopServerIfIdle()).not.toThrow();
-    expect(existsSync(pidFile)).toBe(false);
+    // Spawned, but returned nowhere near the readiness timeout.
+    expect(elapsed).toBeLessThan(2_000);
   });
 });
