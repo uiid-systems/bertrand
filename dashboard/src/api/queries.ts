@@ -75,10 +75,6 @@ async function postSessionActionJson<T>(
   return res.json()
 }
 
-/** Permanently delete the session and everything cascading from it. */
-export const discardSession = (id: string): Promise<{ ok: true }> =>
-  postSessionActionJson<{ ok: true }>(`/api/sessions/${id}/discard`)
-
 export type ResumeSessionResult = {
   sessionId: string
   claudeId: string

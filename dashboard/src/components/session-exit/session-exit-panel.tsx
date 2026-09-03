@@ -1,14 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import {
-  Badge,
-  Button,
-  Dialog,
-  Group,
-  Stack,
-  Text,
-} from "@uiid/design-system";
-import { PlayIcon, PlusIcon, Trash2Icon } from "@uiid/icons";
+import { Badge, Button, Group, Stack, Text } from "@uiid/design-system";
+import { PlayIcon, PlusIcon } from "@uiid/icons";
 
 import { useArchiveAction } from "../../api/use-archive-action";
 import { useSessionExitActions } from "../../api/use-session-exit-actions";
@@ -33,20 +24,22 @@ function describeExit(code: number | null): {
 }
 
 /**
- * What the terminal zone shows once a session has ended — the dashboard's
- * counterpart to the TUI's post-exit screen (`src/tui/screens/Exit.tsx`), which
- * a browser-only session otherwise never gets (#214).
+ * What the terminal zone shows once a session has ended. It arrived as the
+ * dashboard's counterpart to a TUI post-exit screen (#214); that screen has
+ * since been removed — the terminal now just returns to the shell — so this
+ * is the only end-of-session surface, and the only route to resume a session
+ * from outside `bertrand` itself.
  *
  * Reads entirely from the session row and the event log, never from a live
  * relay frame. A browser that attaches *after* the session ended never received
  * the `ended` control frame (#215) and must still see this, so the durable
  * record is the only source that works in both cases.
  *
- * There is no "Save" button. Save is a no-op in the TUI — `finalize` has
- * already paused the session by the time the screen renders — and the TUI needs
- * it only because its screen is a modal gate that something has to dismiss.
- * This panel is not a gate, so the equivalent is stating that the work is
- * already saved.
+ * There is no "Save" button, and never was one to mirror: `finalize` has
+ * already paused the session by the time anything renders. The TUI screen
+ * offered Save only because it was a modal gate that something had to
+ * dismiss — the reason it is gone. This panel is not a gate, so the
+ * equivalent is stating that the work is already saved.
  */
 /** One resumable conversation, as the panel needs it. */
 export type ResumableConversation = {
@@ -67,18 +60,8 @@ export function SessionExitPanel({
   /** Newest first. Empty is fine — resume then only offers a new conversation. */
   readonly conversations: readonly ResumableConversation[];
 }) {
-  const navigate = useNavigate();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
   const archive = useArchiveAction(session);
-  const { discard, resume, describeError } = useSessionExitActions(session, {
-    // The route is keyed by the session that no longer exists, so staying here
-    // would render a "not found" shell. Fall back home.
-    onDiscarded: () => {
-      setConfirmOpen(false);
-      void navigate({ to: "/" });
-    },
-  });
+  const { resume, describeError } = useSessionExitActions(session);
 
   const exit = describeExit(exitCode);
   const durationSeconds =
@@ -103,12 +86,6 @@ export function SessionExitPanel({
             {conversationCount} conversation{conversationCount === 1 ? "" : "s"}
           </Text>
         </Group>
-      </Stack>
-
-      <Stack gap={2}>
-        <Text size={-1} shade="muted">
-          How effective was this session?
-        </Text>
       </Stack>
 
       <Stack gap={2}>
@@ -167,56 +144,11 @@ export function SessionExitPanel({
             <archive.Icon size={13} />
             {archive.label}
           </Button>
-          <Button
-            size="small"
-            variant="subtle"
-            color="red"
-            onClick={() => setConfirmOpen(true)}
-            tooltip="Delete this session permanently"
-          >
-            <Trash2Icon size={13} />
-            Discard
-          </Button>
         </Group>
         <Text size={-1} shade="muted">
           Saved and paused — it will be here when you come back.
         </Text>
       </Stack>
-
-      <Dialog
-        open={confirmOpen}
-        onOpenChange={(open) => {
-          setConfirmOpen(open);
-          if (!open) discard.reset();
-        }}
-        title="Discard session"
-        description="This permanently deletes the session and everything recorded under it — every conversation, event, and statistic. It cannot be undone."
-        footer={
-          <Group gap={2} ax="end" fullwidth>
-            <Button variant="subtle" onClick={() => setConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              color="red"
-              loading={discard.isPending}
-              onClick={() => discard.mutate()}
-            >
-              Discard permanently
-            </Button>
-          </Group>
-        }
-      >
-        <Stack gap={2} fullwidth>
-          <Text size={-1} family="mono" style={{ wordBreak: "break-all" }}>
-            {session.slug}
-          </Text>
-          <Text size={-1} shade="muted">
-            {conversationCount} conversation
-            {conversationCount === 1 ? "" : "s"} will be deleted. Archive instead
-            if you only want it out of the way.
-          </Text>
-        </Stack>
-      </Dialog>
     </Stack>
   );
 }

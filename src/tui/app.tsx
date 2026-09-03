@@ -5,14 +5,11 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 
 import type { LaunchSelection } from "./screens/launch/launch.types";
-import type { ExitAction } from "./screens/Exit";
 import type { ResumeSelection } from "./screens/Resume";
-import { deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
   createConversation,
 } from "@/db/queries/conversations";
-import { archiveSession } from "@/lib/session-archive";
 import { launch, resume } from "@/engine/session";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
@@ -33,7 +30,7 @@ const SCREEN_ENTRY = (() => {
  * handlers on the parent. The TTY delivers signals to the foreground process
  * group, so the child gets them and handles its own cleanup. The parent
  * handler exists purely to suppress Node's default-terminate-on-signal
- * behavior; without it, a Ctrl+C during the exit screen would kill the
+ * behavior; without it, a Ctrl+C during a screen would kill the
  * parent before it could read the child's result file. run-screen.tsx is
  * responsible for ensuring a result file is always written, even on signal.
  */
@@ -58,7 +55,7 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
   // handed a `BERTRAND_PROJECT` pin, because a screen subprocess re-resolved
   // the active project from a mutable global in projects.json and could open a
   // *different* project's DB than its parent — surfacing "Session not found"
-  // instead of the exit menu. There is one DB now, so there is nothing left to
+  // instead of the screen. There is one DB now, so there is nothing left to
   // pin: every screen opens the same file its parent did.
   const child = spawn("bun", ["run", SCREEN_ENTRY, screen, tmpFile, ...args], {
     stdio: "inherit",
@@ -118,21 +115,14 @@ export async function startLaunchTui(): Promise<LaunchSelection> {
 }
 
 /**
- * Render the exit menu and return the user's chosen action.
- */
-async function startExitTui(sessionId: string): Promise<ExitAction> {
-  return runScreen<ExitAction>("exit", sessionId);
-}
-
-/**
  * Render the resume picker and return the user's choice.
  *
- * Always shows the picker when at least one conversation exists — the
- * Exit screen's "Resume" option promises a choice between continuing an
- * existing conversation and starting a new one, so silently auto-
- * selecting the lone conversation when there's only one makes that
- * promise lie. The only exception is zero conversations, where there's
- * nothing to pick and auto-new is the only sensible path.
+ * Always shows the picker when at least one conversation exists — picking a
+ * session on the launch screen is a request to choose between continuing a
+ * conversation and starting a new one, so silently auto-selecting the lone
+ * conversation when there's only one answers that for the user. The only
+ * exception is zero conversations, where there's nothing to pick and
+ * auto-new is the only sensible path.
  */
 export async function startResumeTui(
   sessionId: string,
@@ -168,36 +158,16 @@ async function resolveConversationForResume(
 }
 
 /**
- * Post-session loop: show exit menu, handle action.
- * Loops if the user chooses "resume" from the exit menu.
- */
-export async function runSessionLoop(sessionId: string): Promise<void> {
-  const action = await startExitTui(sessionId);
-
-  switch (action) {
-    case "save":
-      break;
-
-    case "archive":
-      archiveSession(sessionId);
-      break;
-
-    case "discard":
-      deleteSession(sessionId);
-      break;
-
-    case "resume": {
-      const conversationId = await resolveConversationForResume(sessionId);
-      if (!conversationId) break;
-      await resume({ sessionId, conversationId });
-      await runSessionLoop(sessionId);
-      break;
-    }
-  }
-}
-
-/**
- * One launch cycle: TUI launch screen → session → exit menu.
+ * One launch cycle: TUI launch screen → session → back to the shell.
+ *
+ * Nothing follows the session. There used to be an exit screen here offering
+ * Save / Archive / Discard / Resume, and its default — Save — was a no-op:
+ * `finalizeSession` has already paused the session by the time Claude's
+ * process returns, so the screen was a modal gate the user had to dismiss to
+ * get their terminal back. Of the rest, archive is on the CLI (`bertrand
+ * archive`) and in the dashboard, resume is running `bertrand` again or the
+ * dashboard's exit panel, and discard is gone — nothing outside the screen
+ * wanted it, and archive covers putting a session away.
  */
 async function runLaunchCycle(): Promise<void> {
   const selection = await startLaunchTui();
@@ -206,29 +176,23 @@ async function runLaunchCycle(): Promise<void> {
     case "quit":
       return;
 
-    case "create": {
-      const sessionId = await launch(selection);
-      await runSessionLoop(sessionId);
+    case "create":
+      await launch(selection);
       return;
-    }
 
     case "pick": {
       const conversationId = await resolveConversationForResume(
         selection.sessionId,
       );
       if (!conversationId) return;
-      const sessionId = await resume({
-        sessionId: selection.sessionId,
-        conversationId,
-      });
-      await runSessionLoop(sessionId);
+      await resume({ sessionId: selection.sessionId, conversationId });
       return;
     }
   }
 }
 
 /**
- * Main TUI entrypoint: launch screen, run the session, show the exit menu.
+ * Main TUI entrypoint: launch screen, run the session, return to the shell.
  *
  * There is no longer a screen before this one. A project picker used to gate
  * the launch screen, because the sessions it listed came from whichever

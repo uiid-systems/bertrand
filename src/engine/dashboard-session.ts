@@ -384,7 +384,8 @@ function resolveSessionCwd(sessionId: string): SessionCwdResult {
 
 /**
  * Resume a session under the server's ownership (#214) — the dashboard's
- * equivalent of the TUI exit screen's "Resume".
+ * equivalent of picking a paused session in `bertrand` and continuing a
+ * conversation (originally of the since-removed TUI exit screen's "Resume").
  *
  * `conversationId` omitted mints a new conversation under the same session,
  * matching the resume picker's "+ New conversation". Which conversation to

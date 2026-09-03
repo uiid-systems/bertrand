@@ -1,10 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToastManager } from "@uiid/design-system";
-import {
-  discardSession,
-  resumeSession,
-  SessionActionError,
-} from "./queries";
+import { resumeSession, SessionActionError } from "./queries";
 import type { SessionRow } from "./types";
 
 /**
@@ -15,8 +10,6 @@ import type { SessionRow } from "./types";
  */
 const REASON_MESSAGE: Record<string, string> = {
   "not-found": "Session not found",
-  "out-of-range": "Rating must be between 1 and 5",
-  active: "Stop the session before discarding it",
   unknown: "Something went wrong",
 };
 
@@ -31,39 +24,14 @@ function describeError(err: unknown): string {
 /**
  * The end-of-session actions that aren't archive (#214) — archive already has
  * `useArchiveAction`, and this deliberately does not absorb it: that hook owns
- * an undo affordance and an archive/unarchive decision tree that have nothing
- * to do with deleting.
+ * an undo affordance and an archive/unarchive decision tree that resume has
+ * nothing to do with.
  *
- * Rating is optimistic. It is a single integer with no server-side derivation,
- * and the alternative is a star that visibly lags the click on every press.
- * The `sessions` cache is the source of truth the panel renders from, so the
- * patch goes there and is rolled back on failure.
+ * Resume is all that is left here. Rating went with the ratings system, and
+ * discard went with the TUI exit screen it mirrored.
  */
-export function useSessionExitActions(
-  session: Pick<SessionRow, "id" | "slug">,
-  opts: { onDiscarded?: () => void } = {},
-) {
+export function useSessionExitActions(session: Pick<SessionRow, "id">) {
   const qc = useQueryClient();
-  const toast = useToastManager();
-
-  const discard = useMutation({
-    mutationFn: () => discardSession(session.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["sessions"] });
-      toast.add({
-        description: `Discarded ${session.slug}`,
-        priority: "low",
-      });
-      // No undo offered: the row and everything cascading from it is gone, so
-      // a button promising to bring it back would be lying.
-      opts.onDiscarded?.();
-    },
-    onError: (err) =>
-      toast.add({
-        description: `Could not discard ${session.slug}: ${describeError(err)}`,
-        priority: "high",
-      }),
-  });
 
   const resume = useMutation({
     // `undefined` means "start a new conversation under this session".
@@ -80,5 +48,5 @@ export function useSessionExitActions(
     // that caused it, where the remedy ("stop another session") is actionable.
   });
 
-  return { discard, resume, describeError };
+  return { resume, describeError };
 }
