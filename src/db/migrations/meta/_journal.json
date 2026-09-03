@@ -134,6 +134,13 @@
       "when": 1788125900670,
       "tag": "0018_romantic_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788449674958,
+      "tag": "0019_drop_rating",
+      "breakpoints": true
     }
   ]
 }

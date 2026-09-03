@@ -34,7 +34,6 @@ export const sessions = sqliteTable(
       .notNull()
       .default("paused"),
     summary: text("summary"),
-    rating: integer("rating"),
     pid: integer("pid"),
     // Epoch ms when `pid` was recorded, so a recycled pid can't pass as the
     // original process (#209). Null on rows written before this existed —

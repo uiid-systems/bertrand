@@ -12,6 +12,9 @@
 > spike ran on rather than universal, and are corrected in place: the adoption table
 > (4a), the changed-files "never executed" corollary (4a), and the Linear
 > availability claim (Part 7). Grep this doc for `2026-08-30`.
+> **Amended:** 2026-09-03 — §4d's "current schema" had gone stale as the
+> workstreams landed. Restated as of that date, with the dropped columns and the
+> migrations that dropped them listed beneath it. Grep for `2026-09-03`.
 
 ## How to use this document
 
@@ -438,16 +441,31 @@ Two findings that dissolve the naming blocker:
 
 `sessions.summary` is already populated for 32/52 bertrand sessions.
 
-### 4d. Current `sessions` schema
+### 4d. `sessions` schema — refreshed 2026-09-03
+
+The column list here was the schema as of the 2026-08-28 spike. Everything this
+part recommended cutting has since been cut, so it is restated as of
+**2026-09-03** rather than left describing a table that no longer exists:
 
 ```
-id TEXT PK · category_id TEXT NOT NULL · slug TEXT NOT NULL · name TEXT NOT NULL
-status TEXT DEFAULT 'paused' · summary TEXT · pid INTEGER
-started_at · ended_at · created_at · updated_at · rating INTEGER
-worktree_path TEXT · worktree_branch TEXT · pid_started_at INTEGER
+id TEXT PK · slug TEXT NOT NULL · name TEXT NOT NULL
+name_source TEXT DEFAULT 'manual' NOT NULL · status TEXT DEFAULT 'paused' NOT NULL
+summary TEXT · pid INTEGER · pid_started_at INTEGER
+started_at · ended_at · created_at · updated_at · branch TEXT
 ```
 
-Event names in use: `tool.used` 5292 · `assistant.message` 1498 ·
+Dropped since the spike:
+
+- `category_id`, with the `categories` table (0018) — Workstream 2's flatten.
+- `worktree_path` / `worktree_branch` (0015) — Workstream 1's teardown. `branch`
+  is their replacement, and it is the branch *every* session has rather than the
+  ~6% that had a worktree.
+- `rating` (0019) — the 1-5 effectiveness score, removed with its route, its TUI
+  keys, and its dashboard star control. Not a §5 workstream; a later cut in the
+  same slim-down direction.
+
+Event counts below are the spike's, not re-measured. Event names in use:
+`tool.used` 5292 · `assistant.message` 1498 ·
 `tool.applied` 1346 · `session.waiting` 356 · `session.answered` 352 ·
 `user.prompt` 139 · `context.snapshot` 81 · `permission.request` 76 ·
 `permission.resolve` 68 · `claude.ended` 63 · `claude.started` 59 ·

@@ -23,7 +23,7 @@ migrate(drizzle(sqlite), {
 });
 
 // Now import query modules — they'll use the injected test DB
-const { createSession, getSession, getActiveSessions, getAllSessions, setSessionRating, updateSessionStatus } = await import("./queries/sessions.ts");
+const { createSession, getSession, getActiveSessions, getAllSessions, updateSessionStatus } = await import("./queries/sessions.ts");
 const { insertEvent, getEventsBySession } = await import("./queries/events.ts");
 const {
   createConversation,
@@ -80,25 +80,6 @@ describe("sessions", () => {
 
     const listed = getAllSessions({ excludeArchived: true });
     expect(listed.some((s) => s.session.id === session.id)).toBe(true);
-  });
-
-  test("session rating defaults to null and can be set, updated, and cleared", () => {
-    const session = createSession({
-      slug: "rating-test",
-      name: "rating-test",
-    });
-    expect(session.rating).toBeNull();
-
-    const rated = setSessionRating(session.id, 4);
-    expect(rated.rating).toBe(4);
-    expect(getSession(session.id)!.rating).toBe(4);
-
-    const rerated = setSessionRating(session.id, 2);
-    expect(rerated.rating).toBe(2);
-
-    const cleared = setSessionRating(session.id, null);
-    expect(cleared.rating).toBeNull();
-    expect(getSession(session.id)!.rating).toBeNull();
   });
 });
 

@@ -236,19 +236,6 @@ export function setSessionSummary(id: string, summary: string) {
     .get();
 }
 
-export function setSessionRating(
-  id: string,
-  rating: number | null,
-  db: Db = getDb(),
-) {
-  return db
-    .update(sessions)
-    .set({ rating, updatedAt: sql`(datetime('now'))` })
-    .where(eq(sessions.id, id))
-    .returning()
-    .get();
-}
-
 /**
  * A rename is the user speaking, so it stamps nameSource 'manual' — from here
  * on, pause-time derivation must never touch this session's name again.
