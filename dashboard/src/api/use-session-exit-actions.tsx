@@ -1,6 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToastManager } from "@uiid/design-system";
-import { discardSession, resumeSession, SessionActionError } from "./queries";
+import {
+  discardSession,
+  resumeSession,
+  SessionActionError,
+} from "./queries";
 import type { SessionRow } from "./types";
 
 /**
@@ -11,6 +15,7 @@ import type { SessionRow } from "./types";
  */
 const REASON_MESSAGE: Record<string, string> = {
   "not-found": "Session not found",
+  "out-of-range": "Rating must be between 1 and 5",
   active: "Stop the session before discarding it",
   unknown: "Something went wrong",
 };
@@ -27,18 +32,22 @@ function describeError(err: unknown): string {
  * The end-of-session actions that aren't archive (#214) — archive already has
  * `useArchiveAction`, and this deliberately does not absorb it: that hook owns
  * an undo affordance and an archive/unarchive decision tree that have nothing
- * to do with deleting or resuming.
+ * to do with deleting.
+ *
+ * Rating is optimistic. It is a single integer with no server-side derivation,
+ * and the alternative is a star that visibly lags the click on every press.
+ * The `sessions` cache is the source of truth the panel renders from, so the
+ * patch goes there and is rolled back on failure.
  */
 export function useSessionExitActions(
   session: Pick<SessionRow, "id" | "slug">,
-  project: string | undefined,
   opts: { onDiscarded?: () => void } = {},
 ) {
   const qc = useQueryClient();
   const toast = useToastManager();
 
   const discard = useMutation({
-    mutationFn: () => discardSession(session.id, project),
+    mutationFn: () => discardSession(session.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
       toast.add({

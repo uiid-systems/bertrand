@@ -32,9 +32,9 @@ const TEST_DB_PATH = join(
 );
 const sqlite = new Database(TEST_DB_PATH);
 sqlite.exec("PRAGMA foreign_keys = ON");
-// A process-wide override: `getDbForProject` bypasses its per-project cache
-// while one is installed, so every `?project=` scope the routes resolve lands
-// here rather than in `~/.bertrand`.
+// A process-wide override: `getDb()` short-circuits its cache while one is
+// installed, so every read the routes make lands here rather than in
+// `~/.bertrand`.
 _setDb(drizzle(sqlite, { schema }));
 migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),

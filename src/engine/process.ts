@@ -1,4 +1,3 @@
-import { resolveActiveProject } from "@/lib/projects/resolve";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
@@ -26,7 +25,13 @@ let activePty: PtyHandle | null = null;
  * bertrand and Orca compose without either knowing about the other
  * (docs/orca-boundary.md), and any comparable host goes blind to
  * bertrand-launched sessions the moment this is narrowed. bertrand's own
- * `BERTRAND_PROJECT`/`BERTRAND_PROJECT_DB` ride the same channel.
+ * `BERTRAND_*` vars ride the same channel.
+ *
+ * There are four of them now rather than six. `BERTRAND_PROJECT` and
+ * `BERTRAND_PROJECT_DB` pinned the active project (and its SQLite file) at
+ * spawn time so a `bertrand project switch` in another terminal could not
+ * redirect a running session's writes. With one database at `paths.db` there
+ * is nothing to pin, and grouping is a column derived from the session's cwd.
  *
  * Extracted from `launchClaude` so `process.test.ts` can assert the
  * passthrough without spawning `claude`.
@@ -34,22 +39,12 @@ let activePty: PtyHandle | null = null;
 export function buildClaudeEnv(
   opts: Pick<ClaudeLaunchOpts, "sessionId" | "claudeId" | "sessionName" | "sessionSlug">,
 ) {
-  // Capture the active project at spawn time so the running session keeps
-  // writing to the right DB even if the user runs `bertrand project switch`
-  // in another terminal. Hooks inherit this env via the chain
-  // bertrand → claude → hook subprocess → bertrand update, so every
-  // hook-triggered write resolves to the same project the session started
-  // in — not whatever's active on disk at hook-fire time.
-  const active = resolveActiveProject();
-
   return {
     ...process.env,
     BERTRAND_CLAUDE_ID: opts.claudeId,
     BERTRAND_SESSION: opts.sessionId,
     BERTRAND_SESSION_NAME: opts.sessionName,
     BERTRAND_SESSION_SLUG: opts.sessionSlug,
-    BERTRAND_PROJECT: active.slug,
-    BERTRAND_PROJECT_DB: active.db,
   };
 }
 

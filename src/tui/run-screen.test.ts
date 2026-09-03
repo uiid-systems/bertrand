@@ -33,8 +33,8 @@ describe("run-screen.tsx alt-screen first-paint workaround", () => {
     const invalidateCalls = src.match(/app\.screen\.invalidate\(\)/g) ?? [];
     const repaintCalls = src.match(/app\.requestRepaint\(\)/g) ?? [];
 
-    // One render() per screen (launch, project-picker, exit, resume).
-    expect(renderCalls.length).toBeGreaterThanOrEqual(4);
+    // One render() per screen (launch, exit, resume).
+    expect(renderCalls.length).toBeGreaterThanOrEqual(3);
     expect(invalidateCalls.length).toBe(renderCalls.length);
     expect(repaintCalls.length).toBe(renderCalls.length);
   });
@@ -43,13 +43,13 @@ describe("run-screen.tsx alt-screen first-paint workaround", () => {
     // If the repaint pattern is moved after waitUntilExit, the workaround
     // becomes a no-op — Storm has already torn down. Each screen's block
     // must have invalidate/requestRepaint preceding waitUntilExit.
-    const blocks = src.split(/case "(launch|project-picker|exit|resume)":/);
+    const blocks = src.split(/case "(launch|exit|resume)":/);
     // blocks[0] is the preamble; blocks alternate as [name, body, name, body, ...]
     const screenBodies: string[] = [];
     for (let i = 2; i < blocks.length; i += 2) {
       screenBodies.push(blocks[i]!);
     }
-    expect(screenBodies.length).toBeGreaterThanOrEqual(4);
+    expect(screenBodies.length).toBeGreaterThanOrEqual(3);
 
     for (const body of screenBodies) {
       const invalidateIdx = body.indexOf("app.screen.invalidate()");

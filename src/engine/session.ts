@@ -9,7 +9,8 @@ import {
 import { getSessionByAlias } from "@/db/queries/session-aliases";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
-import { recordSessionBranch } from "@/lib/session-branch";
+import { deriveSessionKey, groupKey } from "@/lib/session-key";
+import { recordSessionKey } from "@/lib/session-record";
 import {
   addLabelToSession,
   getOrCreateLabelByName,
@@ -154,10 +155,18 @@ export async function launch(opts: LaunchOpts): Promise<string> {
     }
   }
 
+  // Derived before the row exists so the session goes in already filed under
+  // the work it is for, rather than appearing ungrouped and being corrected a
+  // git call later. `process.cwd()` is the session's directory on this path:
+  // the TUI runs in it.
+  const key = await deriveSessionKey(process.cwd());
+
   const session = createSession({
     slug,
     name: opts.name,
     nameSource: opts.slug ? undefined : "derived",
+    ...key,
+    groupKey: groupKey(key),
   });
 
   for (const name of opts.labelNames ?? []) {
@@ -182,9 +191,6 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   await ensureServerStarted();
 
   const sessionName = slug;
-
-  // Recorded on every start, not only the first: the column is current state.
-  await recordSessionBranch(session.id, process.cwd());
 
   emitClaudeStarted({
     sessionId: session.id,
@@ -244,9 +250,10 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   await ensureServerStarted();
 
   // Outside the resume guard on purpose. The event must not be re-emitted for
-  // a continuing conversation, but the branch must be re-read: a session can
-  // resume on a different branch than it left.
-  await recordSessionBranch(session.id, process.cwd());
+  // a continuing conversation, but where the session is running must be
+  // re-read: it can come back in a different worktree, or on a branch that was
+  // renamed under it, and the group follows the cwd.
+  await recordSessionKey(session.id, process.cwd());
 
   if (!resumeExisting) {
     emitClaudeStarted({

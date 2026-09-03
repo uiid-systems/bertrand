@@ -19,7 +19,16 @@ describe("helpText", () => {
       expect(text).toContain("bertrand log <session>");
       expect(text).toContain("bertrand list");
       expect(text).toContain("bertrand sync <op>");
-      expect(text).toContain("--project <slug>");
+    }
+  });
+
+  test("neither variant advertises a project surface", () => {
+    // The reference is also what the session-start contract injects, so a
+    // stale line here teaches every agent a command that no longer exists.
+    for (const text of [helpText(), helpText({ agent: true })]) {
+      expect(text).not.toContain("bertrand project");
+      expect(text).not.toContain("--project");
+      expect(text).not.toContain("--all-projects");
     }
   });
 });

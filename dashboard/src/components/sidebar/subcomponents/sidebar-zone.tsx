@@ -27,7 +27,7 @@ export type SidebarZoneProps = React.PropsWithChildren<{
    * buttons). */
   actions?: React.ReactNode;
   /** Stable id for persisting this zone's dim state. Defaults to `title`;
-   * pass an explicit id when titles aren't unique (e.g. per-project zones). */
+   * pass an explicit id when the title is copy that may be reworded. */
   zoneId?: string;
   /** Controlled open state (persisted zones). Omit both to let the zone manage
    * itself, open by default. */
@@ -42,7 +42,7 @@ export type SidebarZoneProps = React.PropsWithChildren<{
 
 /**
  * The sidebar's collapsible section shell, shared by every zone ("Active
- * sessions", the project zone, "Files changed"): a full-width trigger bar we
+ * sessions", "Sessions", "Files changed"): a full-width trigger bar we
  * own the styling of — chevron + bold title + optional badge, title underlined
  * on hover via `.sidebar-zone-trigger` — over an instant (no animation)
  * full-width panel. Supports controlled open state for zones that

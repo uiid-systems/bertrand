@@ -1,15 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-
-import {
-  _setRegistryDir,
-  _getRegistryDir,
-  writeRegistry,
-} from "@/lib/projects/registry";
-import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { UnboundProjectError } from "@/lib/projects/policy";
+import { describe, test, expect, beforeEach } from "bun:test";
 
 const {
   DashboardSessionLimitError,
@@ -19,69 +8,18 @@ const {
   listDashboardSessions,
 } = await import("./dashboard-session");
 
-const TS = "2026-01-01T00:00:00.000Z";
-const originalRegistryDir = _getRegistryDir();
-const originalProjectEnv = process.env.BERTRAND_PROJECT;
-
-const temps: string[] = [];
-function tempDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  temps.push(dir);
-  return dir;
-}
-
-/**
- * Point the process at a project that either has a repo binding or doesn't.
- *
- * Spawning now reads the repo off the active project, so every spawn test needs
- * a registry to read — and `BERTRAND_PROJECT` has to be pinned explicitly,
- * because bertrand sets it in its own sessions and an inherited value would
- * silently outrank the registry we just wrote.
- */
-function useProject(slug: string, repoPath?: string): void {
-  writeRegistry({
-    activeProjectSlug: slug,
-    projects: [
-      {
-        slug,
-        name: slug,
-        createdAt: TS,
-        lastUsedAt: TS,
-        ...(repoPath
-          ? {
-              repo: {
-                path: repoPath,
-                provider: { provider: "github" as const, owner: "acme", repo: slug },
-              },
-            }
-          : {}),
-      },
-    ],
-  });
-  process.env.BERTRAND_PROJECT = slug;
-  _resetActiveProjectCache();
-}
-
 // Zero means *every* start is over the cap, which exercises the guard without
-// launching a real `claude` — the check runs before any process or row exists.
+// launching a real `claude` — the check runs before any process or row exists,
+// and before the cwd is derived, so these tests need neither a database nor a
+// git checkout. They used to need a project registry as well: spawning read
+// the repo off the active project's binding, which is what made "which
+// directory?" a lookup instead of an argument.
 //
 // Set per test rather than once at module load: bun shares a process across
 // test files, and a sibling file needs a different cap. Whoever loaded first
 // used to win.
 beforeEach(() => {
   process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "0";
-  _setRegistryDir(tempDir("bertrand-registry-"));
-});
-
-afterEach(() => {
-  _setRegistryDir(originalRegistryDir);
-  if (originalProjectEnv === undefined) delete process.env.BERTRAND_PROJECT;
-  else process.env.BERTRAND_PROJECT = originalProjectEnv;
-  _resetActiveProjectCache();
-});
-
-afterAll(() => {
-  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("dashboard session concurrency bound", () => {
@@ -95,17 +33,15 @@ describe("dashboard session concurrency bound", () => {
   });
 
   test("refuses to spawn past the cap", async () => {
-    useProject("capped", process.cwd());
     await expect(
       spawnDashboardSession({ slug: "over-cap" }),
     ).rejects.toThrow(DashboardSessionLimitError);
   });
 
   test("the refused spawn registers no session", async () => {
-    // The guard runs before both worktree creation and createSession, so a
+    // The guard runs before the cwd is derived and before createSession, so a
     // rejection leaves no trace — no half-built row for recovery to clean up
-    // later, and no orphaned worktree on disk.
-    useProject("capped", process.cwd());
+    // later, and nothing shelled out to git for.
     try {
       await spawnDashboardSession({ slug: "over-cap-2" });
     } catch {
@@ -118,7 +54,6 @@ describe("dashboard session concurrency bound", () => {
     // The cap error (not a slug complaint) proves the missing slug passed
     // argument handling; the placeholder is only issued after the guards.
     process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "0";
-    useProject("capped", process.cwd());
     await expect(spawnDashboardSession({})).rejects.toThrow(
       DashboardSessionLimitError,
     );
@@ -130,50 +65,6 @@ describe("dashboard session concurrency bound", () => {
     expect(err.message).toContain("8");
     expect(err).toBeInstanceOf(Error);
   });
-});
-
-describe("the repo is derived from the project, not supplied", () => {
-  test("an unbound project cannot start a session at all", async () => {
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
-    useProject("unlinked");
-
-    // Asserted by catching rather than `rejects.toThrow`, so the *type* is
-    // checked outright — the HTTP layer branches on it to return 409.
-    const err = await spawnDashboardSession({
-      slug: "nowhere-to-run",
-    }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(UnboundProjectError);
-    expect(listDashboardSessions()).toEqual([]);
-  });
-
-  test("the refusal names the project and the command that fixes it", async () => {
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "5";
-    useProject("unlinked");
-
-    const err = await spawnDashboardSession({
-      slug: "nowhere-to-run-2",
-    }).catch((e) => e);
-
-    expect(err.slug).toBe("unlinked");
-    expect(err.message).toContain("bertrand project link unlinked");
-  });
-
-  test("an unbound project is reported even when the server is at capacity", async () => {
-    // Capacity is transient and the binding is not. Someone told "too many
-    // sessions" when the real problem is an unlinked project would go stop a
-    // session and hit the same wall, so the permanent fault wins.
-    process.env.BERTRAND_MAX_DASHBOARD_SESSIONS = "0";
-    useProject("unlinked");
-
-    const err = await spawnDashboardSession({
-      slug: "capped-and-unbound",
-    }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(UnboundProjectError);
-    expect(err).not.toBeInstanceOf(DashboardSessionLimitError);
-  });
-
 });
 
 describe("resume under the same bound (#214)", () => {

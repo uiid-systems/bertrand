@@ -3,22 +3,22 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { _setRegistryDir, _getRegistryDir } from "@/lib/projects/registry";
+import { _setRootDir, _getRootDir } from "@/lib/paths";
 import { isDeclaredHost, readEnterpriseHosts, _setEnterpriseHosts } from "./hosts";
 
 let tmpRoot: string;
-const originalDir = _getRegistryDir();
+const originalDir = _getRootDir();
 
 /** `config.json` lives under the registry dir, so pointing it at a temp root
  * keeps these tests off the developer's real ~/.bertrand/config.json. */
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-gh-hosts-"));
-  _setRegistryDir(tmpRoot);
+  _setRootDir(tmpRoot);
   _setEnterpriseHosts(null);
 });
 
 afterEach(() => {
-  _setRegistryDir(originalDir);
+  _setRootDir(originalDir);
   _setEnterpriseHosts(null);
   rmSync(tmpRoot, { recursive: true, force: true });
 });

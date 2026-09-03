@@ -13,7 +13,8 @@ type SessionUsageBadgeProps = {
  * A session's output tokens, coloured by how heavy it is relative to every
  * other known session. Ranking against the same set the secondary sidebar uses
  * keeps a session reading the same weight in both places — and the set has to
- * span projects, since the live zone's rows do.
+ * be every session, not just one repo's, since the live zone's rows cross
+ * repos.
  *
  * Renders nothing when no output was captured — sessions predating usage
  * capture would otherwise all show a misleading "lightest" green.

@@ -11,9 +11,10 @@ export const labels = sqliteTable("labels", {
     .default(sql`(datetime('now'))`),
 });
 
-// Sessions are flat: the slug alone is a session's identity, unique per
-// project DB (ELKY-171). Names retired by the flattening — and by manual
-// renames — keep resolving via `session_aliases`.
+// Sessions are flat: the slug alone is a session's identity, unique across the
+// one database (ELKY-171 — it said "per project DB" while there was more than
+// one). Names retired by the flattening — and by manual renames — keep
+// resolving via `session_aliases`.
 export const sessions = sqliteTable(
   "sessions",
   {
@@ -54,6 +55,64 @@ export const sessions = sqliteTable(
     // recorded came from worktrees, which reached ~6% of sessions; this is the
     // branch every session already had and nobody was writing down.
     branch: text("branch"),
+    // The next four columns are one record: the `SessionKey` that
+    // `@/lib/session-key` derives from the session's cwd at start, persisted
+    // verbatim, plus the `groupKey()` computed from it. They replace the
+    // project registry as bertrand's grouping dimension — a project was a row
+    // a human created, bound to a repo, and had to remember to switch to, and
+    // getting any of that wrong filed a session under the wrong name with no
+    // error and no symptom. Reading the answer out of `git` instead means
+    // nothing registers a group, so nothing can be filed wrong.
+    //
+    // Derivation costs up to four `git` invocations, and hook subprocesses are
+    // one-shot with no shared cache, so the values are written once at session
+    // start and read from here forever after. Every one of them is nullable and
+    // null is ordinary rather than an error state: bertrand records sessions in
+    // directories that are not repos and must keep doing so, so an unresolvable
+    // cwd yields a session with all four null — ungrouped, but recorded.
+    //
+    /**
+     * Absolute path to the git worktree root holding the session's cwd — the
+     * *linked* worktree when there is one, not the main checkout. Kept for
+     * display and for `--resume`, not as the group's identity: see `groupKey`
+     * below for why a path cannot be the identity.
+     */
+    worktreeRoot: text("worktree_root"),
+    /**
+     * Absolute path to the repo's main checkout, from `--git-common-dir`.
+     * Equal to `worktreeRoot` when the session ran in the main checkout
+     * itself, which is precisely the case that makes `worktreeRoot` alone
+     * useless as an identity — the main checkout is a workbench hosting months
+     * of unrelated work on many branches.
+     */
+    mainCheckout: text("main_checkout"),
+    /**
+     * Portable repo identity as `owner/repo` (`host/owner/repo` for GHES),
+     * parsed from `origin`. This is the rollup axis the sidebar groups by, and
+     * it is machine-independent on purpose: a main checkout and a stack of
+     * linked worktrees are all one repo, and no human has to say so.
+     *
+     * Null when the cwd is not a repo, has no `origin`, or names a forge
+     * bertrand cannot parse. Such a session still records; it just does not
+     * roll up.
+     */
+    repo: text("repo"),
+    /**
+     * The unit of work this session *is* — `<repo>@<branch>`, falling back to
+     * `path:<worktreeRoot>`. Repeated claude runs on one task resolve to the
+     * same key and so become conversations of one session, instead of each
+     * minting a session of its own.
+     *
+     * It is `(repo, branch)` and deliberately NOT a worktree path, because the
+     * group has to outlive the directory. An Orca workspace is deleted the
+     * moment its task lands, and a session keyed on that path would lose its
+     * identity as the directory went away — including for a `--resume` run from
+     * somewhere else afterwards. `(repo, branch)` survives the teardown, a
+     * rebase, and a move between checkouts. The `path:` fallback only carries
+     * repos whose `origin` could not be parsed, and its prefix keeps the two
+     * key spaces from ever colliding.
+     */
+    groupKey: text("group_key"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -65,6 +124,14 @@ export const sessions = sqliteTable(
     uniqueIndex("sessions_slug").on(t.slug),
     index("sessions_status").on(t.status),
     index("sessions_started").on(t.startedAt),
+    // Not unique: one unit of work legitimately holds several rows over time,
+    // because archiving a session is how the user says "this task is done" and
+    // a later run on the same branch then deserves a fresh one. Uniqueness
+    // lives in the query (`findOpenSessionByGroupKey`), which takes the most
+    // recently updated non-archived row.
+    index("sessions_group_key").on(t.groupKey),
+    // The rollup axis: the sidebar's top level is "sessions of repo X".
+    index("sessions_repo").on(t.repo),
   ]
 );
 

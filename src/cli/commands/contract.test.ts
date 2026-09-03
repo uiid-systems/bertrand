@@ -52,24 +52,16 @@ describe("resolveContractTarget", () => {
   });
 
   test("resolves an adopted session through its marker", () => {
-    writeAdoptionMarker(CID, { sessionId: "sess_adopted", project: "acme" });
+    writeAdoptionMarker(CID, { sessionId: "sess_adopted" });
 
     // The whole point: an adopted claude has no BERTRAND_* env at all, because
     // adoption cannot inject env into a process that is already running.
+    // The session id is the whole answer — the marker used to carry a project
+    // slug as well, so the row could be looked up in the right database.
     expect(resolveContractTarget([], { CLAUDE_CODE_SESSION_ID: CID })).toEqual({
       sessionId: "sess_adopted",
       conversationId: CID,
-      project: "acme",
     });
-  });
-
-  test("carries the project so the row is looked up in the right DB", () => {
-    writeAdoptionMarker(CID, { sessionId: "sess_adopted", project: "acme" });
-    // Without this the lookup runs against whichever project happens to be
-    // active and silently finds nothing.
-    expect(resolveContractTarget([], { CLAUDE_CODE_SESSION_ID: CID })?.project).toBe(
-      "acme",
-    );
   });
 
   test("returns null for a claude that was never adopted", () => {

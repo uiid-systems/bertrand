@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { Toaster, ToastProvider } from "@uiid/design-system"
 import { routeTree } from "./routeTree.gen"
-import { SelectedProjectProvider } from "./components/sidebar/selected-project"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,12 +25,10 @@ declare module "@tanstack/react-router" {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <SelectedProjectProvider>
-        <ToastProvider>
-          <RouterProvider router={router} />
-          <Toaster position="bottom" />
-        </ToastProvider>
-      </SelectedProjectProvider>
+      <ToastProvider>
+        <RouterProvider router={router} />
+        <Toaster position="bottom" />
+      </ToastProvider>
     </QueryClientProvider>
   </StrictMode>
 )

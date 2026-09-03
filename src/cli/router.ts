@@ -1,8 +1,5 @@
 import { existsSync } from "fs";
-import { resolveActiveProject } from "@/lib/projects/resolve";
-import { migrateLegacyLayout } from "@/lib/projects/migrate-layout";
-import { migrateProjectRepos } from "@/lib/projects/migrate-repo";
-import { DEFAULT_PROJECT_SLUG } from "@/lib/projects/registry";
+import { paths } from "@/lib/paths";
 import { triggerBackgroundPull } from "@/sync/trigger";
 import { helpText } from "@/cli/help";
 
@@ -10,23 +7,6 @@ type CommandHandler = (args: string[]) => void | Promise<void>;
 
 const commands = new Map<string, CommandHandler>();
 const aliases = new Map<string, string>();
-
-/**
- * Commands fired by Claude Code hooks during a live session. They run
- * inside an existing bertrand process tree — their parent already
- * migrated on its own launch — so we skip the migration check entirely
- * to avoid log noise on every hook fire in the rare upgrade-mid-session
- * case (parent on an old binary, hook running a new binary).
- *
- * Keep in sync with the registered command names in `src/cli/commands/`.
- */
-const HOOK_COMMANDS = new Set([
-  "update",
-  "ingest-transcript",
-  "contract",
-  "ensure-server",
-  "auto-adopt",
-]);
 
 export function register(name: string, handler: CommandHandler) {
   commands.set(name, handler);
@@ -37,70 +17,6 @@ export function alias(from: string, to: string) {
 }
 
 /**
- * One-shot legacy → per-project layout migration. Runs before every command
- * so an upgrade from a pre-project bertrand picks up the move on first
- * launch. The function is fast and idempotent on the no-op path.
- *
- * If the migration refuses because the legacy DB is held by another
- * process, we abort with a clear error rather than silently leaving the
- * user in a broken state (the next `getDb()` would open a fresh empty DB
- * at the new location while their data sits stranded at the old one).
- */
-function migrateOrAbort(): void {
-  const result = migrateLegacyLayout();
-  if (result.migrated) {
-    const fileList = result.moved.join(", ");
-    console.log(
-      `Migrated to per-project layout (moved: ${fileList}). Active project: ${DEFAULT_PROJECT_SLUG}.`,
-    );
-    return;
-  }
-  if (!result.migrated && result.reason === "db-held") {
-    const procs = result.holders.map((h) => `${h.command}(${h.pid})`).join(", ");
-    console.error(
-      `Cannot migrate to per-project layout: legacy database is held by ${procs}.\n` +
-        `Close all active bertrand sessions and try again.`,
-    );
-    process.exit(1);
-  }
-}
-
-/**
- * One-shot repo-binding migration for the live registry. Runs after the layout
- * migration, since it reads the `projects.json` that one writes.
- *
- * Never aborts the command. Unlike the layout migration there is no broken
- * half-state to protect the user from: an unbound project still works, it just
- * hasn't been attached to a repo yet. So the refusal paths warn and continue.
- */
-async function migrateReposOrReport(): Promise<void> {
-  const result = await migrateProjectRepos();
-
-  if (result.migrated) {
-    for (const project of result.bound) {
-      console.log(`Bound project "${project.slug}" to ${project.identity}.`);
-    }
-    if (result.removed.length > 0) {
-      console.log(`Removed empty projects: ${result.removed.join(", ")}.`);
-    }
-    console.log(`Previous registry saved to ${result.backup}.`);
-    return;
-  }
-
-  if (result.reason === "mismatch") {
-    console.error(
-      `Skipped repo migration: project "${result.slug}" resolves to ` +
-        `${result.found}, expected ${result.expected}. Registry left unchanged.`,
-    );
-  } else if (result.reason === "undetectable") {
-    console.error(
-      `Skipped repo migration: no resolvable checkout found for project ` +
-        `"${result.slug}". Registry left unchanged.`,
-    );
-  }
-}
-
-/**
  * Run init silently before falling through to launch on a fresh install.
  *
  * Detected by the absence of the SQLite db file. Init's success logs are
@@ -108,7 +24,7 @@ async function migrateReposOrReport(): Promise<void> {
  * errors stay visible. Failures abort with init's own exit code.
  */
 async function autoInitIfFirstRun() {
-  if (existsSync(resolveActiveProject().db)) return;
+  if (existsSync(paths.db)) return;
 
   const init = commands.get("init");
   if (!init) return; // hot-path entrypoints don't load init; skip silently
@@ -128,27 +44,22 @@ export async function route(argv: string[]) {
   const args = argv.slice(2);
   const command = args[0];
 
-  // Top-level help. Matched in command position only so subcommand helps
-  // (`bertrand project --help`) still reach their own handlers. Side-effect
-  // free: returns before the migration check so `--help` never touches the DB.
+  // Top-level help. Matched in command position only so a subcommand's own
+  // `--help` still reaches its handler. Side-effect free, and deliberately
+  // first: `--help` must never touch the DB.
   // `--agent` prints the session-context variant injected at session start.
   if (command === "--help" || command === "-h" || command === "help") {
     console.log(helpText({ agent: args.includes("--agent") }));
     return;
   }
 
-  // Migrate legacy single-DB layout to per-project before any command can
-  // touch `getDb()`. Idempotent and fast on the no-op path.
-  //
-  // Hook-fired commands skip this — their parent process (the bertrand
-  // TUI / `bertrand launch`) already ran the migration, and avoiding the
-  // call here means an upgrade-mid-session doesn't print "db-held" errors
-  // on every hook fire (which would happen if a still-running old-binary
-  // session held the legacy DB while the new-binary hook tried to migrate).
-  if (!command || !HOOK_COMMANDS.has(command)) {
-    migrateOrAbort();
-    await migrateReposOrReport();
-  }
+  // No migration gate here any more. Two used to run before every command —
+  // one moving the legacy single database into `projects/<slug>/`, one binding
+  // each project to a repo — and both existed to build the per-project layout
+  // that grouping-by-cwd replaced. They are gone with it, along with the
+  // `HOOK_COMMANDS` set that only existed to skip them on hook-fired commands.
+  // A command now goes straight to its handler, and `getDb()` opens the one
+  // database at `paths.db`.
 
   // No args → launch TUI (auto-init on fresh install first)
   if (!command) {

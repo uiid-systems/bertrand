@@ -1,9 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { SiCursor } from "@icons-pack/react-simple-icons";
 import { Button, type ButtonProps } from "@uiid/design-system";
 import { ExternalLinkIcon } from "@uiid/icons";
 
-import { projectsQuery } from "../api/queries";
 import type { SessionRow } from "../api/types";
 import {
   type EditorId,
@@ -28,45 +26,36 @@ function EditorIcon({ editor }: { readonly editor: EditorId }) {
 
 type OpenInEditorButtonProps = Omit<ButtonProps, "render" | "children"> & {
   session: SessionRow;
-  /**
-   * Which project the session belongs to. Omitted for single-project reads,
-   * where the registry's active project *is* the session's project — the same
-   * fallback the breadcrumb's project name uses.
-   */
-  projectSlug?: string;
 };
 
 /**
  * Open a session's code in the preferred local editor.
  *
- * The directory is the project's own checkout. Sessions used to be able to
- * work in their own worktree and open that instead; with worktrees gone there
- * is one target, and callers still pass the session so the signature survives
- * a future where that stops being true again.
+ * The directory is the session's own — `worktreeRoot`, the git worktree its cwd
+ * resolved to at start, falling back to the repo's main checkout. This used to
+ * come from the *project's* repo binding, which was a path a human typed once
+ * and which frequently named a different checkout than the session had ever
+ * run in: open a session that worked in a linked worktree and you landed in the
+ * main checkout, on someone else's branch. The session now records where it
+ * actually was, so there is nothing to bind and nothing to get wrong.
  *
- * The project path comes from its repo binding, which is the only place
- * bertrand records where a project lives on this machine. An unbound project
- * therefore has no directory to offer — the button stays visible and disabled,
- * naming the missing binding rather than vanishing, since "there is nothing to
- * open here yet" is worth saying in place.
+ * A session outside git has no directory to offer, and neither does one whose
+ * worktree has since been torn down — but the fallback covers the common case
+ * of that, since the main checkout outlives its worktrees. The button stays
+ * visible and disabled rather than vanishing: "there is nothing to open here"
+ * is worth saying in place.
  */
 export const OpenInEditorButton = ({
   session,
-  projectSlug,
   size = "small",
   variant = "ghost",
   shape = "square",
   ...rest
 }: OpenInEditorButtonProps) => {
-  const { data: projects = [] } = useQuery(projectsQuery);
   const [editor] = usePreferredEditor();
 
-  const project = projectSlug
-    ? projects.find((p) => p.slug === projectSlug)
-    : projects.find((p) => p.active);
-
-  const target = project?.repo?.path ?? null;
-  const label = `Open project in ${editorLabel(editor)}`;
+  const target = session.worktreeRoot ?? session.mainCheckout ?? null;
+  const label = `Open ${target ?? "session"} in ${editorLabel(editor)}`;
 
   return (
     <Button
@@ -76,7 +65,9 @@ export const OpenInEditorButton = ({
       disabled={!target}
       aria-label={label}
       tooltip={
-        target ? label : "No repo attached to this project — nothing to open"
+        target
+          ? label
+          : "This session didn't run in a git repo — no directory recorded"
       }
       // Stays a real <button> without a path — an anchor ignores `disabled`
       // and would navigate to a dead file URI.

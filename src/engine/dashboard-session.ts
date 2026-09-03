@@ -10,10 +10,9 @@ import { getEdgeEventOfType } from "@/db/queries/events";
 import { planResume } from "./resume-plan";
 import { createConversation } from "@/db/queries/conversations";
 import { emitClaudeStarted } from "@/db/events/emit";
-import { recordSessionBranch } from "@/lib/session-branch";
 import { finalizeSessionRow } from "@/lib/session-finalize";
-import { resolveActiveProject } from "@/lib/projects/resolve";
-import { requireBoundRepo } from "@/lib/projects/policy";
+import { deriveSessionKey, groupKey } from "@/lib/session-key";
+import { recordSessionKey } from "@/lib/session-record";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
@@ -126,13 +125,27 @@ export interface SpawnDashboardSessionOpts {
   slug?: string;
   /** Display name (defaults to the slug). Requires `slug` — see createSession. */
   name?: string;
+  /**
+   * Where to start `claude`. This is now the *only* thing that decides which
+   * repo and branch the session is filed under, so a caller that knows the
+   * checkout it means should always pass it.
+   *
+   * It used to be derived and never supplied: the project the dashboard was
+   * pointed at had a bound repo, and that binding was the one answer with any
+   * meaning behind it. There are no projects and no bindings, so the fallback
+   * is the server's own working directory — honest, but an inherited accident
+   * from whichever process first triggered `ensureServerStarted`, which may be
+   * a hook subprocess. A session started that way records wherever the server
+   * happens to live, which is why the browser should name a directory instead.
+   */
+  cwd?: string;
 }
 
 export interface SpawnDashboardSessionResult {
   sessionId: string;
   claudeId: string;
   pid: number;
-  /** Where `claude` was started — the bound repo's checkout. */
+  /** Where `claude` was started — what the session's key was derived from. */
   cwd: string;
 }
 
@@ -156,14 +169,11 @@ function startClaudePty(opts: {
   /** `claude --resume <id>` when true, `--session-id <id>` when false. */
   resumeExisting: boolean;
 }): number {
-  const active = resolveActiveProject();
   const env = buildEnv({
     BERTRAND_CLAUDE_ID: opts.claudeId,
     BERTRAND_SESSION: opts.sessionId,
     BERTRAND_SESSION_NAME: opts.sessionName,
     BERTRAND_SESSION_SLUG: opts.slug,
-    BERTRAND_PROJECT: active.slug,
-    BERTRAND_PROJECT_DB: active.db,
   });
 
   const entry: DashboardSession = {
@@ -240,15 +250,17 @@ function startClaudePty(opts: {
   });
 
   // Deliberately not awaited: this function is synchronous (it returns the pid)
-  // and reading a branch shells out to git. The record is session metadata, not
+  // and deriving the key shells out to git. The record is session metadata, not
   // something the start depends on, so it settles in the background. It runs
-  // outside the resume guard below because the column is current state — a
-  // session can resume on a different branch than it left.
-  void recordSessionBranch(opts.sessionId, opts.cwd).catch(() => {
-    // The read itself cannot reject — it answers null instead. This catches
+  // outside the resume guard below because these are current-state columns — a
+  // session can resume in a different worktree, or on a branch renamed under
+  // it. Redundant on the spawn path, which already wrote the key it derived
+  // before creating the row, and harmless there: it re-derives the same values.
+  void recordSessionKey(opts.sessionId, opts.cwd).catch(() => {
+    // The read itself cannot reject — it answers nulls instead. This catches
     // the row write, and exists because an unhandled rejection on a floating
     // promise would take down the server, whereas the TUI path can let the
-    // same failure surface (see the note on recordSessionBranch).
+    // same failure surface (see the note on recordSessionKey).
   });
 
   // Only when Claude has no transcript for this conversation — i.e. it is
@@ -274,17 +286,6 @@ function startClaudePty(opts: {
 export async function spawnDashboardSession(
   opts: SpawnDashboardSessionOpts,
 ): Promise<SpawnDashboardSessionResult> {
-  // The repo is derived, never supplied. A caller-provided path would let the
-  // browser start a session against any directory on the machine, and the
-  // server's own cwd is an inherited accident with no relation to the session
-  // — the project's binding is the only answer that means anything.
-  //
-  // Resolved before the capacity check because an unbound project is a
-  // permanent misconfiguration with a specific remedy, while being at capacity
-  // is transient: reporting "too many sessions" to someone whose real problem
-  // is an unlinked project sends them chasing the wrong fix.
-  const repo = requireBoundRepo(resolveActiveProject().slug);
-
   // Checked before any row is written: a rejected spawn must leave no trace.
   // The map holds only live sessions (finalize deletes the entry), so this
   // counts what is actually running, not what has ever run.
@@ -292,15 +293,26 @@ export async function spawnDashboardSession(
     throw new DashboardSessionLimitError(dashboardSessionLimit());
   }
 
-  // A dashboard session runs directly in the bound repo's checkout. It used to
-  // get its own worktree cut from that checkout (#210), which is what made
-  // spawn able to fail before any row was written; with worktrees gone there
-  // is no pre-row step left to fail, so the row is simply created.
+  const cwd = opts.cwd ?? process.cwd();
+
+  // Derived before the row exists so the key goes in with it rather than
+  // landing a moment later in a background write — a session that appears in
+  // the sidebar ungrouped and then jumps to its repo is worse than one that
+  // arrives where it belongs. `startClaudePty` re-derives in the background
+  // anyway, which is what keeps a resumed session's key current.
+  const key = await deriveSessionKey(cwd);
+
+  // A dashboard session runs directly in `cwd`. It used to get its own
+  // worktree cut from the project's checkout (#210), which is what made spawn
+  // able to fail before any row was written; with worktrees gone there is no
+  // pre-row step left to fail, so the row is simply created.
   const slug = opts.slug ?? untakenPlaceholderSlug();
   const session = createSession({
     slug,
     name: opts.name,
     nameSource: opts.slug ? undefined : "derived",
+    ...key,
+    groupKey: groupKey(key),
   });
 
   const claudeId = randomUUID();
@@ -319,12 +331,12 @@ export async function spawnDashboardSession(
     ),
     // What `emitClaudeStarted` records as the session's cwd, and what resume
     // reads back later.
-    cwd: repo.path,
+    cwd,
     // A conversation minted a line ago; Claude has never heard of it.
     resumeExisting: false,
   });
 
-  return { sessionId: session.id, claudeId, pid, cwd: repo.path };
+  return { sessionId: session.id, claudeId, pid, cwd };
 }
 
 export type ResumeDashboardSessionResult =

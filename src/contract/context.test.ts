@@ -33,7 +33,7 @@ const { buildSiblingContext } = await import("./context");
 const current = createSession({ slug: "current" });
 
 describe("buildSiblingContext", () => {
-  test("empty project (only the current session) yields no block", () => {
+  test("no siblings (only the current session) yields no block", () => {
     expect(buildSiblingContext(current.id)).toBe("");
   });
 

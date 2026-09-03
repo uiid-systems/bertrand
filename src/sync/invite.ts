@@ -1,7 +1,7 @@
 import type { SyncConfig } from "@/sync/config";
 
 const SCHEME = "bertrand-sync://";
-const VERSION = 2;
+const VERSION = 3;
 
 type Bundle = {
   v: number;
@@ -10,34 +10,26 @@ type Bundle = {
   bucket: string;
   obj: string;
   ek: string; // encryption key (base64)
-  psl: string; // project slug
-  pn: string; // project display name
-};
-
-export type InviteProject = {
-  slug: string;
-  name: string;
 };
 
 export type DecodedInvite = {
   config: Omit<SyncConfig, "clientName">;
-  project: InviteProject;
 };
 
 /**
- * Encode a sync configuration + project identity as a single paste-able
- * string for use on another machine. The bundle is **not encrypted** —
- * it's just base64-encoded JSON. It contains a Supabase service_role
- * token and the project's DB encryption key, so treat it like an SSH
- * private key: transmit only over a secure channel (Signal, iMessage,
- * AirDrop), and don't paste it in unencrypted IM/email.
+ * Encode a sync configuration as a single paste-able string for use on another
+ * machine. The bundle is **not encrypted** — it's just base64-encoded JSON. It
+ * contains a Supabase service_role token and the database's encryption key, so
+ * treat it like an SSH private key: transmit only over a secure channel
+ * (Signal, iMessage, AirDrop), and don't paste it in unencrypted IM/email.
  *
- * The project identity (slug + display name) travels alongside the
- * credentials so the receiving machine knows which named project to
- * create rather than dumping the data into whichever project happens
- * to be active.
+ * Credentials only. A v2 bundle also carried a project slug and display name,
+ * so the receiving machine could create the named project the data belonged to
+ * rather than dumping it into whichever one happened to be active. There are
+ * no projects: a bundle now names one database, and importing it means "pull
+ * that database onto this machine".
  */
-export function encodeInvite(cfg: SyncConfig, project: InviteProject): string {
+export function encodeInvite(cfg: SyncConfig): string {
   const bundle: Bundle = {
     v: VERSION,
     url: cfg.supabaseUrl,
@@ -45,8 +37,6 @@ export function encodeInvite(cfg: SyncConfig, project: InviteProject): string {
     bucket: cfg.bucket,
     obj: cfg.objectKey,
     ek: cfg.encryptionKey,
-    psl: project.slug,
-    pn: project.name,
   };
   return SCHEME + Buffer.from(JSON.stringify(bundle), "utf8").toString("base64url");
 }
@@ -72,17 +62,18 @@ export function decodeInvite(invite: string): DecodedInvite {
   }
   const bundle = parsed as Partial<Bundle>;
   if (bundle.v !== VERSION) {
-    // Hard cutover: v1 bundles don't carry project identity, so importing
-    // one would dump the source machine's data into whatever project
-    // happens to be active locally — surprising and prone to mistakes.
-    // Both machines must run a v2-aware bertrand.
+    // Hard cutover, as v1 → v2 was. An older bundle describes a project — a
+    // registry row and a per-project database — that the receiving machine has
+    // no way to create any more, so accepting one would mean guessing what its
+    // slug was supposed to mean. Both machines must run a bertrand that groups
+    // sessions by cwd.
     throw new Error(
       `invite version ${String(bundle.v)} is not supported (expected v${VERSION}). ` +
-        `Both machines must run a per-project-aware bertrand. ` +
+        `Both machines must run a bertrand with one database. ` +
         `Upgrade the source machine and regenerate the invite.`
     );
   }
-  for (const field of ["url", "key", "bucket", "obj", "ek", "psl", "pn"] as const) {
+  for (const field of ["url", "key", "bucket", "obj", "ek"] as const) {
     if (!bundle[field] || typeof bundle[field] !== "string") {
       throw new Error(`invite is missing required field: ${field}`);
     }
@@ -94,10 +85,6 @@ export function decodeInvite(invite: string): DecodedInvite {
       bucket: bundle.bucket!,
       objectKey: bundle.obj!,
       encryptionKey: bundle.ek!,
-    },
-    project: {
-      slug: bundle.psl!,
-      name: bundle.pn!,
     },
   };
 }

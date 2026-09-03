@@ -8,8 +8,6 @@ import { enrichAll, type EnrichedEvent } from "@/lib/catalog";
 import { compact } from "@/lib/compact";
 import { computeSessionStats } from "@/lib/timing";
 import { parseDbTime, truncate } from "@/lib/format";
-import { resolveActiveProject } from "@/lib/projects/resolve";
-import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
 import {
   digestSession,
   segmentByConversation,
@@ -175,15 +173,33 @@ function statsBlock(session: SessionRow) {
   return computeSessionStats(session.id);
 }
 
+/**
+ * Where the session ran, for the top of the JSON record.
+ *
+ * Replaces the `project: { slug, name }` block that used to sit here. That
+ * named a registry row a human had picked and was frequently not the directory
+ * the session actually ran in; these five values are read from git at session
+ * start, so they cannot disagree with it. All nullable — bertrand records
+ * sessions outside git.
+ */
+function groupBlock(session: SessionRow) {
+  return {
+    key: session.groupKey,
+    repo: session.repo,
+    branch: session.branch,
+    worktreeRoot: session.worktreeRoot,
+    mainCheckout: session.mainCheckout,
+  };
+}
+
 function showDigest(session: SessionRow, sessionName: string) {
-  const project = resolveActiveProject();
   const rawEvents = getEventsBySession(session.id);
   const conversations = digestSession(rawEvents);
 
   console.log(
     JSON.stringify(
       {
-        project: { slug: project.slug, name: project.name },
+        group: groupBlock(session),
         session: {
           name: sessionName,
           status: session.status,
@@ -302,7 +318,6 @@ function showEvents(session: SessionRow, flags: LogFlags) {
 // --- Complete record (--full) ---
 
 function showFull(session: SessionRow, sessionName: string) {
-  const project = resolveActiveProject();
   const rawEvents = getEventsBySession(session.id);
   const compacted = compact(enrichAll(rawEvents));
   const stats = getSessionStats(session.id);
@@ -315,7 +330,7 @@ function showFull(session: SessionRow, sessionName: string) {
   console.log(
     JSON.stringify(
       {
-        project: { slug: project.slug, name: project.name },
+        group: groupBlock(session),
         session: { ...session, name: sessionName },
         stats,
         conversations,
@@ -338,10 +353,7 @@ function showFull(session: SessionRow, sessionName: string) {
 // --- Command ---
 
 register("log", async (args) => {
-  const { project: projectSlug, rest: argsWithoutProject } = extractProjectFlag(args);
-  applyProjectFlag(projectSlug);
-
-  const flags = parseFlags(argsWithoutProject);
+  const flags = parseFlags(args);
 
   if (!flags.target) fail(USAGE);
 

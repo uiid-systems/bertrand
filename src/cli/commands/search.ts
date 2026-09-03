@@ -1,13 +1,7 @@
-import { existsSync } from "fs";
 import { register } from "@/cli/router";
-import { getDb, getDbForProject } from "@/db/client";
-import { listProjects } from "@/lib/projects/registry";
-import { projectPaths } from "@/lib/projects/paths";
-import { resolveActiveProject } from "@/lib/projects/resolve";
-import { applyProjectFlag, extractProjectFlag } from "@/lib/projects/cli-flag";
+import { getDb } from "@/db/client";
 import {
-  searchProject,
-  DEFAULT_LIMIT,
+  searchSessions,
   SEARCH_TYPES,
   type SearchHit,
   type SearchType,
@@ -22,8 +16,9 @@ import {
 
 const USAGE = `Usage: bertrand search <term…> [--type prompt,question,answer,assistant,summary,tool]
                                 [--session <slug>] [--limit <n>]
-                                [--project <slug> | --all-projects]
-Terms are AND-ed, case-insensitive. Default types: everything except tool.`;
+Terms are AND-ed, case-insensitive. Default types: everything except tool.
+Searches every session on this machine — one database now holds them all, so
+the old --project / --all-projects flags have nothing left to choose between.`;
 
 function fail(message: string): never {
   console.error(message);
@@ -47,32 +42,29 @@ function printHits(hits: SearchHit[]) {
     return;
   }
   console.log("[");
-  console.log(hits.map((h) => "  " + JSON.stringify(h)).join(",\n"));
+  console.log(
+    hits
+      .map((hit) => "  " + JSON.stringify(hit))
+      .join(",\n"),
+  );
   console.log("]");
 }
 
 register("search", async (args) => {
-  const { project: projectSlug, rest } = extractProjectFlag(args);
-  applyProjectFlag(projectSlug);
-
-  let allProjects = false;
   let types: SearchType[] | undefined;
   let session: string | undefined;
   let limit: number | undefined;
   const terms: string[] = [];
 
-  for (let i = 0; i < rest.length; i++) {
-    const arg = rest[i]!;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
     switch (arg) {
-      case "--all-projects":
-        allProjects = true;
-        break;
       case "--json": // output is always JSON; accepted for symmetry
         break;
       case "--type":
       case "--session":
       case "--limit": {
-        const value = rest[++i];
+        const value = args[++i];
         if (!value) fail(`${arg} requires a value.\n${USAGE}`);
         if (arg === "--type") types = parseTypes(value);
         else if (arg === "--session") session = value;
@@ -90,29 +82,11 @@ register("search", async (args) => {
   }
 
   if (terms.length === 0) fail(USAGE);
-  if (allProjects && projectSlug) fail("--all-projects and --project are mutually exclusive.");
 
-  const opts = { terms, types, session, limit };
-
-  if (allProjects) {
-    const hits: SearchHit[] = [];
-    for (const project of listProjects()) {
-      // A registry entry with no local DB file was never opened on this
-      // machine — skip it explicitly. getDbForProject would CREATE and
-      // migrate an empty DB as a side effect of the read, and stray
-      // bertrand.db files are the sentinel project recovery scans for.
-      if (!existsSync(projectPaths(project.slug).db)) continue;
-      try {
-        hits.push(...searchProject(getDbForProject(project.slug), project.slug, opts));
-      } catch {
-        // Unreadable or mid-migration DB — skip it rather than failing the sweep.
-      }
-    }
-    hits.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-    printHits(hits.slice(0, limit ?? DEFAULT_LIMIT));
-    return;
-  }
-
-  const active = resolveActiveProject();
-  printHits(searchProject(getDb(), active.slug, opts));
+  // One database, one sweep. This used to be two code paths — the active
+  // project, or a fan-out that opened every registered project's SQLite file
+  // in turn, skipped the ones that had never been created, sorted the merged
+  // hits and re-applied the limit by hand. All of it existed to search across
+  // a boundary that no longer exists.
+  printHits(searchSessions(getDb(), { terms, types, session, limit }));
 });

@@ -3,45 +3,38 @@ import { existsSync, mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import {
-  _setRegistryDir,
-  _getRegistryDir,
-  listProjects,
-  getActiveProjectSlug,
-} from "@/lib/projects/registry";
-import { createProject } from "@/lib/projects/create";
-import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { projectPaths } from "@/lib/projects/paths";
+import { _setRootDir, paths } from "@/lib/paths";
 import { _clearTestDb } from "@/db/client";
+import { readConfig } from "@/lib/config";
 import { encodeInvite } from "./invite";
 import { bootstrapFromInvite } from "./bootstrap";
-import type { SyncConfig } from "./config";
+import { loadSyncConfig, type SyncConfig } from "./config";
 
 const SAMPLE_CONFIG: SyncConfig = {
   supabaseUrl: "https://abcdefghij1234567890.supabase.co",
   supabaseServiceKey: "eyJ.signed-jwt.signature",
   bucket: "bertrand",
-  objectKey: "projects/acme/bertrand.db.enc",
+  objectKey: "bertrand.db.enc",
   encryptionKey: "k1XyhPTwjUelDqp4WfPGn5J6tBxKMrJWTL4OGZ3UAGI=",
   clientName: "bertrand-laptop",
 };
 
 let tmpRoot: string;
-const originalDir = _getRegistryDir();
 
 beforeEach(() => {
+  // Redirects every path bertrand owns — `sync.env`, `config.json` and the
+  // database the pull would replace. This used to be `_setRegistryDir`, which
+  // reached the per-project tree but not the top-level paths; the collapse to
+  // one database moved the knob to `@/lib/paths`.
   tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-bootstrap-"));
-  _setRegistryDir(tmpRoot);
-  delete process.env.BERTRAND_PROJECT;
-  _resetActiveProjectCache();
+  _setRootDir(tmpRoot);
   _clearTestDb();
 });
 
 afterEach(() => {
   _clearTestDb();
-  _setRegistryDir(originalDir);
-  delete process.env.BERTRAND_PROJECT;
-  _resetActiveProjectCache();
+  // null restores the real home, which is what this file started from.
+  _setRootDir(null);
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -54,41 +47,37 @@ describe("bootstrapFromInvite — error paths (no network)", () => {
     }
   });
 
-  test("returns slug-collision when local project already exists", async () => {
-    // Seed a local project with the same slug the invite carries
-    createProject({ slug: "acme", name: "Local Acme" });
-    expect(listProjects().map((p) => p.slug)).toEqual(["acme"]);
+  test("writes sync.env and enables sync before the pull is attempted", async () => {
+    // The pull can't be avoided inside the helper and will fail here (there is
+    // no real Supabase), so asserting the credentials landed after a failed
+    // bootstrap is what proves the side effects happen before the network.
+    const result = await bootstrapFromInvite(encodeInvite(SAMPLE_CONFIG));
 
-    const invite = encodeInvite(SAMPLE_CONFIG, { slug: "acme", name: "Acme Corp" });
-    const result = await bootstrapFromInvite(invite);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe("slug-collision");
-      expect(result.error).toMatch(/already exists/);
-    }
-    // Existing project not modified
-    const entry = listProjects().find((p) => p.slug === "acme");
-    expect(entry?.name).toBe("Local Acme");
-  });
-
-  test("creates project + activates + writes sync.env before pull is attempted", async () => {
-    // We can't avoid the pull step in the bootstrap helper itself, but the
-    // pull will fail in tests (no real Supabase). Asserting the project +
-    // sync.env exist after a failed bootstrap proves the side effects
-    // landed before the network attempt.
-    const invite = encodeInvite(SAMPLE_CONFIG, { slug: "newproj", name: "New Project" });
-    const result = await bootstrapFromInvite(invite);
-
-    // The pull will fail (no real Supabase), so result.ok is false with
-    // reason="pull-failed". That's OK — we're checking the pre-network
-    // side effects.
-    expect(listProjects().map((p) => p.slug)).toEqual(["newproj"]);
-    expect(getActiveProjectSlug()).toBe("newproj");
-    expect(existsSync(projectPaths("newproj").syncEnv)).toBe(true);
+    expect(existsSync(paths.syncEnv)).toBe(true);
+    expect(loadSyncConfig()).toMatchObject({
+      supabaseUrl: SAMPLE_CONFIG.supabaseUrl,
+      bucket: SAMPLE_CONFIG.bucket,
+      objectKey: SAMPLE_CONFIG.objectKey,
+      encryptionKey: SAMPLE_CONFIG.encryptionKey,
+    });
+    // The receiving machine names itself rather than inheriting the sender's.
+    expect(loadSyncConfig()?.clientName).not.toBe(SAMPLE_CONFIG.clientName);
+    expect(readConfig()?.sync?.enabled).toBe(true);
 
     if (!result.ok) {
       expect(result.reason).toBe("pull-failed");
     }
+  });
+
+  test("creates and switches nothing — there is no registry to write", async () => {
+    // What this used to do: create a project named by the bundle, refuse on a
+    // slug collision, flip the active project to it, then write credentials
+    // into that project's own sync.env. Importing is now "pull into this
+    // machine's database", so the only file it touches beside sync.env is
+    // config.json's sync flag.
+    await bootstrapFromInvite(encodeInvite(SAMPLE_CONFIG));
+
+    expect(existsSync(join(tmpRoot, "projects.json"))).toBe(false);
+    expect(existsSync(join(tmpRoot, "projects"))).toBe(false);
   });
 });

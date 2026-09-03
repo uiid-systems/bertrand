@@ -72,10 +72,16 @@ describe("buildClaudeEnv", () => {
     expect(env.BERTRAND_CLAUDE_ID).toBe(OPTS.claudeId);
     expect(env.BERTRAND_SESSION_NAME).toBe(OPTS.sessionName);
     expect(env.BERTRAND_SESSION_SLUG).toBe(OPTS.sessionSlug);
-    // Value depends on the machine's registry; that it is set at all is the
-    // contract — it is what pins a session's writes to one project DB.
-    expect(env.BERTRAND_PROJECT).toBeTruthy();
-    expect(env.BERTRAND_PROJECT_DB).toBeTruthy();
+  });
+
+  test("exports no project vars — there is one database to write to", () => {
+    // `BERTRAND_PROJECT`/`BERTRAND_PROJECT_DB` pinned the active project at
+    // spawn so a `project switch` elsewhere could not redirect a running
+    // session's writes. Nothing to pin, and a leftover export would send a
+    // hook looking for a per-project file that does not exist.
+    const env = envFor(OPTS);
+    expect(env.BERTRAND_PROJECT).toBeUndefined();
+    expect(env.BERTRAND_PROJECT_DB).toBeUndefined();
   });
 
   test("does not let its own vars be overwritten by the inherited ones", () => {

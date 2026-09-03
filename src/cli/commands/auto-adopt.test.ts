@@ -8,14 +8,17 @@ import { tmpdir } from "os";
 
 import * as schema from "@/db/schema";
 import { _setDb } from "@/db/client";
-// Type-only, so it is erased and can't disturb the load ordering the runtime
-// imports below depend on.
-import type { GitRunner } from "@/lib/github/resolve";
+import { _setRootDir } from "@/lib/paths";
+// Type-only, so they are erased and can't disturb the load ordering the
+// runtime imports below depend on.
+import type { GitRunner as ResolveGitRunner } from "@/lib/github/resolve";
+import type { GitRunner as KeyGitRunner } from "@/lib/session-key";
 
-// One temp DB for the file, as in adopt.test.ts: `_setDb` overrides `getDb()`
-// and `getDbForProject()` alike, so project routing is asserted through the
-// marker and the returned slug rather than through which file was written.
+// One temp DB and one temp bertrand home for the file. `_setRootDir` has to
+// come before anything reads `paths`, and it is what puts `config.json` — the
+// opt-in gate this command is mostly about — somewhere a test may write.
 const workdir = mkdtempSync(join(tmpdir(), "bertrand-auto-adopt-"));
+_setRootDir(join(workdir, "home"));
 const sqlite = new Database(join(workdir, "test.db"));
 sqlite.exec("PRAGMA foreign_keys = ON");
 _setDb(drizzle(sqlite, { schema }));
@@ -27,14 +30,14 @@ const { _setRuntimeDir, adoptionMarkerPath, autoCreateGatePath, readAdoptionMark
   await import("@/hooks/runtime");
 _setRuntimeDir(join(workdir, "run"));
 
-const { _setRegistryDir, writeRegistry } = await import("@/lib/projects/registry");
-const { _resetActiveProjectCache } = await import("@/lib/projects/resolve");
-const { _setGitRunner, _resetRepoCache } = await import("@/lib/github/resolve");
+const { writeConfig } = await import("@/lib/config");
+const { _setGitRunner: _setResolveGitRunner, _resetRepoCache } = await import(
+  "@/lib/github/resolve"
+);
+const { _setGitRunner: _setKeyGitRunner } = await import("@/lib/session-key");
 const { runAutoAdopt } = await import("./auto-adopt");
 const { getSession } = await import("@/db/queries/sessions");
 const { getConversation } = await import("@/db/queries/conversations");
-
-_setRegistryDir(join(workdir, "registry"));
 
 let counter = 0;
 /** A distinct claude session id per test — each is adopted at most once. */
@@ -44,22 +47,37 @@ function claudeId(): string {
 
 const REPO_PATH = "/src/acme";
 const OTHER_PATH = "/src/other";
-/** A real repo whose origin no project is bound to. */
-const LOOSE_PATH = "/src/loose";
 
-/** origin remotes the fake git serves, keyed by main-worktree path. */
+/** origin remotes the fake git serves, keyed by checkout path. */
 const REMOTES: Record<string, string> = {
   [REPO_PATH]: "acme/app",
   [OTHER_PATH]: "acme/other",
-  [LOOSE_PATH]: "acme/loose",
+};
+
+/** Branch each fake checkout has out. */
+const BRANCHES: Record<string, string> = {
+  [REPO_PATH]: "main",
+  [OTHER_PATH]: "feature/elky-184",
 };
 
 /**
- * A fake `git` answering the three questions `resolveRepoAt` asks. Keys are
- * main-worktree paths; a missing key is "not a repo". Mirrors the helper in
- * project.test.ts — the shape `resolveRepoAt` drives is the same either way.
+ * A fake `git` answering the three `rev-parse` questions `deriveSessionKey`
+ * asks. A path missing from REMOTES is "not a repo", which is how the no-repo
+ * gate is exercised without needing a real directory.
  */
-const fakeGit: GitRunner = async (cwd, args) => {
+const fakeKeyGit: KeyGitRunner = async (cwd, args) => {
+  if (!(cwd in REMOTES)) throw new Error("not a git repository");
+  if (args[1] === "--show-toplevel") return cwd;
+  if (args[1] === "--git-common-dir") return `${cwd}/.git`;
+  if (args[1] === "--abbrev-ref") return BRANCHES[cwd]!;
+  throw new Error(`unexpected git ${args.join(" ")}`);
+};
+
+/**
+ * A fake `git` for the separate runner behind `resolveRepoAt`, which is what
+ * turns a checkout into an `owner/repo` identity.
+ */
+const fakeResolveGit: ResolveGitRunner = async (cwd, args) => {
   if (args[0] === "worktree") {
     if (!(cwd in REMOTES)) throw new Error("not a git repository");
     return `worktree ${cwd}\nHEAD abc123\n`;
@@ -73,58 +91,24 @@ const fakeGit: GitRunner = async (cwd, args) => {
   throw new Error(`unexpected git ${args.join(" ")}`);
 };
 
-/**
- * Registry with `acme` opted in, `other` bound but opted out, and `dormant`
- * active — so every test runs with the *wrong* project active, which is the
- * failure this command's `useProject` call exists to prevent.
- */
-function seedRegistry(): void {
-  const now = new Date().toISOString();
-  const entry = (slug: string, path: string | null, autoAdopt?: boolean) => ({
-    slug,
-    name: slug,
-    createdAt: now,
-    lastUsedAt: now,
-    // Identity comes from the remote, not the directory name — matching by
-    // origin is the whole point of `resolveProjectForCwd`.
-    ...(path
-      ? {
-          repo: {
-            path,
-            provider: {
-              provider: "github" as const,
-              owner: REMOTES[path]!.split("/")[0]!,
-              repo: REMOTES[path]!.split("/")[1]!,
-            },
-          },
-        }
-      : {}),
-    ...(autoAdopt ? { autoAdopt: true } : {}),
-  });
-  writeRegistry({
-    activeProjectSlug: "dormant",
-    projects: [
-      entry("dormant", null),
-      entry("acme", REPO_PATH, true),
-      entry("other", OTHER_PATH),
-    ],
-  });
-  _resetActiveProjectCache();
+/** Write `~/.bertrand/config.json` with automatic adoption on or off. */
+function setAutoAdopt(enabled: boolean): void {
+  writeConfig({ bin: "bertrand", version: 1, autoAdopt: enabled });
 }
 
 beforeEach(() => {
-  seedRegistry();
-  _setGitRunner(fakeGit);
+  setAutoAdopt(true);
+  _setKeyGitRunner(fakeKeyGit);
+  _setResolveGitRunner(fakeResolveGit);
   // Resolutions are TTL-cached by absolute path, so one test's answer would
-  // otherwise stand in for the next test's registry.
+  // otherwise stand in for the next test's.
   _resetRepoCache();
 });
 
 afterEach(() => {
-  _setGitRunner(null);
+  _setKeyGitRunner(null);
+  _setResolveGitRunner(null);
   _resetRepoCache();
-  delete process.env.BERTRAND_PROJECT;
-  _resetActiveProjectCache();
 });
 
 const gate = (cid: string): string | null =>
@@ -133,35 +117,63 @@ const gate = (cid: string): string | null =>
     : null;
 
 describe("runAutoAdopt — the gates", () => {
-  test("a cwd no project owns is refused, and the refusal is remembered", async () => {
+  test("a machine that hasn't opted in is refused, and the refusal is remembered", async () => {
+    setAutoAdopt(false);
     const cid = claudeId();
     const outcome = await runAutoAdopt({
       claudeSessionId: cid,
-      cwd: "/somewhere/unregistered",
-      pid: null,
-    });
-
-    expect(outcome).toMatchObject({ ok: false, reason: "no-project" });
-    expect(getConversation(cid)).toBeUndefined();
-    expect(existsSync(adoptionMarkerPath(cid))).toBe(false);
-    // Non-empty is the whole point: the hook's `[ -s ]` short-circuits every
-    // later prompt in this conversation without spawning anything.
-    expect(gate(cid)).toContain("declined=no-project");
-  });
-
-  test("a bound project that hasn't opted in is refused, and says how to opt in", async () => {
-    const cid = claudeId();
-    const outcome = await runAutoAdopt({
-      claudeSessionId: cid,
-      cwd: OTHER_PATH,
+      cwd: REPO_PATH,
       pid: null,
     });
 
     expect(outcome).toMatchObject({ ok: false, reason: "not-opted-in" });
-    if (outcome.ok) throw new Error("unreachable");
-    expect(outcome.message).toContain("bertrand project auto other on");
     expect(getConversation(cid)).toBeUndefined();
+    expect(existsSync(adoptionMarkerPath(cid))).toBe(false);
+    // Non-empty is the whole point: the hook's `[ -s ]` short-circuits every
+    // later prompt in this conversation without spawning anything.
     expect(gate(cid)).toContain("declined=not-opted-in");
+  });
+
+  test("an absent config reads as off, so an upgrade changes nothing", async () => {
+    // The asymmetry the flag exists for: opting in wrongly records work the
+    // user never asked bertrand to watch, opting out wrongly costs one
+    // `bertrand adopt`. So the default has to be off, including on a machine
+    // whose config.json predates the flag.
+    writeConfig({ bin: "bertrand", version: 1 });
+    const outcome = await runAutoAdopt({
+      claudeSessionId: claudeId(),
+      cwd: REPO_PATH,
+      pid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, reason: "not-opted-in" });
+  });
+
+  test("the opt-in message names both ways to record the session", async () => {
+    setAutoAdopt(false);
+    const outcome = await runAutoAdopt({
+      claudeSessionId: claudeId(),
+      cwd: REPO_PATH,
+      pid: null,
+    });
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.message).toContain("autoAdopt");
+    expect(outcome.message).toContain("bertrand adopt");
+  });
+
+  test("a cwd that is not a repo is refused, opted in or not", async () => {
+    const cid = claudeId();
+    const outcome = await runAutoAdopt({
+      claudeSessionId: cid,
+      cwd: "/somewhere/not-a-repo",
+      pid: null,
+    });
+
+    // Nothing to group a session by, and a claude in a directory like this is
+    // overwhelmingly not work. `bertrand adopt` still records it on request.
+    expect(outcome).toMatchObject({ ok: false, reason: "no-repo" });
+    expect(getConversation(cid)).toBeUndefined();
+    expect(existsSync(adoptionMarkerPath(cid))).toBe(false);
+    expect(gate(cid)).toContain("declined=no-repo");
   });
 
   test("a claude bertrand launched is refused rather than duplicated", async () => {
@@ -176,23 +188,10 @@ describe("runAutoAdopt — the gates", () => {
     expect(outcome).toMatchObject({ ok: false, reason: "already-launched" });
     expect(getConversation(cid)).toBeUndefined();
   });
-
-  test("a git repo whose origin no project owns is refused", async () => {
-    const cid = claudeId();
-    // Distinct from the case above: this cwd resolves to a GitHub identity
-    // cleanly, there is just no project bound to it. Auto-creation must not
-    // invent one — projects are bound to repos by a human (UnboundProjectError).
-    const outcome = await runAutoAdopt({
-      claudeSessionId: cid,
-      cwd: LOOSE_PATH,
-      pid: null,
-    });
-    expect(outcome).toMatchObject({ ok: false, reason: "no-project" });
-  });
 });
 
 describe("runAutoAdopt — creation", () => {
-  test("an opted-in project gets an unnamed, derived session", async () => {
+  test("an opted-in repo gets an unnamed, derived session", async () => {
     const cid = claudeId();
     const outcome = await runAutoAdopt({
       claudeSessionId: cid,
@@ -200,7 +199,11 @@ describe("runAutoAdopt — creation", () => {
       pid: null,
     });
 
-    expect(outcome).toMatchObject({ ok: true, created: true, project: "acme" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      created: true,
+      group: "acme/app@main",
+    });
     if (!outcome.ok) throw new Error("unreachable");
 
     const session = getSession(outcome.sessionId)!;
@@ -215,18 +218,37 @@ describe("runAutoAdopt — creation", () => {
     expect(getConversation(cid)?.sessionId).toBe(outcome.sessionId);
   });
 
-  test("the session lands in the cwd's project, not the active one", async () => {
+  test("the session is filed under the cwd's repo and branch", async () => {
+    const outcome = await runAutoAdopt({
+      claudeSessionId: claudeId(),
+      cwd: OTHER_PATH,
+      pid: null,
+    });
+    if (!outcome.ok) throw new Error("unreachable");
+
+    // Read from git at the cwd, which is the whole change: this used to be a
+    // registry lookup that answered with the *active* project — a value
+    // nothing in an auto-adopted claude ever set.
+    const session = getSession(outcome.sessionId)!;
+    expect(session.repo).toBe("acme/other");
+    expect(session.branch).toBe("feature/elky-184");
+    expect(session.groupKey).toBe("acme/other@feature/elky-184");
+    expect(session.worktreeRoot).toBe(OTHER_PATH);
+    expect(session.mainCheckout).toBe(OTHER_PATH);
+  });
+
+  test("the marker carries the session and nothing else", async () => {
     const cid = claudeId();
     const outcome = await runAutoAdopt({
       claudeSessionId: cid,
       cwd: REPO_PATH,
       pid: null,
     });
+    if (!outcome.ok) throw new Error("unreachable");
 
-    expect(outcome).toMatchObject({ ok: true, project: "acme" });
-    // The marker is how the hooks learn which project to write into; the
-    // active project is still `dormant`, and without this they'd use it.
-    expect(readAdoptionMarker(cid)?.project).toBe("acme");
+    // It used to carry a project slug too, so a hook tick could export
+    // BERTRAND_PROJECT and pick a database. There is one database now.
+    expect(readAdoptionMarker(cid)).toEqual({ sessionId: outcome.sessionId });
   });
 
   test("a second call re-attaches instead of creating a second session", async () => {
@@ -247,6 +269,26 @@ describe("runAutoAdopt — creation", () => {
     // The marker is rewritten, which is what makes the hooks start resolving
     // the session again.
     expect(readAdoptionMarker(cid)?.sessionId).toBe(first.sessionId);
+  });
+
+  test("a second conversation in the same repo joins the open session", async () => {
+    const cid = claudeId();
+    const first = await runAutoAdopt({ claudeSessionId: cid, cwd: REPO_PATH, pid: null });
+    if (!first.ok) throw new Error("first call should have created a session");
+
+    const second = await runAutoAdopt({
+      claudeSessionId: claudeId(),
+      cwd: REPO_PATH,
+      pid: null,
+    });
+
+    // Auto-adoption inherits find-or-create from `runAdopt`: repeated claude
+    // runs on one task are conversations of one session, not sessions of one.
+    expect(second).toMatchObject({
+      ok: true,
+      created: false,
+      sessionId: first.sessionId,
+    });
   });
 
   test("creation leaves the gate alone so nothing masks a live session", async () => {

@@ -1,10 +1,10 @@
 /**
- * Spot-check (and optionally backfill) derived session slugs over a project
- * DB. This is the verification harness for ELKY-168's quality bar
+ * Spot-check (and optionally backfill) derived session slugs over a
+ * bertrand DB. This is the verification harness for ELKY-168's quality bar
  * (docs/orca-boundary.md §4c): print every session's current name next to
  * what pause-time derivation would call it.
  *
- *   bun scripts/backfill-slugs.ts                 # dry-run, active project
+ *   bun scripts/backfill-slugs.ts                 # dry-run, real DB
  *   bun scripts/backfill-slugs.ts --db <path>     # dry-run, any DB copy
  *   bun scripts/backfill-slugs.ts --apply         # write derived slugs
  *   bun scripts/backfill-slugs.ts --apply --force # …including manual rows
@@ -41,11 +41,8 @@ function parseArgs(argv: string[]) {
 
 const args = parseArgs(process.argv.slice(2));
 
-let dbPath = args.db;
-if (!dbPath) {
-  const { resolveActiveProject } = await import("../src/lib/projects/resolve");
-  dbPath = resolveActiveProject().db;
-}
+const { paths } = await import("../src/lib/paths");
+const dbPath = args.db || paths.db;
 if (!existsSync(dbPath)) {
   console.error(`No database at ${dbPath}`);
   process.exit(1);

@@ -6,7 +6,7 @@ import { formatTokens } from "./format";
  *
  * Severity here is relative, never absolute. "100K output tokens" means
  * nothing on its own — whether that is a lot depends entirely on how the user
- * works. So a session is ranked against the others in the same project and
+ * works. So a session is ranked against every other session bertrand knows and
  * the badge colours that standing, which also means the scale self-calibrates
  * as more sessions accumulate.
  */

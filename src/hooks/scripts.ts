@@ -97,10 +97,12 @@ const READ_PAYLOAD_REST = `input="$phead$(cat)"`;
  * the 512-byte window keeps the search in the header regardless. That closes
  * the greedy-match caveat ELKY-173 left open.
  *
- * The marker carries the project as well as the session because an adopted
- * claude never inherited `BERTRAND_PROJECT` either. Without exporting it, the
- * bin would write into whichever project happens to be active in the registry
- * when the hook fires, which has no relation to the session it just resolved.
+ * The marker holds nothing but the session (and claude's pid, which only the
+ * stale sweep reads). It used to carry a project slug the guard exported as
+ * `BERTRAND_PROJECT`, because an adopted claude never inherited one and the
+ * bin would otherwise have written into whichever project happened to be
+ * active in the registry. There is one database now, so the guard reads one
+ * key and exports nothing.
  *
  * Defines `sid` and `cid` for the rest of the script. On an adopted session
  * the conversation id *is* claude's session id — that is what `adopt` keyed
@@ -140,11 +142,9 @@ ${noMarker}
   while IFS='=' read -r k v || [ -n "$k" ]; do
     case "$k" in
       session) sid="$v" ;;
-      project) BERTRAND_PROJECT="$v" ;;
     esac
   done < "$adopted"
   [ -z "$sid" ] && exit 0
-  [ -n "\${BERTRAND_PROJECT:-}" ] && export BERTRAND_PROJECT
   cid="$ccid"
 fi`;
 }
@@ -170,16 +170,17 @@ fi`;
  * creation time.
  *
  * **A decline is remembered.** `bertrand auto-adopt` writes the reason into
- * `$gate` when the answer will not change — the directory belongs to no
- * project, or its project has not opted in — and `[ -s ]` short-circuits every
- * later prompt before anything is spawned. A directory nobody registered
- * therefore pays for exactly one bin invocation per conversation, and every
- * prompt after it costs a file test.
+ * `$gate` when the answer will not change — this machine has not opted in, or
+ * the directory is not a git repo — and `[ -s ]` short-circuits every later
+ * prompt before anything is spawned. A machine that never opts in therefore
+ * pays for exactly one bin invocation per conversation, and every prompt after
+ * it costs a file test.
  *
  * `cwd` comes from the payload rather than `$PWD`. They agree today, but the
- * payload is the value Claude Code documents, and picking the wrong project is
- * a silent failure — the session lands in another project's log and nothing
- * says so.
+ * payload is the value Claude Code documents, and the cwd is now the whole of
+ * a session's identity — it decides the repo and branch the session is filed
+ * under, and getting it wrong is silent: the session lands under other work
+ * and nothing says so.
  */
 function autoCreateGate(runtimeDir: string): string {
   return `  if [ ! -f "$adopted" ]; then

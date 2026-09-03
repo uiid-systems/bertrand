@@ -2,32 +2,36 @@ import { hostname } from "os";
 import { decodeInvite } from "@/sync/invite";
 import { saveSyncConfig } from "@/sync/config";
 import { pull } from "@/sync/engine";
-import { listProjects, setActiveProjectSlug } from "@/lib/projects/registry";
-import { createProject } from "@/lib/projects/create";
-import { resolveActiveProject, _resetActiveProjectCache } from "@/lib/projects/resolve";
 import { patchConfig } from "@/lib/config";
+import { paths } from "@/lib/paths";
 
 export type BootstrapResult =
-  | { ok: false; reason: "decode-failed" | "slug-collision" | "pull-failed"; error: string }
+  | { ok: false; reason: "decode-failed" | "pull-failed"; error: string }
   | {
       ok: true;
-      project: { slug: string; name: string };
+      /** The database the pull landed in. */
+      dbPath: string;
       pulled: boolean;
       bytes: number;
       durationMs: number;
     };
 
 /**
- * Import a v2 invite bundle end-to-end: decode, create the named project
- * locally, write per-project sync.env, activate, run first pull.
+ * Import an invite bundle end-to-end: decode, write this machine's sync.env,
+ * enable the auto-triggers, run the first pull.
  *
- * Refuses on slug collision rather than silently overwriting — if a
- * project with the invited slug already exists locally with unrelated
- * data, joining the two would be confusing. The caller can offer to
- * `remove --purge` the existing one first.
+ * Considerably less than it used to do. A v2 bundle carried a project slug and
+ * display name, so importing meant creating that project locally, refusing on
+ * a slug collision, flipping the active project to the new one, and only then
+ * writing credentials into its per-project sync.env. Every one of those steps
+ * existed to answer "which of this machine's databases does the remote one
+ * correspond to?" — a question with one answer now, so there is no registry to
+ * write, nothing to collide with, and no active project to flip.
  *
- * Side effects: creates a project entry, writes ~/.bertrand/projects/<slug>/
- * (db + sync.env), and flips the active project to the imported one.
+ * Side effects: writes `~/.bertrand/sync.env` (mode 0600), sets
+ * `sync.enabled`, and **replaces `~/.bertrand/bertrand.db`** with the remote
+ * one. That last is the pull's own atomic rename and it refuses while another
+ * process holds the file open — see `pull`.
  */
 export async function bootstrapFromInvite(invite: string): Promise<BootstrapResult> {
   let decoded: ReturnType<typeof decodeInvite>;
@@ -41,24 +45,7 @@ export async function bootstrapFromInvite(invite: string): Promise<BootstrapResu
     };
   }
 
-  const { config: cfg, project } = decoded;
-
-  if (listProjects().some((p) => p.slug === project.slug)) {
-    return {
-      ok: false,
-      reason: "slug-collision",
-      error: `Project "${project.slug}" already exists on this machine. Remove it first (\`bertrand project remove ${project.slug} --purge\`) or rename it before importing.`,
-    };
-  }
-
-  createProject({ slug: project.slug, name: project.name });
-  setActiveProjectSlug(project.slug);
-  _resetActiveProjectCache();
-
-  // Re-resolve so saveSyncConfig writes into the newly-activated project's
-  // sync.env (rather than wherever was active before the createProject call).
-  resolveActiveProject();
-  saveSyncConfig({ ...cfg, clientName: `bertrand-${hostname()}` });
+  saveSyncConfig({ ...decoded.config, clientName: `bertrand-${hostname()}` });
   patchConfig({ sync: { enabled: true } });
 
   const result = await pull();
@@ -72,7 +59,7 @@ export async function bootstrapFromInvite(invite: string): Promise<BootstrapResu
 
   return {
     ok: true,
-    project,
+    dbPath: paths.db,
     pulled: result.pulled ?? false,
     bytes: result.bytes ?? 0,
     durationMs: result.durationMs ?? 0,

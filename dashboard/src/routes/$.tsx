@@ -23,7 +23,7 @@ import {
   Text,
 } from "@uiid/design-system";
 
-import { eventsQuery, projectsQuery } from "../api/queries";
+import { eventsQuery } from "../api/queries";
 import { useArchiveAction } from "../api/use-archive-action";
 import type { EventRow, SessionRow, SessionListRow } from "../api/types";
 import {
@@ -76,12 +76,18 @@ const RouterLink = ({
 type Crumb = { label: string; value: string };
 
 /**
- * Two-level breadcrumbs: the project (linking home) and the session. Sessions
- * are flat (ELKY-171), so there is no category level in between.
+ * Two-level breadcrumbs: where the session ran (linking home) and the session
+ * itself. Sessions are flat (ELKY-171), so there is no category level between.
+ *
+ * The root crumb is the session's `repo`, read straight off the row. It used to
+ * be a project name looked up in a registry, with the *active* project as the
+ * fallback — which meant a session whose project had been switched away from
+ * was labelled with somebody else's name. A derived repo cannot be wrong, and
+ * when there isn't one the crumb says "bertrand" rather than inventing a home.
  */
-function buildBreadcrumbs(projectName: string, leafLabel: string): Crumb[] {
+function buildBreadcrumbs(root: string | null, leafLabel: string): Crumb[] {
   return [
-    { label: projectName, value: "/" },
+    { label: root ?? "bertrand", value: "/" },
     { label: leafLabel, value: "" },
   ];
 }
@@ -98,11 +104,6 @@ function SplatPage() {
   return <SessionNotFound splat={_splat} />;
 }
 
-function useProjectName(): string {
-  const { data: projects = [] } = useQuery(projectsQuery);
-  return projects.find((p) => p.active)?.name ?? "bertrand";
-}
-
 /**
  * Splat resolves to no session. Old bookmarked `<category>/<slug>` URLs land
  * here too: aliases keep every retired name resolving on the CLI, but the
@@ -111,7 +112,6 @@ function useProjectName(): string {
  * the routing complexity. This page is the recovery path.
  */
 function SessionNotFound({ splat }: { readonly splat: string }) {
-  const projectName = useProjectName();
   return (
     <Stack gap={4} ax="stretch" fullwidth>
       <Stack
@@ -124,10 +124,8 @@ function SessionNotFound({ splat }: { readonly splat: string }) {
           zIndex: 1,
         }}
       >
-        <Breadcrumbs
-          items={buildBreadcrumbs(projectName, splat)}
-          linkAs={RouterLink}
-        />
+        {/* No session, so no repo to name — the root crumb falls back. */}
+        <Breadcrumbs items={buildBreadcrumbs(null, splat)} linkAs={RouterLink} />
       </Stack>
       <Stack px={8} gap={2}>
         <Text shade="muted">No session named "{splat}".</Text>
@@ -142,18 +140,13 @@ function SessionNotFound({ splat }: { readonly splat: string }) {
 SessionNotFound.displayName = "SessionNotFound";
 
 function SessionDetail({ match }: { readonly match: SessionListRow }) {
-  const activeProjectName = useProjectName();
-  const projectSlug = match.project?.slug;
-  const projectName = match.project?.name ?? activeProjectName;
   const sessionId = match.session.id;
   const isLive = isLiveStatus(match.session.status);
   const statusDotColor = statusColor(
     match.session.status,
   ) as StatusProps["color"];
 
-  const { data: rawEvents = [] } = useQuery(
-    eventsQuery(sessionId, isLive, projectSlug),
-  );
+  const { data: rawEvents = [] } = useQuery(eventsQuery(sessionId, isLive));
   // Threading the previous result through keeps finished conversations
   // identity-stable across live appends, so the memoized segment views below
   // only re-render the conversation that actually changed.
@@ -208,7 +201,7 @@ function SessionDetail({ match }: { readonly match: SessionListRow }) {
     if (el) el.scrollIntoView({ block: "start" });
   }, [segments, sessionId]);
 
-  const breadcrumbs = buildBreadcrumbs(projectName, match.session.name);
+  const breadcrumbs = buildBreadcrumbs(match.session.repo, match.session.name);
 
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>
@@ -219,12 +212,9 @@ function SessionDetail({ match }: { readonly match: SessionListRow }) {
         </Group>
         <Group ay="center">
           <CopyResumeButton session={match.session} />
-          <OpenInEditorButton
-            session={match.session}
-            projectSlug={projectSlug}
-          />
-          <OpenOnGithubButton projectSlug={projectSlug} />
-          <ArchiveToggle session={match.session} project={projectSlug} />
+          <OpenInEditorButton session={match.session} />
+          <OpenOnGithubButton session={match.session} />
+          <ArchiveToggle session={match.session} />
         </Group>
       </Group>
       <Stack fullwidth style={{ flex: 1, minHeight: 0 }}>
@@ -240,7 +230,6 @@ function SessionDetail({ match }: { readonly match: SessionListRow }) {
                 exitCode={exitCode}
                 conversationCount={segments.length}
                 conversations={resumable}
-                project={projectSlug}
               />
             )
           }
@@ -561,14 +550,8 @@ function EventCard({
 }
 EventCard.displayName = "EventCard";
 
-function ArchiveToggle({
-  session,
-  project,
-}: {
-  readonly session: SessionRow;
-  readonly project?: string;
-}) {
-  const action = useArchiveAction(session, project);
+function ArchiveToggle({ session }: { readonly session: SessionRow }) {
+  const action = useArchiveAction(session);
   const { Icon } = action;
   return (
     <Button

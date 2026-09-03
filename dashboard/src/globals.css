@@ -4,7 +4,7 @@
   box-sizing: border-box;
 }
 
-/* Full-width sidebar zone triggers ("Active sessions", the project zone) and the
+/* Full-width sidebar zone triggers ("Active sessions", "Sessions") and the
    main area's content zones (timeline, terminal). A simple underline on the
    title (not the count) signals they're clickable. */
 .sidebar-zone-trigger:hover .sidebar-zone-title,

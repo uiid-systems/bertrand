@@ -11,7 +11,6 @@
  * or `bun`. `types-boundary.test.ts` enforces this.
  */
 import type { sessions, events, sessionStats } from "./db/schema";
-import type { ProjectRepo } from "./lib/projects/types";
 import type { GhFailureReason } from "./lib/github/errors";
 import type { PullRequest } from "./lib/github/types";
 
@@ -33,14 +32,22 @@ export type EventRow = Omit<typeof events.$inferSelect, "meta"> & {
 
 export type SessionStatsRow = typeof sessionStats.$inferSelect;
 
+/**
+ * A session as every list endpoint serves it.
+ *
+ * There is no sibling `project` field any more, and nothing replaced it: the
+ * grouping dimension is now four columns *on the session itself* (`repo`,
+ * `branch`, `groupKey`, `worktreeRoot`), derived from its cwd at start and
+ * inferred into `SessionRow` straight from the schema. A client groups by
+ * `row.session.repo` and needs no second request and no registry to join
+ * against.
+ *
+ * The wrapper stays a wrapper rather than collapsing to `SessionRow`, because
+ * endpoints do decorate it — and a one-field object is a cheaper place to add
+ * the next decoration than a breaking change to every caller.
+ */
 export type SessionListRow = {
   session: SessionRow;
-  /**
-   * Which project this session belongs to. Present when the row was produced
-   * by a cross-project query (the dashboard's multi-project session list);
-   * omitted for single-project/active-DB reads where the project is implicit.
-   */
-  project?: { slug: string; name: string };
 };
 
 /**
@@ -67,52 +74,6 @@ export type SessionPullRequest =
 export type EngagementStats = {
   toolUsage: Record<string, number>;
   discardRate: { discarded: number; total: number };
-};
-
-/**
- * A project's repo binding as the API serves it: the stored binding plus a
- * display `label` the server formats.
- *
- * The label is computed server-side on purpose. Rendering `owner/repo` looks
- * trivial until GitHub Enterprise, where the host has to be prefixed —
- * `formatIdentity` owns that rule, and the dashboard can't call it (it takes
- * *types* from `src`, never runtime code, since there's no `@/` alias in the
- * Vite build). Sending the formatted string keeps the rule in one place.
- */
-export type ProjectRepoView = ProjectRepo & {
-  label: string;
-  /**
-   * False for a binding whose host this machine no longer declares as GitHub
-   * Enterprise Server. The binding is still shown — dropping a project's repo
-   * out from under it would be worse — but a host bertrand cannot vouch for
-   * should not render as one it can.
-   */
-  hostTrusted: boolean;
-};
-
-/**
- * One row of /api/projects.
- *
- * `repo` is explicitly `null` when unbound rather than omitted: an absent key
- * would be indistinguishable from a server too old to send it, and the
- * dashboard renders those two cases differently.
- */
-export type ProjectSummary = {
-  slug: string;
-  name: string;
-  /** True for the registry's active project — the CLI's write target. */
-  active: boolean;
-  lastUsedAt: string;
-  /** Count of currently live (active/waiting) sessions in this project. */
-  liveCount: number;
-  repo: ProjectRepoView | null;
-};
-
-/** /api/active-project — the registry's current write target. */
-export type ActiveProjectMeta = {
-  slug: string;
-  name: string;
-  repo: ProjectRepoView | null;
 };
 
 export type ArchiveReason = "not-found" | "active" | "already-archived";

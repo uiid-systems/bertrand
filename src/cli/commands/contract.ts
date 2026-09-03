@@ -4,7 +4,6 @@ import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { markContractSent, readAdoptionMarker } from "@/hooks/runtime";
-import { useProject } from "@/lib/projects/cli-flag";
 
 /**
  * Print the session contract to stdout. Hook-facing.
@@ -30,18 +29,11 @@ import { useProject } from "@/lib/projects/cli-flag";
  * UserPromptSubmit would deliver the whole thing a second time.
  */
 
-/** Which session's contract to print, and where its row lives. */
+/** Which session's contract to print. */
 export interface ContractTarget {
   sessionId: string;
   /** Conversation the contract-sent marker is keyed by. */
   conversationId: string;
-  /**
-   * Project holding the session row, when resolution had to name one. Only the
-   * adoption marker does: an adopted claude never inherited BERTRAND_PROJECT,
-   * so without this the lookup would run against whichever project happens to
-   * be active and find nothing.
-   */
-  project?: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -75,11 +67,7 @@ export function resolveContractTarget(
   if (!claudeId) return null;
   const adopted = readAdoptionMarker(claudeId);
   if (!adopted) return null;
-  return {
-    sessionId: adopted.sessionId,
-    conversationId: claudeId,
-    project: adopted.project,
-  };
+  return { sessionId: adopted.sessionId, conversationId: claudeId };
 }
 
 /** `--name value` or `--name=value`, whichever form the caller used. */
@@ -102,8 +90,6 @@ register("contract", async (args) => {
     );
     process.exit(1);
   }
-
-  if (target.project) useProject(target.project);
 
   const session = getSession(target.sessionId);
   if (!session) return; // unknown session → emit nothing, hook injects no context

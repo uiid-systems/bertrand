@@ -6,7 +6,6 @@ import { installClaudeCommands } from "@/claude/commands";
 import { installHookScripts } from "@/hooks/install";
 import { installHookSettings } from "@/hooks/settings";
 import { paths } from "@/lib/paths";
-import { resolveActiveProject } from "@/lib/projects/resolve";
 import { generateCompletions } from "@/lib/completions";
 import { readConfig, writeConfig, type BertrandConfig } from "@/lib/config";
 
@@ -49,11 +48,10 @@ register("init", async () => {
   mkdirSync(paths.hooks, { recursive: true });
   mkdirSync(paths.runtime, { recursive: true });
 
-  // 2. Migrations — for the active project's DB. On a fresh install with no
-  // registry yet, that resolves to `projects/default/bertrand.db`.
-  const active = resolveActiveProject();
-  runMigrations(active.db);
-  console.log(`  Database: ${active.db}`);
+  // 2. Migrations. One database, at a fixed path — there is no registry to
+  // consult and no per-project file to create.
+  runMigrations();
+  console.log(`  Database: ${paths.db}`);
 
   // 3. Resolve binary path for hooks to invoke
   const bin = resolveBin();

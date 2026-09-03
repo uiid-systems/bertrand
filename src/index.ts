@@ -37,7 +37,6 @@ if (command && command in hotPath) {
     import("./cli/commands/contract"),
     import("./cli/commands/serve"),
     import("./cli/commands/sync"),
-    import("./cli/commands/project"),
   ]);
 }
 

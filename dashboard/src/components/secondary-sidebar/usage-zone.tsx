@@ -15,8 +15,6 @@ export type UsageZoneProps = {
   sessionId: string;
   /** Live sessions poll as tokens accrue; paused ones fetch once. */
   isLive?: boolean;
-  /** Project the session belongs to, so stats resolve against the right DB. */
-  projectSlug?: string;
 };
 
 /**
@@ -51,19 +49,15 @@ const ROWS = [
  * that hasn't been backfilled; the two are indistinguishable from here, so
  * the copy claims neither.
  */
-export const UsageZone = ({
-  sessionId,
-  isLive,
-  projectSlug,
-}: UsageZoneProps) => {
+export const UsageZone = ({ sessionId, isLive }: UsageZoneProps) => {
   const { data: stats, isPending } = useQuery({
-    ...statsQuery(sessionId, isLive, projectSlug),
+    ...statsQuery(sessionId, isLive),
     enabled: !!sessionId,
   });
 
   // Peers give the counters a scale to be read against. Deliberately the same
-  // set the primary sidebar ranks against — every known session, not this
-  // session's project: the two badges sit on screen together, so a session that
+  // set the primary sidebar ranks against — every known session, not just this
+  // session's repo: the two badges sit on screen together, so a session that
   // reads "heavy" in one must read heavy in the other. Shares the sidebar's
   // cache entry, so this is usually free.
   const allStats = useAllStats();
