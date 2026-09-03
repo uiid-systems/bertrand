@@ -1,8 +1,6 @@
 # bertrand
 
-Multi-session workflow manager for Claude Code. Tracks concurrent Claude Code sessions, captures their timelines into a local database, and surfaces them in a dashboard for review.
-
-> **Status:** TypeScript rebuild. The previous Go release (v0.9.1) is still on Homebrew but no longer developed against this branch.
+Multi-session workflow logger for Claude Code. Tracks concurrent Claude Code sessions, captures their timelines into a local database, and surfaces them in a dashboard for review.
 
 ## How it works
 
@@ -74,23 +72,13 @@ spawned it — type:
 /bertrand
 ```
 
-That records the conversation so far, starts capturing the rest of it, and
-applies the contract from that turn on. Pass work along with it
-(`/bertrand fix the flaky test`) and the session starts on it immediately.
+That records the conversation so far, starts capturing the rest of it, and applies the contract from that turn on. Pass work along with it (`/bertrand fix the flaky test`) and the session starts on it immediately.
 
-`bertrand adopt` is the same thing without the slash command, for a terminal
-you're already in.
+`bertrand adopt` is the same thing without the slash command, for a terminal you're already in.
 
-An attached session goes in unnamed and is named from its own transcript at the
-first pause, exactly like a launched one. Bertrand ends it when Claude Code
-exits — there's no bertrand process watching an attached session, so that
-happens on the next `bertrand` launch or dashboard start rather than instantly.
+An attached session goes in unnamed and is named from its own transcript at the first pause, exactly like a launched one. Bertrand ends it when Claude Code exits — there's no bertrand process watching an attached session, so that happens on the next `bertrand` launch or dashboard start rather than instantly.
 
-Resuming one (`claude --resume`) picks up where it left off, but only once you
-run `/bertrand` again: attaching leaves a marker keyed to the conversation, and
-ending the session clears it. The second `/bertrand` re-attaches to the same
-session — same name, same timeline — and back-fills anything said in between.
-Archived sessions are the exception; those stay closed.
+Resuming one (`claude --resume`) picks up where it left off, but only once you run `/bertrand` again: attaching leaves a marker keyed to the conversation, and ending the session clears it. The second `/bertrand` re-attaches to the same session — same name, same timeline — and back-fills anything said in between. Archived sessions are the exception; those stay closed.
 
 ### Resume
 
