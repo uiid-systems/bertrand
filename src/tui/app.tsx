@@ -7,7 +7,6 @@ import { randomUUID } from "crypto";
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import type { ExitAction } from "./screens/Exit";
 import type { ResumeSelection } from "./screens/Resume";
-import type { ProjectPickerSelection } from "./screens/project-picker/project-picker.types";
 import { deleteSession } from "@/db/queries/sessions";
 import {
   getConversationsBySession,
@@ -15,15 +14,6 @@ import {
 } from "@/db/queries/conversations";
 import { archiveSession } from "@/lib/session-archive";
 import { launch, resume } from "@/engine/session";
-import {
-  setActiveProjectSlug,
-  listProjects,
-} from "@/lib/projects/registry";
-import { createProject } from "@/lib/projects/create";
-import {
-  _resetActiveProjectCache,
-  resolveActiveProject,
-} from "@/lib/projects/resolve";
 
 // In source-tree dev, app.tsx lives at src/tui/ and run-screen.tsx is its
 // sibling. After `bun run build`, both bundle into dist/ as .js files —
@@ -64,16 +54,15 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
     }
   }
 
-  // Pin the active project for the screen subprocess. resolveActiveProject()
-  // is memoized in this parent to whatever was active when the session was
-  // launched, so it survives `project switch` (or a concurrent session in
-  // another project) mutating the global `activeProjectSlug` in projects.json.
-  // Without this, the spawned screen re-resolves the project from that mutable
-  // global and the Exit/Resume screens' getSession() lookups hit the wrong
-  // per-project DB — surfacing "Session not found" instead of the exit menu.
+  // The child inherits this process's environment untouched. It used to be
+  // handed a `BERTRAND_PROJECT` pin, because a screen subprocess re-resolved
+  // the active project from a mutable global in projects.json and could open a
+  // *different* project's DB than its parent — surfacing "Session not found"
+  // instead of the exit menu. There is one DB now, so there is nothing left to
+  // pin: every screen opens the same file its parent did.
   const child = spawn("bun", ["run", SCREEN_ENTRY, screen, tmpFile, ...args], {
     stdio: "inherit",
-    env: { ...process.env, BERTRAND_PROJECT: resolveActiveProject().slug },
+    env: { ...process.env },
   });
 
   const noopSignal = (): void => {};
@@ -126,16 +115,6 @@ async function runScreen<T>(screen: string, ...args: string[]): Promise<T> {
  */
 export async function startLaunchTui(): Promise<LaunchSelection> {
   return runScreen<LaunchSelection>("launch");
-}
-
-/**
- * Render the project picker and return the user's selection. Skipped
- * when only one project is registered AND no env-var override is set —
- * the picker would be one row to confirm with Enter, which is friction
- * we don't need.
- */
-export async function startProjectPickerTui(): Promise<ProjectPickerSelection> {
-  return runScreen<ProjectPickerSelection>("project-picker");
 }
 
 /**
@@ -218,27 +197,6 @@ export async function runSessionLoop(sessionId: string): Promise<void> {
 }
 
 /**
- * Skip the project picker when there's exactly one project AND the user
- * hasn't pinned a different one via `BERTRAND_PROJECT`. Hitting Enter on
- * a single-row picker is friction we'd be inflicting for no gain.
- */
-function shouldShowProjectPicker(): boolean {
-  if (process.env.BERTRAND_PROJECT) return false;
-  const projects = listProjects();
-  return projects.length !== 1;
-}
-
-/**
- * Activate the project the user selected (or just created) so the
- * launch screen that follows sees its sessions, not whoever was active
- * before. The resolver cache is per-process so we explicitly reset.
- */
-function activateProject(slug: string): void {
-  setActiveProjectSlug(slug);
-  _resetActiveProjectCache();
-}
-
-/**
  * One launch cycle: TUI launch screen → session → exit menu.
  */
 async function runLaunchCycle(): Promise<void> {
@@ -270,31 +228,16 @@ async function runLaunchCycle(): Promise<void> {
 }
 
 /**
- * Main TUI entrypoint. Shows project picker (when more than one project
- * exists), then launch screen, runs session, shows exit menu.
+ * Main TUI entrypoint: launch screen, run the session, show the exit menu.
+ *
+ * There is no longer a screen before this one. A project picker used to gate
+ * the launch screen, because the sessions it listed came from whichever
+ * project's DB was active and picking the wrong one showed you the wrong
+ * sessions. Grouping is derived from each session's cwd now and every session
+ * lives in one DB, so the launch screen can show all of them at once, rolled up
+ * by repo — which is the answer the picker was a slow, error-prone way of
+ * asking for.
  */
 export async function startTui(): Promise<void> {
-  if (!shouldShowProjectPicker()) {
-    await runLaunchCycle();
-    return;
-  }
-
-  const projectSelection = await startProjectPickerTui();
-  switch (projectSelection.type) {
-    case "quit":
-      return;
-
-    case "select": {
-      activateProject(projectSelection.slug);
-      await runLaunchCycle();
-      return;
-    }
-
-    case "create": {
-      createProject({ slug: projectSelection.slug });
-      activateProject(projectSelection.slug);
-      await runLaunchCycle();
-      return;
-    }
-  }
+  await runLaunchCycle();
 }

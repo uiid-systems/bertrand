@@ -60,20 +60,18 @@ export function SessionExitPanel({
   exitCode,
   conversationCount,
   conversations,
-  project,
 }: {
   readonly session: SessionRow;
   readonly exitCode: number | null;
   readonly conversationCount: number;
   /** Newest first. Empty is fine — resume then only offers a new conversation. */
   readonly conversations: readonly ResumableConversation[];
-  readonly project?: string;
 }) {
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const archive = useArchiveAction(session, project);
-  const { discard, resume, describeError } = useSessionExitActions(session, project, {
+  const archive = useArchiveAction(session);
+  const { discard, resume, describeError } = useSessionExitActions(session, {
     // The route is keyed by the session that no longer exists, so staying here
     // would render a "not found" shell. Fall back home.
     onDiscarded: () => {
@@ -105,6 +103,12 @@ export function SessionExitPanel({
             {conversationCount} conversation{conversationCount === 1 ? "" : "s"}
           </Text>
         </Group>
+      </Stack>
+
+      <Stack gap={2}>
+        <Text size={-1} shade="muted">
+          How effective was this session?
+        </Text>
       </Stack>
 
       <Stack gap={2}>

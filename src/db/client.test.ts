@@ -1,54 +1,44 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync } from "fs";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 
-import {
-  _setRegistryDir,
-  _getRegistryDir,
-} from "@/lib/projects/registry";
-import { _resetActiveProjectCache } from "@/lib/projects/resolve";
-import { projectPaths } from "@/lib/projects/paths";
-import {
-  getDb,
-  getDbForProject,
-  invalidateDbCache,
-  closeDbForProject,
-  _clearTestDb,
-} from "./client";
+import { paths, _setRootDir } from "@/lib/paths";
+import { getDb, invalidateDbCache, _clearTestDb } from "./client";
+
+const MIGRATIONS_FOLDER = join(import.meta.dir, "migrations");
 
 let tmpRoot: string;
-const originalDir = _getRegistryDir();
 
 beforeEach(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-client-"));
-  _setRegistryDir(tmpRoot);
-  delete process.env.BERTRAND_PROJECT;
-  _resetActiveProjectCache();
+  // A path *under* the temp dir, deliberately not created: openDb is
+  // responsible for making bertrand's home on a first-ever run.
+  tmpRoot = join(mkdtempSync(join(tmpdir(), "bertrand-client-")), "home");
+  _setRootDir(tmpRoot);
   _clearTestDb();
 });
 
 afterEach(() => {
   _clearTestDb();
-  _setRegistryDir(originalDir);
-  delete process.env.BERTRAND_PROJECT;
-  _resetActiveProjectCache();
-  rmSync(tmpRoot, { recursive: true, force: true });
+  const created = dirname(tmpRoot);
+  _setRootDir(null);
+  rmSync(created, { recursive: true, force: true });
 });
 
 describe("getDb()", () => {
-  test("opens the active project's DB and caches the handle", () => {
+  test("opens the one database and caches the handle", () => {
     const first = getDb();
     const second = getDb();
     expect(first).toBe(second);
   });
 
-  test("creates the project directory on first open", () => {
-    const expected = projectPaths("default");
+  test("creates bertrand's home directory on first open", () => {
+    expect(existsSync(tmpRoot)).toBe(false);
     getDb();
-    const fs = require("fs") as typeof import("fs");
-    expect(fs.existsSync(expected.db)).toBe(true);
+    expect(existsSync(paths.db)).toBe(true);
   });
 
   test("running lazy migrations gives the new DB its schema", () => {
@@ -58,27 +48,43 @@ describe("getDb()", () => {
     const result = db.$client.prepare("SELECT count(*) as n FROM session_aliases").get();
     expect(result).toEqual({ n: 0 });
   });
-});
 
-describe("getDbForProject(slug)", () => {
-  test("opens at the slug's path, independently from getDb()", () => {
-    process.env.BERTRAND_PROJECT = "alpha";
-    _resetActiveProjectCache();
+  test("the derived grouping columns and their indexes land on a fresh DB", () => {
+    // 0019 is the grouping teardown's migration. A missing column here fails
+    // only at runtime — the schema types would still compile — so the shape is
+    // asserted against the actual file.
+    const db = getDb();
+    const columns = (
+      db.$client.prepare("SELECT name FROM pragma_table_info('sessions')").all() as Array<{
+        name: string;
+      }>
+    ).map((c) => c.name);
+    expect(columns).toContain("worktree_root");
+    expect(columns).toContain("main_checkout");
+    expect(columns).toContain("repo");
+    expect(columns).toContain("group_key");
 
-    const active = getDb();
-    const beta = getDbForProject("beta");
-
-    expect(active).not.toBe(beta);
-
-    const fs = require("fs") as typeof import("fs");
-    expect(fs.existsSync(projectPaths("alpha").db)).toBe(true);
-    expect(fs.existsSync(projectPaths("beta").db)).toBe(true);
+    const indexes = (
+      db.$client
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sessions'")
+        .all() as Array<{ name: string }>
+    ).map((i) => i.name);
+    expect(indexes).toContain("sessions_group_key");
+    expect(indexes).toContain("sessions_repo");
   });
 
-  test("returns the same handle on repeated calls for the same slug", () => {
-    const first = getDbForProject("acme");
-    const second = getDbForProject("acme");
-    expect(first).toBe(second);
+  test("re-opens when the root moves, rather than serving the old file", () => {
+    // The cache is keyed on the resolved path because `paths.db` is an
+    // accessor now: a cache that only remembered "something is open" would go
+    // on writing to the previous file after the root moved.
+    const first = getDb();
+    const moved = join(dirname(tmpRoot), "moved-home");
+    _setRootDir(moved);
+
+    const second = getDb();
+
+    expect(second).not.toBe(first);
+    expect(existsSync(join(moved, "bertrand.db"))).toBe(true);
   });
 });
 
@@ -89,20 +95,17 @@ describe("openDb migration recovery", () => {
     // tables never landed. drizzle's migrate() looks at hashes, sees a
     // match, and silently skips — so openDb must verify the schema is
     // actually present and re-migrate if not.
-    const realPath = join(_getRegistryDir(), "tmp-real", "real.db");
+    const realPath = join(dirname(tmpRoot), "tmp-real", "real.db");
     mkdirSync(dirname(realPath), { recursive: true });
     const real = new Database(realPath);
-    const realDb = (require("drizzle-orm/bun-sqlite") as typeof import("drizzle-orm/bun-sqlite")).drizzle(real);
-    const realMigrate = (require("drizzle-orm/bun-sqlite/migrator") as typeof import("drizzle-orm/bun-sqlite/migrator")).migrate;
-    realMigrate(realDb, { migrationsFolder: join(import.meta.dir, "migrations") });
+    migrate(drizzle(real), { migrationsFolder: MIGRATIONS_FOLDER });
     const realHashes = real
       .query("SELECT hash, created_at FROM __drizzle_migrations ORDER BY id")
       .all() as Array<{ hash: string; created_at: number }>;
     real.close();
 
-    const dbPath = projectPaths("rescue").db;
-    mkdirSync(dirname(dbPath), { recursive: true });
-    const sqlite = new Database(dbPath);
+    mkdirSync(tmpRoot, { recursive: true });
+    const sqlite = new Database(paths.db);
     sqlite.exec(
       "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash TEXT NOT NULL, created_at NUMERIC)",
     );
@@ -112,90 +115,29 @@ describe("openDb migration recovery", () => {
     for (const r of realHashes) stmt.run(r.hash, r.created_at);
     sqlite.close();
 
-    const db = getDbForProject("rescue");
+    const db = getDb();
     const result = db.$client.prepare("SELECT count(*) as n FROM sessions").get();
     expect(result).toEqual({ n: 0 });
   });
 });
 
 describe("invalidateDbCache", () => {
-  test("clearing a slug forces a fresh open for that project only", () => {
-    const a1 = getDbForProject("a");
-    const b1 = getDbForProject("b");
-
-    invalidateDbCache("a");
-
-    const a2 = getDbForProject("a");
-    const b2 = getDbForProject("b");
-
-    expect(a2).not.toBe(a1);
-    expect(b2).toBe(b1);
-  });
-
-  test("no-arg call clears every cached handle", () => {
-    const a1 = getDbForProject("a");
-    const b1 = getDbForProject("b");
+  test("forces a fresh open on the next call", () => {
+    const first = getDb();
 
     invalidateDbCache();
 
-    expect(getDbForProject("a")).not.toBe(a1);
-    expect(getDbForProject("b")).not.toBe(b1);
+    expect(getDb()).not.toBe(first);
   });
 
   test("leaves the underlying connection open — it forgets, it does not close", () => {
-    const a = getDbForProject("a");
+    const db = getDb();
 
-    invalidateDbCache("a");
+    invalidateDbCache();
 
-    // The distinction this pins down is the entire bug in #249: a forgotten
-    // handle is still an open file descriptor, so a purge frees no space.
-    expect(() => a.$client.prepare("SELECT 1").get()).not.toThrow();
-  });
-});
-
-describe("closeDbForProject", () => {
-  test("closes the underlying connection, not just the cache entry", () => {
-    const a = getDbForProject("a");
-    expect(() => a.$client.prepare("SELECT 1").get()).not.toThrow();
-
-    expect(closeDbForProject("a")).toBe(true);
-
-    // A closed sqlite connection rejects new statements. That throw is the
-    // only in-process evidence that the descriptors on bertrand.db, -wal and
-    // -shm are gone, which is what lets a purged project's disk space return.
-    expect(() => a.$client.prepare("SELECT 1").get()).toThrow();
-  });
-
-  test("drops the cache so a re-open builds a fresh handle", () => {
-    const a1 = getDbForProject("a");
-    closeDbForProject("a");
-
-    const a2 = getDbForProject("a");
-
-    expect(a2).not.toBe(a1);
-    expect(() => a2.$client.prepare("SELECT 1").get()).not.toThrow();
-  });
-
-  test("leaves other projects untouched", () => {
-    const a = getDbForProject("a");
-    const b = getDbForProject("b");
-
-    closeDbForProject("a");
-
-    expect(getDbForProject("b")).toBe(b);
-    expect(() => b.$client.prepare("SELECT 1").get()).not.toThrow();
-    expect(() => a.$client.prepare("SELECT 1").get()).toThrow();
-  });
-
-  test("reports false for a project this process never opened", () => {
-    // The server evicting a project it happened never to serve is routine, not
-    // an error — `project remove` calls unconditionally.
-    expect(closeDbForProject("never-touched")).toBe(false);
-  });
-
-  test("is idempotent", () => {
-    getDbForProject("a");
-    expect(closeDbForProject("a")).toBe(true);
-    expect(closeDbForProject("a")).toBe(false);
+    // Forgetting a handle is not releasing it: the descriptor stays open, so
+    // a query already in flight through the old handle keeps working. Closing
+    // here instead would yank the connection out from under it.
+    expect(() => db.$client.prepare("SELECT 1").get()).not.toThrow();
   });
 });

@@ -20,8 +20,6 @@ import type {
 export type PullRequestCardProps = {
   /** The session the sidebar belongs to — its branch is the one looked up. */
   sessionId: string;
-  /** Project the session belongs to, so the branch resolves against the right DB. */
-  projectSlug?: string;
 };
 
 type Presentation = {
@@ -105,11 +103,8 @@ const SILENT_FAILURES = new Set<GhFailureReason>([
  * card is the opposite, and deliberately so: "no pull request" is the default
  * state of a session and saying it on every one of them would be noise.
  */
-export const PullRequestCard = ({
-  sessionId,
-  projectSlug,
-}: PullRequestCardProps) => {
-  const { data } = useQuery(pullRequestQuery(sessionId, projectSlug));
+export const PullRequestCard = ({ sessionId }: PullRequestCardProps) => {
+  const { data } = useQuery(pullRequestQuery(sessionId));
 
   if (!data || data.status === "none") {
     return null;

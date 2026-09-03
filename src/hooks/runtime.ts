@@ -49,7 +49,8 @@ const AUTO_CREATE_MARKER_PREFIX = "autocreate-";
 const STALE_MS = 24 * 60 * 60 * 1000;
 
 // Indirection over paths.runtime so tests can point the marker dir at a temp
-// location. Mirrors the _setRegistryDir seam in lib/projects/registry.
+// location. Narrower than `_setRootDir` in lib/paths on purpose: a test of the
+// markers alone should not have to relocate the database to get one.
 let runtimeDir = paths.runtime;
 export function _setRuntimeDir(dir: string): void {
   runtimeDir = dir;
@@ -160,12 +161,17 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
   }
 }
 
-/** What an `adopted-$cid` marker resolves a claude session to. */
+/**
+ * What an `adopted-$cid` marker resolves a claude session to.
+ *
+ * One field of substance, where there used to be two: the marker also carried
+ * the project slug whose DB held the session, so a hook tick could export
+ * `BERTRAND_PROJECT` and write to the right file. There is one database now
+ * (`paths.db`), so there is no choice left to record.
+ */
 export interface AdoptionMarker {
   /** bertrand session id the claude session was adopted into. */
   sessionId: string;
-  /** Project slug whose DB holds that session. */
-  project: string;
   /**
    * Claude's pid, when adoption could determine it. Read only by the stale
    * sweep, which uses it to leave a still-running session's marker alone; the
@@ -219,18 +225,13 @@ export function markAutoCreateDeclined(
  * `key=value` lines rather than JSON because the readers are the six bash hook
  * guards on Claude's hot path: they have to resolve a session with grep and
  * cut, never jq (~1ms vs ~15ms, paid by every claude on the machine).
- *
- * `project` rides along because an adopted claude was spawned by something
- * other than bertrand and so never inherited `BERTRAND_PROJECT`. Without it
- * the hook would write into whichever project happens to be active in the
- * registry when it fires, which has no relation to the session it just found.
  */
 export function writeAdoptionMarker(
   claudeSessionId: string,
   marker: AdoptionMarker,
 ): void {
   mkdirSync(runtimeDir, { recursive: true });
-  const lines = [`session=${marker.sessionId}`, `project=${marker.project}`];
+  const lines = [`session=${marker.sessionId}`];
   // Omitted rather than written empty when unknown: the sweep distinguishes
   // "claude is alive" from "we can't tell", and an empty value reads as the
   // latter either way, but a missing key says so without parsing.
@@ -240,9 +241,9 @@ export function writeAdoptionMarker(
 
 /**
  * Read an adoption marker, or null when there is none (the overwhelmingly
- * common case — most claudes on the machine are not adopted). A marker
- * missing either field is treated as absent rather than half-trusted: a
- * partial write would otherwise resolve a session into the wrong project.
+ * common case — most claudes on the machine are not adopted). A marker with
+ * no `session=` line is treated as absent rather than half-trusted: it is a
+ * torn write, and there is nothing in it to resolve.
  */
 export function readAdoptionMarker(
   claudeSessionId: string,
@@ -262,13 +263,12 @@ export function readAdoptionMarker(
   }
 
   const sessionId = fields.get("session");
-  const project = fields.get("project");
-  if (!sessionId || !project) return null;
+  if (!sessionId) return null;
 
   // `> 0` matters: `kill(0, 0)` targets the caller's whole process group and
   // always succeeds, so a `pid=0` marker would read as permanently alive and
   // never be swept.
   const rawPid = Number(fields.get("pid"));
   const pid = Number.isInteger(rawPid) && rawPid > 0 ? rawPid : undefined;
-  return { sessionId, project, ...(pid == null ? {} : { pid }) };
+  return { sessionId, ...(pid == null ? {} : { pid }) };
 }

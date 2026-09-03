@@ -26,8 +26,6 @@ import { Launch } from "./screens/launch/index";
 import type { LaunchSelection } from "./screens/launch/launch.types";
 import { Exit, type ExitAction } from "./screens/Exit";
 import { Resume, type ResumeSelection } from "./screens/Resume";
-import { ProjectPicker } from "./screens/project-picker/index";
-import type { ProjectPickerSelection } from "./screens/project-picker/project-picker.types";
 
 const [, , screen, outputPath, ...args] = process.argv;
 
@@ -98,42 +96,6 @@ try {
       phase("render() pre");
       const app = render(
         <Launch
-          onSelect={(s) => {
-            selection = s;
-            result = selection;
-          }}
-        />,
-        { alternateScreen: true, patchConsole: true, onRender },
-      );
-      phase("render() post");
-      // Some terminals with strict alt-screen activation semantics drop the
-      // very first paint emitted after \x1b[?1049h.
-      // Force a second paint with a microtask boundary between it and the
-      // initial commit — `invalidate()` resets the diff's prev buffer so
-      // the upcoming repaint outputs the full content, and
-      // `requestRepaint()` schedules via `queueMicrotask`, which is the
-      // same path React useEffect takes (and the reason Launch/Picker
-      // accidentally work — text-field.tsx's useEffects happen to trigger
-      // a quick paint #2). Exit.tsx has no useEffect, which is why the
-      // bug surfaces only there. Making the second paint explicit removes
-      // the dependency on which components happen to be in the tree.
-      app.screen.invalidate();
-      app.requestRepaint();
-      phase("post-mount invalidate+requestRepaint");
-      await app.waitUntilExit();
-      phase("waitUntilExit returned");
-      app.unmount();
-      phase("unmount done");
-      result = selection;
-      break;
-    }
-
-    case "project-picker": {
-      let selection: ProjectPickerSelection = { type: "quit" };
-      result = selection;
-      phase("render() pre");
-      const app = render(
-        <ProjectPicker
           onSelect={(s) => {
             selection = s;
             result = selection;

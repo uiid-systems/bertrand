@@ -70,7 +70,7 @@ describe("pruneSessionMarkers", () => {
   });
 
   test("removes the adoption marker so a resumed conversation re-attaches", () => {
-    writeAdoptionMarker("cid1", { sessionId: "sid1", project: "acme" });
+    writeAdoptionMarker("cid1", { sessionId: "sid1" });
 
     pruneSessionMarkers("sid1", "cid1");
 
@@ -118,11 +118,7 @@ describe("pruneStaleMarkers", () => {
     const deadPid = child.pid!;
     await new Promise((r) => child.on("exit", r));
 
-    writeAdoptionMarker("cid-dead", {
-      sessionId: "sid1",
-      project: "acme",
-      pid: deadPid,
-    });
+    writeAdoptionMarker("cid-dead", { sessionId: "sid1", pid: deadPid });
     age(adoptionMarkerPath("cid-dead"), 48 * 60 * 60 * 1000);
 
     pruneStaleMarkers(24 * 60 * 60 * 1000);
@@ -133,11 +129,7 @@ describe("pruneStaleMarkers", () => {
   test("keeps an adoption marker while its claude is still running", async () => {
     const child = spawn("sleep", ["30"], { stdio: "ignore" });
     try {
-      writeAdoptionMarker("cid-live", {
-        sessionId: "sid1",
-        project: "acme",
-        pid: child.pid!,
-      });
+      writeAdoptionMarker("cid-live", { sessionId: "sid1", pid: child.pid! });
       // Old enough to sweep on age alone — an adopted claude can legitimately
       // stay open for days, and sweeping it would silently stop recording a
       // session the user is still working in.
@@ -152,7 +144,7 @@ describe("pruneStaleMarkers", () => {
   });
 
   test("keeps a fresh adoption marker whose pid is unknown", () => {
-    writeAdoptionMarker("cid-nopid", { sessionId: "sid1", project: "acme" });
+    writeAdoptionMarker("cid-nopid", { sessionId: "sid1" });
 
     pruneStaleMarkers(24 * 60 * 60 * 1000);
 
@@ -169,27 +161,17 @@ describe("pruneStaleMarkers", () => {
 
 describe("adoption marker round-trip", () => {
   test("carries the pid through write and read", () => {
-    writeAdoptionMarker("cid1", { sessionId: "sid1", project: "acme", pid: 4242 });
-    expect(readAdoptionMarker("cid1")).toEqual({
-      sessionId: "sid1",
-      project: "acme",
-      pid: 4242,
-    });
+    writeAdoptionMarker("cid1", { sessionId: "sid1", pid: 4242 });
+    expect(readAdoptionMarker("cid1")).toEqual({ sessionId: "sid1", pid: 4242 });
   });
 
   test("omits the pid rather than writing an empty one", () => {
-    writeAdoptionMarker("cid1", { sessionId: "sid1", project: "acme" });
-    expect(readAdoptionMarker("cid1")).toEqual({
-      sessionId: "sid1",
-      project: "acme",
-    });
+    writeAdoptionMarker("cid1", { sessionId: "sid1" });
+    expect(readAdoptionMarker("cid1")).toEqual({ sessionId: "sid1" });
   });
 
   test("ignores a non-numeric pid instead of trusting it", () => {
-    writeFileSync(
-      adoptionMarkerPath("cid1"),
-      "session=sid1\nproject=acme\npid=notapid\n",
-    );
+    writeFileSync(adoptionMarkerPath("cid1"), "session=sid1\npid=notapid\n");
     // A garbage pid must not become NaN and get signalled or compared.
     expect(readAdoptionMarker("cid1")?.pid).toBeUndefined();
   });
@@ -197,15 +179,19 @@ describe("adoption marker round-trip", () => {
   test("ignores pid 0, which would read as permanently alive", () => {
     // kill(0, 0) signals the caller's own process group and always succeeds,
     // so trusting it would pin the marker on disk forever.
-    writeFileSync(adoptionMarkerPath("cid1"), "session=sid1\nproject=acme\npid=0\n");
+    writeFileSync(adoptionMarkerPath("cid1"), "session=sid1\npid=0\n");
     expect(readAdoptionMarker("cid1")?.pid).toBeUndefined();
   });
 
   test("still resolves markers written before pid was recorded", () => {
+    writeFileSync(adoptionMarkerPath("cid1"), "session=sid1\n");
+    expect(readAdoptionMarker("cid1")).toEqual({ sessionId: "sid1" });
+  });
+
+  test("ignores a stale project= line from an older bertrand", () => {
+    // Markers on disk survive an upgrade, and the field is gone: parsing must
+    // not choke on it, and must not resurrect it either.
     writeFileSync(adoptionMarkerPath("cid1"), "session=sid1\nproject=acme\n");
-    expect(readAdoptionMarker("cid1")).toEqual({
-      sessionId: "sid1",
-      project: "acme",
-    });
+    expect(readAdoptionMarker("cid1")).toEqual({ sessionId: "sid1" });
   });
 });

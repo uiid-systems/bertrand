@@ -6,10 +6,11 @@
  * never payloads; the drill-in path is `bertrand log <session> --events
  * --conversation N`. Matching is AND-of-terms, case-insensitive, via SQL
  * LIKE over json_extract — at bertrand's scale (thousands of events per
- * project) this stays well under 10ms, so no FTS table until scale demands.
+ * corpus) this stays well under 10ms, so no FTS table until scale demands.
  *
- * Every function takes an explicit Db handle so `--all-projects` can sweep
- * sibling project databases via getDbForProject().
+ * Every function still takes an explicit Db handle. Not for cross-project
+ * sweeps any more — there is one database — but because that is what makes
+ * these functions testable against an injected handle.
  */
 
 import { and, eq, desc, inArray, like, sql, type SQL } from "drizzle-orm";
@@ -56,7 +57,6 @@ const EVENT_SOURCES: Record<
 };
 
 export type SearchHit = {
-  project: string;
   session: string;
   status: string;
   /** 1-based conversation ordinal within the session; null for summary hits
@@ -125,7 +125,7 @@ function loadSessionIndex(db: Db): Map<string, SessionInfo> {
 }
 
 /**
- * `--session <name>` → session id, or undefined when this project has no such
+ * `--session <name>` → session id, or undefined when there is no such
  * session. Retired names resolve too: `log`, `stats`, `archive`, and `rename`
  * all reach a session by any name it has ever had, and search silently
  * returning zero hits for one of those names reads as "nothing here" rather
@@ -186,10 +186,10 @@ function loadEventOrdinals(db: Db, sessionIds: Set<string>): Map<number, number>
 }
 
 /**
- * Search one project's database. Hits come back newest-first, capped at
+ * Search the database. Hits come back newest-first, capped at
  * `limit` (default 20).
  */
-export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): SearchHit[] {
+export function searchSessions(db: Db, opts: SearchOpts): SearchHit[] {
   const terms = opts.terms.filter((t) => t.length > 0);
   if (terms.length === 0) return [];
   const types = opts.types?.length ? opts.types : DEFAULT_SEARCH_TYPES;
@@ -200,7 +200,7 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
   let sessionFilter: string | undefined;
   if (opts.session) {
     sessionFilter = resolveSessionFilter(db, sessionIndex, opts.session);
-    if (!sessionFilter) return []; // unknown session in this project — no hits here
+    if (!sessionFilter) return []; // unknown session name — no hits
   }
 
   const hits: SearchHit[] = [];
@@ -225,7 +225,6 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
         const info = sessionIndex.get(row.id);
         if (!info) continue;
         hits.push({
-          project: projectSlug,
           session: info.name,
           status: info.status,
           conversation: null,
@@ -265,7 +264,6 @@ export function searchProject(db: Db, projectSlug: string, opts: SearchOpts): Se
         sessionId: row.sessionId,
         eventId: row.id,
         hit: {
-          project: projectSlug,
           session: info.name,
           status: info.status,
           conversation: null, // resolved below from event segmentation

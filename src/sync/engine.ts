@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, renameSync, statSync, openSync, writeSync, fsyncSync, closeSync } from "fs";
 import { dirname } from "path";
-import { resolveActiveProject } from "@/lib/projects/resolve";
+import { paths } from "@/lib/paths";
 import { findHolders } from "@/lib/lsof";
 import { loadSyncConfig, hasSyncConfig } from "@/sync/config";
 import { takeSnapshot, cleanupSnapshot } from "@/sync/snapshot";
@@ -96,11 +96,10 @@ export async function pull(opts: { force?: boolean } = {}): Promise<SyncResult> 
     return { ok: false, operation: "pull", error: "sync config incomplete" };
   }
 
-  // Pin the active project's DB path once for the whole pull — the resolver
-  // is memoized for the process lifetime, but pinning locally makes the
-  // "this is a single target file" semantics obvious in the holder check,
-  // tmp filename, atomic rename, and dir-fsync below.
-  const dbPath = resolveActiveProject().db;
+  // Read once for the whole pull. `paths.db` is an accessor, and pinning it
+  // locally makes the "this is a single target file" semantics obvious across
+  // the holder check, tmp filename, atomic rename, and dir-fsync below.
+  const dbPath = paths.db;
 
   const holders = findHolders(dbPath);
   if (holders.length > 0) {
@@ -177,7 +176,7 @@ export async function status(): Promise<SyncStatus> {
   const cfg = loadSyncConfig();
   if (!cfg) return { configured: false, local: null, remote: null };
 
-  const dbPath = resolveActiveProject().db;
+  const dbPath = paths.db;
   let local: SyncStatus["local"] = null;
   try {
     const s = statSync(dbPath);

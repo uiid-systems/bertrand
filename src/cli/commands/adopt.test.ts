@@ -15,10 +15,14 @@ import { tmpdir } from "os";
 
 import * as schema from "@/db/schema";
 import { _setDb } from "@/db/client";
+import { _setRootDir } from "@/lib/paths";
 
 // Temp DB + temp runtime dir so adoption has somewhere to write rows and
 // markers. Both overrides run at top level, before any test body.
 const workdir = mkdtempSync(join(tmpdir(), "bertrand-adopt-"));
+// Nothing here reads bertrand's home, but a mistake that made it start would
+// otherwise scribble in the developer's real ~/.bertrand.
+_setRootDir(join(workdir, "home"));
 const sqlite = new Database(join(workdir, "test.db"));
 sqlite.exec("PRAGMA foreign_keys = ON");
 _setDb(drizzle(sqlite, { schema }));
@@ -31,16 +35,12 @@ const { _setRuntimeDir, adoptionMarkerPath, readAdoptionMarker } = await import(
 );
 _setRuntimeDir(join(workdir, "run"));
 
-// No registry file, so `listProjects()` is empty — a fresh install, and what
-// CI runs as. Re-attachment has to work off the active project alone here; a
-// scan of registered projects finds nothing to attach to.
-const { _setRegistryDir } = await import("@/lib/projects/registry");
-_setRegistryDir(join(workdir, "registry"));
-
-const { runAdopt } = await import("./adopt");
+const { runAdopt, describeGroup } = await import("./adopt");
 const { getSession, updateSession } = await import("@/db/queries/sessions");
 const { shouldIgnoreStatusFlip } = await import("./update");
-const { getConversation } = await import("@/db/queries/conversations");
+const { getConversation, getConversationsBySession } = await import(
+  "@/db/queries/conversations"
+);
 const { getEventsBySession } = await import("@/db/queries/events");
 
 let counter = 0;
@@ -50,9 +50,14 @@ function claudeId(): string {
 }
 
 /**
- * A real repo on a known branch. The branch column is read by shelling out to
+ * A real repo on a known branch. The session key is read by shelling out to
  * git, so there is no seam to fake — and `rev-parse --abbrev-ref HEAD` needs a
  * commit, since an unborn HEAD is an ambiguous argument.
+ *
+ * No `origin`, deliberately: `groupKey` then falls back to `path:<worktree>`,
+ * which is the fallback a local repo actually gets and is enough to key a group
+ * on. `workdir` itself is not a repo, so a cwd of `workdir` derives to all
+ * nulls — the ungrouped case most tests here want.
  */
 function makeRepo(name: string, branch: string): string {
   const dir = join(workdir, name);
@@ -120,7 +125,6 @@ describe("runAdopt — success path", () => {
     expect(existsSync(adoptionMarkerPath(cid))).toBe(true);
     expect(readAdoptionMarker(cid)).toEqual({
       sessionId: result.sessionId,
-      project: result.project,
       pid: process.pid,
     });
 
@@ -161,9 +165,7 @@ describe("runAdopt — success path", () => {
     // matters as much as the values. `pid` is omitted here rather than written
     // empty: the stale sweep reads it to tell a running claude from a dead one.
     const contents = readFileSync(adoptionMarkerPath(cid), "utf8");
-    expect(contents).toBe(
-      `session=${result.sessionId}\nproject=${result.project}\n`,
-    );
+    expect(contents).toBe(`session=${result.sessionId}\n`);
   });
 
   test("records claude's pid in the marker when it is known", async () => {
@@ -293,37 +295,6 @@ describe("runAdopt — back-fill", () => {
 });
 
 describe("runAdopt — re-attachment", () => {
-  test("finds the owning session with no project registry at all", async () => {
-    // A machine that has never run `bertrand project create` has an empty
-    // registry, so scanning registered projects finds nothing: the active
-    // project has to be consulted directly or an existing conversation reads
-    // as new and gets a second session built around it.
-    const { listProjects } = await import("@/lib/projects/registry");
-    expect(listProjects()).toEqual([]);
-
-    const cid = claudeId();
-    const first = await runAdopt({
-      claudeSessionId: cid,
-      cwd: workdir,
-      pid: null,
-      backfill: false,
-    });
-    expect(first.ok).toBe(true);
-    if (!first.ok) return;
-
-    const second = await runAdopt({
-      claudeSessionId: cid,
-      cwd: workdir,
-      pid: null,
-      backfill: false,
-    });
-
-    expect(second.ok).toBe(true);
-    if (!second.ok) return;
-    expect(second.reattached).toBe(true);
-    expect(second.sessionId).toBe(first.sessionId);
-  });
-
   test("returns the existing session instead of building a second one", async () => {
     const cid = claudeId();
 
@@ -379,10 +350,7 @@ describe("runAdopt — re-attachment", () => {
     if (!second.ok) return;
     // Without this the hooks have nothing to resolve and the resumed session
     // records nothing, while `adopt` reports it as already recorded.
-    expect(readAdoptionMarker(cid)).toEqual({
-      sessionId: first.sessionId,
-      project: second.project,
-    });
+    expect(readAdoptionMarker(cid)).toEqual({ sessionId: first.sessionId });
   });
 
   test("clears endedAt so a resumed session does not read as finished", async () => {
@@ -448,7 +416,7 @@ describe("runAdopt — re-attachment", () => {
     expect(readAdoptionMarker(cid)?.sessionId).toBe(first.sessionId);
   });
 
-  test("re-reads the branch, which a resume can land on a different one", async () => {
+  test("re-reads the whole key, which a resume can land somewhere else", async () => {
     const cid = claudeId();
 
     const first = await runAdopt({
@@ -459,20 +427,28 @@ describe("runAdopt — re-attachment", () => {
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    // Adopted outside a repo, so the column starts empty.
-    expect(getSession(first.sessionId)!.branch).toBeNull();
+    // Adopted outside a repo, so the whole key starts empty.
+    const before = getSession(first.sessionId)!;
+    expect(before.branch).toBeNull();
+    expect(before.groupKey).toBeNull();
 
     const repo = makeRepo("resumed-repo", "elky-183-resumed");
-    await runAdopt({
+    const second = await runAdopt({
       claudeSessionId: cid,
       cwd: repo,
       pid: process.pid,
       backfill: false,
     });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
 
-    // Carried over instead of re-read, the column would still say "no branch"
-    // for a session now running on one.
-    expect(getSession(first.sessionId)!.branch).toBe("elky-183-resumed");
+    // Carried over instead of re-read, the row would still say "no branch, no
+    // group" for a session now running on a branch in a repo.
+    const after = getSession(first.sessionId)!;
+    expect(after.branch).toBe("elky-183-resumed");
+    expect(after.worktreeRoot).not.toBeNull();
+    expect(after.groupKey).toBe(`path:${after.worktreeRoot}`);
+    expect(second.group.key).toBe(after.groupKey);
   });
 
   test("refuses to reanimate an archived session", async () => {
@@ -502,6 +478,172 @@ describe("runAdopt — re-attachment", () => {
     if (second.ok) return;
     expect(second.reason).toBe("archived");
     expect(getSession(first.sessionId)!.status).toBe("archived");
+  });
+});
+
+describe("runAdopt — find-or-create on the group key", () => {
+  test("a second conversation on one key joins the open session", async () => {
+    // The whole point of keying a session on the work: two claude runs against
+    // one task used to be two sessions, which is why `session` sat 1:1 with
+    // `conversation` and the sibling summaries had nothing to group.
+    const repo = makeRepo("group-join", "elky-184-join");
+
+    const first = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.reattached).toBe(false);
+
+    const secondCid = claudeId();
+    const second = await runAdopt({
+      claudeSessionId: secondCid,
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(second.reattached).toBe(true);
+    expect(second.group.key).toBe(first.group.key);
+
+    // One session, two conversations — not one conversation re-pointed.
+    expect(getConversation(secondCid)?.sessionId).toBe(first.sessionId);
+    expect(getConversationsBySession(first.sessionId)).toHaveLength(2);
+  });
+
+  test("an archived session on the key does not capture new work", async () => {
+    // Archiving is the user saying "this one is done". A later claude on the
+    // same branch is new work and must get a row of its own, rather than
+    // reanimating the archived one or refusing outright.
+    const repo = makeRepo("group-archived", "elky-184-archived");
+
+    const first = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    updateSession(first.sessionId, { status: "archived" });
+
+    const second = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.sessionId).not.toBe(first.sessionId);
+    expect(second.reattached).toBe(false);
+    expect(second.group.key).toBe(first.group.key);
+    expect(getSession(first.sessionId)!.status).toBe("archived");
+  });
+
+  test("a cwd with no key mints a session every time", async () => {
+    // `workdir` is not a repo, so the key is all nulls. An unresolvable key is
+    // not evidence that two conversations are the same work — grouping on it
+    // would collapse every non-repo claude on the machine into one session.
+    const a = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: workdir,
+      pid: null,
+      backfill: false,
+    });
+    const b = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: workdir,
+      pid: null,
+      backfill: false,
+    });
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+
+    expect(a.group.key).toBeNull();
+    expect(b.group.key).toBeNull();
+    expect(b.sessionId).not.toBe(a.sessionId);
+    expect(b.reattached).toBe(false);
+    // Recorded regardless: bertrand logs sessions outside git and must keep
+    // doing so, ungrouped.
+    expect(getSession(b.sessionId)!.groupKey).toBeNull();
+    expect(getSession(b.sessionId)!.repo).toBeNull();
+  });
+
+  test("persists the derived key on the row it creates", async () => {
+    const repo = makeRepo("group-persist", "elky-184-persist");
+    const result = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const session = getSession(result.sessionId)!;
+    // The pieces are stored alongside the key computed from them: the key
+    // cannot name the worktree a session ran in, and the dashboard and
+    // `--resume` both need that path without re-shelling out to git.
+    expect(session.branch).toBe("elky-184-persist");
+    expect(session.worktreeRoot).toEndWith("/group-persist");
+    // Not compared to `worktreeRoot` textually: `--show-toplevel` answers with
+    // symlinks resolved and `--git-common-dir` does not, so on macOS (where
+    // /var is a symlink to /private/var) the same checkout spells differently
+    // in the two columns. Both name this directory, which is what matters.
+    expect(session.mainCheckout).toEndWith("/group-persist");
+    expect(session.repo).toBeNull(); // no origin on a bare `git init`
+    expect(session.groupKey).toBe(`path:${session.worktreeRoot}`);
+  });
+});
+
+describe("describeGroup", () => {
+  // The line under `Adopted this claude session as <slug>.` — it replaced
+  // `project: <slug>`, which named a registry row nobody in an adopted claude
+  // had chosen and was usually not the directory the session ran in.
+  const key = {
+    worktreeRoot: "/w/task",
+    mainCheckout: "/w/main",
+    branch: "feature/x",
+    repo: "acme/app",
+  };
+
+  test("names the repo and branch when both resolved", () => {
+    expect(describeGroup({ ...key, key: "acme/app@feature/x" }, "/w/task")).toBe(
+      "  group: acme/app@feature/x",
+    );
+  });
+
+  test("says why a path key is a path key", () => {
+    expect(
+      describeGroup(
+        { ...key, repo: null, key: "path:/w/task" },
+        "/w/task",
+      ),
+    ).toContain("path:/w/task");
+  });
+
+  test("an unresolvable cwd is reported as recorded, not as a failure", () => {
+    const line = describeGroup(
+      {
+        worktreeRoot: null,
+        mainCheckout: null,
+        branch: null,
+        repo: null,
+        key: null,
+      },
+      "/tmp",
+    );
+    expect(line).toContain("/tmp");
+    expect(line).toContain("ungrouped");
   });
 });
 

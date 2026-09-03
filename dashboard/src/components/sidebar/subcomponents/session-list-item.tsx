@@ -6,7 +6,6 @@ import type { SessionListRow } from "@/types";
 
 import { statusColor, formatRelativeTime } from "../../../lib/format";
 
-import { useSelectedProject } from "../selected-project";
 import { SessionLabel } from "./session-label";
 import { SessionContent } from "./session-content";
 import { SessionUsageBadge } from "./session-usage-badge";
@@ -18,16 +17,11 @@ type SessionListItemProps = {
 export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const isArchived = s.session.status === "archived";
   const color = statusColor(s.session.status);
-  const { setSelected } = useSelectedProject();
 
-  // Opening a session moves the sidebar to its project, so the zone below
-  // always frames whatever you're looking at. Only the live zone can actually
-  // cross projects; elsewhere this is a no-op. Done on click rather than off
-  // the route so it can't fight a deliberate pick from the selector.
-  const followProject = () => {
-    const slug = s.project?.slug;
-    if (slug) setSelected(slug);
-  };
+  // Nothing to do on click beyond navigating. This used to also move the
+  // sidebar's project filter to the row's project, so the zone below framed
+  // whatever you opened. There is no filter to move: every repo is on screen
+  // already and the row is under its own heading.
 
   // "You are here": the row for the session currently open in the detail view.
   // The route splat is exactly the slug (see findSessionFromSplat).
@@ -52,9 +46,7 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
       style={isArchived ? { opacity: 0.4 } : undefined}
     >
       <Card
-        render={
-          <Link to="/$" params={{ _splat: splat }} onClick={followProject} />
-        }
+        render={<Link to="/$" params={{ _splat: splat }} />}
         InnerContainerProps={{ gap: 1 }}
         aria-current={isCurrent ? "page" : undefined}
         color={color}

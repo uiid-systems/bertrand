@@ -1,66 +1,63 @@
-import { useQuery } from "@tanstack/react-query";
 import { Button, type ButtonProps } from "@uiid/design-system";
 import { GithubIcon, TriangleAlertIcon } from "@uiid/icons";
 
-import { projectsQuery } from "../api/queries";
-import type { ProjectRepoView } from "../api/types";
+import type { SessionRow } from "../api/types";
 
 type OpenOnGithubButtonProps = Omit<ButtonProps, "render" | "children"> & {
-  /**
-   * Which project the session belongs to. Omitted for single-project reads,
-   * where the registry's active project *is* the session's project — the same
-   * fallback the breadcrumb's project name uses.
-   */
-  projectSlug?: string;
+  session: SessionRow;
 };
 
 /**
- * Web URL of a bound repo's root.
+ * Web URL for a session's `repo`, or null when this page must not derive one.
  *
- * Unlike the display `label` — which the server formats, because prefixing the
- * host is an enterprise-only rule — the URL takes the host unconditionally and
- * defaults to github.com, so there is no branching rule to keep in one place.
+ * `repo` is `formatIdentity()` output written at session start: `owner/repo` for
+ * github.com, `host/owner/repo` for GitHub Enterprise (the host may carry a
+ * port). Render it verbatim — the host prefix is already in the string and
+ * reformatting it here would duplicate a rule `@/lib/github/identity` owns.
+ *
+ * Only the two-segment, github.com form yields a URL. A host-prefixed value
+ * names a GHES install that was declared on this machine when the session
+ * started, and nothing the browser can see says it still is — a host can be
+ * named to read like github.com, and navigating somewhere on a stale
+ * declaration's say-so is the one thing this button must not do. The server
+ * used to re-check that per project and send a `hostTrusted` flag; there is no
+ * project to hang one on, and no per-session equivalent on the wire yet.
  */
-function repoWebUrl(repo: ProjectRepoView): string {
-  const { host, owner, repo: name } = repo.provider;
-  return `https://${host ?? "github.com"}/${owner}/${name}`;
+function repoWebUrl(repo: string | null): string | null {
+  if (!repo) return null;
+  const segments = repo.split("/");
+  if (segments.length !== 2) return null;
+  return `https://github.com/${segments[0]}/${segments[1]}`;
 }
 
 /**
- * Open a session's project on GitHub in a new tab.
+ * Open a session's repo on GitHub in a new tab.
  *
- * The repo *root*, not the session's branch: a session's branch is a
- * local one until something pushes it, so linking it would send you to a 404
- * for exactly the sessions still in progress. The root is always there.
+ * The repo *root*, not the session's branch: a session's branch is a local one
+ * until something pushes it, so linking it would send you to a 404 for exactly
+ * the sessions still in progress. The root is always there.
  *
- * The target comes from the project's repo binding, the only place bertrand
- * records which repo a project is. An unbound project has nothing to open, so
- * the button stays visible and disabled, naming the missing binding rather than
- * vanishing — same treatment as {@link OpenInEditorButton}.
- *
- * A binding whose host this machine no longer vouches for is disabled too, and
- * drops the GitHub mark: a host can be named to read like github.com, and
- * navigating somewhere on that machine's say-so is the one thing this button
- * must not do.
+ * The target is read off the session row, which records the repo its cwd
+ * resolved to at start. It used to come from the project's repo binding — a
+ * thing a human bound by hand, and could bind to the wrong repo or forget to
+ * bind at all. A session outside git has no repo, so the button stays visible
+ * and disabled, naming what's missing rather than vanishing — same treatment as
+ * {@link OpenInEditorButton}.
  */
 export const OpenOnGithubButton = ({
-  projectSlug,
+  session,
   size = "small",
   variant = "ghost",
   shape = "square",
   ...rest
 }: OpenOnGithubButtonProps) => {
-  const { data: projects = [] } = useQuery(projectsQuery);
+  const repo = session.repo;
+  const href = repoWebUrl(repo);
+  // A repo bertrand recorded but this page won't navigate to: an enterprise
+  // host it cannot vouch for from here.
+  const unverifiable = repo !== null && href === null;
 
-  const project = projectSlug
-    ? projects.find((p) => p.slug === projectSlug)
-    : projects.find((p) => p.active);
-
-  const repo = project?.repo ?? null;
-  const trusted = repo?.hostTrusted ?? false;
-  const href = repo && trusted ? repoWebUrl(repo) : null;
-
-  const label = repo ? `Open ${repo.label} on GitHub` : "Open on GitHub";
+  const label = repo ? `Open ${repo} on GitHub` : "Open on GitHub";
 
   return (
     <Button
@@ -72,9 +69,9 @@ export const OpenOnGithubButton = ({
       tooltip={
         href
           ? label
-          : repo
-            ? `${repo.label} — unverified host, not opening`
-            : "No repo attached to this project — nothing to open"
+          : unverifiable
+            ? `${repo} — enterprise host, not opening from the browser`
+            : "This session didn't run in a GitHub repo — nothing to open"
       }
       // Stays a real <button> without a target — an anchor ignores `disabled`
       // and would navigate anyway.
@@ -83,7 +80,7 @@ export const OpenOnGithubButton = ({
       }
       {...rest}
     >
-      {repo && !trusted ? (
+      {unverifiable ? (
         <TriangleAlertIcon size={13} />
       ) : (
         <GithubIcon size={13} />

@@ -190,41 +190,53 @@ this very session's cwd resolves to `/Users/adamfratino/www/uiid/bertrand`, orig
 `uiid-systems/bertrand`, and `findProjectByRepo` (`src/lib/projects/policy.ts:63`)
 returns project `bertrand`. Measured: **101/101 transcripts resolve this way.**
 
-### Resolve once, persist, export
+### Resolve once, persist — superseded 2026-09-03 (no export)
 
-`resolveRepoAt` spawns `git` twice and caches **in-process**, which is worthless to
-one-shot hook subprocesses. So:
+> **Superseded.** This section prescribed resolving the project once at
+> marker-write time and having every later hook tick export `BERTRAND_PROJECT`
+> so `getDb()` picked the right per-project database. **Projects are gone**, and
+> with them the export, `projects.json`, `resolveActiveProject`, and the
+> per-project databases — there is one database at `~/.bertrand/bertrand.db`.
+> The marker no longer carries a project field. Kept because the *diagnosis*
+> below was right and was borne out.
 
-- Resolve the project **once**, at marker-write time.
-- Persist the slug **in the marker**.
-- Every later hook tick reads the marker (one `[ -f ]` and a `cut`) and **exports
-  `BERTRAND_PROJECT`** before calling `bq update`.
+The failure this section predicted happened exactly as written. `runAdopt`
+resolved the active project rather than the cwd, so an adopted session wrote
+into "whatever project the user last ran `bertrand project use` on — a silent
+cross-project write that produces no error and no visible symptom until someone
+goes looking for a session in the wrong log". The fix landed in `auto-adopt`
+and never in explicit `adopt`, which is the path `/bertrand` calls. Measured on
+the eight sessions of 2026-09-02/03: **five were filed under a project unrelated
+to the directory they ran in.**
 
-That last step is load-bearing and easy to miss. `bertrand update` has no
-`--project` flag; `getDb()` resolves through `resolveActiveProject()`
-(`src/db/client.ts:43` → `src/lib/projects/resolve.ts:33`), whose order is
-`BERTRAND_PROJECT` → `activeProjectSlug` in `projects.json` → the literal
-`"default"`. Without the export, an adopted session writes into **whatever project
-the user last ran `bertrand project use` on** — a silent cross-project write that
-produces no error and no visible symptom until someone goes looking for a session in
-the wrong log. The launched path already avoids this by pinning
-`BERTRAND_PROJECT` at spawn (`src/engine/process.ts:58`,
-`src/engine/dashboard-session.ts:165`); adopted sessions need the same pin, delivered
-through the marker instead of the environment.
+The resolution was to delete the choice rather than route it correctly. A
+session's group is now derived from its cwd by `@/lib/session-key` and persisted
+on the row (`repo`, `branch`, `group_key`, `worktree_root`, `main_checkout`), so
+a hook tick has nothing to resolve and nothing to export — it writes to the one
+database, and the group was settled at session start.
 
-### A cwd belonging to no project
+The caching point still holds and is why the key is written once: `resolveRepoAt`
+caches in-process, which is worthless to one-shot hook subprocesses.
 
-Three options, and they get different answers depending on who asked:
+### A cwd belonging to no repo
+
+Superseded along with the above — there is no `default` project to land in, and
+no registry to refuse to invent. The rule that replaced it is narrower:
 
 | Case | Behavior |
 |---|---|
-| Explicit `bertrand adopt`, unresolvable cwd | Land in `default`. A human asked; refusing is worse than a slightly wrong bucket, and `--project <slug>` overrides. |
-| Phase 2 auto-create, unresolvable cwd | **Refuse.** Write no marker; the hooks stay a total no-op. Silence is the correct behavior for a directory nobody registered. |
-| Either, no project could be invented | Never auto-create a *project*. Projects are bound to GitHub repos by policy (`UnboundProjectError`, `src/lib/projects/policy.ts`), and fabricating registry state from a cwd is not a thing a hook may do. |
+| Explicit `bertrand adopt`, unresolvable cwd | **Record it, ungrouped.** All four key columns are null and `group_key` is null, so it groups with nothing and is never mistaken for another session's work. A human asked; refusing is worse. |
+| Auto-adopt, unresolvable cwd | **Refuse.** Write no marker; the hooks stay a total no-op. Silence is still the correct behavior for a directory nobody asked about. |
+| Either, on the same null key | Never treat a null key as a match. An unresolvable key is not evidence that two conversations are the same work, and collapsing every non-repo claude into one session is the failure the sticky project already demonstrated. |
 
-This keeps the standing rule that **bertrand must not require git**: a session in a
-non-repo directory still works — you adopt it explicitly and it lands in `default`.
-What requires git is *automatic* project inference, which is a different promise.
+Auto-adopt's opt-in gate is now the global `autoAdopt` in
+`~/.bertrand/config.json` (default off), because the per-project flag it used to
+read has no registry to live on. The asymmetric-cost reasoning under "Drift: the
+required position" is unchanged; only its storage moved.
+
+This keeps the standing rule that **bertrand must not require git**: a session in
+a non-repo directory still records. What requires git is *grouping*, which is a
+different promise.
 
 **Do not read `ORCA_WORKTREE_ID`.** It carries the workspace path and would shortcut
 this entire section, at the cost of binding bertrand to one host. The boundary doc's

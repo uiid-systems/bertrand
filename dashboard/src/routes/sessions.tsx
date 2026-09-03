@@ -13,7 +13,6 @@ import {
 
 import { sessionsQuery } from "../api/queries";
 import type { SessionStatsRow, SessionListRow } from "../api/types";
-import { useSelectedProject } from "../components/sidebar/selected-project";
 import { useAllStats } from "../lib/use-sessions";
 import {
   formatDuration,
@@ -29,7 +28,8 @@ const RANKED_LIMIT = 10;
 /** One flat row per session, values pre-rendered as nodes/primitives so the
  * shared Table renders them directly (it stringifies non-elements). */
 type SessionRow = {
-  project: React.ReactNode;
+  repo: React.ReactNode;
+  branch: React.ReactNode;
   session: React.ReactNode;
   status: React.ReactNode;
   interactions: number;
@@ -55,7 +55,8 @@ const VIEWS: Record<
     title: "Recent sessions",
     columns: [
       "status",
-      "project",
+      "repo",
+      "branch",
       "session",
       "interactions",
       "changes",
@@ -70,7 +71,8 @@ const VIEWS: Record<
     title: "Largest sessions",
     columns: [
       "changes",
-      "project",
+      "repo",
+      "branch",
       "session",
       "status",
       "interactions",
@@ -85,7 +87,8 @@ const VIEWS: Record<
     title: "Heaviest sessions",
     columns: [
       "tokens",
-      "project",
+      "repo",
+      "branch",
       "session",
       "status",
       "interactions",
@@ -117,12 +120,9 @@ function totalTokens(stat: SessionStatsRow | undefined): number {
  * or sorting controls yet, deliberately.
  */
 function SessionsPage() {
-  const { queryProjects } = useSelectedProject();
-  const { data: sessions = [] } = useQuery(
-    sessionsQuery({ projects: queryProjects }),
-  );
-  // Superset stats, sliced by this page's own (project-scoped) session list —
-  // same numbers as before, but sharing the sidebar's single cache entry.
+  const { data: sessions = [] } = useQuery(sessionsQuery());
+  // The same superset the sidebar polls, so this page shares its cache entry
+  // rather than opening a second one over the same rows.
   const stats = useAllStats();
 
   const [ranking, setRanking] = useState<Ranking>("recent");
@@ -200,11 +200,21 @@ function toRow(
   entry: SessionListRow,
   stat: SessionStatsRow | undefined,
 ): SessionRow {
-  const { session, project } = entry;
+  const { session } = entry;
 
   return {
-    project: project ? (
-      <Text weight="medium">{project.name}</Text>
+    // Both derived from the session's cwd at start, and both legitimately
+    // absent for a session that ran outside a repo — an em dash rather than a
+    // blank cell, so absence reads as an answer and not as a rendering bug.
+    repo: session.repo ? (
+      <Text weight="medium">{session.repo}</Text>
+    ) : (
+      <Text shade="halftone">—</Text>
+    ),
+    branch: session.branch ? (
+      <Text family="mono" size={-1}>
+        {session.branch}
+      </Text>
     ) : (
       <Text shade="halftone">—</Text>
     ),

@@ -8,7 +8,6 @@ import type {
   EngagementStats,
   ArchiveErrorReason,
   SessionActionErrorReason,
-  ProjectSummary,
   SessionPullRequest,
 } from "./types"
 
@@ -30,12 +29,10 @@ export class ArchiveError extends Error {
 async function postSessionAction(
   id: string,
   action: "archive" | "unarchive",
-  project?: string,
 ): Promise<SessionRow> {
-  const res = await fetch(
-    apiUrl(`/api/sessions/${id}/${action}${projectParam(project)}`),
-    { method: "POST" },
-  )
+  const res = await fetch(apiUrl(`/api/sessions/${id}/${action}`), {
+    method: "POST",
+  })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as {
       error?: string
@@ -46,10 +43,9 @@ async function postSessionAction(
   return res.json()
 }
 
-export const archiveSession = (id: string, project?: string) =>
-  postSessionAction(id, "archive", project)
-export const unarchiveSession = (id: string, project?: string) =>
-  postSessionAction(id, "unarchive", project)
+export const archiveSession = (id: string) => postSessionAction(id, "archive")
+export const unarchiveSession = (id: string) =>
+  postSessionAction(id, "unarchive")
 
 /** Thrown by the end-of-session actions (#214) that aren't archive. */
 export class SessionActionError extends Error {
@@ -80,10 +76,8 @@ async function postSessionActionJson<T>(
 }
 
 /** Permanently delete the session and everything cascading from it. */
-export const discardSession = (id: string, project?: string): Promise<{ ok: true }> =>
-  postSessionActionJson<{ ok: true }>(
-    `/api/sessions/${id}/discard${projectParam(project)}`,
-  )
+export const discardSession = (id: string): Promise<{ ok: true }> =>
+  postSessionActionJson<{ ok: true }>(`/api/sessions/${id}/discard`)
 
 export type ResumeSessionResult = {
   sessionId: string
@@ -94,9 +88,6 @@ export type ResumeSessionResult = {
 /**
  * Resume a session under the server's ownership. Omitting `conversationId`
  * starts a new conversation under the same session.
- *
- * Not project-scoped: resuming spawns a process the server has to own, and the
- * server only ever spawns into its own active project.
  */
 export const resumeSession = (
   id: string,
@@ -108,43 +99,23 @@ export const resumeSession = (
   })
 
 /**
- * Serialize a projects filter into a query string. `undefined` omits the param
- * entirely (server falls back to the active project); an array — including an
- * empty one — always sets `projects=`, so an empty selection returns nothing
- * rather than silently reverting to the active project.
+ * Every session the server knows about.
+ *
+ * There is no scope parameter any more. The server reads one DB, and each row
+ * carries the columns a client groups by (`repo`, `branch`, `groupKey`) — so
+ * narrowing is a client-side slice of one cached response rather than a
+ * differently-keyed fetch, which is what the `?projects=` filter used to force.
  */
-function projectsParam(projects: string[] | undefined): string {
-  if (projects === undefined) return ""
-  const qs = new URLSearchParams({ projects: projects.join(",") }).toString()
-  return `?${qs}`
-}
-
-export const sessionsQuery = (
-  opts: { includeArchived?: boolean; projects?: string[] } = {},
-) =>
+export const sessionsQuery = (opts: { includeArchived?: boolean } = {}) =>
   queryOptions({
-    queryKey: [
-      "sessions",
-      { includeArchived: !!opts.includeArchived, projects: opts.projects ?? null },
-    ],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      if (opts.includeArchived) params.set("excludeArchived", "false")
-      if (opts.projects !== undefined) params.set("projects", opts.projects.join(","))
-      const qs = params.toString()
-      return fetchJson<SessionListRow[]>(
-        `/api/sessions${qs ? `?${qs}` : ""}`,
-      )
-    },
+    queryKey: ["sessions", { includeArchived: !!opts.includeArchived }],
+    queryFn: () =>
+      fetchJson<SessionListRow[]>(
+        `/api/sessions${opts.includeArchived ? "?excludeArchived=false" : ""}`,
+      ),
     refetchInterval: 2000,
     placeholderData: keepPreviousData,
   })
-
-/** Single-project query string (`?project=slug`) for per-session endpoints. */
-function projectParam(project: string | undefined): string {
-  if (!project) return ""
-  return `?${new URLSearchParams({ project }).toString()}`
-}
 
 /**
  * Server ordering is (createdAt, id) — transcript ingestion can backdate a
@@ -156,9 +127,9 @@ function byTimelineOrder(a: EventRow, b: EventRow): number {
   return a.id - b.id
 }
 
-export const eventsQuery = (sessionId: string, isLive = false, project?: string) =>
+export const eventsQuery = (sessionId: string, isLive = false) =>
   queryOptions({
-    queryKey: ["events", sessionId, project ?? null],
+    queryKey: ["events", sessionId],
     // Incremental poll: events are append-only, so after the first full fetch
     // each tick asks only for rows past the max id already in the cache.
     // While the session is idle this returns an empty array and we hand back
@@ -167,7 +138,6 @@ export const eventsQuery = (sessionId: string, isLive = false, project?: string)
     queryFn: async ({ client, queryKey }) => {
       const prev = client.getQueryData<EventRow[]>(queryKey)
       const params = new URLSearchParams()
-      if (project) params.set("project", project)
       if (prev && prev.length > 0) {
         const sinceId = prev.reduce((max, e) => Math.max(max, e.id), 0)
         params.set("sinceId", String(sinceId))
@@ -195,13 +165,10 @@ export const eventsQuery = (sessionId: string, isLive = false, project?: string)
     structuralSharing: false,
   })
 
-export const statsQuery = (sessionId: string, isLive = false, project?: string) =>
+export const statsQuery = (sessionId: string, isLive = false) =>
   queryOptions({
-    queryKey: ["stats", sessionId, project ?? null],
-    queryFn: () =>
-      fetchJson<SessionStatsRow | null>(
-        `/api/stats/${sessionId}${projectParam(project)}`,
-      ),
+    queryKey: ["stats", sessionId],
+    queryFn: () => fetchJson<SessionStatsRow | null>(`/api/stats/${sessionId}`),
     enabled: !!sessionId,
     refetchInterval: isLive ? 2000 : false,
     placeholderData: keepPreviousData,
@@ -216,65 +183,30 @@ export const statsQuery = (sessionId: string, isLive = false, project?: string) 
  * server's per-branch TTL, so a faster poll would only re-serve the same
  * cached answer, and a slower one would leave a green build looking pending.
  */
-export const pullRequestQuery = (sessionId: string, project?: string) =>
+export const pullRequestQuery = (sessionId: string) =>
   queryOptions({
-    queryKey: ["pull-request", sessionId, project ?? null],
+    queryKey: ["pull-request", sessionId],
     queryFn: () =>
-      fetchJson<SessionPullRequest>(
-        `/api/github/${sessionId}/pr${projectParam(project)}`,
-      ),
+      fetchJson<SessionPullRequest>(`/api/github/${sessionId}/pr`),
     enabled: !!sessionId,
     refetchInterval: 30_000,
     placeholderData: keepPreviousData,
   })
 
-export const allStatsQuery = (
-  opts: { hasLiveSession?: boolean; projects?: string[] } = {},
-) =>
+export const allStatsQuery = (opts: { hasLiveSession?: boolean } = {}) =>
   queryOptions({
-    queryKey: ["stats", { projects: opts.projects ?? null }],
-    queryFn: () =>
-      fetchJson<Record<string, SessionStatsRow>>(
-        `/api/stats${projectsParam(opts.projects)}`,
-      ),
+    queryKey: ["stats", "all"],
+    queryFn: () => fetchJson<Record<string, SessionStatsRow>>("/api/stats"),
     refetchInterval: opts.hasLiveSession ? 2000 : false,
     placeholderData: keepPreviousData,
   })
 
-export const engagementQuery = (
-  sessionId: string,
-  isLive = false,
-  project?: string,
-) =>
+export const engagementQuery = (sessionId: string, isLive = false) =>
   queryOptions({
-    queryKey: ["engagement", sessionId, project ?? null],
+    queryKey: ["engagement", sessionId],
     queryFn: () =>
-      fetchJson<EngagementStats>(
-        `/api/engagement/${sessionId}${projectParam(project)}`,
-      ),
+      fetchJson<EngagementStats>(`/api/engagement/${sessionId}`),
     enabled: !!sessionId,
     refetchInterval: isLive ? 2000 : false,
     placeholderData: keepPreviousData,
   })
-
-// Re-exported rather than re-declared: the shape is the server's, and a local
-// copy would drift silently the next time a field is added to the response.
-export type { ProjectSummary }
-
-export const projectsQuery = queryOptions({
-  queryKey: ["projects"],
-  queryFn: () => fetchJson<ProjectSummary[]>("/api/projects"),
-  refetchInterval: 5000,
-})
-
-export async function switchActiveProject(slug: string): Promise<void> {
-  const res = await fetch(apiUrl("/api/active-project"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ slug }),
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`)
-  }
-}

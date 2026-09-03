@@ -27,7 +27,8 @@ migrate(drizzle(sqlite), {
 const { createSession, updateSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { insertEvent } = await import("@/db/queries/events");
-const { searchProject, makeSnippet } = await import("./search");
+const { searchSessions, makeSnippet } = await import("./search");
+import type { SearchHit } from "./search";
 const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 
 const s1 = createSession({ slug: "auth-work" });
@@ -75,10 +76,10 @@ insertEvent({
   createdAt: "2026-07-02 10:03:00",
 });
 
-describe("searchProject", () => {
+describe("searchSessions", () => {
   test("finds hits across default types with conversation ordinals, newest first", () => {
-    const hits = searchProject(testDb, "proj", { terms: ["token"] });
-    const types = hits.map((h) => h.type);
+    const hits = searchSessions(testDb, { terms: ["token"] });
+    const types = hits.map((h: SearchHit) => h.type);
     expect(types).toContain("prompt");
     expect(types).toContain("question");
     expect(types).toContain("answer");
@@ -86,38 +87,38 @@ describe("searchProject", () => {
     expect(types).toContain("summary");
     expect(types).not.toContain("tool"); // opt-in only
 
-    const prompt = hits.find((h) => h.type === "prompt")!;
+    const prompt = hits.find((h: SearchHit) => h.type === "prompt")!;
     expect(prompt.session).toBe("auth-work");
     expect(prompt.conversation).toBe(1);
-    const question = hits.find((h) => h.type === "question")!;
+    const question = hits.find((h: SearchHit) => h.type === "question")!;
     expect(question.conversation).toBe(2);
 
     // Newest first
-    const times = hits.map((h) => new Date(h.at).getTime());
+    const times = hits.map((h: SearchHit) => new Date(h.at).getTime());
     expect([...times].sort((a, b) => b - a)).toEqual(times);
   });
 
   test("terms are AND-ed", () => {
-    expect(searchProject(testDb, "p", { terms: ["token", "refresh"] }).map((h) => h.type)).toEqual([
+    expect(searchSessions(testDb, { terms: ["token", "refresh"] }).map((h: SearchHit) => h.type)).toEqual([
       "prompt",
     ]);
-    expect(searchProject(testDb, "p", { terms: ["token", "zzz-no-match"] })).toEqual([]);
+    expect(searchSessions(testDb, { terms: ["token", "zzz-no-match"] })).toEqual([]);
   });
 
   test("matching is case-insensitive", () => {
-    const hits = searchProject(testDb, "p", { terms: ["OAUTH"] });
+    const hits = searchSessions(testDb, { terms: ["OAUTH"] });
     expect(hits.length).toBe(1);
     expect(hits[0]!.type).toBe("prompt");
   });
 
   test("tool type is searchable when requested", () => {
-    const hits = searchProject(testDb, "p", { terms: ["openssl"], types: ["tool"] });
+    const hits = searchSessions(testDb, { terms: ["openssl"], types: ["tool"] });
     expect(hits.length).toBe(1);
     expect(hits[0]!.snippet).toContain("openssl genrsa");
   });
 
   test("--session filter restricts event and summary hits", () => {
-    const hits = searchProject(testDb, "p", { terms: ["token"], session: "other" });
+    const hits = searchSessions(testDb, { terms: ["token"], session: "other" });
     expect(hits.length).toBe(1);
     expect(hits[0]!.type).toBe("summary");
     expect(hits[0]!.session).toBe("other");
@@ -128,7 +129,7 @@ describe("searchProject", () => {
     // "<category>/<slug>" name, or a slug the session has since been renamed
     // out of, still reaches it. Returning [] would read as "no results".
     recordSessionAlias("github-projects/other", s2.id);
-    const hits = searchProject(testDb, "p", {
+    const hits = searchSessions(testDb, {
       terms: ["token"],
       session: "github-projects/other",
     });
@@ -138,22 +139,22 @@ describe("searchProject", () => {
 
   test("--session filter still returns nothing for an unknown name", () => {
     expect(
-      searchProject(testDb, "p", { terms: ["token"], session: "no-such" }),
+      searchSessions(testDb, { terms: ["token"], session: "no-such" }),
     ).toEqual([]);
     // Malformed names can't match anything either — and must not throw.
     expect(
-      searchProject(testDb, "p", { terms: ["token"], session: "///" }),
+      searchSessions(testDb, { terms: ["token"], session: "///" }),
     ).toEqual([]);
   });
 
   test("limit caps merged results", () => {
-    const hits = searchProject(testDb, "p", { terms: ["token"], limit: 2 });
+    const hits = searchSessions(testDb, { terms: ["token"], limit: 2 });
     expect(hits.length).toBe(2);
   });
 
   test("LIKE wildcards in terms are treated literally", () => {
-    expect(searchProject(testDb, "p", { terms: ["%"] })).toEqual([]);
-    expect(searchProject(testDb, "p", { terms: ["_"] })).toEqual([]);
+    expect(searchSessions(testDb, { terms: ["%"] })).toEqual([]);
+    expect(searchSessions(testDb, { terms: ["_"] })).toEqual([]);
   });
 
   test("ordinals match log's event segmentation when legacy events lead the session", () => {
@@ -182,7 +183,7 @@ describe("searchProject", () => {
       createdAt: "2026-06-02 10:00:00",
     });
 
-    const hits = searchProject(testDb, "p", { terms: ["xylophone"] });
+    const hits = searchSessions(testDb, { terms: ["xylophone"] });
     expect(hits.length).toBe(1);
     // The conversations table alone would say ordinal 1; event segmentation
     // (what `log --events --conversation N` uses) puts the legacy segment
@@ -219,7 +220,7 @@ describe("searchProject", () => {
       createdAt: "2026-06-03 10:00:00",
     });
 
-    const hits = searchProject(testDb, "p", { terms: ["quixotic"] });
+    const hits = searchSessions(testDb, { terms: ["quixotic"] });
     expect(hits.length).toBe(1);
     // Last-wins conversation-keyed ordinals would report 3; the hit lives in
     // the first leg, so the per-event mapping must say 1.
@@ -233,7 +234,7 @@ describe("searchProject", () => {
       event: "user.prompt",
       meta: { prompt: "die Übergabe planen" },
     });
-    const hits = searchProject(testDb, "p", { terms: ["Übergabe"] });
+    const hits = searchSessions(testDb, { terms: ["Übergabe"] });
     expect(hits.length).toBe(1);
     expect(hits[0]!.session).toBe("unicode");
   });

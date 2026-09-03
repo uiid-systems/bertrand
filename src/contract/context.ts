@@ -6,7 +6,7 @@ import { formatAgo } from "@/lib/format";
  * Sibling sessions context layer, injected into every session's contract.
  *
  * Project-wide (docs/agent-cli.md, Spec 2): every non-archived session in
- * the active project gets a line — capped so the block stays a few hundred
+ * every other session gets a line — capped so the block stays a few hundred
  * tokens. Summaries come from the pause-time derivation in lib/summary.ts.
  * Archived sessions are excluded from injection; they stay discoverable via
  * `bertrand list --all`.

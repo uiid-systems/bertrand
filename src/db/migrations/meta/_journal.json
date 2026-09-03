@@ -141,6 +141,13 @@
       "when": 1788449674958,
       "tag": "0019_drop_rating",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788453229205,
+      "tag": "0020_steep_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

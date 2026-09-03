@@ -5,9 +5,15 @@ import { AppDetails, Logo } from "@/tui/components";
 import { Picker, type PickerItem } from "@/tui/components/picker";
 import { getAllSessions } from "@/db/queries/sessions";
 import { archiveSession, unarchiveSession } from "@/lib/session-archive";
-import { formatAgo, parseDbTime } from "@/lib/format";
+import { formatAgo } from "@/lib/format";
 import { parseSessionName } from "@/lib/parse-session-name";
 
+import {
+  UNGROUPED_KEY,
+  groupByRepo,
+  recencyMs,
+  type RepoGroup,
+} from "./group";
 import type { LaunchSelection, LaunchProps } from "./launch.types";
 
 type SessionRow = ReturnType<typeof getAllSessions>[number];
@@ -29,13 +35,30 @@ function statusRank(status: string): number {
 }
 
 /**
- * Newest-activity sort key, as epoch ms rather than the stored string. The two
- * columns are written in different shapes — `startedAt` is a `datetime('now')`
- * default, `endedAt` was ISO until this release — and comparing those as text
- * sorts on the separator (" " before "T") rather than on the time.
+ * A repo heading. Disabled so the cursor steps straight past it — it names the
+ * rows below rather than being one of them, and stopping on something that
+ * cannot be selected reads as a dead row.
+ *
+ * The count sits on the right where every other row's `meta` does, so the
+ * headings and the sessions share one column grid.
  */
-function recencyMs(s: SessionRow): number {
-  return parseDbTime(s.session.endedAt ?? s.session.startedAt);
+function repoHeaderRow(group: RepoGroup): PickerItem {
+  return {
+    value: `repo:${group.key}`,
+    // Matched by the filter, so typing a repo name narrows to it *and* keeps
+    // this heading. Session labels carry the repo too — see `sessionRow`.
+    label: group.label,
+    meta: `${group.sessions.length}`,
+    disabled: true,
+    display: () => (
+      <>
+        <Text>{"  "}</Text>
+        <Text bold dim={group.key === UNGROUPED_KEY}>
+          {group.label}
+        </Text>
+      </>
+    ),
+  };
 }
 
 function sessionRow(s: SessionRow): PickerItem {
@@ -43,10 +66,16 @@ function sessionRow(s: SessionRow): PickerItem {
   const color = STATUS_COLOR[status] ?? "gray";
   const disabled = status === "waiting";
   const isArchived = status === "archived";
+  const branch = s.session.branch;
 
   return {
     value: s.session.slug,
-    label: `${s.session.slug} ${status}`,
+    // The repo joins the match text so filtering by it keeps this row under its
+    // heading; the branch joins it because the branch *is* the unit of work now,
+    // and "which session was on ui-505" is the question being asked.
+    label: [s.session.slug, status, s.session.repo, branch]
+      .filter(Boolean)
+      .join(" "),
     meta: formatAgo(new Date(recencyMs(s))),
     disabled,
     dim: isArchived,
@@ -59,7 +88,7 @@ function sessionRow(s: SessionRow): PickerItem {
       return (
         <>
           <Text color={cursorColor} bold>
-            {isCursor ? "❯ " : "  "}
+            {isCursor ? "  ❯ " : "    "}
           </Text>
           <Text color={dotColor} bold={isCursor}>
             ●{" "}
@@ -71,6 +100,15 @@ function sessionRow(s: SessionRow): PickerItem {
           <Text color={slugColor} bold={isCursor} dim={dimText}>
             {s.session.slug}
           </Text>
+          {/* The branch, not the slug, is what this session's work *is* — the
+              slug is a name derived at pause and may say less. Shown only when
+              recorded; a session outside git has none and must still render. */}
+          {branch && (
+            <>
+              <Text dim> · </Text>
+              <Text dim>{branch}</Text>
+            </>
+          )}
         </>
       );
     },
@@ -128,9 +166,22 @@ export function Launch({ onSelect }: LaunchProps) {
       });
   }, [allSessions, showArchived]);
 
+  // Grouped *after* the sort above, so each repo's rows keep the global
+  // paused-before-waiting-before-archived, then newest-first order.
+  const groups = useMemo(() => groupByRepo(visibleSessions), [visibleSessions]);
+
+  // Headings render even for a single repo. It costs one line and answers
+  // "which repo am I looking at" — which is what the deleted project picker
+  // was for, minus the keypress and minus the chance of answering it wrong.
   const items: PickerItem[] = useMemo(
-    () => [newSessionRow, ...visibleSessions.map(sessionRow)],
-    [visibleSessions],
+    () => [
+      newSessionRow,
+      ...groups.flatMap((group) => [
+        repoHeaderRow(group),
+        ...group.sessions.map((s) => sessionRow(s)),
+      ]),
+    ],
+    [groups],
   );
 
   // Drawn from every loaded session, archived included so the suggestion
@@ -236,6 +287,10 @@ export function Launch({ onSelect }: LaunchProps) {
               <Text dim>· none — type a name to create</Text>
             ) : (
               <>
+                <Text dim>·</Text>
+                <Text dim>
+                  {groups.length} repo{groups.length === 1 ? "" : "s"}
+                </Text>
                 <Text dim>·</Text>
                 <Text color="gold">{counts.paused} paused</Text>
                 {counts.waiting > 0 && (

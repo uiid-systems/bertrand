@@ -9,7 +9,7 @@ import {
 // doesn't leave the file world-readable for long. We re-chmod and log a
 // warning; both are silent in background-spawned trigger contexts but
 // surface in foreground CLI runs, which is the user-facing escape hatch.
-import { resolveActiveProject } from "@/lib/projects/resolve";
+import { paths } from "@/lib/paths";
 
 export type SyncConfig = {
   supabaseUrl: string;
@@ -51,9 +51,17 @@ function parseEnv(contents: string): Partial<Record<Key, string>> {
   return out;
 }
 
-/** Default to the active project's per-project sync.env. */
+/**
+ * This machine's sync credentials: `~/.bertrand/sync.env`.
+ *
+ * One file, not one per project. Sync replicates a database and there is one
+ * database, so the per-project split only ever produced several copies of the
+ * same Supabase credentials pointed at different object keys.
+ *
+ * Read through `paths` rather than composed here so `_setRootDir` reaches it.
+ */
 function defaultPath(): string {
-  return resolveActiveProject().syncEnv;
+  return paths.syncEnv;
 }
 
 export function hasSyncConfig(syncEnvPath?: string): boolean {

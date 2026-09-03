@@ -3,12 +3,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import {
-  _setRegistryDir,
-  _getRegistryDir,
-  registerProject,
-} from "@/lib/projects/registry";
-import { _resetActiveProjectCache } from "@/lib/projects/resolve";
+import { _setRootDir, _getRootDir } from "@/lib/paths";
 import { invalidateDbCache, _clearTestDb } from "@/db/client";
 import { startServer } from "./index";
 
@@ -26,29 +21,35 @@ import { startServer } from "./index";
 
 let tmpRoot: string;
 let server: ReturnType<typeof startServer>;
-const originalDir = _getRegistryDir();
+const originalDir = _getRootDir();
 const originalWorkspace = process.env.BERTRAND_WORKSPACE;
 
-beforeEach(() => {
-  // Gate startServer's global boot sweeps off the real machine (see
-  // projects-api.test.ts).
-  process.env.BERTRAND_WORKSPACE = "1";
-  delete process.env.BERTRAND_PROJECT;
+/**
+ * A surviving GET route to probe the allowlist with. Every assertion here is
+ * about the origin check, which runs before dispatch, so the route only has to
+ * exist and answer 200 — `/api/sessions` is the list endpoint and reads the one
+ * DB the redirected root above provides.
+ */
+const PROBE = "/api/sessions";
 
+beforeEach(() => {
+  // startServer's boot sweep is global and would reconcile the real machine's
+  // sessions. It's gated on BERTRAND_WORKSPACE.
+  process.env.BERTRAND_WORKSPACE = "1";
+
+  // Redirect bertrand's home so the probe route opens (and migrates) a throwaway
+  // DB rather than the user's.
   tmpRoot = mkdtempSync(join(tmpdir(), "bertrand-cors-"));
-  _setRegistryDir(tmpRoot);
-  _resetActiveProjectCache();
+  _setRootDir(tmpRoot);
   invalidateDbCache();
   _clearTestDb();
 
-  registerProject({ slug: "cors", name: "CORS Project" });
   server = startServer(0);
 });
 
 afterEach(() => {
   server.stop(true);
-  _setRegistryDir(originalDir);
-  _resetActiveProjectCache();
+  _setRootDir(originalDir);
   invalidateDbCache();
   _clearTestDb();
   rmSync(tmpRoot, { recursive: true, force: true });
@@ -64,7 +65,7 @@ const url = (path: string) => `http://127.0.0.1:${server.port}${path}`;
 
 describe("CORS origin allowlist", () => {
   test("echoes the hosted page's origin rather than a wildcard", async () => {
-    const res = await fetch(url("/api/projects"), {
+    const res = await fetch(url(PROBE), {
       headers: { origin: "https://bertrand.sh" },
     });
 
@@ -75,7 +76,7 @@ describe("CORS origin allowlist", () => {
   });
 
   test("allows the vite dev server's origin", async () => {
-    const res = await fetch(url("/api/projects"), {
+    const res = await fetch(url(PROBE), {
       headers: { origin: "http://localhost:5199" },
     });
 
@@ -86,7 +87,7 @@ describe("CORS origin allowlist", () => {
   test("refuses a localhost origin on an unnamed port", async () => {
     // The allowlist names exact ports rather than trusting localhost wholesale,
     // so some other local dev server cannot reach this API just by being local.
-    const res = await fetch(url("/api/projects"), {
+    const res = await fetch(url(PROBE), {
       headers: { origin: "http://localhost:5173" },
     });
 
@@ -95,14 +96,14 @@ describe("CORS origin allowlist", () => {
 
   test("serves a request with no Origin and adds no CORS header", async () => {
     // curl, the TUI, and same-origin browser GETs all land here.
-    const res = await fetch(url("/api/projects"));
+    const res = await fetch(url(PROBE));
 
     expect(res.status).toBe(200);
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   test("answers a preflight from an allowed origin", async () => {
-    const res = await fetch(url("/api/projects"), {
+    const res = await fetch(url(PROBE), {
       method: "OPTIONS",
       headers: { origin: "https://bertrand.sh" },
     });
@@ -113,7 +114,7 @@ describe("CORS origin allowlist", () => {
   });
 
   test("refuses a preflight from an untrusted origin", async () => {
-    const res = await fetch(url("/api/projects"), {
+    const res = await fetch(url(PROBE), {
       method: "OPTIONS",
       headers: { origin: "https://evil.example" },
     });

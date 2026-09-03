@@ -86,16 +86,16 @@ export function useEphemeralCollapsed(active: boolean) {
   return { collapsed, toggle };
 }
 
-/** The project zone's own collapsed state, keyed by project slug. */
-export const useCollapsedProjects = () =>
-  useCollapsed("bertrand:sidebar:collapsed-projects");
+/** Collapsed repo groups in the sessions zone, keyed by `owner/repo`. */
+export const useCollapsedRepos = () =>
+  useCollapsed("bertrand:sidebar:collapsed-repos");
 
 /**
- * Collapsed project groups inside the live zone, keyed by project slug.
+ * Collapsed repo groups inside the live zone, keyed by `owner/repo`.
  *
- * Separate storage from `useCollapsedProjects` even though both key off the
- * same slugs: that one tracks whether the project *zone* is open, and sharing a
- * key would make folding a project's live group silently fold the zone below.
+ * Separate storage from `useCollapsedRepos` even though both key off the same
+ * repos: the same repo legitimately has a live group you want folded and a
+ * paused group you don't, and sharing a key would tie the two together.
  */
-export const useCollapsedLiveProjects = () =>
-  useCollapsed("bertrand:sidebar:collapsed-live-projects");
+export const useCollapsedLiveRepos = () =>
+  useCollapsed("bertrand:sidebar:collapsed-live-repos");

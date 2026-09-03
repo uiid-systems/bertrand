@@ -4,11 +4,7 @@ import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import { recoverStaleSessions } from "@/lib/session-recovery"
 import { type ChangedFile } from "@/lib/git"
-import {
-  getAllSessionsForProject,
-  getSession,
-  countLiveSessions,
-} from "@/db/queries/sessions"
+import { getAllSessions, getSession } from "@/db/queries/sessions"
 import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
 import { getSessionStats } from "@/db/queries/stats"
 import { computeSessionStats, computeAndPersist } from "@/lib/timing"
@@ -21,34 +17,15 @@ import {
   type UnarchiveResult,
 } from "@/lib/session-archive"
 import { discardSession, type DiscardResult } from "@/lib/session-actions"
-import {
-  listProjects,
-  setActiveProjectSlug,
-  projectExists,
-  getProjectRepo,
-  type ProjectRepo,
-} from "@/lib/projects/registry"
-import { formatIdentity } from "@/lib/github/identity"
-import { isDeclaredHost } from "@/lib/github/hosts"
 import { getPRForBranch } from "@/lib/github/pr"
 import { resolveRepoAt } from "@/lib/github/resolve"
 import { resolveSessionPullRequest } from "@/lib/github/session-pr"
-import {
-  resolveActiveProject,
-  _resetActiveProjectCache,
-} from "@/lib/projects/resolve"
-import { UnboundProjectError } from "@/lib/projects/policy"
-import { isValidSlug } from "@/lib/projects/paths"
-import { getDbForProject, invalidateDbCache, closeDbForProject, type Db } from "@/db/client"
 import type {
   SessionRow,
   SessionListRow,
   EventRow,
   SessionStatsRow,
   EngagementStats,
-  ProjectRepoView,
-  ProjectSummary,
-  ActiveProjectMeta,
   SessionPullRequest,
 } from "@/types"
 
@@ -76,18 +53,17 @@ type RouteHandler = (params: Record<string, string | undefined>, url: URL) => un
  * every meta blob), and the dashboard polls them every 2s per live session.
  * Events are append-only, so max(event.id) is a complete change token — cache
  * the last result per session and only recompute when the log actually grew.
- * Session ids are globally unique nanoids, so one map is safe across project
- * DBs. Unbounded but tiny: one row per session ever polled this process.
+ * Unbounded but tiny: one row per session ever polled this process.
  */
 const liveStatsCache = new Map<string, { maxId: number; row: SessionStatsRow }>()
 
-function liveStats(sessionId: string, db?: Db): SessionStatsRow {
-  const maxId = getMaxEventId(sessionId, db)
+function liveStats(sessionId: string): SessionStatsRow {
+  const maxId = getMaxEventId(sessionId)
   const cached = liveStatsCache.get(sessionId)
   if (cached && cached.maxId === maxId) return cached.row
   const row: SessionStatsRow = {
     sessionId,
-    ...computeSessionStats(sessionId, db),
+    ...computeSessionStats(sessionId),
     updatedAt: new Date().toISOString(),
   }
   liveStatsCache.set(sessionId, { maxId, row })
@@ -100,65 +76,56 @@ function liveStats(sessionId: string, db?: Db): SessionStatsRow {
  * is unavoidable once, but persisting the result means it's once — not on
  * every 2s poll forever.
  */
-function backfilledStats(sessionId: string, db?: Db): SessionStatsRow {
+function backfilledStats(sessionId: string): SessionStatsRow {
   return {
     sessionId,
-    ...computeAndPersist(sessionId, db),
+    ...computeAndPersist(sessionId),
     updatedAt: new Date().toISOString(),
   }
 }
 
 /**
- * Which projects a list/stats request covers. `?projects=a,b,c` names them
- * explicitly (unknown slugs dropped, empty string → no projects); omitting the
- * param falls back to the active project alone, preserving the single-project
- * behavior for any consumer that doesn't opt into the multi-project view.
- */
-function resolveProjectScope(url: URL): { slug: string; name: string }[] {
-  const nameBySlug = new Map(listProjects().map((p) => [p.slug, p.name]))
-  const param = url.searchParams.get("projects")
-  if (param === null) {
-    const active = resolveActiveProject()
-    return [{ slug: active.slug, name: active.name }]
-  }
-  return param
-    .split(",")
-    .map((s) => s.trim())
-    .filter((slug) => nameBySlug.has(slug))
-    .map((slug) => ({ slug, name: nameBySlug.get(slug)! }))
-}
-
-/**
- * DB handle for a single-session request (`events`, `stats/:id`, `engagement`).
- * `?project=slug` targets that project's DB; absent or unknown falls through to
- * `undefined` so the callee's `getDb()` default (the active project) applies.
- */
-function resolveDb(url: URL): Db | undefined {
-  const slug = url.searchParams.get("project")
-  if (slug && projectExists(slug)) return getDbForProject(slug)
-  return undefined
-}
-
-/**
- * The repo root a response's file paths should be rendered relative to.
+ * The directory a session's *recorded file paths* are relative to.
  *
- * Deliberately mirrors `resolveDb`'s choice of project, so the paths and the
- * rows they describe always come from the same one — reading the active
- * project's root while serving another project's sessions would render every
- * path absolute. `undefined` when that project has no repo bound, which the
- * display path treats as "leave it absolute".
+ * Read off the session row, not out of a registry. This used to be the bound
+ * repo path of whichever project the request named, which could easily be a
+ * different checkout than the session ever touched — and then every path in
+ * the response rendered absolute, because the prefix being stripped wasn't the
+ * prefix the paths carried. `worktreeRoot` is where `claude` actually ran, so it
+ * is that prefix by construction; `mainCheckout` only stands in for a session
+ * whose worktree was never recorded.
+ *
+ * `undefined` rather than null: the callee reads an absent root as "leave the
+ * path absolute", which is the correct rendering for a session outside git.
  */
-function resolveRepoRoot(url: URL): string | undefined {
-  const slug = url.searchParams.get("project")
-  const owner = slug && projectExists(slug) ? slug : resolveActiveProject().slug
-  return getProjectRepo(owner)?.path
+function displayRoot(session: SessionRow): string | undefined {
+  return session.worktreeRoot ?? session.mainCheckout ?? undefined
 }
 
+/**
+ * The checkout a session's *repo identity* should be resolved in.
+ *
+ * The opposite preference to {@link displayRoot}, and deliberately so: this
+ * path only has to still exist and still name the repo, and a linked worktree
+ * frequently does not. An Orca workspace is deleted the moment its task lands,
+ * which would leave a paused session's PR permanently unresolvable — while the
+ * main checkout behind it is a long-lived clone of the same repo with the same
+ * `origin`. Falls back to the worktree for a session that has no main checkout
+ * recorded.
+ */
+function repoRoot(session: SessionRow): string | undefined {
+  return session.mainCheckout ?? session.worktreeRoot ?? undefined
+}
+
+/**
+ * Every session in one list. There is a single DB now, so there is no scope to
+ * resolve and no `?projects=` to honour: the rollup a client wants (repo →
+ * session → conversation) is derivable from `repo`/`branch`/`groupKey`, which
+ * ride along on each row straight out of the schema.
+ */
 const listSessions = (_params: object, url: URL): SessionListRow[] => {
   const excludeArchived = url.searchParams.get("excludeArchived") !== "false"
-  return resolveProjectScope(url).flatMap((project) =>
-    getAllSessionsForProject(project, { excludeArchived }),
-  )
+  return getAllSessions({ excludeArchived })
 }
 
 const getSessionById = ({ id }: { id?: string }): SessionRow | undefined =>
@@ -168,110 +135,68 @@ const listEvents = (
   { sessionId }: { sessionId?: string },
   url: URL,
 ): EventRow[] => {
-  const db = resolveDb(url)
   const eventType = url.searchParams.get("type")
-  if (eventType) return getEventsByType(sessionId!, eventType, db)
+  if (eventType) return getEventsByType(sessionId!, eventType)
   // `?sinceId=N` returns only rows with id > N — the dashboard's live poll
   // passes the max id it has seen so idle ticks cost ~0 bytes instead of the
   // full timeline. Invalid/absent values fall back to the full list.
   const sinceParam = Number(url.searchParams.get("sinceId"))
   const sinceId = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : undefined
-  return getEventsBySession(sessionId!, db, { sinceId })
+  // The explicit `undefined` skips the query's `db` parameter — a test-injection
+  // seam that defaults to `getDb()` — to reach the options after it.
+  return getEventsBySession(sessionId!, undefined, { sinceId })
 }
 
-const listAllStats = (
-  _params: object,
-  url: URL,
-): Record<string, SessionStatsRow> => {
+const listAllStats = (): Record<string, SessionStatsRow> => {
   const result: Record<string, SessionStatsRow> = {}
-  for (const project of resolveProjectScope(url)) {
-    const db = getDbForProject(project.slug)
-    for (const { session } of getAllSessionsForProject(project)) {
-      const isLive =
-        session.status === "active" ||
-        session.status === "waiting" ||
-        session.status === "blocked"
-      if (isLive) {
-        result[session.id] = liveStats(session.id, db)
-        continue
-      }
-      result[session.id] =
-        getSessionStats(session.id, db) ?? backfilledStats(session.id, db)
+  for (const { session } of getAllSessions()) {
+    const isLive =
+      session.status === "active" ||
+      session.status === "waiting" ||
+      session.status === "blocked"
+    if (isLive) {
+      result[session.id] = liveStats(session.id)
+      continue
     }
+    result[session.id] =
+      getSessionStats(session.id) ?? backfilledStats(session.id)
   }
   return result
 }
 
-const getStatsBySession = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): SessionStatsRow | null => {
-  const db = resolveDb(url)
-  const session = getSession(sessionId!, db)
+const getStatsBySession = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): SessionStatsRow | null => {
+  const session = getSession(sessionId!)
   if (!session) return null
   const isLive = session.status === "active" ||
         session.status === "waiting" ||
         session.status === "blocked"
-  if (isLive) return liveStats(sessionId!, db)
-  return getSessionStats(sessionId!, db) ?? backfilledStats(sessionId!, db)
+  if (isLive) return liveStats(sessionId!)
+  return getSessionStats(sessionId!) ?? backfilledStats(sessionId!)
 }
 
 // /api/stats/:sessionId/files — the individual files a session changed, with
 // per-file line counts, replayed from the session's own timeline. Covers every
 // session uniformly now that worktrees are gone. A missing session answers
 // "nothing changed" so the sidebar can poll quietly.
-const getChangedFilesBySession = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): Promise<ChangedFile[]> => {
-  const db = resolveDb(url)
-  const session = getSession(sessionId!, db)
+const getChangedFilesBySession = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): Promise<ChangedFile[]> => {
+  const session = getSession(sessionId!)
   if (!session) return Promise.resolve([])
-  return resolveChangedFiles(session, resolveRepoRoot(url), db)
+  return resolveChangedFiles(session, displayRoot(session))
 }
 
-const getEngagement = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): EngagementStats => computeEngagementStats(sessionId!, resolveDb(url))
-
-/** Widen a stored binding into its wire form, or `null` when unbound. */
-const toRepoView = (repo: ProjectRepo | undefined): ProjectRepoView | null =>
-  repo
-    ? {
-        ...repo,
-        label: formatIdentity(repo.provider),
-        hostTrusted: isDeclaredHost(repo.provider.host),
-      }
-    : null
-
-const listAllProjects = (): ProjectSummary[] => {
-  const active = resolveActiveProject()
-  return listProjects().map((p) => ({
-    slug: p.slug,
-    name: p.name,
-    active: p.slug === active.slug,
-    lastUsedAt: p.lastUsedAt,
-    // Live-session count drives the dashboard's default view (projects with
-    // current activity). Handles are cached, so this is a cheap per-poll COUNT.
-    liveCount: countLiveSessions(getDbForProject(p.slug)),
-    repo: toRepoView(p.repo),
-  }))
-}
-
-const getActiveProjectMeta = (): ActiveProjectMeta => {
-  const active = resolveActiveProject()
-  // The binding is read from the registry rather than taken off `active`:
-  // resolveActiveProject memoizes for the whole process lifetime, so a
-  // `bertrand project link` during a long-lived server would otherwise not
-  // show up until restart. Registry reads hit disk each call, so this is
-  // always current.
-  return {
-    slug: active.slug,
-    name: active.name,
-    repo: toRepoView(getProjectRepo(active.slug)),
-  }
-}
+const getEngagement = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): EngagementStats => computeEngagementStats(sessionId!)
 
 // /api/github/:sessionId/pr — the pull request for the session's branch, with
 // its check rollup. The decisions (which branch, which checkout, and what
@@ -285,18 +210,21 @@ const getActiveProjectMeta = (): ActiveProjectMeta => {
 //
 // No route-level cache: `getPRForBranch` TTL-caches per branch and coalesces
 // concurrent lookups, so N sessions on one branch still cost one `gh`.
-const getSessionPullRequest = (
-  { sessionId }: { sessionId?: string },
-  url: URL,
-): Promise<SessionPullRequest> => {
-  const session = getSession(sessionId!, resolveDb(url))
+const getSessionPullRequest = ({
+  sessionId,
+}: {
+  sessionId?: string
+}): Promise<SessionPullRequest> => {
+  const session = getSession(sessionId!)
   if (!session) return Promise.resolve({ status: "none" })
   return resolveSessionPullRequest(
     {
-      // Recorded at session start from the cwd. Null for sessions that predate
-      // the column, and for any session whose cwd was not in a git repo.
+      // Both recorded at session start from the cwd, and both null for a
+      // session whose cwd was not in a git repo — which answers `none`, not an
+      // error. `repoRoot` prefers the main checkout over the worktree; see
+      // there for why a torn-down workspace must not lose the PR.
       branch: session.branch,
-      repoPath: resolveRepoRoot(url),
+      repoPath: repoRoot(session),
     },
     {
       resolveRepo: resolveRepoAt,
@@ -314,8 +242,6 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/stats\/(?<sessionId>[^/]+)\/files$/, getChangedFilesBySession],
   [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
   [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
-  [/^\/api\/projects$/, listAllProjects],
-  [/^\/api\/active-project$/, getActiveProjectMeta],
 ]
 
 /**
@@ -404,79 +330,6 @@ function sessionActionResponse(
 }
 
 /**
- * Switch the active project. Writes the new slug to the registry, then drops
- * the in-process caches that pin the previous project: the memoized active-
- * project resolver and the per-DB-path drizzle handle map. The next request
- * resolves the new active project and re-opens its DB lazily — no restart,
- * no respawn window for the client to bridge over.
- *
- * Safe under concurrent requests because `invalidateDbCache` only drops the
- * cache entries; existing handles held by in-flight queries continue to work
- * and free themselves on GC.
- */
-async function handleSwitchProject(req: Request): Promise<Response> {
-  let body: { slug?: unknown }
-  try {
-    body = (await req.json()) as { slug?: unknown }
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
-  const slug = body.slug
-  if (typeof slug !== "string") {
-    return Response.json({ error: "slug must be a string" }, { status: 400 })
-  }
-  if (!projectExists(slug)) {
-    return Response.json({ error: `Unknown project: ${slug}` }, { status: 404 })
-  }
-  setActiveProjectSlug(slug)
-  // resolveActiveProject() honors BERTRAND_PROJECT over the registry — the
-  // spawn-time pin that keeps hook subprocesses anchored to their parent
-  // session. The dashboard server is long-lived and the click is an
-  // explicit override, so we update this process's env to match before
-  // dropping the caches that read it.
-  process.env.BERTRAND_PROJECT = slug
-  _resetActiveProjectCache()
-  invalidateDbCache()
-  return Response.json({ ok: true, slug })
-}
-
-/**
- * Release the DB handles this process holds for a project the CLI just removed
- * (issue #249). Closing them is what actually returns the disk space after a
- * `--purge`: the unlinked inodes survive as long as any descriptor is open.
- *
- * Gated on the project being absent from the registry, which is both the
- * correctness argument and the safety one. `project remove` writes the registry
- * before calling here, so a live project reaching this path means the caller is
- * confused (or malicious — the API is loopback-only but unauthenticated), and
- * closing a DB still being served would break in-flight dashboard reads. A 409
- * says so rather than silently doing nothing.
- *
- * The slug shape is checked for the same reason: it becomes a filesystem path
- * on the way to a cache key, so `a/../b` would normalize onto project `b` and
- * close a live project's connection despite the registry check above passing
- * for the literal string.
- */
-function handleEvictProject(slug: string): Response {
-  if (!isValidSlug(slug)) {
-    return Response.json(
-      { error: `Invalid project slug "${slug}"`, reason: "invalid-slug" },
-      { status: 400 },
-    )
-  }
-  if (projectExists(slug)) {
-    return Response.json(
-      {
-        error: `Project "${slug}" is still registered — remove it before evicting`,
-        reason: "still-registered",
-      },
-      { status: 409 },
-    )
-  }
-  return Response.json({ ok: true, slug, closed: closeDbForProject(slug) })
-}
-
-/**
  * Every way a resume can be refused, and what the browser should be told.
  *
  * Each carries a message the user can act on. "At capacity" especially: it is
@@ -509,7 +362,7 @@ const RESUME_ERROR: Record<string, { status: number; message: string }> = {
  */
 async function handleResumeSession(id: string, req: Request): Promise<Response> {
   // An empty body is legitimate here — it means "new conversation" — so a
-  // failed parse is tolerated rather than rejected.
+  // failed parse is not an error here.
   let body: { conversationId?: unknown } = {}
   try {
     body = (await req.json()) as typeof body
@@ -567,11 +420,11 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
  * CLI-started session there is no terminal involved at all — the browser that
  * attaches becomes the sole sizing authority.
  *
- * The body carries no path. Where the session works is derived from the active
- * project's repo binding, because a client-supplied path is both untrustworthy
- * (any directory on the machine) and unnecessary (the project already knows).
- * Every dashboard session gets its own worktree under that repo's main
- * checkout (#210), and the worktree is the working directory.
+ * The body still carries no path, and must not start doing so: a
+ * client-supplied directory would let any page the browser has open pick where
+ * `claude` runs. Choosing the working directory is `src/engine`'s decision —
+ * this handler only validates the naming arguments and translates the engine's
+ * refusals into status codes.
  */
 async function handleSpawnDashboardSession(req: Request): Promise<Response> {
   let body: {
@@ -614,18 +467,6 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
     })
     return Response.json(result)
   } catch (err) {
-    // The project this server is pointed at has no directory bound at all, so
-    // there is nowhere to start. 409 rather than 500: nothing is broken, a
-    // prerequisite is simply missing, and `err.message` already names the
-    // command that fixes it. `reason` lets a UI offer the link action inline
-    // instead of printing a sentence about the CLI. Note the binding need not
-    // be a git repo — bertrand logs sessions outside version control too.
-    if (err instanceof UnboundProjectError) {
-      return Response.json(
-        { error: err.message, reason: "unbound-project", slug: err.slug },
-        { status: 409 },
-      )
-    }
     // At capacity is a client-visible condition with a retry story, not a
     // server fault — 503 so a UI can say "too many sessions" rather than
     // surfacing an opaque 500.
@@ -813,34 +654,16 @@ export function startServer(port = PORT) {
         }
       }
 
-      // Drop a removed project's cached DB handles so its files are released
-      // (see handler).
-      if (req.method === "POST") {
-        const evictMatch = /^\/api\/projects\/([^/]+)\/evict$/.exec(url.pathname)
-        if (evictMatch) {
-          const r = handleEvictProject(decodeURIComponent(evictMatch[1]!))
-          applyCors(r, allowOrigin)
-          return r
-        }
-      }
-
-      // Switch the active project in-process (see handler).
-      if (req.method === "POST" && url.pathname === "/api/active-project") {
-        const r = await handleSwitchProject(req)
-        applyCors(r, allowOrigin)
-        return r
-      }
-
       if (req.method === "POST") {
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
-          const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))
+          const response = archiveResponse(archiveSession(archiveMatch[1]!))
           applyCors(response, allowOrigin)
           return response
         }
         const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
         if (unarchiveMatch) {
-          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!, resolveDb(url)))
+          const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!))
           applyCors(response, allowOrigin)
           return response
         }
@@ -854,9 +677,7 @@ export function startServer(port = PORT) {
         }
         const discardMatch = /^\/api\/sessions\/([^/]+)\/discard$/.exec(url.pathname)
         if (discardMatch) {
-          const response = sessionActionResponse(
-            discardSession(discardMatch[1]!, resolveDb(url)),
-          )
+          const response = sessionActionResponse(discardSession(discardMatch[1]!))
           applyCors(response, allowOrigin)
           return response
         }

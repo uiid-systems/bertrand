@@ -10,9 +10,10 @@ type SessionGroupProps = {
 };
 
 /**
- * One run of sessions under a muted header that doubles as a collapse trigger —
- * a category in the project zone, a project in the live zone. Both zones share
- * it so the two lists read as the same kind of thing at the same depth.
+ * One repo's sessions under a muted header that doubles as a collapse trigger.
+ * Both zones share it so the two lists read as the same kind of thing at the
+ * same depth, and so a repo folds the same way whether its sessions are live or
+ * paused.
  *
  * The count sits beside the label because the header is often collapsed: it has
  * to say how much is behind it without being opened.
