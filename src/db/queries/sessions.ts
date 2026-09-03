@@ -380,9 +380,11 @@ export function setDerivedSessionSlug(
  * stats, label joins) declares `onDelete: "cascade"` and `PRAGMA foreign_keys`
  * is ON, so this takes the session's entire history with it.
  *
- * Unguarded by design — callers decide whether deletion is allowed. Reach for
- * `discardSession` (src/lib/session-actions.ts) unless you have already
- * established the session is not live.
+ * Unguarded by design — callers decide whether deletion is allowed. Nothing on
+ * a user-facing path calls this any more: `discardSession` was its only caller
+ * and went with the TUI exit screen it served, leaving archive as the way to
+ * put a session away. Kept as the primitive the schema's cascade behavior is
+ * tested through; guard on liveness yourself before reaching for it again.
  */
 export function deleteSession(id: string, db: Db = getDb()) {
   return db

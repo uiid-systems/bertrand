@@ -63,7 +63,7 @@ Re-run `init` whenever bertrand updates — hook scripts are versioned and may n
 bertrand
 ```
 
-Opens an Ink TUI to type a session name (e.g. `bertrand/fix-recap-render`, `frontend/ENG-142-auth`). Slashes nest the session under group folders. Claude Code launches with the bertrand contract applied.
+Opens a TUI to name a session (e.g. `fix-recap-render`, `ENG-142-auth`) or pick up a paused one, rolled up by the repo it ran in. Sessions are flat — a name may contain slashes, but they are part of the name, not a hierarchy; grouping comes from the repo and branch of the directory you launch in. Claude Code launches with the bertrand contract applied, and the session ends by returning you to the shell.
 
 ### Attach a session you didn't launch through bertrand
 

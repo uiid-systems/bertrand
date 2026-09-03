@@ -16,7 +16,6 @@ import {
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
-import { discardSession, type DiscardResult } from "@/lib/session-actions"
 import { getPRForBranch } from "@/lib/github/pr"
 import { resolveRepoAt } from "@/lib/github/resolve"
 import { resolveSessionPullRequest } from "@/lib/github/session-pr"
@@ -309,23 +308,6 @@ const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {
 function archiveResponse(result: ArchiveResult | UnarchiveResult): Response {
   if (result.ok) return Response.json(result.session)
   const meta = ARCHIVE_ERROR[result.reason] ?? { status: 400, message: "Operation failed" }
-  return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
-}
-
-const SESSION_ACTION_ERROR: Record<string, { status: number; message: string }> = {
-  "not-found": { status: 404, message: "Session not found" },
-  active: { status: 409, message: "Stop the session before discarding it" },
-}
-
-function sessionActionResponse(
-  result: DiscardResult,
-  body: unknown = { ok: true },
-): Response {
-  if (result.ok) return Response.json(body)
-  const meta = SESSION_ACTION_ERROR[result.reason] ?? {
-    status: 400,
-    message: "Operation failed",
-  }
   return Response.json({ error: meta.message, reason: result.reason }, { status: meta.status })
 }
 
@@ -667,19 +649,16 @@ export function startServer(port = PORT) {
           applyCors(response, allowOrigin)
           return response
         }
-        // End-of-session actions the TUI exit screen has always had and the
-        // dashboard did not (#214). Archive above is shared with it as-is.
+        // Resume arrived for the dashboard's sake (#214), matching a TUI exit
+        // screen that has since been removed — so this is now the only way to
+        // resume a session outside `bertrand` itself. Discard was its sibling
+        // here and is gone with the screen; archive above covers wanting a
+        // session out of the way.
         const resumeMatch = /^\/api\/sessions\/([^/]+)\/resume$/.exec(url.pathname)
         if (resumeMatch) {
           const r = await handleResumeSession(resumeMatch[1]!, req)
           applyCors(r, allowOrigin)
           return r
-        }
-        const discardMatch = /^\/api\/sessions\/([^/]+)\/discard$/.exec(url.pathname)
-        if (discardMatch) {
-          const response = sessionActionResponse(discardSession(discardMatch[1]!))
-          applyCors(response, allowOrigin)
-          return response
         }
       }
 

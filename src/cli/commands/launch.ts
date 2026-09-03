@@ -45,9 +45,7 @@ register("launch", async (args) => {
       // so nameSource stays 'manual' (createSession's default).
       const { slug } = parseSessionName(sessionName);
       const { launch } = await import("@/engine/session");
-      const { runSessionLoop } = await import("@/tui/app");
-      const sessionId = await launch({ slug });
-      await runSessionLoop(sessionId);
+      await launch({ slug });
       return;
     }
 

@@ -80,5 +80,19 @@ export type ArchiveReason = "not-found" | "active" | "already-archived";
 export type UnarchiveReason = "not-found" | "not-archived";
 export type ArchiveErrorReason = ArchiveReason | UnarchiveReason | "unknown";
 
-export type DiscardReason = "not-found" | "active";
-export type SessionActionErrorReason = DiscardReason | "unknown";
+/**
+ * Every way the dashboard's resume action can be refused, plus the client's
+ * own fallback when the server sends no reason. Paired with `RESUME_ERROR` in
+ * `src/server/index.ts`, which turns each into a status and a message.
+ *
+ * Session *discard* used to be the other member of this family. It is gone —
+ * with the TUI exit screen removed there was no non-dashboard route to it, and
+ * archive covers wanting a session out of the way.
+ */
+export type SessionActionErrorReason =
+  | "not-found"
+  | "conversation-not-found"
+  | "already-running"
+  | "no-cwd"
+  | "at-capacity"
+  | "unknown";

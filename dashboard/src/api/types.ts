@@ -8,7 +8,6 @@ export type {
   ArchiveReason,
   UnarchiveReason,
   ArchiveErrorReason,
-  DiscardReason,
   SessionActionErrorReason,
   ChangedFile,
   SessionPullRequest,
