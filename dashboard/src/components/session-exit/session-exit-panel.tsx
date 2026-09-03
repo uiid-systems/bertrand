@@ -15,7 +15,6 @@ import { useSessionExitActions } from "../../api/use-session-exit-actions";
 import type { SessionRow } from "../../api/types";
 import { formatDuration } from "../../lib/format";
 import { parseDbTime } from "@/lib/format";
-import { StarRating } from "./star-rating";
 
 /**
  * How an exit code reads to a person. 0 is the only unambiguously good one;
@@ -74,7 +73,7 @@ export function SessionExitPanel({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const archive = useArchiveAction(session, project);
-  const { rate, discard, resume, describeError } = useSessionExitActions(session, project, {
+  const { discard, resume, describeError } = useSessionExitActions(session, project, {
     // The route is keyed by the session that no longer exists, so staying here
     // would render a "not found" shell. Fall back home.
     onDiscarded: () => {
@@ -106,17 +105,6 @@ export function SessionExitPanel({
             {conversationCount} conversation{conversationCount === 1 ? "" : "s"}
           </Text>
         </Group>
-      </Stack>
-
-      <Stack gap={2}>
-        <Text size={-1} shade="muted">
-          How effective was this session?
-        </Text>
-        <StarRating
-          value={session.rating}
-          onChange={(next) => rate.mutate(next)}
-          disabled={rate.isPending}
-        />
       </Stack>
 
       <Stack gap={2}>

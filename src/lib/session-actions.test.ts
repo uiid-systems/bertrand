@@ -30,7 +30,7 @@ const { createSession, updateSessionStatus, getSession } = await import(
 const { createConversation, getConversationsBySession } = await import(
   "@/db/queries/conversations"
 );
-const { rateSession, discardSession } = await import("@/lib/session-actions");
+const { discardSession } = await import("@/lib/session-actions");
 
 
 function makeSession(
@@ -41,65 +41,6 @@ function makeSession(
   if (status !== "paused") updateSessionStatus(s.id, status);
   return getSession(s.id)!;
 }
-
-describe("rateSession", () => {
-  test("sets a rating in range", () => {
-    const s = makeSession("rate-1");
-    const result = rateSession(s.id, 4);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.session.rating).toBe(4);
-    expect(getSession(s.id)!.rating).toBe(4);
-  });
-
-  test("accepts both ends of the 1-5 range", () => {
-    const s = makeSession("rate-bounds");
-    expect(rateSession(s.id, 1).ok).toBe(true);
-    expect(getSession(s.id)!.rating).toBe(1);
-    expect(rateSession(s.id, 5).ok).toBe(true);
-    expect(getSession(s.id)!.rating).toBe(5);
-  });
-
-  test("null clears an existing rating", () => {
-    const s = makeSession("rate-clear");
-    rateSession(s.id, 3);
-    const result = rateSession(s.id, null);
-    expect(result.ok).toBe(true);
-    expect(getSession(s.id)!.rating).toBeNull();
-  });
-
-  test("rejects out-of-range and non-integer values", () => {
-    const s = makeSession("rate-bad");
-    for (const bad of [0, 6, -1, 2.5, NaN]) {
-      expect(rateSession(s.id, bad)).toEqual({
-        ok: false,
-        reason: "out-of-range",
-      });
-    }
-    expect(getSession(s.id)!.rating).toBeNull();
-  });
-
-  test("is allowed while the session is still live", () => {
-    // The TUI persists a rating from its exit screen, but rating is a judgement
-    // about the session rather than a lifecycle transition — nothing downstream
-    // reads it mid-run, so there is no reason to refuse.
-    const s = makeSession("rate-live", "active");
-    expect(rateSession(s.id, 5).ok).toBe(true);
-    expect(getSession(s.id)!.rating).toBe(5);
-  });
-
-  test("returns not-found for unknown id", () => {
-    expect(rateSession("nope", 3)).toEqual({ ok: false, reason: "not-found" });
-  });
-
-  test("validates the rating before looking the session up", () => {
-    // Order matters for the caller's error message: a bad rating on a missing
-    // session should report the thing the caller can actually fix.
-    expect(rateSession("nope", 99)).toEqual({
-      ok: false,
-      reason: "out-of-range",
-    });
-  });
-});
 
 describe("discardSession", () => {
   test("deletes a paused session", () => {
@@ -161,21 +102,14 @@ describe("with an explicit db (cross-project)", () => {
   _setDb(testDb);
 
   test("without db arg, a session in another project's DB is not-found", () => {
-    expect(rateSession(otherSession.id, 3)).toEqual({
-      ok: false,
-      reason: "not-found",
-    });
     expect(discardSession(otherSession.id)).toEqual({
       ok: false,
       reason: "not-found",
     });
   });
 
-  test("with the owning db arg, rate and discard succeed", () => {
-    const rated = rateSession(otherSession.id, 2, otherDb);
-    expect(rated.ok).toBe(true);
-    expect(getSession(otherSession.id, otherDb)!.rating).toBe(2);
-
+  test("with the owning db arg, discard succeeds", () => {
+    expect(getSession(otherSession.id, otherDb)).toBeDefined();
     expect(discardSession(otherSession.id, otherDb)).toEqual({ ok: true });
     expect(getSession(otherSession.id, otherDb)).toBeUndefined();
   });

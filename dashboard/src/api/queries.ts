@@ -79,20 +79,6 @@ async function postSessionActionJson<T>(
   return res.json()
 }
 
-/** Set the session's 1-5 rating, or `null` to clear it. */
-export const rateSession = (
-  id: string,
-  rating: number | null,
-  project?: string,
-): Promise<SessionRow> =>
-  postSessionActionJson<SessionRow>(
-    `/api/sessions/${id}/rating${projectParam(project)}`,
-    {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating }),
-    },
-  )
-
 /** Permanently delete the session and everything cascading from it. */
 export const discardSession = (id: string, project?: string): Promise<{ ok: true }> =>
   postSessionActionJson<{ ok: true }>(

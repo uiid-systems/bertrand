@@ -188,7 +188,6 @@ function showDigest(session: SessionRow, sessionName: string) {
           name: sessionName,
           status: session.status,
           summary: session.summary,
-          rating: session.rating,
           startedAt: session.startedAt,
           updatedAt: session.updatedAt,
         },
