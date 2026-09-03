@@ -323,6 +323,61 @@ const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/active-project$/, getActiveProjectMeta],
 ]
 
+/**
+ * The Vite dev server's port. Must match `server.port` in
+ * `dashboard/vite.config.ts` — the dev server proxies `/api` and `/ws` here, so
+ * a browser on that page sends its own origin along with any POST.
+ */
+const VITE_DEV_PORT = 5199
+
+const loopbackOrigins = (port: number): string[] => [
+  `http://localhost:${port}`,
+  `http://127.0.0.1:${port}`,
+]
+
+/**
+ * Origins permitted to talk to this server.
+ *
+ * The API is unauthenticated and includes state-changing routes that spawn
+ * processes (`/api/open`, `/api/sessions/spawn`), so the blanket `*` this used
+ * to answer with let any page the user happened to have open drive them.
+ * Loopback binding is no defence there — the browser is itself a local process.
+ * The server now runs continuously rather than only alongside a live session,
+ * which would have made that an always-open window.
+ *
+ * Deliberately an exact-match set rather than a "trust all of localhost"
+ * pattern: only the two pages that actually exist are named — the bundled
+ * dashboard on this server's own port (so it follows `BERTRAND_PORT`) and the
+ * Vite dev server. The tradeoff is that a dev server which falls back to
+ * another port because {@link VITE_DEV_PORT} is busy will be refused; fix that
+ * by freeing the port rather than by widening this set.
+ */
+const ALLOWED_ORIGINS = new Set([
+  "https://bertrand.sh",
+  ...loopbackOrigins(PORT),
+  ...loopbackOrigins(VITE_DEV_PORT),
+])
+
+/**
+ * The value to echo back in `Access-Control-Allow-Origin`, or null when the
+ * request needs no CORS header at all (same-origin browser requests omit
+ * `Origin`, as do curl and the TUI).
+ */
+function corsOrigin(origin: string | null): string | null {
+  if (!origin) return null
+  return ALLOWED_ORIGINS.has(origin) ? origin : null
+}
+
+/** Echo an allowlisted origin onto a response. No-op when there's nothing to echo. */
+function applyCors(response: Response, origin: string | null): Response {
+  if (origin) {
+    response.headers.set("Access-Control-Allow-Origin", origin)
+    // Responses now differ by origin, so shared caches must key on it.
+    response.headers.set("Vary", "Origin")
+  }
+  return response
+}
+
 const ARCHIVE_ERROR: Record<string, { status: number; message: string }> = {
   "not-found": { status: 404, message: "Session not found" },
   active: { status: 409, message: "Cannot archive an active session" },
@@ -727,25 +782,47 @@ export function startServer(port = PORT) {
     async fetch(req, server) {
       const url = new URL(req.url)
 
+      const requestOrigin = req.headers.get("origin")
+      const allowOrigin = corsOrigin(requestOrigin)
+
+      // Refuse an untrusted cross-origin request outright rather than merely
+      // withholding its response. Two independent reasons this cannot be a
+      // response-header-only policy:
+      //
+      //   - CORS gates *reading* a reply, not sending the request. A "simple"
+      //     POST (text/plain body, no preflight) is still delivered, so
+      //     `/api/open` and `/api/sessions/spawn` would run for their side
+      //     effect and only the answer would be withheld.
+      //   - WebSockets aren't governed by CORS at all. The check therefore has
+      //     to precede the upgrade below, or any page could attach to the
+      //     terminal relay — reading a session's output and writing its input.
+      //
+      // Non-browser callers (the relay's own upstream client, the TUI, curl)
+      // send no Origin at all and pass straight through.
+      if (requestOrigin && !allowOrigin) {
+        return new Response("Forbidden origin", { status: 403 })
+      }
+
       const wsResult = tryUpgradeTerminal(req, server, url)
       if (wsResult !== false) return wsResult
 
-      // CORS for dev
       if (req.method === "OPTIONS") {
-        return new Response(null, {
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-          },
-        })
+        return applyCors(
+          new Response(null, {
+            headers: {
+              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type",
+            },
+          }),
+          allowOrigin,
+        )
       }
 
       // Hand off to the platform `open` binary. macOS-only for now; runs
       // server-side so the browser doesn't need to expose file:// access.
       if (req.method === "POST" && url.pathname === "/api/open") {
         const r = await handleOpen(req)
-        r.headers.set("Access-Control-Allow-Origin", "*")
+        applyCors(r, allowOrigin)
         return r
       }
 
@@ -753,7 +830,7 @@ export function startServer(port = PORT) {
       // the browser is the only viewer and the sole sizing authority.
       if (req.method === "POST" && url.pathname === "/api/sessions/spawn") {
         const r = await handleSpawnDashboardSession(req)
-        r.headers.set("Access-Control-Allow-Origin", "*")
+        applyCors(r, allowOrigin)
         return r
       }
 
@@ -762,9 +839,9 @@ export function startServer(port = PORT) {
         if (stopSessionMatch) {
           const { stopDashboardSession } = await dashboardSessions()
           const stopped = stopDashboardSession(stopSessionMatch[1]!)
-          return Response.json(
-            { stopped },
-            { status: stopped ? 200 : 404, headers: { "Access-Control-Allow-Origin": "*" } },
+          return applyCors(
+            Response.json({ stopped }, { status: stopped ? 200 : 404 }),
+            allowOrigin,
           )
         }
       }
@@ -775,7 +852,7 @@ export function startServer(port = PORT) {
         const evictMatch = /^\/api\/projects\/([^/]+)\/evict$/.exec(url.pathname)
         if (evictMatch) {
           const r = handleEvictProject(decodeURIComponent(evictMatch[1]!))
-          r.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(r, allowOrigin)
           return r
         }
       }
@@ -783,7 +860,7 @@ export function startServer(port = PORT) {
       // Switch the active project in-process (see handler).
       if (req.method === "POST" && url.pathname === "/api/active-project") {
         const r = await handleSwitchProject(req)
-        r.headers.set("Access-Control-Allow-Origin", "*")
+        applyCors(r, allowOrigin)
         return r
       }
 
@@ -791,13 +868,13 @@ export function startServer(port = PORT) {
         const archiveMatch = /^\/api\/sessions\/([^/]+)\/archive$/.exec(url.pathname)
         if (archiveMatch) {
           const response = archiveResponse(archiveSession(archiveMatch[1]!, resolveDb(url)))
-          response.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(response, allowOrigin)
           return response
         }
         const unarchiveMatch = /^\/api\/sessions\/([^/]+)\/unarchive$/.exec(url.pathname)
         if (unarchiveMatch) {
           const response = archiveResponse(unarchiveSession(unarchiveMatch[1]!, resolveDb(url)))
-          response.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(response, allowOrigin)
           return response
         }
         // End-of-session actions the TUI exit screen has always had and the
@@ -805,13 +882,13 @@ export function startServer(port = PORT) {
         const rateMatch = /^\/api\/sessions\/([^/]+)\/rating$/.exec(url.pathname)
         if (rateMatch) {
           const r = await handleRateSession(rateMatch[1]!, url, req)
-          r.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(r, allowOrigin)
           return r
         }
         const resumeMatch = /^\/api\/sessions\/([^/]+)\/resume$/.exec(url.pathname)
         if (resumeMatch) {
           const r = await handleResumeSession(resumeMatch[1]!, req)
-          r.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(r, allowOrigin)
           return r
         }
         const discardMatch = /^\/api\/sessions\/([^/]+)\/discard$/.exec(url.pathname)
@@ -819,14 +896,14 @@ export function startServer(port = PORT) {
           const response = sessionActionResponse(
             discardSession(discardMatch[1]!, resolveDb(url)),
           )
-          response.headers.set("Access-Control-Allow-Origin", "*")
+          applyCors(response, allowOrigin)
           return response
         }
       }
 
       if (url.pathname.startsWith("/api/")) {
         const response = await match(url.pathname, url)
-        response.headers.set("Access-Control-Allow-Origin", "*")
+        applyCors(response, allowOrigin)
         return response
       }
 
@@ -834,7 +911,7 @@ export function startServer(port = PORT) {
       if (dashboardResponse) return dashboardResponse
 
       const response = await match(url.pathname, url)
-      response.headers.set("Access-Control-Allow-Origin", "*")
+      applyCors(response, allowOrigin)
       return response
     },
   })
