@@ -433,6 +433,15 @@ ${sessionGuard(runtimeDir, { autoCreate: true })}
 # other path, including the launched one this hook was originally written for.
 [ -z "$input" ] && ${READ_PAYLOAD_REST}
 
+# Bring the shared dashboard server up if it isn't already. This is the one
+# lifecycle event every launch path shares, so it is the only place that covers
+# the TUI, \`bertrand adopt\`, the /bertrand command and a bare \`claude\` alike —
+# server start used to live in the TUI launcher, which meant an adopted session
+# never got one. Costs a single kill(pid,0) when a server is already healthy,
+# and never waits for readiness, so a cold start cannot stall the turn.
+# Stdout muted: UserPromptSubmit parses stdout as a hook decision.
+bq ensure-server >/dev/null
+
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
