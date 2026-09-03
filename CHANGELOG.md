@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.43.0](https://github.com/uiid-systems/bertrand/compare/v0.42.0...v0.43.0) (2026-09-03)
+
+
+### Features
+
+* derive session grouping from the cwd and remove projects ([#296](https://github.com/uiid-systems/bertrand/issues/296)) ([11318dd](https://github.com/uiid-systems/bertrand/commit/11318dd4124548cca62a0d65ebd127620b793e07))
+
+
+### Refactoring
+
+* remove the session ratings system ([#294](https://github.com/uiid-systems/bertrand/issues/294)) ([aee5540](https://github.com/uiid-systems/bertrand/commit/aee55405c2f7a2df2883ae4c8c3c9ca0ff7d7ed8))
+* remove the TUI exit screen and session discard ([#297](https://github.com/uiid-systems/bertrand/issues/297)) ([00c8ee9](https://github.com/uiid-systems/bertrand/commit/00c8ee9f9e12b1288a5eca12137ec9a952326722))
+
 ## [0.42.0](https://github.com/uiid-systems/bertrand/compare/v0.41.0...v0.42.0) (2026-08-31)
 
 
