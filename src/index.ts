@@ -29,6 +29,7 @@ if (command && command in hotPath) {
     import("./cli/commands/stats"),
     import("./cli/commands/backfill-stats"),
     import("./cli/commands/backfill-slugs"),
+    import("./cli/commands/consolidate-projects"),
     import("./cli/commands/archive"),
     import("./cli/commands/rename"),
     import("./cli/commands/adopt"),
