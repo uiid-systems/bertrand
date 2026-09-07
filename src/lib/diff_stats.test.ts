@@ -23,9 +23,7 @@ migrate(drizzle(sqlite), {
 const { createSession } = await import("@/db/queries/sessions");
 const { createConversation } = await import("@/db/queries/conversations");
 const { emitToolApplied } = await import("@/db/events/emit");
-const { computeChangedFiles, resolveChangedFiles } = await import(
-  "@/lib/diff_stats"
-);
+const { computeDiffStats } = await import("@/lib/diff_stats");
 
 afterAll(() => rmSync(TEST_DIR, { recursive: true, force: true }));
 
@@ -54,109 +52,36 @@ function sessionEditing(...paths: string[]) {
   return session.id;
 }
 
-const REPO = "/Users/dev/projects/acme";
-
-describe("computeChangedFiles display paths", () => {
-  test("renders repo-relative against the root it is given", () => {
-    const id = sessionEditing(`${REPO}/src/index.ts`);
-    const files = computeChangedFiles(id, REPO);
-    expect(files.map((f) => f.path)).toEqual(["src/index.ts"]);
+describe("computeDiffStats", () => {
+  // The counters behind `session_stats` and the `bertrand log` digest. They
+  // see only what `tool.applied` records — Edit/Write/MultiEdit — so a session
+  // that edits through Bash reports nothing here. That is a known limit, not a
+  // bug to fix in this function; see the ELKY-189 notes on why nothing in the
+  // UI ranks on these numbers.
+  test("a session with no edits reports zeroes", () => {
+    const slug = `diffstats-empty-${n++}`;
+    const session = createSession({ slug });
+    expect(computeDiffStats(session.id)).toEqual({
+      linesAdded: 0,
+      linesRemoved: 0,
+      filesTouched: 0,
+    });
   });
 
-  test("the root is the argument, not wherever the process is standing", () => {
-    // P3.9's actual defect: this read `process.cwd()`, so `bertrand serve`
-    // launched from /tmp matched nothing and the sidebar rendered every path
-    // absolute. chdir'ing somewhere unrelated must not change the answer.
-    const id = sessionEditing(`${REPO}/src/index.ts`);
-    const elsewhere = mkdtempSync(join(tmpdir(), "bertrand-diffstats-cwd-"));
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(elsewhere);
-      expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
-        "src/index.ts",
-      ]);
-    } finally {
-      process.chdir(originalCwd);
-      rmSync(elsewhere, { recursive: true, force: true });
-    }
+  test("counts one file per distinct path", () => {
+    const id = sessionEditing("/repo/a.ts", "/repo/b.ts");
+    expect(computeDiffStats(id).filesTouched).toBe(2);
   });
 
-  test("a repo path is never mistaken for relative just because cwd matches", () => {
-    // The inverse guard. Standing *inside* a directory that would have matched
-    // under the old behavior must not rescue a call given the wrong root.
-    const id = sessionEditing(`${TEST_DIR}/src/index.ts`);
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(TEST_DIR);
-      expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
-        `${TEST_DIR}/src/index.ts`,
-      ]);
-    } finally {
-      process.chdir(originalCwd);
-    }
+  test("repeated edits to one path are still one file", () => {
+    const id = sessionEditing("/repo/a.ts", "/repo/a.ts", "/repo/a.ts");
+    expect(computeDiffStats(id).filesTouched).toBe(1);
   });
 
-  test("collapses the .claude/worktrees/<name>/ infix to the logical repo path", () => {
-    const id = sessionEditing(
-      `${REPO}/.claude/worktrees/feature-x/src/components/Button.tsx`,
-    );
-    expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
-      "src/components/Button.tsx",
-    ]);
-  });
-
-  test("collapse and root-strip compose in either order of appearance", () => {
-    const id = sessionEditing(
-      `${REPO}/.claude/worktrees/wt-a/src/a.ts`,
-      `${REPO}/src/b.ts`,
-    );
-    expect(computeChangedFiles(id, REPO).map((f) => f.path).sort()).toEqual([
-      "src/a.ts",
-      "src/b.ts",
-    ]);
-  });
-
-  test("an unbound project has no root, so paths stay absolute", () => {
-    const id = sessionEditing(`${REPO}/src/index.ts`);
-    expect(computeChangedFiles(id, undefined).map((f) => f.path)).toEqual([
-      `${REPO}/src/index.ts`,
-    ]);
-  });
-
-  test("a path outside the root falls back to absolute, worktree infix still collapsed", () => {
-    const id = sessionEditing(
-      "/Users/dev/projects/other/.claude/worktrees/wt/src/z.ts",
-    );
-    expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
-      "/Users/dev/projects/other/src/z.ts",
-    ]);
-  });
-
-  test("a sibling root sharing a prefix is not stripped", () => {
-    // `${REPO}-legacy` starts with REPO but is a different repo; the trailing
-    // separator in the comparison is what keeps it whole.
-    const id = sessionEditing(`${REPO}-legacy/src/index.ts`);
-    expect(computeChangedFiles(id, REPO).map((f) => f.path)).toEqual([
-      `${REPO}-legacy/src/index.ts`,
-    ]);
-  });
-});
-
-describe("resolveChangedFiles replays the timeline", () => {
-  test("returns the files the session's events touched", async () => {
-    const id = sessionEditing(`${REPO}/src/a.ts`);
-    const files = await resolveChangedFiles({ id }, REPO);
-    expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
-  });
-
-  // Regression guard for the worktree teardown (ELKY-163). There was once a
-  // git arm that took precedence whenever a worktree existed on disk; a
-  // session whose events and working tree disagreed would be served git's
-  // answer. Now there is one arm, so the events are always what is rendered
-  // — including for sessions that still carry a stale worktree_path.
-  test("ignores any path on the session and always uses the events", async () => {
-    const id = sessionEditing(`${REPO}/src/only-in-events.ts`);
-    const files = await resolveChangedFiles({ id }, REPO);
-    expect(files.map((f) => f.path)).toEqual(["src/only-in-events.ts"]);
+  test("tallies added lines across every edit", () => {
+    // sessionEditing writes a single-line newStr per path and no oldStr.
+    const stats = computeDiffStats(sessionEditing("/repo/a.ts", "/repo/b.ts"));
+    expect(stats.linesAdded).toBe(2);
+    expect(stats.linesRemoved).toBe(0);
   });
 });

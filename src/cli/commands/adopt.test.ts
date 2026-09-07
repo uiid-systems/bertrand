@@ -144,10 +144,8 @@ describe("runAdopt — success path", () => {
     if (!result.ok) return;
 
     const session = getSession(result.sessionId)!;
-    // 'derived' is what lets summary.ts rename it at the first pause; a
-    // display name of its own would be silently replaced there.
+    // 'derived' is what lets summary.ts rename it at the first pause.
     expect(session.nameSource).toBe("derived");
-    expect(session.name).toBe(session.slug);
   });
 
   test("records the marker in a shell-readable key=value form", async () => {

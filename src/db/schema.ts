@@ -19,8 +19,13 @@ export const sessions = sqliteTable(
   "sessions",
   {
     id: text("id").primaryKey(),
+    // The session's whole identity. There is no separate display `name`
+    // beside it any more: the column existed so a session could be shown
+    // under something friendlier than its slug, but nothing ever set the two
+    // apart — every write path assigned `name = slug`, and all 116 rows in
+    // the corpus agreed — so it was a second copy of the slug that search,
+    // breadcrumbs and the TUI each had to remember to prefer.
     slug: text("slug").notNull(),
-    name: text("name").notNull(),
     // Who chose this session's name. Pause-time slug derivation (ELKY-168)
     // only ever renames 'derived' rows — a manual name is the user's word and
     // wins permanently. Defaults 'manual' because every creation path today is

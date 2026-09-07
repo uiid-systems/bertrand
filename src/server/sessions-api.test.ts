@@ -71,7 +71,6 @@ function makeSession(): SessionRow {
   const n = seq++;
   return createSession({
     slug: `api-session-${n}`,
-    name: `api session ${n}`,
   });
 }
 

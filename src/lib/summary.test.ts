@@ -39,7 +39,6 @@ function makeSession(
 ) {
   return createSession({
     slug,
-    name: slug,
     nameSource: opts?.nameSource,
   });
 }
@@ -225,7 +224,6 @@ describe("storeSessionSummary slug derivation", () => {
 
     const after = getSession(s.id)!;
     expect(after.slug).toBe("fix-flaky-archive-test");
-    expect(after.name).toBe("fix-flaky-archive-test");
     expect(after.updatedAt).toBe("2020-01-01 00:00:00");
   });
 

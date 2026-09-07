@@ -123,8 +123,6 @@ export interface SpawnDashboardSessionOpts {
    * (name_source='derived').
    */
   slug?: string;
-  /** Display name (defaults to the slug). Requires `slug` — see createSession. */
-  name?: string;
   /**
    * Where to start `claude`. This is now the *only* thing that decides which
    * repo and branch the session is filed under, so a caller that knows the
@@ -306,10 +304,9 @@ export async function spawnDashboardSession(
   // worktree cut from the project's checkout (#210), which is what made spawn
   // able to fail before any row was written; with worktrees gone there is no
   // pre-row step left to fail, so the row is simply created.
-  const slug = opts.slug ?? untakenPlaceholderSlug();
+  const slug = opts.slug ?? untakenPlaceholderSlug({ branch: key.branch });
   const session = createSession({
     slug,
-    name: opts.name,
     nameSource: opts.slug ? undefined : "derived",
     ...key,
     groupKey: groupKey(key),

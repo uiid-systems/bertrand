@@ -29,7 +29,6 @@ beforeAll(() => {
   migrate(drizzle(sqlite), { migrationsFolder: import.meta.dir + "/../migrations" });
   const session = createSession({
     slug: "ingest-test",
-    name: "ingest-test",
   });
   sessionId = session.id;
   conversationId = createConversation({

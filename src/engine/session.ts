@@ -112,12 +112,6 @@ export interface LaunchOpts {
    * (name_source='derived').
    */
   slug?: string;
-  /**
-   * Display name (defaults to slug). Requires `slug`: pause-time derivation
-   * sets name and slug together, so a display name on an unnamed session
-   * would be silently overwritten at the first pause.
-   */
-  name?: string;
   /** Label names to attach. Created if they don't exist. */
   labelNames?: string[];
 }
@@ -137,12 +131,13 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // they accumulate.
   pruneStaleMarkers();
 
-  const slug = opts.slug ?? untakenPlaceholderSlug();
-
   // Friendly duplicate check ahead of the unique index — the index still
   // backstops a race, but this is the message users see. A retired name is
   // refused too: the unique index wouldn't stop it, and taking a name an alias
   // points at would silently strand the session that alias belongs to.
+  //
+  // Ahead of the key derivation below so a name that was never going to be
+  // accepted fails before spending up to four `git` invocations on it.
   if (opts.slug) {
     if (getSessionBySlug(opts.slug)) {
       throw new Error(`Session "${opts.slug}" already exists`);
@@ -161,9 +156,12 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   // the TUI runs in it.
   const key = await deriveSessionKey(process.cwd());
 
+  // After the key, because an unnamed session takes its starting name from the
+  // branch the key just read.
+  const slug = opts.slug ?? untakenPlaceholderSlug({ branch: key.branch });
+
   const session = createSession({
     slug,
-    name: opts.name,
     nameSource: opts.slug ? undefined : "derived",
     ...key,
     groupKey: groupKey(key),

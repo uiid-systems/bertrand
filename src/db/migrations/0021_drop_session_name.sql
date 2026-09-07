@@ -1,0 +1,14 @@
+-- Drop `sessions.name` (ELKY-189).
+--
+-- The column was a display name that could differ from the slug. Nothing ever
+-- made it differ: every write path assigned `name = slug` (createSession,
+-- renameSession, setDerivedSessionSlug), and no row in the corpus disagreed.
+-- It survived as a second copy of the slug that search, breadcrumbs and the
+-- TUI each had to remember to prefer.
+--
+-- No COMMIT/BEGIN sandwich here, unlike 0018. `ALTER TABLE … DROP COLUMN` is
+-- native in SQLite and edits the table in place; it is not the 12-step rebuild
+-- that drops and recreates the table, so there is no `DROP TABLE sessions` for
+-- foreign keys to cascade from. `name` carries no index or constraint, which
+-- is what makes the in-place form legal. Same shape as 0019.
+ALTER TABLE `sessions` DROP COLUMN `name`;

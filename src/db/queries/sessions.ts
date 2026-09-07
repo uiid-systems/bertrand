@@ -1,7 +1,7 @@
 import { eq, and, inArray, isNotNull, lt, ne, sql, desc } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { sessions, events } from "@/db/schema";
-import { createId, placeholderSlug } from "@/lib/id";
+import { createId, placeholderSlug, slugFromBranch } from "@/lib/id";
 import {
   getSessionByAlias,
   isAliasTakenByOtherSession,
@@ -58,13 +58,8 @@ export function resolveSessionByName(
  * sessions outside git, and such a session is ungrouped, not rejected.
  */
 export interface CreateSessionOpts extends Partial<SessionKey> {
+  /** The session's whole identity — there is no separate display name. */
   slug: string;
-  /**
-   * Display name (defaults to the slug). On a 'derived' row it may only
-   * repeat the slug: derivation writes name and slug together, so a display
-   * name of its own would be silently replaced at the first pause.
-   */
-  name?: string;
   /** Omitted means 'manual' — a name the human typed, never re-derived. */
   nameSource?: SessionRow["nameSource"];
   /**
@@ -77,22 +72,9 @@ export interface CreateSessionOpts extends Partial<SessionKey> {
 }
 
 export function createSession(opts: CreateSessionOpts) {
-  if (
-    opts.nameSource === "derived" &&
-    opts.name !== undefined &&
-    opts.name !== opts.slug
-  ) {
-    throw new Error(
-      "A derived session cannot carry its own display name — it is named at pause.",
-    );
-  }
   const db = getDb();
   const id = createId();
-  return db
-    .insert(sessions)
-    .values({ id, ...opts, name: opts.name ?? opts.slug })
-    .returning()
-    .get();
+  return db.insert(sessions).values({ id, ...opts }).returning().get();
 }
 
 export function getSession(
@@ -153,15 +135,79 @@ export function findOpenSessionByGroupKey(
     .get();
 }
 
+/** How far the `-2`, `-3`, … walk runs before a branch seed is abandoned. */
+const MAX_BRANCH_SEED_ATTEMPTS = 99;
+
 /**
- * A placeholder slug no session currently holds. A collision in the 6-char
- * space is near-impossible, but the retry costs one indexed lookup and the
- * unique slug index still backstops a race.
+ * A starting name no session currently holds, seeded from the session's branch
+ * where there is one.
+ *
+ * Every session is created unnamed and 'derived', on the expectation that
+ * pause-time derivation will replace this with a name drawn from what the
+ * conversation turned out to be about. Plenty never get there — a session that
+ * is abandoned, crashes, or simply never produces a derivable prompt keeps the
+ * name it was created with forever, and in the corpus that meant rows reading
+ * `new-0dqjum` next to a perfectly good `ui-182` branch. Seeding from the
+ * branch costs nothing when derivation does run (it overwrites either way) and
+ * leaves a legible name behind when it doesn't.
+ *
+ * Collisions are real here in a way they never were for a random id: several
+ * sessions legitimately run on one branch over time. The `-2`, `-3`, … walk
+ * matches {@link resolveSlugCollision} so both paths disambiguate alike, and it
+ * is bounded — past the cap the branch has stopped being a useful name and the
+ * random placeholder is the better answer.
+ *
+ * Aliases count as taken, not just live slugs: claiming a name an alias points
+ * at would shadow the session that alias belongs to, since `resolveSessionByName`
+ * tries slugs first.
  */
-export function untakenPlaceholderSlug(db: Db = getDb()): string {
+export function untakenPlaceholderSlug(
+  opts: { branch?: string | null } = {},
+  db: Db = getDb(),
+): string {
+  const seeded = untakenBranchSlug(opts.branch, null, db);
+  if (seeded) return seeded;
+
+  // A collision in the 6-char space is near-impossible, but the retry costs
+  // one indexed lookup and the unique slug index still backstops a race.
   let slug = placeholderSlug();
-  while (getSessionBySlug(slug, db)) slug = placeholderSlug();
+  while (isNameTakenByOtherSession(slug, null, db)) slug = placeholderSlug();
   return slug;
+}
+
+/**
+ * A free slug derived from `branch`, or null when the branch yields no usable
+ * name or every disambiguated form of it is taken.
+ *
+ * Shared by session creation and the one-off backfill of rows created before
+ * seeding existed, so a session named from its branch today and one renamed
+ * from its branch afterwards land on exactly the same string.
+ *
+ * `sessionId` is exempted from the collision check — a row re-deriving a name
+ * it already holds is not colliding with itself.
+ *
+ * `reserved` holds names claimed earlier in the same batch but not yet
+ * written. A dry run writes nothing, so without it every session on one branch
+ * would be previewed as taking the bare slug while the real run hands the
+ * second one `-2` — a preview that disagrees with the thing it is previewing.
+ */
+export function untakenBranchSlug(
+  branch: string | null | undefined,
+  sessionId: string | null = null,
+  db: Db = getDb(),
+  reserved: ReadonlySet<string> = new Set(),
+): string | null {
+  const seed = slugFromBranch(branch);
+  const free = (name: string) =>
+    !reserved.has(name) && !isNameTakenByOtherSession(name, sessionId, db);
+
+  if (!seed) return null;
+  if (free(seed)) return seed;
+  for (let n = 2; n <= MAX_BRANCH_SEED_ATTEMPTS; n++) {
+    const candidate = `${seed}-${n}`;
+    if (free(candidate)) return candidate;
+  }
+  return null;
 }
 
 export function getActiveSessions(): SessionListRow[] {
@@ -297,12 +343,11 @@ export function setSessionSummary(id: string, summary: string) {
  * A rename is the user speaking, so it stamps nameSource 'manual' — from here
  * on, pause-time derivation must never touch this session's name again.
  */
-export function renameSession(id: string, slug: string, name?: string) {
+export function renameSession(id: string, slug: string) {
   return getDb()
     .update(sessions)
     .set({
       slug,
-      name: name ?? slug,
       nameSource: "manual",
       updatedAt: sql`(datetime('now'))`,
     })
@@ -369,7 +414,7 @@ export function setDerivedSessionSlug(
 ) {
   return db
     .update(sessions)
-    .set({ slug, name: slug })
+    .set({ slug })
     .where(eq(sessions.id, id))
     .returning()
     .get();

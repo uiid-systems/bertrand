@@ -130,8 +130,8 @@ function SessionNotFound({ splat }: { readonly splat: string }) {
       <Stack px={8} gap={2}>
         <Text shade="muted">No session named "{splat}".</Text>
         <Text shade="muted" size={-1}>
-          It may have been renamed — check the sidebar, or{" "}
-          <Link to="/sessions">the session list</Link>.
+          It may have been renamed — check the sidebar, which lists every
+          session grouped by the repo it ran in.
         </Text>
       </Stack>
     </Stack>
@@ -201,7 +201,7 @@ function SessionDetail({ match }: { readonly match: SessionListRow }) {
     if (el) el.scrollIntoView({ block: "start" });
   }, [segments, sessionId]);
 
-  const breadcrumbs = buildBreadcrumbs(match.session.repo, match.session.name);
+  const breadcrumbs = buildBreadcrumbs(match.session.repo, match.session.slug);
 
   return (
     <Stack ax="stretch" fullwidth fullheight style={{ overflow: "hidden" }}>

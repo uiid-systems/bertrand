@@ -41,7 +41,6 @@ function makeSession(
 ) {
   return createSession({
     slug,
-    name: slug,
     nameSource: opts?.nameSource,
   });
 }
@@ -329,7 +328,6 @@ describe("resolveSlugCollision", () => {
   test("suffixes -2 when another session holds the slug, even in another category", () => {
     createSession({
       slug: "taken-slug",
-      name: "taken-slug",
     });
     const s = makeSession("collision-victim");
     expect(resolveSlugCollision("taken-slug", s.id)).toBe("taken-slug-2");

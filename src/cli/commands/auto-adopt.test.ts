@@ -207,11 +207,8 @@ describe("runAutoAdopt — creation", () => {
     if (!outcome.ok) throw new Error("unreachable");
 
     const session = getSession(outcome.sessionId)!;
-    // Never a prompt, and never a name of its own: ELKY-172 derivation names
-    // it at the first pause, and `createSession` throws if a derived row
-    // arrives carrying one.
+    // Never a prompt: ELKY-172 derivation names it at the first pause.
     expect(session.nameSource).toBe("derived");
-    expect(session.name).toBe(session.slug);
 
     // The conversation is keyed on claude's own session id — the invariant
     // every hook, the transcript lookup and the contract marker depend on.

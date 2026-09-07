@@ -32,7 +32,6 @@ let conversationId: string;
 beforeAll(() => {
   const session = createSession({
     slug: "emit-test",
-    name: "emit test",
   });
   sessionId = session.id;
   const convo = createConversation({

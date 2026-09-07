@@ -80,7 +80,7 @@ function TerminalDevPage() {
           <option value="">Select a live session…</option>
           {liveSessions.map(({ session }) => (
             <option key={session.id} value={session.id}>
-              {session.name} ({session.status})
+              {session.slug} ({session.status})
             </option>
           ))}
         </select>

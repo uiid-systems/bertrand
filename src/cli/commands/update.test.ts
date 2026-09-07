@@ -64,7 +64,7 @@ describe("dispatchHookEvent — retired worktree events", () => {
   // Historical rows are untouched: `catalog.ts` still renders both types so
   // old timelines read correctly.
   test("worktree.entered is no longer handled", () => {
-    const s = createSession({ slug: "wt-enter", name: "wt enter" });
+    const s = createSession({ slug: "wt-enter" });
 
     const handled = dispatchHookEvent("worktree.entered", {
       sessionId: s.id,
@@ -75,7 +75,7 @@ describe("dispatchHookEvent — retired worktree events", () => {
   });
 
   test("worktree.exited is no longer handled", () => {
-    const s = createSession({ slug: "wt-exit", name: "wt exit" });
+    const s = createSession({ slug: "wt-exit" });
 
     expect(dispatchHookEvent("worktree.exited", { sessionId: s.id, meta: {} })).toBe(
       false,

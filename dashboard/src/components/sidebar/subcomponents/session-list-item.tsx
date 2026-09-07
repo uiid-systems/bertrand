@@ -7,13 +7,29 @@ import type { SessionListRow } from "@/types";
 import { statusColor, formatRelativeTime } from "../../../lib/format";
 
 import { SessionLabel } from "./session-label";
-import { SessionContent } from "./session-content";
-import { SessionUsageBadge } from "./session-usage-badge";
 
 type SessionListItemProps = {
   session: SessionListRow;
 };
 
+/**
+ * One session as a single row: who it is, and when it last did something.
+ *
+ * It used to carry a second line of metrics — output tokens, files touched,
+ * `+added/-removed`. That line is gone and should not come back in that form.
+ * The diff half was derived by replaying `tool.applied` events, which the
+ * PostToolUse hook only emits for `Edit`/`Write`/`MultiEdit`; a session that
+ * edits files through `Bash` (`sed`, heredocs — what Claude is told to prefer
+ * under bypassPermissions) records none of them. A quarter of the sessions in
+ * the corpus with substantial output therefore reported "0 files", and because
+ * the row hid zeroes, the cards that did show numbers implied the blank ones
+ * had done nothing. Nor was it a diff: every line of `newStr` counted as added
+ * and every line of `oldStr` as removed, both truncated at 4096 chars, so a
+ * one-word change in a ten-line block read `+10 -10`.
+ *
+ * Anything reinstated here needs a source that sees a session's whole effect,
+ * not one that infers it from the subset of tools that happen to be hooked.
+ */
 export const SessionListItem = ({ session: s }: SessionListItemProps) => {
   const isArchived = s.session.status === "archived";
   const color = statusColor(s.session.status);
@@ -47,7 +63,6 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
     >
       <Card
         render={<Link to="/$" params={{ _splat: splat }} />}
-        InnerContainerProps={{ gap: 1 }}
         aria-current={isCurrent ? "page" : undefined}
         color={color}
         py={3}
@@ -72,7 +87,6 @@ export const SessionListItem = ({ session: s }: SessionListItemProps) => {
             {formatRelativeTime(s.session.updatedAt)}
           </Text>
         </Group>
-        <SessionContent session={s} />
       </Card>
     </ListItem>
   );

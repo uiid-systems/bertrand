@@ -213,7 +213,7 @@ async function create(
   // and a `groupKey` beside them, not the combined shape the outcome reports.
   const { key: groupKeyValue, ...sessionKey } = group;
   const session = createSession({
-    slug: untakenPlaceholderSlug(),
+    slug: untakenPlaceholderSlug({ branch: group.branch }),
     nameSource: "derived",
     // The key's fields are persisted verbatim alongside the value computed
     // from them: the row has to answer "where did this run?" for the dashboard
