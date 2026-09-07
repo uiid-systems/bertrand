@@ -19,8 +19,10 @@ export interface ConsolidatedProject {
   events: number;
   /** Sessions whose slug was already taken in the merged database. */
   renamed: { from: string; to: string }[];
-  /** Sessions already present, so a re-run left them alone. */
-  alreadyPresent: number;
+  /** Sessions already imported that had recorded more since. */
+  caughtUp: number;
+  /** Sessions already imported with nothing new to add. */
+  unchanged: number;
 }
 
 export interface ConsolidateResult {
@@ -71,6 +73,38 @@ function readRegistry(root: string): Map<string, { repo: string | null; path: st
     out.set(p.slug, { repo, path: p.repo?.path ?? null });
   }
   return out;
+}
+
+/**
+ * A private copy of a live database, including anything still in its
+ * write-ahead log.
+ *
+ * The `-wal` sidecar is the whole point. bertrand runs WAL mode, so recent
+ * writes live there until a checkpoint folds them into the main file, and on a
+ * database being written right now that is not a rounding error — the one this
+ * was found on had a 4MB WAL against a 1.1MB main file, so copying only the
+ * main file imported a stale prefix and silently lost events.
+ *
+ * All three files are copied and SQLite recovers the log when the copy is
+ * opened. Copying a live WAL cannot corrupt the result: recovery validates
+ * frame checksums and stops at the first incomplete one, so a copy taken
+ * mid-write degrades to a slightly older *consistent* state, which is what a
+ * snapshot is anyway.
+ *
+ * Deliberately a copy rather than `VACUUM INTO` on the original. That needs a
+ * connection, and a read-only one cannot open a WAL database that has no `-shm`
+ * file yet (it would have to create it) — which is every idle project database
+ * here. A read-write connection would work but can checkpoint the original on
+ * close, rewriting a file the installed build is still recording into. Copying
+ * touches nothing.
+ */
+function snapshot(sourcePath: string, destPath: string): void {
+  copyFileSync(sourcePath, destPath);
+  for (const suffix of ["-wal", "-shm"]) {
+    if (existsSync(sourcePath + suffix)) {
+      copyFileSync(sourcePath + suffix, destPath + suffix);
+    }
+  }
 }
 
 /**
@@ -171,7 +205,7 @@ export function runConsolidateProjects(
   // creating it. Doing that to the real file would make --dry-run write, which
   // is precisely the thing a preview must not do.
   const targetPath = dryRun ? join(scratch, "target-preview.db") : paths.db;
-  if (dryRun && existsSync(paths.db)) copyFileSync(paths.db, targetPath);
+  if (dryRun && existsSync(paths.db)) snapshot(paths.db, targetPath);
 
   const target = new Database(targetPath);
   target.exec(`PRAGMA journal_mode = ${dryRun ? "DELETE" : "WAL"}`);
@@ -197,14 +231,14 @@ export function runConsolidateProjects(
 
       const binding = registry.get(slug) ?? null;
 
-      // Work on a copy so the originals — which the installed build may still
-      // be reading — are never migrated or written.
+      // Work on a snapshot so the originals — which the installed build may
+      // still be writing to — are never migrated or modified.
       const copyPath = join(scratch, `${slug}.db`);
-      copyFileSync(sourcePath, copyPath);
-      const source = new Database(copyPath);
-      source.exec("PRAGMA journal_mode = DELETE");
-      migrate(drizzle(source), { migrationsFolder: MIGRATIONS_FOLDER });
-      source.close();
+      snapshot(sourcePath, copyPath);
+      const copy = new Database(copyPath);
+      copy.exec("PRAGMA journal_mode = DELETE");
+      migrate(drizzle(copy), { migrationsFolder: MIGRATIONS_FOLDER });
+      copy.close();
 
       staged.push({
         project: {
@@ -214,7 +248,8 @@ export function runConsolidateProjects(
           conversations: 0,
           events: 0,
           renamed: [],
-          alreadyPresent: 0,
+          caughtUp: 0,
+          unchanged: 0,
         },
         binding,
         copyPath,
@@ -277,7 +312,10 @@ function mergeOne(
 
   for (const session of sessions) {
     if (db.query("SELECT 1 FROM sessions WHERE id = ?1").get(session.id) != null) {
-      project.alreadyPresent++;
+      const added = catchUp(db, session.id);
+      project.events += added;
+      if (added > 0) project.caughtUp++;
+      else project.unchanged++;
       continue;
     }
 
@@ -391,8 +429,13 @@ register("consolidate-projects", async (args) => {
     console.log(
       `${verb} ${p.sessions} session(s), ${p.conversations} conversation(s), ${p.events} event(s) from ${p.slug}${where}`,
     );
-    if (p.alreadyPresent) {
-      console.log(`  ${p.alreadyPresent} already present, left alone`);
+    if (p.caughtUp) {
+      console.log(
+        `  ${p.caughtUp} already-imported session(s) caught up with events recorded since`,
+      );
+    }
+    if (p.unchanged) {
+      console.log(`  ${p.unchanged} already up to date`);
     }
     for (const r of p.renamed) {
       console.log(
@@ -413,3 +456,72 @@ register("consolidate-projects", async (args) => {
     );
   }
 });
+
+/**
+ * Bring a session that was already imported up to date, returning how many
+ * events were added.
+ *
+ * The first import is a snapshot: a session still running keeps recording into
+ * its project database afterwards, and without this a re-run would skip it
+ * whole and those events would never arrive. Which matters most for the
+ * session doing the consolidating.
+ *
+ * Events carry no identity that survives the copy — `id` is autoincrement and
+ * gets reassigned — so the catch-up is positional: the target already holds
+ * the first N events for this session, so the source's rows are replayed from
+ * offset N in the same `(created_at, id)` order the first pass used. That is
+ * sound because the event log is append-only, which is the same property
+ * `getLastEventAt` and the ingestion cursors already rely on. A source that
+ * had rows deleted from the middle would defeat it, and nothing deletes them.
+ *
+ * The session row's mutable columns are refreshed too — a session that was
+ * `active` at import time has almost certainly moved on. Identity is left
+ * alone: `slug` may have been renamed here by a collision or by
+ * `backfill-slugs`, and reverting it to the source's would undo that.
+ */
+function catchUp(db: Database, sessionId: string): number {
+  const have = (
+    db
+      .query("SELECT count(*) AS n FROM events WHERE session_id = ?1")
+      .get(sessionId as never) as { n: number }
+  ).n;
+
+  db.query(
+    `UPDATE sessions SET
+       status = (SELECT status FROM src.sessions WHERE id = ?1),
+       summary = (SELECT summary FROM src.sessions WHERE id = ?1),
+       pid = (SELECT pid FROM src.sessions WHERE id = ?1),
+       pid_started_at = (SELECT pid_started_at FROM src.sessions WHERE id = ?1),
+       ended_at = (SELECT ended_at FROM src.sessions WHERE id = ?1),
+       branch = (SELECT branch FROM src.sessions WHERE id = ?1),
+       updated_at = (SELECT updated_at FROM src.sessions WHERE id = ?1)
+     WHERE id = ?1`,
+  ).run(sessionId as never);
+
+  db.query(
+    `INSERT OR IGNORE INTO conversations
+     SELECT * FROM src.conversations WHERE session_id = ?1`,
+  ).run(sessionId as never);
+
+  db.query(
+    `INSERT INTO events (session_id, conversation_id, event, summary, meta, created_at)
+     SELECT session_id, conversation_id, event, summary, meta, created_at
+       FROM src.events WHERE session_id = ?1
+      ORDER BY created_at, id
+      LIMIT -1 OFFSET ?2`,
+  ).run(sessionId as never, have as never);
+
+  // Stats are a materialized rollup, so the newer computation wins outright
+  // rather than being ignored as a duplicate.
+  db.query(
+    `INSERT OR REPLACE INTO session_stats
+     SELECT * FROM src.session_stats WHERE session_id = ?1`,
+  ).run(sessionId as never);
+
+  const now = (
+    db
+      .query("SELECT count(*) AS n FROM events WHERE session_id = ?1")
+      .get(sessionId as never) as { n: number }
+  ).n;
+  return now - have;
+}

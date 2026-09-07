@@ -275,11 +275,79 @@ describe("runConsolidateProjects", () => {
     const { projects } = runConsolidateProjects();
 
     expect(projects.reduce((n, p) => n + p.sessions, 0)).toBe(0);
-    expect(projects.reduce((n, p) => n + p.alreadyPresent, 0)).toBe(5);
+    expect(projects.reduce((n, p) => n + p.unchanged, 0)).toBe(5);
+    expect(projects.reduce((n, p) => n + p.caughtUp, 0)).toBe(0);
 
     const db = target();
     expect(one<{ n: number }>(db, "SELECT count(*) n FROM sessions").n).toBe(5);
     expect(one<{ n: number }>(db, "SELECT count(*) n FROM events").n).toBe(10);
     db.close();
+  });
+
+  test("catches up a session that kept recording after it was imported", () => {
+    // The first import is a snapshot. A session still running — the one doing
+    // the consolidating, most of all — keeps writing to its project database,
+    // and those events have to arrive on a later run rather than being skipped
+    // along with the session.
+    const source = new Database(join(root, "projects", "bertrand", "bertrand.db"));
+    source.query(
+      "INSERT INTO events (session_id, conversation_id, event, summary) VALUES ('b-1', 'b-1-conv', 'user.prompt', ?1)",
+    ).run("recorded after the import");
+    source.query(
+      "UPDATE sessions SET status = 'archived', summary = 'wrapped up' WHERE id = 'b-1'",
+    ).run();
+    source.close();
+
+    const { projects } = runConsolidateProjects();
+    const bertrand = projects.find((p) => p.slug === "bertrand")!;
+
+    expect(bertrand.caughtUp).toBe(1);
+    expect(bertrand.sessions).toBe(0);
+
+    const db = target();
+    // Exactly the one new event, and no re-import of the original two.
+    expect(one<{ n: number }>(db, "SELECT count(*) n FROM events WHERE session_id = 'b-1'").n).toBe(3);
+    expect(
+      one<{ n: number }>(db, "SELECT count(*) n FROM events WHERE summary = 'recorded after the import'").n,
+    ).toBe(1);
+
+    // Mutable columns follow the source; identity does not.
+    const row = db.query("SELECT slug, status, summary FROM sessions WHERE id = 'b-1'").get() as Record<string, unknown>;
+    expect(row.status).toBe("archived");
+    expect(row.summary).toBe("wrapped up");
+    // Renamed by the collision rule — a catch-up must not revert that.
+    expect(row.slug).toBe("finish-up-2");
+    db.close();
+  });
+
+  test("sees writes still sitting in a source's write-ahead log", () => {
+    // bertrand runs its databases in WAL mode, so a source being written right
+    // now keeps recent rows in a `-wal` sidecar until a checkpoint. Copying
+    // just the main file would import a stale prefix — the case this was found
+    // on had a 4MB WAL against a 1.1MB main file. The connection is left open
+    // so nothing checkpoints it before the import reads it.
+    const live = new Database(join(root, "projects", "unregistered", "bertrand.db"));
+    live.exec("PRAGMA journal_mode = WAL");
+    live.query(
+      "INSERT INTO sessions (id, slug, name, status, started_at) VALUES ('w-1', 'wal-only', 'wal-only', 'paused', '2026-05-01 10:00:00')",
+    ).run();
+    live.query(
+      "INSERT INTO events (session_id, event, summary) VALUES ('w-1', 'user.prompt', 'written into the wal')",
+    ).run();
+
+    try {
+      runConsolidateProjects();
+
+      const db = target();
+      expect(
+        db.query("SELECT slug FROM sessions WHERE id = 'w-1'").get(),
+      ).toEqual({ slug: "wal-only" });
+      expect(
+        one<{ n: number }>(db, "SELECT count(*) n FROM events WHERE summary = 'written into the wal'").n,
+      ).toBe(1);
+      db.close();
+    } finally {
+      live.close();
+    }
   });
 });
