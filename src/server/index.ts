@@ -3,30 +3,15 @@ import { existsSync } from "fs"
 import { join } from "path"
 import { tryUpgradeTerminal, terminalWebSocketHandlers } from "./terminal-relay"
 import { recoverStaleSessions } from "@/lib/session-recovery"
-import { type ChangedFile } from "@/lib/git"
 import { getAllSessions, getSession } from "@/db/queries/sessions"
-import { getEventsBySession, getEventsByType, getMaxEventId } from "@/db/queries/events"
-import { getSessionStats } from "@/db/queries/stats"
-import { computeSessionStats, computeAndPersist } from "@/lib/timing"
-import { resolveChangedFiles } from "@/lib/diff_stats"
-import { computeEngagementStats } from "@/lib/engagement_stats"
+import { getEventsBySession, getEventsByType } from "@/db/queries/events"
 import {
   archiveSession,
   unarchiveSession,
   type ArchiveResult,
   type UnarchiveResult,
 } from "@/lib/session-archive"
-import { getPRForBranch } from "@/lib/github/pr"
-import { resolveRepoAt } from "@/lib/github/resolve"
-import { resolveSessionPullRequest } from "@/lib/github/session-pr"
-import type {
-  SessionRow,
-  SessionListRow,
-  EventRow,
-  SessionStatsRow,
-  EngagementStats,
-  SessionPullRequest,
-} from "@/types"
+import type { SessionRow, SessionListRow, EventRow } from "@/types"
 
 const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 
@@ -46,75 +31,6 @@ const PORT = Number(process.env.BERTRAND_PORT ?? 5200)
 const dashboardSessions = () => import("@/engine/dashboard-session")
 
 type RouteHandler = (params: Record<string, string | undefined>, url: URL) => unknown
-
-/**
- * Live stats are recomputed from a full event walk (timings + diff parse over
- * every meta blob), and the dashboard polls them every 2s per live session.
- * Events are append-only, so max(event.id) is a complete change token — cache
- * the last result per session and only recompute when the log actually grew.
- * Unbounded but tiny: one row per session ever polled this process.
- */
-const liveStatsCache = new Map<string, { maxId: number; row: SessionStatsRow }>()
-
-function liveStats(sessionId: string): SessionStatsRow {
-  const maxId = getMaxEventId(sessionId)
-  const cached = liveStatsCache.get(sessionId)
-  if (cached && cached.maxId === maxId) return cached.row
-  const row: SessionStatsRow = {
-    sessionId,
-    ...computeSessionStats(sessionId),
-    updatedAt: new Date().toISOString(),
-  }
-  liveStatsCache.set(sessionId, { maxId, row })
-  return row
-}
-
-/**
- * Fallback for a non-live session missing its materialized session_stats row
- * (sessions ended before stats persistence existed, or by a crash). Computing
- * is unavoidable once, but persisting the result means it's once — not on
- * every 2s poll forever.
- */
-function backfilledStats(sessionId: string): SessionStatsRow {
-  return {
-    sessionId,
-    ...computeAndPersist(sessionId),
-    updatedAt: new Date().toISOString(),
-  }
-}
-
-/**
- * The directory a session's *recorded file paths* are relative to.
- *
- * Read off the session row, not out of a registry. This used to be the bound
- * repo path of whichever project the request named, which could easily be a
- * different checkout than the session ever touched — and then every path in
- * the response rendered absolute, because the prefix being stripped wasn't the
- * prefix the paths carried. `worktreeRoot` is where `claude` actually ran, so it
- * is that prefix by construction; `mainCheckout` only stands in for a session
- * whose worktree was never recorded.
- *
- * `undefined` rather than null: the callee reads an absent root as "leave the
- * path absolute", which is the correct rendering for a session outside git.
- */
-function displayRoot(session: SessionRow): string | undefined {
-  return session.worktreeRoot ?? session.mainCheckout ?? undefined
-}
-
-/**
- * The checkout a session's *repo identity* should be resolved in.
- *
- * The opposite preference to {@link displayRoot}, and deliberately so: this
- * path only has to still exist and still name the repo, and a linked worktree
- * frequently does not. An Orca workspace is deleted the moment its task lands,
- * which would leave a paused session's PR permanently unresolvable — while the
- * main checkout behind it is a long-lived clone of the same repo with the same
- * `origin`. Falls back to the worktree for a session that has no main checkout
- * recorded.
- */
-function repoRoot(session: SessionRow): string | undefined {
-  return session.mainCheckout ?? session.worktreeRoot ?? undefined
-}
 
 /**
  * Every session in one list. There is a single DB now, so there is no scope to
@@ -146,101 +62,10 @@ const listEvents = (
   return getEventsBySession(sessionId!, undefined, { sinceId })
 }
 
-const listAllStats = (): Record<string, SessionStatsRow> => {
-  const result: Record<string, SessionStatsRow> = {}
-  for (const { session } of getAllSessions()) {
-    const isLive =
-      session.status === "active" ||
-      session.status === "waiting" ||
-      session.status === "blocked"
-    if (isLive) {
-      result[session.id] = liveStats(session.id)
-      continue
-    }
-    result[session.id] =
-      getSessionStats(session.id) ?? backfilledStats(session.id)
-  }
-  return result
-}
-
-const getStatsBySession = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): SessionStatsRow | null => {
-  const session = getSession(sessionId!)
-  if (!session) return null
-  const isLive = session.status === "active" ||
-        session.status === "waiting" ||
-        session.status === "blocked"
-  if (isLive) return liveStats(sessionId!)
-  return getSessionStats(sessionId!) ?? backfilledStats(sessionId!)
-}
-
-// /api/stats/:sessionId/files — the individual files a session changed, with
-// per-file line counts, replayed from the session's own timeline. Covers every
-// session uniformly now that worktrees are gone. A missing session answers
-// "nothing changed" so the sidebar can poll quietly.
-const getChangedFilesBySession = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): Promise<ChangedFile[]> => {
-  const session = getSession(sessionId!)
-  if (!session) return Promise.resolve([])
-  return resolveChangedFiles(session, displayRoot(session))
-}
-
-const getEngagement = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): EngagementStats => computeEngagementStats(sessionId!)
-
-// /api/github/:sessionId/pr — the pull request for the session's branch, with
-// its check rollup. The decisions (which branch, which checkout, and what
-// counts as "GitHub didn't answer") live in @/lib/github/session-pr; this is
-// the adapter that hands it the session row and the real I/O.
-//
-// An unknown session answers "no PR" rather than 404ing. The sidebar polls
-// this, and every arm of the response already means "render nothing" except
-// the one where a PR exists — so a missing session has a correct answer, and
-// erroring would make a torn-down session louder than a live one.
-//
-// No route-level cache: `getPRForBranch` TTL-caches per branch and coalesces
-// concurrent lookups, so N sessions on one branch still cost one `gh`.
-const getSessionPullRequest = ({
-  sessionId,
-}: {
-  sessionId?: string
-}): Promise<SessionPullRequest> => {
-  const session = getSession(sessionId!)
-  if (!session) return Promise.resolve({ status: "none" })
-  return resolveSessionPullRequest(
-    {
-      // Both recorded at session start from the cwd, and both null for a
-      // session whose cwd was not in a git repo — which answers `none`, not an
-      // error. `repoRoot` prefers the main checkout over the worktree; see
-      // there for why a torn-down workspace must not lose the PR.
-      branch: session.branch,
-      repoPath: repoRoot(session),
-    },
-    {
-      resolveRepo: resolveRepoAt,
-      lookupPR: getPRForBranch,
-    },
-  )
-}
-
 const routes: [RegExp, RouteHandler][] = [
   [/^\/api\/sessions$/, listSessions],
   [/^\/api\/sessions\/(?<id>[^/]+)$/, getSessionById],
-  [/^\/api\/github\/(?<sessionId>[^/]+)\/pr$/, getSessionPullRequest],
   [/^\/api\/events\/(?<sessionId>[^/]+)$/, listEvents],
-  [/^\/api\/stats$/, listAllStats],
-  [/^\/api\/stats\/(?<sessionId>[^/]+)\/files$/, getChangedFilesBySession],
-  [/^\/api\/stats\/(?<sessionId>[^/]+)$/, getStatsBySession],
-  [/^\/api\/engagement\/(?<sessionId>[^/]+)$/, getEngagement],
 ]
 
 /**

@@ -60,21 +60,6 @@ export function getEventsBySession(
 }
 
 /**
- * Highest event id for a session, 0 when it has none. Events are append-only,
- * so this single integer is a complete change token: equal max ids mean the
- * session's event log is byte-for-byte identical. The dashboard's live-stats
- * path uses it to skip recomputing over unchanged logs.
- */
-export function getMaxEventId(sessionId: string, db: Db = getDb()): number {
-  const row = db
-    .select({ maxId: sql<number | null>`max(${events.id})` })
-    .from(events)
-    .where(eq(events.sessionId, sessionId))
-    .get();
-  return row?.maxId ?? 0;
-}
-
-/**
  * When a session last recorded anything, in whatever shape the row was written
  * in — undefined for a session with no events.
  *

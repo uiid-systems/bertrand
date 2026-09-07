@@ -14,7 +14,6 @@ import type { sessions, events, sessionStats } from "./db/schema";
 import type { GhFailureReason } from "./lib/github/errors";
 import type { PullRequest } from "./lib/github/types";
 
-export type { ChangedFile } from "./lib/git-types";
 export type {
   CheckBucket,
   CheckRollupState,
@@ -70,11 +69,6 @@ export type SessionPullRequest =
   | { status: "none" }
   | { status: "unavailable"; reason: GhFailureReason; message: string }
   | { status: "ok"; pullRequest: PullRequest };
-
-export type EngagementStats = {
-  toolUsage: Record<string, number>;
-  discardRate: { discarded: number; total: number };
-};
 
 export type ArchiveReason = "not-found" | "active" | "already-archived";
 export type UnarchiveReason = "not-found" | "not-archived";
