@@ -73,15 +73,55 @@ function readRegistry(root: string): Map<string, { repo: string | null; path: st
   return out;
 }
 
-/** A free slug in the merged database, walking -2, -3 like every other path. */
-function untakenSlug(db: Database, slug: string): string {
-  const taken = (s: string) =>
-    db.query("SELECT 1 FROM sessions WHERE slug = ?1 UNION ALL SELECT 1 FROM session_aliases WHERE alias = ?1").get(s) != null;
-  if (!taken(slug)) return slug;
-  for (let n = 2; ; n++) {
-    const candidate = `${slug}-${n}`;
-    if (!taken(candidate)) return candidate;
+/**
+ * The slug every incoming session will land on, keyed by session id.
+ *
+ * Decided for the whole import at once and ordered by `started_at`, so the
+ * oldest session claiming a name keeps it — the rule migration 0018 used when
+ * flattening made two sessions collide. Per-project resolution would instead
+ * award contested names by directory order, which says nothing about the
+ * sessions involved.
+ *
+ * Names already live in the target — its slugs and its aliases — are taken
+ * before any of this starts: claiming one would either break the unique index
+ * or shadow an alias that `resolveSessionByName` can no longer reach.
+ */
+function assignSlugs(
+  db: Database,
+  staged: { copyPath: string }[],
+): Map<string, string> {
+  const taken = new Set<string>();
+  for (const r of db.query("SELECT slug AS name FROM sessions UNION SELECT alias AS name FROM session_aliases").all() as {
+    name: string;
+  }[]) {
+    taken.add(r.name);
   }
+
+  const incoming: { id: string; slug: string; startedAt: string }[] = [];
+  for (const { copyPath } of staged) {
+    const src = new Database(copyPath, { readonly: true });
+    for (const row of src
+      .query("SELECT id, slug, started_at AS startedAt FROM sessions")
+      .all() as { id: string; slug: string; startedAt: string }[]) {
+      incoming.push(row);
+    }
+    src.close();
+  }
+
+  // `id` breaks ties so the result is deterministic across runs.
+  incoming.sort(
+    (a, b) =>
+      a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id),
+  );
+
+  const assigned = new Map<string, string>();
+  for (const row of incoming) {
+    let slug = row.slug;
+    for (let n = 2; taken.has(slug); n++) slug = `${row.slug}-${n}`;
+    taken.add(slug);
+    assigned.set(row.id, slug);
+  }
+  return assigned;
 }
 
 /**
@@ -122,17 +162,32 @@ export function runConsolidateProjects(
   if (!existsSync(projectsDir)) return result;
 
   const registry = readRegistry(root);
+  const scratch = mkdtempSync(join(tmpdir(), "bertrand-consolidate-"));
+  const dryRun = opts.dryRun === true;
 
-  // The target has to be at the current schema before anything is attached to
-  // it — on a fresh install it does not exist at all.
-  const target = new Database(paths.db);
-  target.exec("PRAGMA journal_mode = WAL");
+  // A dry run works on a *copy* of the target, so the flag means what it says.
+  // Collision detection has to query the merged database, and querying it means
+  // bringing it to the current schema first — which on a fresh install means
+  // creating it. Doing that to the real file would make --dry-run write, which
+  // is precisely the thing a preview must not do.
+  const targetPath = dryRun ? join(scratch, "target-preview.db") : paths.db;
+  if (dryRun && existsSync(paths.db)) copyFileSync(paths.db, targetPath);
+
+  const target = new Database(targetPath);
+  target.exec(`PRAGMA journal_mode = ${dryRun ? "DELETE" : "WAL"}`);
   target.exec("PRAGMA foreign_keys = ON");
   migrate(drizzle(target), { migrationsFolder: MIGRATIONS_FOLDER });
 
-  const scratch = mkdtempSync(join(tmpdir(), "bertrand-consolidate-"));
-
   try {
+    // Pass 1 — migrate every source onto a copy and read its session list.
+    // Nothing is inserted yet, because who keeps a contested slug cannot be
+    // decided one project at a time.
+    const staged: {
+      project: ConsolidatedProject;
+      binding: { repo: string | null; path: string | null } | null;
+      copyPath: string;
+    }[] = [];
+
     for (const slug of readdirSync(projectsDir).sort()) {
       const sourcePath = join(projectsDir, slug, "bertrand.db");
       if (!existsSync(sourcePath)) {
@@ -140,16 +195,7 @@ export function runConsolidateProjects(
         continue;
       }
 
-      const binding = registry.get(slug);
-      const project: ConsolidatedProject = {
-        slug,
-        repo: binding?.repo ?? null,
-        sessions: 0,
-        conversations: 0,
-        events: 0,
-        renamed: [],
-        alreadyPresent: 0,
-      };
+      const binding = registry.get(slug) ?? null;
 
       // Work on a copy so the originals — which the installed build may still
       // be reading — are never migrated or written.
@@ -160,14 +206,41 @@ export function runConsolidateProjects(
       migrate(drizzle(source), { migrationsFolder: MIGRATIONS_FOLDER });
       source.close();
 
-      target.exec(`ATTACH DATABASE '${copyPath.replace(/'/g, "''")}' AS src`);
+      staged.push({
+        project: {
+          slug,
+          repo: binding?.repo ?? null,
+          sessions: 0,
+          conversations: 0,
+          events: 0,
+          renamed: [],
+          alreadyPresent: 0,
+        },
+        binding,
+        copyPath,
+      });
+    }
+
+    // Pass 2 — settle contested slugs across every project at once, oldest
+    // session first. Same rule as migration 0018 used when flattening
+    // categories collided: the earliest `started_at` keeps the bare slug and
+    // later claimants take -2, -3. Deciding by directory order instead would
+    // hand the name to whichever project sorts first alphabetically, which is
+    // arbitrary — and in this corpus handed it to an *archived* session over a
+    // live one purely because "design-system" < "shuff-app".
+    const assigned = assignSlugs(target, staged);
+
+    // Pass 3 — insert, project by project, with the slugs already settled.
+    for (const entry of staged) {
+      target.exec(
+        `ATTACH DATABASE '${entry.copyPath.replace(/'/g, "''")}' AS src`,
+      );
       try {
-        mergeOne(target, project, binding ?? null, opts.dryRun === true);
+        mergeOne(target, entry.project, entry.binding, assigned);
       } finally {
         target.exec("DETACH DATABASE src");
       }
-
-      result.projects.push(project);
+      result.projects.push(entry.project);
     }
   } finally {
     target.close();
@@ -182,7 +255,7 @@ function mergeOne(
   db: Database,
   project: ConsolidatedProject,
   binding: { repo: string | null; path: string | null } | null,
-  dryRun: boolean,
+  assigned: Map<string, string>,
 ): void {
   const sessions = db
     .query("SELECT id, slug, branch FROM src.sessions ORDER BY started_at, id")
@@ -199,7 +272,6 @@ function mergeOne(
   }
 
   const run = (sql: string, ...params: unknown[]) => {
-    if (dryRun) return;
     db.query(sql).run(...(params as never[]));
   };
 
@@ -209,7 +281,7 @@ function mergeOne(
       continue;
     }
 
-    const slug = untakenSlug(db, session.slug);
+    const slug = assigned.get(session.id) ?? session.slug;
     if (slug !== session.slug) {
       project.renamed.push({ from: session.slug, to: slug });
     }

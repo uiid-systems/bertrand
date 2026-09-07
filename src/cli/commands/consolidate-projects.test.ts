@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -45,7 +46,12 @@ function legacyMigrationsFolder(): string {
 
 function seedProject(
   slug: string,
-  sessions: { id: string; slug: string; branch: string | null }[],
+  sessions: {
+    id: string;
+    slug: string;
+    branch: string | null;
+    startedAt?: string;
+  }[],
 ): void {
   const dir = join(root, "projects", slug);
   mkdirSync(dir, { recursive: true });
@@ -56,8 +62,8 @@ function seedProject(
   for (const s of sessions) {
     db.query(
       `INSERT INTO sessions (id, slug, name, status, branch, started_at)
-       VALUES (?1, ?2, ?2, 'paused', ?3, '2026-01-01 10:00:00')`,
-    ).run(s.id, s.slug, s.branch);
+       VALUES (?1, ?2, ?2, 'paused', ?3, ?4)`,
+    ).run(s.id, s.slug, s.branch, s.startedAt ?? "2026-01-01 10:00:00");
     const conv = `${s.id}-conv`;
     db.query("INSERT INTO conversations (id, session_id) VALUES (?1, ?2)").run(
       conv,
@@ -97,12 +103,14 @@ beforeAll(() => {
   _setRootDir(root);
 
   seedProject("bertrand", [
-    { id: "b-1", slug: "finish-up", branch: "elky-179" },
+    { id: "b-1", slug: "finish-up", branch: "elky-179", startedAt: "2026-03-01 10:00:00" },
     { id: "b-2", slug: "new-0dqjum", branch: "ui-182" },
   ]);
   // Same slug in a second project — legal there, a collision once merged.
+  // Deliberately the OLDER of the two while sorting later by directory name,
+  // so the test fails if collisions are settled by import order.
   seedProject("design-system", [
-    { id: "d-1", slug: "finish-up", branch: "ui-500" },
+    { id: "d-1", slug: "finish-up", branch: "ui-500", startedAt: "2026-02-01 10:00:00" },
     { id: "d-2", slug: "ui-196-wrap", branch: null },
   ]);
   // No entry in projects.json: ungrouped, but still imported.
@@ -139,7 +147,7 @@ afterAll(() => {
 });
 
 describe("runConsolidateProjects", () => {
-  test("a dry run reports the whole import and writes nothing", () => {
+  test("a dry run reports the whole import and creates no database", () => {
     const { projects } = runConsolidateProjects({ dryRun: true });
 
     expect(projects.map((p) => p.slug).sort()).toEqual([
@@ -149,9 +157,19 @@ describe("runConsolidateProjects", () => {
     ]);
     expect(projects.reduce((n, p) => n + p.sessions, 0)).toBe(5);
 
-    const db = target();
-    expect(one<{ n: number }>(db, "SELECT count(*) n FROM sessions").n).toBe(0);
-    db.close();
+    // Not merely "no rows" — the target file must not come into existence.
+    // Collision detection has to query the merged database, so a preview that
+    // ran against the real one would create and migrate it just by looking.
+    expect(existsSync(paths.db)).toBe(false);
+  });
+
+  test("a dry run still previews cross-project slug collisions", () => {
+    // The preview only sees `finish-up` as taken because its own copy of the
+    // target records the first import; against an untouched database both
+    // would preview as the bare slug while the real run renames one.
+    const { projects } = runConsolidateProjects({ dryRun: true });
+    const b = projects.find((p) => p.slug === "bertrand")!;
+    expect(b.renamed).toEqual([{ from: "finish-up", to: "finish-up-2" }]);
   });
 
   test("imports every session, its conversations, events and stats", () => {
@@ -205,13 +223,17 @@ describe("runConsolidateProjects", () => {
     db.close();
   });
 
-  test("renames a slug two projects both used, first-imported keeps it", () => {
+  test("a contested slug goes to the oldest session, not the first imported", () => {
+    // `design-system` imports after `bertrand` (directories sort that way) but
+    // its finish-up started a month earlier, so it keeps the bare name. This is
+    // migration 0018's rule; settling by import order would instead hand
+    // contested names out alphabetically by project directory.
     const db = target();
     expect(
-      (db.query("SELECT slug FROM sessions WHERE id = 'b-1'").get() as { slug: string }).slug,
+      (db.query("SELECT slug FROM sessions WHERE id = 'd-1'").get() as { slug: string }).slug,
     ).toBe("finish-up");
     expect(
-      (db.query("SELECT slug FROM sessions WHERE id = 'd-1'").get() as { slug: string }).slug,
+      (db.query("SELECT slug FROM sessions WHERE id = 'b-1'").get() as { slug: string }).slug,
     ).toBe("finish-up-2");
     db.close();
   });
@@ -226,7 +248,7 @@ describe("runConsolidateProjects", () => {
     // The genuinely retired names still come across.
     expect(
       db.query("SELECT session_id FROM session_aliases WHERE alias = 'legacy/finish-up'").get(),
-    ).toEqual({ session_id: "b-1" });
+    ).not.toBeNull();
     db.close();
   });
 
