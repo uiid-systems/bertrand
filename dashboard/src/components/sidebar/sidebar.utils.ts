@@ -20,8 +20,8 @@ export function isLive(s: SessionListRow): boolean {
 }
 
 /**
- * The search predicate. Matches the session's own identity — slug and display
- * name — plus the two fields that say *where* it ran: `repo` and `branch`.
+ * The search predicate. Matches the session's own identity — its slug — plus
+ * the two fields that say *where* it ran: `repo` and `branch`.
  *
  * Those two are matchable now, where the project name never was. Search used
  * to narrow a single project, so every row shared its name and matching it
@@ -29,11 +29,15 @@ export function isLive(s: SessionListRow): boolean {
  * sidebar spans every repo now, so "everything in tabs-backend" and
  * "whichever session was on ui-505" are exactly the questions being asked —
  * and the branch, not the slug, is what a unit of work is called.
+ *
+ * A `name` was searched here too. It was never a fourth field: every write
+ * path set it to the slug, so it could only ever match what the slug already
+ * matched.
  */
 export function matchesQuery(s: SessionListRow, q: string): boolean {
   if (!q) return true;
-  const { slug, name, repo, branch } = s.session;
-  return [slug, name, repo, branch].some(
+  const { slug, repo, branch } = s.session;
+  return [slug, repo, branch].some(
     (field) => field != null && field.toLowerCase().includes(q),
   );
 }

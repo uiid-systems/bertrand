@@ -40,7 +40,6 @@ describe("sessions", () => {
   test("create and retrieve session", () => {
     const session = createSession({
       slug: "fix-auth-bug",
-      name: "fix-auth-bug",
     });
     expect(session.id).toBeTruthy();
     expect(session.status).toBe("paused");
@@ -53,7 +52,6 @@ describe("sessions", () => {
   test("update session status", () => {
     const session = createSession({
       slug: "port-hooks",
-      name: "port-hooks",
     });
     const updated = updateSessionStatus(session.id, "active");
     expect(updated!.status).toBe("active");
@@ -71,7 +69,6 @@ describe("sessions", () => {
     // "needs approval" card silently vanished from the sidebar entirely.
     const session = createSession({
       slug: "needs-approval",
-      name: "needs-approval",
     });
     updateSessionStatus(session.id, "blocked");
 
@@ -87,7 +84,6 @@ describe("events", () => {
   test("insert and query events", () => {
     const session = createSession({
       slug: "event-test",
-      name: "event-test",
     });
 
     insertEvent({
@@ -114,7 +110,6 @@ describe("events", () => {
     // actually said them, so timeline ordering matches reality.
     const session = createSession({
       slug: "created-at-test",
-      name: "created-at-test",
     });
 
     insertEvent({
@@ -141,7 +136,6 @@ describe("conversations", () => {
   test("create and query conversations", () => {
     const session = createSession({
       slug: "conv-test",
-      name: "conv-test",
     });
 
     createConversation({ id: "test-claude-id-1", sessionId: session.id });
@@ -158,7 +152,6 @@ describe("labels", () => {
     expect(label.name).toBe("code-review");
     const session = createSession({
       slug: "label-test",
-      name: "label-test",
     });
 
     addLabelToSession(session.id, label.id);
@@ -172,7 +165,6 @@ describe("stats", () => {
   test("upsert session stats", () => {
     const session = createSession({
       slug: "stats-test",
-      name: "stats-test",
     });
 
     upsertSessionStats(session.id, {
@@ -223,7 +215,6 @@ describe("token usage rollup", () => {
   test("sums a session's conversations and excludes discarded ones", () => {
     const session = createSession({
       slug: "usage-rollup",
-      name: "usage-rollup",
     });
 
     const first = createConversation({ id: "conv-usage-1", sessionId: session.id });
@@ -273,7 +264,6 @@ describe("token usage rollup", () => {
   test("a session with no conversations rolls up to zero", () => {
     const session = createSession({
       slug: "usage-empty",
-      name: "usage-empty",
     });
 
     expect(getSessionUsage(session.id)).toEqual({

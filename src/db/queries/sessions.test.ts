@@ -33,6 +33,7 @@ const {
   updateSessionStatus,
   updateSession,
   getSession,
+  untakenPlaceholderSlug,
 } = await import("@/db/queries/sessions");
 const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 const { insertEvent, getEventsBySession } = await import("@/db/queries/events");
@@ -133,32 +134,21 @@ describe("isNameTakenByOtherSession", () => {
   });
 });
 
-describe("createSession name/nameSource contract", () => {
-  test("rejects a derived row carrying its own display name", () => {
-    // Sync throw: bun's toThrow is vacuous on an async fn, so this assertion
-    // only means anything because createSession is synchronous.
-    expect(() =>
-      createSession({
-        slug: "derived-with-name",
-        name: "My Session",
-        nameSource: "derived",
-      }),
-    ).toThrow(/named at pause/);
+describe("createSession nameSource contract", () => {
+  // A session's slug is its whole identity; there is no display name beside
+  // it any more. What survives is who chose the slug, which is what decides
+  // whether pause-time derivation may replace it.
+  test("defaults to 'manual' — a name the human typed", () => {
+    const s = createSession({ slug: "manual-by-default" });
+    expect(s.nameSource).toBe("manual");
   });
 
-  test("allows a derived row whose name merely repeats the slug", () => {
+  test("records 'derived' for a session that is named at pause", () => {
     const s = createSession({
       slug: "derived-echoing-slug",
-      name: "derived-echoing-slug",
       nameSource: "derived",
     });
     expect(s.nameSource).toBe("derived");
-  });
-
-  test("a manual row may carry any display name", () => {
-    const s = createSession({ slug: "manual-named", name: "Manual Named" });
-    expect(s.name).toBe("Manual Named");
-    expect(s.nameSource).toBe("manual");
   });
 });
 
@@ -334,5 +324,49 @@ describe("purgeSessionsBefore", () => {
       .prepare("SELECT count(*) as n FROM sessions")
       .get() as { n: number };
     expect(after.n).toBe(before.n);
+  });
+});
+
+describe("untakenPlaceholderSlug", () => {
+  test("seeds from the branch instead of minting new-<id>", () => {
+    expect(untakenPlaceholderSlug({ branch: "elky-189-tidy" })).toBe(
+      "elky-189-tidy",
+    );
+  });
+
+  test("falls back to a placeholder without a usable branch", () => {
+    expect(untakenPlaceholderSlug()).toMatch(/^new-[a-z0-9]{6}$/);
+    expect(untakenPlaceholderSlug({ branch: null })).toMatch(
+      /^new-[a-z0-9]{6}$/,
+    );
+    // The default branch names no particular work, so it is not a seed.
+    expect(untakenPlaceholderSlug({ branch: "main" })).toMatch(
+      /^new-[a-z0-9]{6}$/,
+    );
+  });
+
+  test("walks -2, -3 when the branch already named a session", () => {
+    // Several sessions legitimately run on one branch over time.
+    const branch = "adamfratino/ui-500-repeat";
+    const first = untakenPlaceholderSlug({ branch });
+    expect(first).toBe("ui-500-repeat");
+    createSession({ slug: first });
+
+    const second = untakenPlaceholderSlug({ branch });
+    expect(second).toBe("ui-500-repeat-2");
+    createSession({ slug: second });
+
+    expect(untakenPlaceholderSlug({ branch })).toBe("ui-500-repeat-3");
+  });
+
+  test("treats a retired alias as taken", () => {
+    // Claiming a name an alias points at would shadow the session it belongs
+    // to, since resolveSessionByName tries slugs first.
+    const owner = createSession({ slug: "ui-501-current" });
+    recordSessionAlias("ui-501-old", owner.id);
+
+    expect(untakenPlaceholderSlug({ branch: "ui-501-old" })).toBe(
+      "ui-501-old-2",
+    );
   });
 });

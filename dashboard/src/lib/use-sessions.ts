@@ -1,9 +1,8 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { allStatsQuery, sessionsQuery } from "../api/queries"
-import type { SessionStatsRow, SessionListRow } from "../api/types"
-import { isLive } from "../components/sidebar/sidebar.utils"
+import { sessionsQuery } from "../api/queries"
+import type { SessionListRow } from "../api/types"
 
 /**
  * The one shared session poll. Consumers used to subscribe to several distinct
@@ -22,18 +21,6 @@ import { isLive } from "../components/sidebar/sidebar.utils"
  */
 export function useAllSessions(): SessionListRow[] {
   const { data = [] } = useQuery(sessionsQuery({ includeArchived: true }))
-  return data
-}
-
-/**
- * The one shared stats poll, over the same superset for the same reason:
- * peer-relative readouts (the usage badge and its secondary-sidebar twin) must
- * all rank against one set, or the same session reads "heavy" in one place and
- * not the other.
- */
-export function useAllStats(): Record<string, SessionStatsRow> {
-  const hasLiveSession = useAllSessions().some(isLive)
-  const { data = {} } = useQuery(allStatsQuery({ hasLiveSession }))
   return data
 }
 

@@ -115,7 +115,6 @@ describe("archiveSession / unarchiveSession with explicit db (cross-project)", (
   _setDb(otherDb);
   const otherSession = createSession({
     slug: "cross-1",
-    name: "cross-1",
   });
   _setDb(testDb);
 

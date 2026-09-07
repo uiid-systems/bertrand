@@ -177,7 +177,7 @@ describe("migration 0018 (flatten categories)", () => {
     const db = openDb(DB_PATH);
     expect(() =>
       db.exec(
-        "INSERT INTO sessions (id, slug, name) VALUES ('s-dup', 'fix-colors', 'fix-colors')",
+        "INSERT INTO sessions (id, slug) VALUES ('s-dup', 'fix-colors')",
       ),
     ).toThrow(/UNIQUE/);
     db.close();
@@ -185,7 +185,7 @@ describe("migration 0018 (flatten categories)", () => {
 
   test("a second full run is a no-op", () => {
     const before = openDb(DB_PATH)
-      .query("SELECT id, slug, name FROM sessions ORDER BY id")
+      .query("SELECT id, slug FROM sessions ORDER BY id")
       .all();
     const aliasesBefore = openDb(DB_PATH)
       .query("SELECT alias, session_id FROM session_aliases ORDER BY alias")
@@ -194,7 +194,7 @@ describe("migration 0018 (flatten categories)", () => {
     runMigrationsFrom(DB_PATH, MIGRATIONS_DIR);
 
     const db = openDb(DB_PATH);
-    expect(db.query("SELECT id, slug, name FROM sessions ORDER BY id").all()).toEqual(before);
+    expect(db.query("SELECT id, slug FROM sessions ORDER BY id").all()).toEqual(before);
     expect(
       db.query("SELECT alias, session_id FROM session_aliases ORDER BY alias").all(),
     ).toEqual(aliasesBefore);

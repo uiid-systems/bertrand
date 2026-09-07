@@ -9,18 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DevTerminalRouteImport } from './routes/dev/terminal'
 import { Route as DevMarkdownRouteImport } from './routes/dev/markdown'
 import { Route as DevDiffRouteImport } from './routes/dev/diff'
 
-const SessionsRoute = SessionsRouteImport.update({
-  id: '/sessions',
-  path: '/sessions',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SplatRoute = SplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -50,7 +44,6 @@ const DevDiffRoute = DevDiffRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/sessions': typeof SessionsRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
@@ -58,7 +51,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/sessions': typeof SessionsRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
@@ -67,36 +59,21 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/sessions': typeof SessionsRoute
   '/dev/diff': typeof DevDiffRoute
   '/dev/markdown': typeof DevMarkdownRoute
   '/dev/terminal': typeof DevTerminalRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/$'
-    | '/sessions'
-    | '/dev/diff'
-    | '/dev/markdown'
-    | '/dev/terminal'
+  fullPaths: '/' | '/$' | '/dev/diff' | '/dev/markdown' | '/dev/terminal'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/sessions' | '/dev/diff' | '/dev/markdown' | '/dev/terminal'
-  id:
-    | '__root__'
-    | '/'
-    | '/$'
-    | '/sessions'
-    | '/dev/diff'
-    | '/dev/markdown'
-    | '/dev/terminal'
+  to: '/' | '/$' | '/dev/diff' | '/dev/markdown' | '/dev/terminal'
+  id: '__root__' | '/' | '/$' | '/dev/diff' | '/dev/markdown' | '/dev/terminal'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
-  SessionsRoute: typeof SessionsRoute
   DevDiffRoute: typeof DevDiffRoute
   DevMarkdownRoute: typeof DevMarkdownRoute
   DevTerminalRoute: typeof DevTerminalRoute
@@ -104,13 +81,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sessions': {
-      id: '/sessions'
-      path: '/sessions'
-      fullPath: '/sessions'
-      preLoaderRoute: typeof SessionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/$': {
       id: '/$'
       path: '/$'
@@ -152,7 +122,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
-  SessionsRoute: SessionsRoute,
   DevDiffRoute: DevDiffRoute,
   DevMarkdownRoute: DevMarkdownRoute,
   DevTerminalRoute: DevTerminalRoute,

@@ -24,7 +24,6 @@ function stub(
     session: {
       id: slug,
       slug,
-      name: slug,
       status: "paused",
       repo,
       branch,

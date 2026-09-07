@@ -36,7 +36,6 @@ const {
 function makeActiveSession(slug: string) {
   const session = createSession({
     slug,
-    name: slug,
   });
   updateSession(session.id, { status: "active", pid: 99999 });
   return session;

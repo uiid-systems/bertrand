@@ -411,7 +411,6 @@ async function handleResumeSession(id: string, req: Request): Promise<Response> 
 async function handleSpawnDashboardSession(req: Request): Promise<Response> {
   let body: {
     slug?: unknown
-    name?: unknown
     baseBranch?: unknown
   }
   try {
@@ -429,24 +428,12 @@ async function handleSpawnDashboardSession(req: Request): Promise<Response> {
       { status: 400 },
     )
   }
-  // A display name on a slugless spawn would be marked 'derived' and replaced
-  // by the derived slug at the first pause. Refuse rather than lose it.
-  if (body.name !== undefined && slug === undefined) {
-    return Response.json(
-      { error: "name requires slug — a slugless session is named at pause" },
-      { status: 400 },
-    )
-  }
-
   // Resolved before the try so the catch below can reach the error class the
   // same module exports.
   const { spawnDashboardSession, DashboardSessionLimitError } = await dashboardSessions()
 
   try {
-    const result = await spawnDashboardSession({
-      slug,
-      name: typeof body.name === "string" ? body.name : undefined,
-    })
+    const result = await spawnDashboardSession({ slug })
     return Response.json(result)
   } catch (err) {
     // At capacity is a client-visible condition with a retry story, not a

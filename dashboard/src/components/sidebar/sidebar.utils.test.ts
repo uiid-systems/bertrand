@@ -20,15 +20,14 @@ function stub(
   // tests here don't care where a session ran, and the ones that do say so.
   repo: string | null = null,
   updatedAt = "2026-01-01T00:00:00.000Z",
-  // Search reads the display name and the branch, so both are overridable;
-  // zone A's tests don't care and take the defaults.
-  extra: { name?: string; branch?: string | null } = {},
+  // Search reads the branch as well as the slug, so it's overridable; zone A's
+  // tests don't care and take the default.
+  extra: { branch?: string | null } = {},
 ): SessionListRow {
   return {
     session: {
       id: slug,
       slug,
-      name: extra.name ?? slug,
       status,
       updatedAt,
       repo,
@@ -124,7 +123,6 @@ describe("groupByRepo", () => {
 
 describe("matchesQuery", () => {
   const session = stub("fix-search", "paused", BERTRAND, undefined, {
-    name: "Fix search",
     branch: "adamfratino/fix-search",
   });
 
@@ -132,9 +130,9 @@ describe("matchesQuery", () => {
     expect(matchesQuery(session, "")).toBe(true);
   });
 
-  test("matches on slug and name", () => {
+  test("matches on slug", () => {
     expect(matchesQuery(session, "fix-")).toBe(true);
-    expect(matchesQuery(session, "fix search")).toBe(true);
+    expect(matchesQuery(session, "fix-search")).toBe(true);
   });
 
   test("matches on repo", () => {

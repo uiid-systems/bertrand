@@ -55,7 +55,7 @@ export function Resume({ sessionId, onSelect }: ResumeProps) {
   return (
     <Box flexDirection="column" padding={1} gap={1}>
       <Text bold color="#82AAFF">
-        Resume: {session.name}
+        Resume: {session.slug}
       </Text>
 
       <Box flexDirection="column">

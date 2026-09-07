@@ -4,11 +4,8 @@ import type {
   SessionListRow,
   SessionRow,
   EventRow,
-  SessionStatsRow,
-  EngagementStats,
   ArchiveErrorReason,
   SessionActionErrorReason,
-  SessionPullRequest,
 } from "./types"
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -161,48 +158,3 @@ export const eventsQuery = (sessionId: string, isLive = false) =>
     structuralSharing: false,
   })
 
-export const statsQuery = (sessionId: string, isLive = false) =>
-  queryOptions({
-    queryKey: ["stats", sessionId],
-    queryFn: () => fetchJson<SessionStatsRow | null>(`/api/stats/${sessionId}`),
-    enabled: !!sessionId,
-    refetchInterval: isLive ? 2000 : false,
-    placeholderData: keepPreviousData,
-  })
-
-/**
- * The pull request for a session's branch, with its check rollup.
- *
- * Polled on a fixed interval rather than gated on `isLive`, because checks
- * move on GitHub's clock, not the session's: the branch a paused session left
- * behind is exactly the one whose CI someone is waiting on. 30s matches the
- * server's per-branch TTL, so a faster poll would only re-serve the same
- * cached answer, and a slower one would leave a green build looking pending.
- */
-export const pullRequestQuery = (sessionId: string) =>
-  queryOptions({
-    queryKey: ["pull-request", sessionId],
-    queryFn: () =>
-      fetchJson<SessionPullRequest>(`/api/github/${sessionId}/pr`),
-    enabled: !!sessionId,
-    refetchInterval: 30_000,
-    placeholderData: keepPreviousData,
-  })
-
-export const allStatsQuery = (opts: { hasLiveSession?: boolean } = {}) =>
-  queryOptions({
-    queryKey: ["stats", "all"],
-    queryFn: () => fetchJson<Record<string, SessionStatsRow>>("/api/stats"),
-    refetchInterval: opts.hasLiveSession ? 2000 : false,
-    placeholderData: keepPreviousData,
-  })
-
-export const engagementQuery = (sessionId: string, isLive = false) =>
-  queryOptions({
-    queryKey: ["engagement", sessionId],
-    queryFn: () =>
-      fetchJson<EngagementStats>(`/api/engagement/${sessionId}`),
-    enabled: !!sessionId,
-    refetchInterval: isLive ? 2000 : false,
-    placeholderData: keepPreviousData,
-  })
