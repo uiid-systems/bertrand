@@ -165,20 +165,49 @@ export function untakenPlaceholderSlug(
   opts: { branch?: string | null } = {},
   db: Db = getDb(),
 ): string {
-  const seed = slugFromBranch(opts.branch);
-  if (seed) {
-    if (!isNameTakenByOtherSession(seed, null, db)) return seed;
-    for (let n = 2; n <= MAX_BRANCH_SEED_ATTEMPTS; n++) {
-      const candidate = `${seed}-${n}`;
-      if (!isNameTakenByOtherSession(candidate, null, db)) return candidate;
-    }
-  }
+  const seeded = untakenBranchSlug(opts.branch, null, db);
+  if (seeded) return seeded;
 
   // A collision in the 6-char space is near-impossible, but the retry costs
   // one indexed lookup and the unique slug index still backstops a race.
   let slug = placeholderSlug();
   while (isNameTakenByOtherSession(slug, null, db)) slug = placeholderSlug();
   return slug;
+}
+
+/**
+ * A free slug derived from `branch`, or null when the branch yields no usable
+ * name or every disambiguated form of it is taken.
+ *
+ * Shared by session creation and the one-off backfill of rows created before
+ * seeding existed, so a session named from its branch today and one renamed
+ * from its branch afterwards land on exactly the same string.
+ *
+ * `sessionId` is exempted from the collision check — a row re-deriving a name
+ * it already holds is not colliding with itself.
+ *
+ * `reserved` holds names claimed earlier in the same batch but not yet
+ * written. A dry run writes nothing, so without it every session on one branch
+ * would be previewed as taking the bare slug while the real run hands the
+ * second one `-2` — a preview that disagrees with the thing it is previewing.
+ */
+export function untakenBranchSlug(
+  branch: string | null | undefined,
+  sessionId: string | null = null,
+  db: Db = getDb(),
+  reserved: ReadonlySet<string> = new Set(),
+): string | null {
+  const seed = slugFromBranch(branch);
+  const free = (name: string) =>
+    !reserved.has(name) && !isNameTakenByOtherSession(name, sessionId, db);
+
+  if (!seed) return null;
+  if (free(seed)) return seed;
+  for (let n = 2; n <= MAX_BRANCH_SEED_ATTEMPTS; n++) {
+    const candidate = `${seed}-${n}`;
+    if (free(candidate)) return candidate;
+  }
+  return null;
 }
 
 export function getActiveSessions(): SessionListRow[] {
