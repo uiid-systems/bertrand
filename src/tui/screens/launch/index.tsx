@@ -8,31 +8,27 @@ import { archiveSession, unarchiveSession } from "@/lib/session-archive";
 import { formatAgo } from "@/lib/format";
 import { parseSessionName } from "@/lib/parse-session-name";
 
-import {
-  UNGROUPED_KEY,
-  groupByRepo,
-  recencyMs,
-  type RepoGroup,
-} from "./group";
+import { UNGROUPED_KEY, groupByRepo, type RepoGroup } from "./group";
 import type { LaunchSelection, LaunchProps } from "./launch.types";
+import {
+  countByStatus,
+  isLiveStatus,
+  recencyMs,
+  visibleLaunchSessions,
+} from "./launch.utils";
 
 type SessionRow = ReturnType<typeof getAllSessions>[number];
 
+// Red marks a session halted on the user (an unanswered question, a pending
+// approval); orange marks one Claude is still working. Same vocabulary as the
+// StatusDot component.
 const STATUS_COLOR: Record<string, string> = {
   paused: "gold",
+  blocked: "red",
   waiting: "red",
+  active: "orange",
   archived: "purple",
 };
-
-const STATUS_RANK: Record<string, number> = {
-  paused: 0,
-  waiting: 1,
-  archived: 2,
-};
-
-function statusRank(status: string): number {
-  return STATUS_RANK[status] ?? 99;
-}
 
 /**
  * A repo heading. Disabled so the cursor steps straight past it — it names the
@@ -64,7 +60,10 @@ function repoHeaderRow(group: RepoGroup): PickerItem {
 function sessionRow(s: SessionRow): PickerItem {
   const status = s.session.status;
   const color = STATUS_COLOR[status] ?? "gray";
-  const disabled = status === "waiting";
+  // A live row is running in another terminal (or the dashboard) — listed so
+  // the screen shows every session the user has, but not selectable: resuming
+  // it here would attach a second claude to the same session.
+  const disabled = isLiveStatus(status);
   const isArchived = status === "archived";
   const branch = s.session.branch;
 
@@ -151,23 +150,14 @@ export function Launch({ onSelect }: LaunchProps) {
     [showArchived, refreshKey],
   );
 
-  const visibleSessions = useMemo(() => {
-    return allSessions
-      .filter((s) => {
-        const st = s.session.status;
-        if (st === "paused" || st === "waiting") return true;
-        if (st === "archived") return showArchived;
-        return false;
-      })
-      .sort((a, b) => {
-        const r = statusRank(a.session.status) - statusRank(b.session.status);
-        if (r !== 0) return r;
-        return recencyMs(b) - recencyMs(a);
-      });
-  }, [allSessions, showArchived]);
+  const visibleSessions = useMemo(
+    () => visibleLaunchSessions(allSessions, showArchived),
+    [allSessions, showArchived],
+  );
 
   // Grouped *after* the sort above, so each repo's rows keep the global
-  // paused-before-waiting-before-archived, then newest-first order.
+  // live (blocked, waiting, active), then paused, then archived order, and
+  // newest-first within each status.
   const groups = useMemo(() => groupByRepo(visibleSessions), [visibleSessions]);
 
   // Headings render even for a single repo. It costs one line and answers
@@ -191,9 +181,9 @@ export function Launch({ onSelect }: LaunchProps) {
     [allSessions],
   );
 
-  // Match against *all* loaded sessions so typing an existing name —
-  // even one we don't render (active, waiting) — gets a clear message instead
-  // of silently attempting a duplicate create.
+  // Match against *all* loaded sessions so typing an existing name — even a
+  // live one the cursor can't reach, or an archived one that's hidden — gets
+  // a clear message instead of silently attempting a duplicate create.
   const sessionByValue = useMemo(() => {
     const map = new Map<string, SessionRow>();
     for (const s of allSessions) {
@@ -246,7 +236,9 @@ export function Launch({ onSelect }: LaunchProps) {
         return;
       }
       setError(
-        `${value} is ${existing.session.status} — can't resume from here.`,
+        isLiveStatus(existing.session.status)
+          ? `${value} is ${existing.session.status} in another terminal — it can't be resumed from here.`
+          : `${value} is ${existing.session.status} — can't resume from here.`,
       );
       return;
     }
@@ -259,17 +251,7 @@ export function Launch({ onSelect }: LaunchProps) {
     }
   };
 
-  const counts = useMemo(() => {
-    let paused = 0;
-    let waiting = 0;
-    let archived = 0;
-    for (const s of visibleSessions) {
-      if (s.session.status === "paused") paused++;
-      else if (s.session.status === "waiting") waiting++;
-      else if (s.session.status === "archived") archived++;
-    }
-    return { paused, waiting, archived };
-  }, [visibleSessions]);
+  const counts = useMemo(() => countByStatus(visibleSessions), [visibleSessions]);
 
   return (
     <Box flexDirection="column" paddingY={1} gap={1}>
@@ -292,7 +274,14 @@ export function Launch({ onSelect }: LaunchProps) {
                   {groups.length} repo{groups.length === 1 ? "" : "s"}
                 </Text>
                 <Text dim>·</Text>
-                <Text color="gold">{counts.paused} paused</Text>
+                {counts.blocked > 0 && (
+                  <>
+                    <Text dim>·</Text>
+                    <Text color="red" dim>
+                      {counts.blocked} blocked
+                    </Text>
+                  </>
+                )}
                 {counts.waiting > 0 && (
                   <>
                     <Text dim>·</Text>
@@ -301,6 +290,15 @@ export function Launch({ onSelect }: LaunchProps) {
                     </Text>
                   </>
                 )}
+                {counts.active > 0 && (
+                  <>
+                    <Text dim>·</Text>
+                    <Text color="orange" dim>
+                      {counts.active} active
+                    </Text>
+                  </>
+                )}
+                <Text color="gold">{counts.paused} paused</Text>
                 {showArchived && counts.archived > 0 && (
                   <>
                     <Text dim>·</Text>
@@ -320,11 +318,7 @@ export function Launch({ onSelect }: LaunchProps) {
             maxVisible={24}
             suggest={suggestions}
             placeholder="Filter or type a name to create…"
-            emptyHint={
-              showArchived
-                ? "No sessions. Type a name to create one."
-                : "No paused sessions. Type a name to create one."
-            }
+            emptyHint="No sessions. Type a name to create one."
             onSubmit={handleSubmit}
             onKey={(e, cursorItem) => {
               if (e.key === "c" && e.ctrl) {
