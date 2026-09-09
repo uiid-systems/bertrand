@@ -20,8 +20,7 @@ import {
 type SessionRow = ReturnType<typeof getAllSessions>[number];
 
 // Red marks a session halted on the user (an unanswered question, a pending
-// approval); orange marks one Claude is still working. Same vocabulary as the
-// StatusDot component.
+// approval); orange marks one Claude is still working.
 const STATUS_COLOR: Record<string, string> = {
   paused: "gold",
   blocked: "red",
