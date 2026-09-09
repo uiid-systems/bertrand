@@ -6,6 +6,7 @@ import { formatAgo, formatDuration } from "@/lib/format";
 const STATUS_DOTS: Record<string, string> = {
   active: "\x1b[32m●\x1b[0m",     // green
   waiting: "\x1b[33m●\x1b[0m",    // yellow
+  blocked: "\x1b[31m●\x1b[0m",    // red — halted on a permission approval
   paused: "\x1b[90m●\x1b[0m",     // gray
   archived: "\x1b[90m○\x1b[0m",   // gray hollow
 };

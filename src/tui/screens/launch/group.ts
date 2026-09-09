@@ -1,5 +1,6 @@
-import { parseDbTime } from "@/lib/format";
 import type { SessionListRow } from "@/types";
+
+import { recencyMs } from "./launch.utils";
 
 /**
  * Label for the bucket a session with no `repo` falls into.
@@ -20,16 +21,6 @@ export interface RepoGroup {
   key: string;
   label: string;
   sessions: SessionListRow[];
-}
-
-/**
- * Newest-activity sort key, as epoch ms rather than the stored string. The two
- * columns are written in different shapes — `startedAt` is a `datetime('now')`
- * default, `endedAt` was ISO until this release — and comparing those as text
- * sorts on the separator (" " before "T") rather than on the time.
- */
-export function recencyMs(s: SessionListRow): number {
-  return parseDbTime(s.session.endedAt ?? s.session.startedAt);
 }
 
 /**
