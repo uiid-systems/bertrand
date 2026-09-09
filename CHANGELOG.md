@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.43.0](https://github.com/uiid-systems/bertrand/compare/v0.42.0...v0.43.0) (2026-09-09)
+
+
+### Features
+
+* derive session grouping from the cwd and remove projects ([#296](https://github.com/uiid-systems/bertrand/issues/296)) ([11318dd](https://github.com/uiid-systems/bertrand/commit/11318dd4124548cca62a0d65ebd127620b793e07))
+* strip unreliable session metrics and seed slugs from the branch ([#300](https://github.com/uiid-systems/bertrand/issues/300)) ([35189bf](https://github.com/uiid-systems/bertrand/commit/35189bf783ef43e928f3e358118c0cd0bcaeae33))
+
+
+### Bug Fixes
+
+* **tui:** list live sessions on the launch screen ([#301](https://github.com/uiid-systems/bertrand/issues/301)) ([888af84](https://github.com/uiid-systems/bertrand/commit/888af84494dd34be9a07db0f030e096098affdf5))
+
+
+### Refactoring
+
+* remove the session ratings system ([#294](https://github.com/uiid-systems/bertrand/issues/294)) ([aee5540](https://github.com/uiid-systems/bertrand/commit/aee55405c2f7a2df2883ae4c8c3c9ca0ff7d7ed8))
+* remove the TUI exit screen and session discard ([#297](https://github.com/uiid-systems/bertrand/issues/297)) ([00c8ee9](https://github.com/uiid-systems/bertrand/commit/00c8ee9f9e12b1288a5eca12137ec9a952326722))
+* **tui:** remove the exit screen's last components ([#302](https://github.com/uiid-systems/bertrand/issues/302)) ([41f8733](https://github.com/uiid-systems/bertrand/commit/41f87330d5569d894ff26fcf474ea4164a487631))
+
 ## [0.42.0](https://github.com/uiid-systems/bertrand/compare/v0.41.0...v0.42.0) (2026-08-31)
 
 
