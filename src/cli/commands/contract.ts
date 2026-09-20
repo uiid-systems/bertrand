@@ -1,6 +1,6 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
-import { buildContract } from "@/contract/template";
+import { buildContract, buildReminder } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
 import { markContractSent, readAdoptionMarker } from "@/hooks/runtime";
@@ -20,8 +20,10 @@ import { markContractSent, readAdoptionMarker } from "@/hooks/runtime";
  * the durable env/hook channel, so the guidance reaches those sessions too.
  * It mirrors exactly what engine/session.ts builds at launch.
  *
- * `--short` emits a one-line reminder instead of the full contract, for turns
- * after the first where the full text is already in context.
+ * `--short` emits the session rules plus a one-line loop reminder instead of the
+ * full contract, for turns after the first where the full text is already in
+ * context. See `buildReminder` for why it re-states the rules and not the
+ * hook-enforced mechanics.
  *
  * `--mark-sent` writes the once-per-conversation marker the hook otherwise
  * writes for itself. The `/bertrand` command needs it: it delivers the full
@@ -97,9 +99,7 @@ register("contract", async (args) => {
   const sessionName = session.slug;
 
   if (short) {
-    process.stdout.write(
-      `Reminder — you are in bertrand session ${sessionName}: end this turn with an AskUserQuestion call (multiSelect:true on every question, plus a "Done for now" option).`,
-    );
+    process.stdout.write(buildReminder(sessionName));
     return;
   }
 

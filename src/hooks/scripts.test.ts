@@ -133,7 +133,7 @@ describe("on-done.sh — AUQ loop enforcement", () => {
   });
 });
 
-describe("on-answered.sh — Done-for-now handoff", () => {
+describe("Done-for-now handoff — on-answered / on-waiting / on-user-prompt", () => {
   test("Done-for-now answer → drops done marker, clears nudge, halts the loop", () => {
     writeFileSync(marker(`auq-nudge-${SID}`), "2");
     const input = JSON.stringify({
@@ -160,6 +160,48 @@ describe("on-answered.sh — Done-for-now handoff", () => {
     expect(stdout).not.toContain('"continue": false');
     expect(existsSync(marker(`done-${SID}`))).toBe(false);
     expect(existsSync(marker(`auq-nudge-${SID}`))).toBe(false);
+  });
+
+  test("Done-for-now co-selected with real work → marker set, loop not halted", () => {
+    const input = JSON.stringify({
+      tool_input: {
+        answers: { q: "Put rules in the reminder, Done for now" },
+        questions: [],
+      },
+    });
+    const { stdout } = run("on-answered.sh", input, {
+      BERTRAND_SESSION: SID,
+      BERTRAND_CLAUDE_ID: CID,
+    });
+    // multiSelect is forced on, so this is the normal exit shape, not an edge.
+    // The agent needs its turn to do the co-selected work; on-done.sh then sees
+    // the marker and pauses cleanly rather than nudging the loop back open.
+    expect(stdout).not.toContain('"continue": false');
+    expect(existsSync(marker(`done-${SID}`))).toBe(true);
+  });
+
+  test("on-waiting.sh refuses to ask again once the done marker exists", () => {
+    // Valid payload, so a block can only come from the marker — not multiSelect.
+    const input = JSON.stringify({
+      tool_input: { questions: [{ question: "q", multiSelect: true }] },
+    });
+    const env = { BERTRAND_SESSION: SID, BERTRAND_CLAUDE_ID: CID };
+
+    expect(run("on-waiting.sh", input, env).code).toBe(0);
+
+    writeFileSync(marker(`done-${SID}`), "");
+    expect(run("on-waiting.sh", input, env).code).toBe(2);
+  });
+
+  test("on-user-prompt.sh clears a done marker orphaned by a dead session", () => {
+    writeFileSync(marker(`done-${SID}`), "");
+    run("on-user-prompt.sh", JSON.stringify({ prompt: "hello" }), {
+      BERTRAND_SESSION: SID,
+      BERTRAND_CLAUDE_ID: CID,
+    });
+    // Otherwise the refusal above would pause the next session on its first
+    // question. A new prompt means the user is still here.
+    expect(existsSync(marker(`done-${SID}`))).toBe(false);
   });
 });
 
