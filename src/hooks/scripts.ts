@@ -214,7 +214,7 @@ function quietHelper(bin: string): string {
   return `bq() { ${bin} "$@" 2>/dev/null || true; }`;
 }
 
-/** PreToolUse AskUserQuestion → enforce multiSelect:true, then mark session as waiting */
+/** PreToolUse AskUserQuestion → refuse once exiting, enforce multiSelect:true, then mark session as waiting */
 export function waitingScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
@@ -222,6 +222,18 @@ ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
 ${READ_PAYLOAD_REST}
+
+# Refuse to ask anything once the session is exiting. "Done for now" co-selected
+# with real work leaves the agent one more turn to finish that work (see
+# on-answered.sh) — but that turn has to END, not re-open the loop and prompt
+# the user again after they already said they were done. The contract tells the
+# agent not to ask again; this is what makes it so where the contract cannot
+# reach. Checked before multiSelect: if the session is over, the shape of the
+# question no longer matters.
+if [ -f "${runtimeDir}/done-$sid" ]; then
+  printf 'This bertrand session is exiting — the user selected "Done for now". Do not ask another question. Finish any work they co-selected alongside it, then end your turn; bertrand pauses the session from there.\\n' >&2
+  exit 2
+fi
 
 # Block AUQ calls that omit multiSelect:true on any question. multiSelect is a
 # UX-safety mechanism in bertrand (prevents submit-on-focus), not a cardinality
@@ -286,15 +298,32 @@ bq update --session-id "$sid" --event session.answered --meta "$meta"
 # run of consecutive contract violations, not cumulatively across the session.
 rm -f "${runtimeDir}/auq-nudge-$sid"
 
-# Halt the agent loop if the user signaled Done for now. The Stop hook
-# (on-done.sh) will fire afterwards and mark the session as paused.
-if printf '%s' "$done_check" | grep -q "Done for now"; then
-  # Tell on-done.sh this Stop is a legitimate exit, not a dropped AUQ call —
-  # so it pauses normally instead of forcing the loop to continue.
-  touch "${runtimeDir}/done-$sid"
+# Done for now ends the session. Two shapes, because multiSelect is forced on
+# and co-selection is therefore the normal case rather than an edge:
+#
+#   sole selection → nothing else was asked for, halt the agent immediately.
+#   co-selected    → the user picked real work *and* signalled the exit. Drop
+#                    the marker but let the turn run, so the agent does that
+#                    work and ends on its own; on-done.sh sees the marker and
+#                    pauses cleanly instead of nudging the loop back open.
+#
+# Halting on any occurrence (what this used to do) made the second shape
+# unreachable: continue:false killed the turn before the co-selected work ran.
+#
+# Either way the marker tells on-done.sh this Stop is a legitimate exit rather
+# than a dropped AUQ call. Both tests below are bash builtins — no fork, on a
+# hook that runs on every answered question.
+case "$done_check" in
+  *"Done for now"*)
+    touch "${runtimeDir}/done-$sid"
 
-  printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
-fi
+    # Anything picked besides the exit itself? Strip the label, then the
+    # separators AUQ joins selections with — a non-empty remainder is work.
+    rest="\${done_check//Done for now/}"
+    rest="\${rest//[[:space:],]/}"
+    [ -z "$rest" ] && printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
+    ;;
+esac
 `;
 }
 
@@ -425,8 +454,10 @@ export function userPromptScript(bin: string, runtimeDir: string): string {
 # BERTRAND_* env vars without going through launchClaude (background jobs,
 # nested \`claude\`, an external launcher) never receive it. Re-
 # injecting here — through the durable env/hook channel — closes that gap.
-# Full contract on the first prompt of each conversation, a one-line reminder
-# thereafter, to keep the per-turn token cost low.
+# Full contract on the first prompt of each conversation, then the session
+# rules plus a one-line loop reminder thereafter — the soft guidance is the
+# half that decays as the conversation compacts; the mechanics are hook-enforced
+# and do not need repeating.
 ${quietHelper(bin)}
 ${sessionGuard(runtimeDir, { autoCreate: true })}
 
@@ -442,6 +473,14 @@ ${sessionGuard(runtimeDir, { autoCreate: true })}
 # and never waits for readiness, so a cold start cannot stall the turn.
 # Stdout muted: UserPromptSubmit parses stdout as a hook decision.
 bq ensure-server >/dev/null
+
+# A new prompt means the user is still here, so any pending exit signal is
+# stale — drop it. Normal exits never reach this hook (the Stop that follows
+# "Done for now" clears the marker itself), so this only ever catches a marker
+# orphaned by a session that died mid-turn. Worth the one builtin: on-waiting.sh
+# now refuses to ask anything while the marker exists, so an orphan would
+# silently pause the next session on its first question.
+rm -f "${runtimeDir}/done-$sid"
 
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).
