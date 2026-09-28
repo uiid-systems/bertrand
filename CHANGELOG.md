@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/uiid-systems/bertrand/compare/v0.43.0...v0.43.1) (2026-09-20)
+
+
+### Refactoring
+
+* new rules ([#303](https://github.com/uiid-systems/bertrand/issues/303)) ([7d74742](https://github.com/uiid-systems/bertrand/commit/7d74742a9a130a2e7e26f4e6a1799424c81d658d))
+
 ## [0.43.0](https://github.com/uiid-systems/bertrand/compare/v0.42.0...v0.43.0) (2026-09-09)
 
 
