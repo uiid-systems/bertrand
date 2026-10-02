@@ -545,7 +545,10 @@ if [ ! -f "$done_marker" ]; then
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   if [ "$count" -lt 3 ]; then
     printf '%s' "$((count + 1))" > "$nudge_marker"
-    reason='This is a bertrand session: every turn must end with an AskUserQuestion call (multiSelect:true on every question) that includes a "Done for now" option. You ended a turn without calling AskUserQuestion. Call it now to continue the loop, or — if the work is finished — present it so the user can pick "Done for now" to end the session.'
+    # Claude Code always renders a block reason to the user as "Stop hook
+    # error: …" (no way to suppress it), so keep it to one short line — the
+    # full rule already lives in the contract.
+    reason='End the turn with AskUserQuestion (multiSelect, "Done for now" option).'
     wait
     jq -n --arg r "$reason" '{decision:"block", reason:$r}'
     exit 0
