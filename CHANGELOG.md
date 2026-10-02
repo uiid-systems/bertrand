@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.2](https://github.com/uiid-systems/bertrand/compare/v0.43.1...v0.43.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **hooks:** slim the Stop-hook AUQ nudge to one line ([#305](https://github.com/uiid-systems/bertrand/issues/305)) ([d937663](https://github.com/uiid-systems/bertrand/commit/d93766350344801b9a9b6cb7423a851eac01bb94))
+
 ## [0.43.1](https://github.com/uiid-systems/bertrand/compare/v0.43.0...v0.43.1) (2026-09-20)
 
 
