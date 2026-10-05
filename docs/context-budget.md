@@ -355,7 +355,7 @@ machine. Proceeding with single-model findings only.
 | 5 | Pausing pruned `recalled-$cid`, so a resumed conversation could get the same pointers again | **Actionable:** kept 30 days |
 | 6 | The ubiquity gate's floor of 3 meant that in a corpus under ~15 sessions any term passed the single-term exception | **Actionable:** no floor; single-term exception ≤2 sessions |
 | 7 | The log ignores the flag and grows without bound; `resume-plan.test` reads the real config | **Partly actionable:** rotation at 5MB. Always-on logging is deliberate (it provides the baseline). The config read is read-only and harmless |
-| 8 | Missing tests: the contract handler, hook stdin, the current-prompt case; date assertions failed under `TZ=Pacific/Auckland` | **Partly actionable:** added current-prompt, empty-hit, transcript-reader and marker-retention tests; dates are now timezone-independent. Handler and hook stdin are covered by the end-to-end runs, not unit tests |
+| 8 | Missing tests: the contract handler, hook stdin, the current-prompt case; date assertions failed under `TZ=Pacific/Auckland` | **Actionable:** the handler body is now `renderContract()` with tests for flag off/on, once-per-conversation recall, transcript-driven queries and write-then-mark; the hook stub logs stdin, so the hook tests check the exact `contract` call and a prompt with shell metacharacters; current-prompt, empty-hit, transcript-reader and marker-retention tests added; dates are timezone-independent |
 | 9 | A bare `/command` took up one of the three query slots | **Actionable:** stripped before counting |
 
 ## Open, deliberately not answered here

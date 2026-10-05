@@ -125,8 +125,6 @@ export function contractDelivery(
 }
 
 register("contract", async (args) => {
-  const markSent = args.includes("--mark-sent");
-
   const target = resolveContractTarget(args);
   if (!target) {
     console.error(
@@ -136,13 +134,26 @@ register("contract", async (args) => {
     process.exit(1);
   }
 
-  const session = getSession(target.sessionId);
-  if (!session) return; // unknown session → emit nothing, hook injects no context
+  const prompt = args.includes("--prompt-stdin") ? await Bun.stdin.text() : "";
+  renderContract(args, target, prompt, (text) => process.stdout.write(text));
+});
 
-  const sessionName = session.slug;
+/**
+ * Everything `contract` does but read stdin: build what this delivery owes
+ * the conversation, `write` it, then record that it went. An unknown session
+ * writes nothing, so the hook injects no context.
+ */
+export function renderContract(
+  args: string[],
+  target: ContractTarget,
+  prompt: string,
+  write: (text: string) => void,
+): void {
+  const session = getSession(target.sessionId);
+  if (!session) return;
+
   const { conversationId } = target;
   const delivery = contractDelivery(args, conversationId);
-  const prompt = args.includes("--prompt-stdin") ? await Bun.stdin.text() : "";
 
   const hits = recallFor(session.id, conversationId, delivery, prompt, flag(args, "transcript-path"));
   const recalled: ContextLayer = { name: "recall", text: formatRecall(hits) };
@@ -151,15 +162,15 @@ register("contract", async (args) => {
     delivery === "reminder" ? [] : contractLayers(session.id, conversationId);
   const base =
     delivery === "reminder"
-      ? buildReminder(sessionName)
-      : buildContract(sessionName, ...layers.map((l) => l.text));
+      ? buildReminder(session.slug)
+      : buildContract(session.slug, ...layers.map((l) => l.text));
   const output = recalled.text ? `${base}\n\n${recalled.text}` : base;
-  process.stdout.write(output);
+  write(output);
 
   // After the write, not before: a marker set by a run that then failed to
   // print would downgrade every later delivery to the reminder, and the full
   // contract would never reach the session at all.
-  if (markSent && delivery === "full") markContractSent(conversationId);
+  if (args.includes("--mark-sent") && delivery === "full") markContractSent(conversationId);
   try {
     markRecalled(conversationId, hits.map((h) => h.sessionId));
   } catch {
@@ -175,7 +186,7 @@ register("contract", async (args) => {
     ),
     recalled: hits.map((h) => h.slug),
   });
-});
+}
 
 /**
  * What the user typed in this conversation before now. The transcript is the

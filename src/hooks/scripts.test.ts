@@ -29,6 +29,8 @@ const stubScript = (runtimeDir: string) => `#!/usr/bin/env bash
 # Unset for every other test, so the stub stays silent for them.
 if [ -n "\${BERTRAND_STUB_LOG:-}" ]; then
   printf 'argv=%s\\n' "$*" >> "$BERTRAND_STUB_LOG"
+  # What the hook piped in — the prompt, for recall.
+  [ "$1" = "contract" ] && printf 'stdin=%s\\n' "$(cat)" >> "$BERTRAND_STUB_LOG"
 fi
 if [ "$1" = "contract" ] && [ -z "\${BERTRAND_STUB_CONTRACT_EMPTY:-}" ]; then
   case "$*" in
@@ -234,6 +236,33 @@ describe("on-user-prompt.sh — contract re-injection", () => {
     expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe(
       "SHORT_CONTRACT",
     );
+  });
+
+  describe("hands recall its inputs", () => {
+    // Quotes, a `$` and backticks: the prompt must reach `contract` verbatim,
+    // never through a shell expansion.
+    const prompt = 'fix "the" $HOME `upload` retries';
+    const input = JSON.stringify({ prompt, transcript_path: "/t/convo.jsonl" });
+    const log = () => join(workDir, "stub.log");
+    const contractCall = () =>
+      readFileSync(log(), "utf-8").split("\n").filter((l) => l.startsWith("argv=contract"))[0];
+
+    test("first prompt: prompt on stdin, conversation id, transcript path", () => {
+      run("on-user-prompt.sh", input, { ...env, BERTRAND_STUB_LOG: log() });
+      expect(contractCall()).toBe(
+        `argv=contract --session-id ${SID} --conversation-id ${CID} --prompt-stdin --transcript-path /t/convo.jsonl`,
+      );
+      expect(readFileSync(log(), "utf-8")).toContain(`stdin=${prompt}\n`);
+    });
+
+    test("later prompts: the reminder, with the prompt on stdin", () => {
+      writeFileSync(marker(`contract-sent-${CID}`), "");
+      run("on-user-prompt.sh", input, { ...env, BERTRAND_STUB_LOG: log() });
+      expect(contractCall()).toBe(
+        `argv=contract --session-id ${SID} --conversation-id ${CID} --short --prompt-stdin`,
+      );
+      expect(readFileSync(log(), "utf-8")).toContain(`stdin=${prompt}\n`);
+    });
   });
 });
 
