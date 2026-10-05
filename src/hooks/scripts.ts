@@ -490,12 +490,15 @@ rm -f "${runtimeDir}/done-$sid"
 meta="$(printf '%s' "$input" | jq --arg cid "$cid" '{prompt: (.prompt // ""), claude_id: $cid}')"
 [ -n "$meta" ] && bq update --session-id "$sid" --event user.prompt --meta "$meta" >/dev/null
 
-# Re-deliver the contract as additional context.
+# Re-deliver the contract as additional context. The prompt goes along on
+# stdin for prompt-keyed recall, which \`contract\` runs only when the
+# contextRecall config flag is on (contract/recall.ts).
 marker="${runtimeDir}/contract-sent-\${cid:-$sid}"
+prompt="$(printf '%s' "$input" | jq -r '.prompt // ""')"
 if [ -f "$marker" ]; then
-  contract="$(bq contract --session-id "$sid" --short)"
+  contract="$(printf '%s' "$prompt" | bq contract --session-id "$sid" --conversation-id "\${cid:-$sid}" --short --prompt-stdin)"
 else
-  contract="$(bq contract --session-id "$sid")"
+  contract="$(printf '%s' "$prompt" | bq contract --session-id "$sid" --conversation-id "\${cid:-$sid}" --prompt-stdin)"
   # Only a contract that was actually printed counts as sent: \`bq\` swallows
   # failures, and \`/bertrand\` trusts this marker to skip its own full copy.
   [ -n "$contract" ] && : > "$marker"

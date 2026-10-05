@@ -21,6 +21,16 @@ describe("resolveContractTarget", () => {
     ).toMatchObject({ sessionId: "sess_flag" });
   });
 
+  test("takes the conversation from --conversation-id over the env", () => {
+    // The hook passes its own `${cid:-$sid}`, which for an adopted claude comes
+    // from the payload — the env may not carry it at all.
+    expect(
+      resolveContractTarget(["--session-id", "sess_flag", "--conversation-id", "conv_flag"], {
+        BERTRAND_CLAUDE_ID: CID,
+      }),
+    ).toEqual({ sessionId: "sess_flag", conversationId: "conv_flag" });
+  });
+
   test("accepts --session-id=value", () => {
     expect(resolveContractTarget(["--session-id=sess_inline"], {})).toMatchObject({
       sessionId: "sess_inline",

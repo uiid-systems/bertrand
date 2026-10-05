@@ -13,9 +13,7 @@ import { emitClaudeStarted } from "@/db/events/emit";
 import { finalizeSessionRow } from "@/lib/session-finalize";
 import { deriveSessionKey, groupKey } from "@/lib/session-key";
 import { recordSessionKey } from "@/lib/session-record";
-import { buildContract } from "@/contract/template";
-import { buildSiblingContext } from "@/contract/context";
-import { helpText } from "@/cli/help";
+import { buildSessionContract } from "@/contract/layers";
 import { deliverContract } from "./process";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
@@ -321,11 +319,7 @@ export async function spawnDashboardSession(
     claudeId,
     sessionName,
     slug,
-    contract: buildContract(
-      sessionName,
-      helpText({ agent: true }),
-      buildSiblingContext(session.id),
-    ),
+    contract: buildSessionContract(sessionName, session.id, claudeId),
     // What `emitClaudeStarted` records as the session's cwd, and what resume
     // reads back later.
     cwd,

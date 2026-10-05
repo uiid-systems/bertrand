@@ -83,6 +83,16 @@ export const paths = {
   get syncEnv() {
     return join(_getRootDir(), "sync.env");
   },
+  /**
+   * One JSON line per contract delivery: what bertrand injected into which
+   * conversation, and how many bytes of it — the cost side of
+   * docs/context-budget.md Tier 3. A file rather than events: it is
+   * measurement, not session history, and must not show up in timelines,
+   * event counts or sync.
+   */
+  get contextLog() {
+    return join(_getRootDir(), "context-log.jsonl");
+  },
   /** Directory for VACUUM INTO snapshots during sync. */
   get snapshots() {
     return join(_getRootDir(), "snapshots");

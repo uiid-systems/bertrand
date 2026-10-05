@@ -99,9 +99,21 @@ function edgeText(rows: EventRow[], key: string, edge: "first" | "last"): string
  * an empty text, and blindly taking the newest row would blank the outcome.
  */
 export function deriveSessionSummary(sessionId: string): string | null {
-  const prompts = getEventsByType(sessionId, "user.prompt");
-  const messages = getEventsByType(sessionId, "assistant.message");
+  return summarizeExchange(
+    getEventsByType(sessionId, "user.prompt"),
+    getEventsByType(sessionId, "assistant.message"),
+  );
+}
 
+/**
+ * The derivation itself, over any slice of a session's prompts and messages —
+ * the whole session here, one conversation in the resume digest
+ * (contract/history.ts). Both rows lists in event order.
+ */
+export function summarizeExchange(
+  prompts: EventRow[],
+  messages: EventRow[],
+): string | null {
   // Machine prompts can still be the first *recorded* one: auto-adoption
   // records nothing until a conversation's second prompt.
   const asked = prompts.filter((row) => !isMachinePrompt(metaStr(row.meta, "prompt")));

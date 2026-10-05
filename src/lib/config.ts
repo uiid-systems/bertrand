@@ -25,6 +25,17 @@ export interface BertrandConfig {
    * regardless of this flag.
    */
   autoAdopt?: boolean;
+  /**
+   * Inject relevant history into the contract: a digest of the session's own
+   * earlier conversations, and pointers to past sessions that match what the
+   * user just typed (contract/history.ts, contract/recall.ts).
+   *
+   * Off until measured. Injected text is re-read on every request that
+   * follows, so it pays for itself only if it replaces exploration the agent
+   * would otherwise do — the open question docs/context-budget.md Tier 3 is
+   * designed to answer.
+   */
+  contextRecall?: boolean;
   github?: {
     /**
      * Hosts trusted to serve GitHub Enterprise Server. github.com needs no
@@ -103,4 +114,9 @@ export function isSyncEnabled(): boolean {
  */
 export function isAutoAdoptEnabled(): boolean {
   return readConfig()?.autoAdopt === true;
+}
+
+/** Whether relevant-history injection is on. Default false, as above. */
+export function isContextRecallEnabled(): boolean {
+  return readConfig()?.contextRecall === true;
 }

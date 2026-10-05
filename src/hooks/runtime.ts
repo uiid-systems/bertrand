@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -16,7 +17,7 @@ import { isProcessAlive } from "@/lib/process-identity";
  *
  * Hook scripts drop short-lived marker files in `paths.runtime`: per-session
  * state (`done-$sid`, `auq-nudge-$sid`, `working-$sid`, `worktree-$sid`) and per-conversation
- * state (`contract-sent-$cid`). The per-session markers are cleared along their
+ * state (`contract-sent-$cid`, `recalled-$cid`). The per-session markers are cleared along their
  * normal control flow, but `contract-sent-$cid` is intentionally write-once and
  * never removed by a hook — and sessions that bertrand didn't spawn (background
  * jobs, an external launcher) never reach finalizeSession, so their markers would
@@ -45,6 +46,7 @@ import { isProcessAlive } from "@/lib/process-identity";
 const CONTRACT_MARKER_PREFIX = "contract-sent-";
 const ADOPTION_MARKER_PREFIX = "adopted-";
 const AUTO_CREATE_MARKER_PREFIX = "autocreate-";
+const RECALL_MARKER_PREFIX = "recalled-";
 
 /** Default age past which an orphaned contract-sent marker is swept. */
 const STALE_MS = 24 * 60 * 60 * 1000;
@@ -96,6 +98,29 @@ export function isContractSent(conversationId: string): boolean {
 }
 
 /**
+ * Sessions already pointed to in this conversation by prompt-keyed recall
+ * (contract/recall.ts), one id per line. A pointer is in the message history
+ * once injected, so repeating it on a later prompt only spends tokens.
+ */
+export function readRecalled(conversationId: string): Set<string> {
+  try {
+    const text = readFileSync(join(runtimeDir, `${RECALL_MARKER_PREFIX}${conversationId}`), "utf-8");
+    return new Set(text.split("\n").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+export function markRecalled(conversationId: string, sessionIds: string[]): void {
+  if (sessionIds.length === 0) return;
+  mkdirSync(runtimeDir, { recursive: true });
+  appendFileSync(
+    join(runtimeDir, `${RECALL_MARKER_PREFIX}${conversationId}`),
+    sessionIds.map((id) => `${id}\n`).join(""),
+  );
+}
+
+/**
  * Remove the markers owned by a finished session/conversation. Best-effort —
  * a missing file is a no-op, and a missing runtime dir is ignored.
  */
@@ -109,6 +134,7 @@ export function pruneSessionMarkers(
   rmMarker(`worktree-${sessionId}`);
   if (conversationId) {
     rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
+    rmMarker(`${RECALL_MARKER_PREFIX}${conversationId}`);
     // Dropped along with the adoption marker so a `claude --resume` of this
     // conversation re-arms the same way a fresh one does: one prompt to prove
     // materiality, then a re-attach. Left behind, an already-declined gate
@@ -123,10 +149,10 @@ export function pruneSessionMarkers(
 }
 
 /**
- * Sweep orphaned `contract-sent-*`, `adopted-*` and `autocreate-*` markers
- * older than `maxAgeMs`. The backstop for markers whose session bertrand never finalized;
+ * Sweep orphaned `contract-sent-*`, `recalled-*`, `adopted-*` and
+ * `autocreate-*` markers older than `maxAgeMs`. The backstop for markers whose session bertrand never finalized;
  * the happy path is pruneSessionMarkers. Safe to call on every launch — it
- * touches only those three prefixes and tolerates a missing runtime dir.
+ * touches only those four prefixes and tolerates a missing runtime dir.
  *
  * Age alone can't decide an adoption marker's fate. A contract marker has done
  * its job the moment the conversation moves on, but an adopted claude can sit
@@ -151,7 +177,10 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
     // so the worst a premature sweep costs is one more `auto-adopt` spawn that
     // reaches the same conclusion.
     const isAutoCreate = name.startsWith(AUTO_CREATE_MARKER_PREFIX);
-    if (!isContract && !isAdoption && !isAutoCreate) continue;
+    // Same footing as a contract marker: once the conversation moves on, it
+    // has done its job.
+    const isRecall = name.startsWith(RECALL_MARKER_PREFIX);
+    if (!isContract && !isAdoption && !isAutoCreate && !isRecall) continue;
 
     if (isAdoption) {
       // Liveness only, no identity check: a recycled pid at worst keeps a dead

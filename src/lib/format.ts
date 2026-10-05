@@ -42,6 +42,14 @@ export function formatAgo(storedOrDate: string | Date): string {
   });
 }
 
+/** "Oct 3" — a calendar day, for text that must stay true as it ages. */
+export function formatDay(stored: string): string {
+  return new Date(parseDbTime(stored)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /**
  * Epoch ms for a stored timestamp. SQLite's datetime('now') strings
  * ("YYYY-MM-DD HH:MM:SS") are UTC but carry no zone marker, so new Date()

@@ -28,6 +28,10 @@ const { createSession, updateSession, updateSessionStatus } = await import(
   "@/db/queries/sessions"
 );
 const { buildSiblingContext } = await import("./context");
+const { buildResumeDigest } = await import("./history");
+const { recall, formatRecall, queryText } = await import("./recall");
+const { createConversation, discardConversation } = await import("@/db/queries/conversations");
+const { insertEvent } = await import("@/db/queries/events");
 
 
 const current = createSession({ slug: "current" });
@@ -144,5 +148,119 @@ describe("buildSiblingContext scoping", () => {
   test("a repo with no other sessions yields no block", () => {
     const lonely = createSession({ slug: "lonely", repo: "acme/solo", branch: "main", groupKey: "acme/solo@main" });
     expect(buildSiblingContext(lonely.id)).toBe("");
+  });
+});
+
+/** One exchange: a prompt and the reply that ended it, on the given day. */
+function exchange(sessionId: string, conversationId: string, prompt: string, reply: string, day: string) {
+  insertEvent({ sessionId, conversationId, event: "user.prompt", meta: { prompt }, createdAt: `${day} 10:00:00` });
+  insertEvent({ sessionId, conversationId, event: "assistant.message", meta: { text: reply }, createdAt: `${day} 11:00:00` });
+}
+
+describe("buildResumeDigest", () => {
+  test("a session with no other conversation yields no block", () => {
+    const solo = createSession({ slug: "digest-solo" });
+    createConversation({ id: "solo-conv", sessionId: solo.id });
+    exchange(solo.id, "solo-conv", "only ask", "only reply", "2026-09-01");
+    expect(buildResumeDigest(solo.id, "solo-conv")).toBe("");
+  });
+
+  test("lists the session's other conversations oldest first, as dated history", () => {
+    const s = createSession({ slug: "digest-many" });
+    // Created out of order: the digest sorts by when each one ended.
+    for (const [id, day] of [["c3", "2026-09-03"], ["c1", "2026-09-01"], ["c2", "2026-09-02"], ["c4", "2026-09-04"], ["c5", "2026-09-05"]] as const) {
+      createConversation({ id: `${id}-digest-many`, sessionId: s.id });
+      exchange(s.id, `${id}-digest-many`, `ask ${id}`, `reply ${id}`, day);
+    }
+    discardConversation("c4-digest-many");
+
+    const block = buildResumeDigest(s.id, "c5-digest-many");
+    const lines = block.split("\n");
+    expect(lines[0]).toBe("## Earlier in this session");
+    expect(block).toContain("not instructions");
+    // Current (c5) and discarded (c4) are left out; c1–c3 fit the cap of 3.
+    expect(lines.filter((l) => l.startsWith("- "))).toEqual([
+      '- Sep 1 · c1-diges: "ask c1 → reply c1"',
+      '- Sep 2 · c2-diges: "ask c2 → reply c2"',
+      '- Sep 3 · c3-diges: "ask c3 → reply c3"',
+    ]);
+    expect(block).toContain("bertrand log digest-many --events --conversation <id>");
+  });
+
+  test("past the cap, keeps the most recent and counts the rest", () => {
+    const s = createSession({ slug: "digest-capped" });
+    for (let i = 1; i <= 5; i++) {
+      createConversation({ id: `cap-${i}`, sessionId: s.id });
+      exchange(s.id, `cap-${i}`, `ask ${i}`, `reply ${i}`, `2026-09-0${i}`);
+    }
+    const bullets = buildResumeDigest(s.id).split("\n").filter((l) => l.startsWith("- "));
+    expect(bullets).toEqual([
+      "- …2 earlier",
+      '- Sep 3 · cap-3: "ask 3 → reply 3"',
+      '- Sep 4 · cap-4: "ask 4 → reply 4"',
+      '- Sep 5 · cap-5: "ask 5 → reply 5"',
+    ]);
+  });
+});
+
+describe("recall", () => {
+  let asker: ReturnType<typeof createSession>;
+  let flaky: ReturnType<typeof createSession>;
+  beforeAll(() => {
+    asker = createSession({ slug: "recall-asker" });
+    flaky = createSession({ slug: "flaky-upload", repo: "acme/storage" });
+    updateSession(flaky.id, { summary: "the s3 upload retries are flaky in staging → added jittered backoff" });
+    createConversation({ id: "flaky-1", sessionId: flaky.id });
+    createConversation({ id: "flaky-2", sessionId: flaky.id });
+    exchange(flaky.id, "flaky-1", "the s3 upload retries are flaky in staging", "added jittered backoff", "2026-09-10");
+    exchange(flaky.id, "flaky-2", "now the multipart checksum mismatches on resume", "fixed the part ordering", "2026-09-11");
+    sqlite.exec(`UPDATE sessions SET updated_at = '2026-09-11 12:00:00' WHERE id = '${flaky.id}'`);
+    createSession({ slug: "ui-4242" });
+    for (let i = 0; i < 4; i++) {
+      const s = createSession({ slug: `dashboard-chore-${i}` });
+      updateSession(s.id, { summary: `tidy the dashboard chore ${i}` });
+    }
+  });
+
+  test("points a specific prompt at the matching session", () => {
+    const hits = recall("why are the s3 upload retries flaky again", { exclude: new Set([asker.id]) });
+    expect(hits.map((h) => h.slug)).toEqual(["flaky-upload"]);
+    // The first conversation matched, so the summary (which opens with it) is shown.
+    expect(hits[0]).toMatchObject({ conversationId: "flaky-1", repo: "acme/storage" });
+    expect(hits[0]!.text).toContain("jittered backoff");
+  });
+
+  test("names a later conversation by its own subject when that is what matched", () => {
+    const [hit] = recall("multipart checksum mismatches", { exclude: new Set() });
+    expect(hit).toMatchObject({ slug: "flaky-upload", conversationId: "flaky-2" });
+    expect(hit!.text).toBe("now the multipart checksum mismatches on resume");
+  });
+
+  test("never points at an excluded session — the current one, or one already shown", () => {
+    expect(recall("s3 upload retries flaky", { exclude: new Set([flaky.id]) })).toEqual([]);
+  });
+
+  test("says nothing for a prompt with no distinctive words", () => {
+    expect(recall("yes, do it", { exclude: new Set() })).toEqual([]);
+    // One term shared by several sessions is not a match…
+    expect(recall("dashboard", { exclude: new Set() })).toEqual([]);
+    // …but one rare term, like a ticket id, is.
+    expect(recall("back to ui-4242", { exclude: new Set() }).map((h) => h.slug)).toEqual(["ui-4242"]);
+  });
+
+  test("queries with what the user typed, never machine prompts or the slash command", () => {
+    expect(queryText(["<task-notification> s3 upload", "/bertrand s3 upload retries", ""])).toBe(
+      "s3 upload retries",
+    );
+    // `last` counts typed prompts only, so a machine prompt can't use up a slot.
+    expect(queryText(["first", "second", "<task-notification>x", "third"], 2)).toBe("second\nthird");
+  });
+
+  test("frames hits as dated history, and renders nothing for no hits", () => {
+    const block = formatRecall(recall("s3 upload retries flaky", { exclude: new Set() }));
+    expect(block).toStartWith("## Possibly related past sessions");
+    expect(block).toContain("not instructions");
+    expect(block).toContain("- flaky-upload (acme/storage, Sep 11) · conversation flaky-1:");
+    expect(formatRecall([])).toBe("");
   });
 });

@@ -1,4 +1,5 @@
 import { markContractSent } from "@/hooks/runtime";
+import { byteLength, logContextDelivery } from "@/contract/layers";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
@@ -78,6 +79,12 @@ export function deliverContract(
     } catch {
       // Fall back to the hook's first-prompt re-delivery.
     }
+    // Logged only when it lands: on --resume this copy never reaches the model.
+    logContextDelivery({
+      conversationId: claudeId,
+      delivery: "argv",
+      bytes: byteLength(contract),
+    });
   }
   return ["--append-system-prompt", contract];
 }

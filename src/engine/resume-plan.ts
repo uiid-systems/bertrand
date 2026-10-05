@@ -4,9 +4,7 @@ import {
   createConversation,
   getConversationsBySession,
 } from "@/db/queries/conversations";
-import { buildContract } from "@/contract/template";
-import { buildSiblingContext } from "@/contract/context";
-import { helpText } from "@/cli/help";
+import { buildSessionContract } from "@/contract/layers";
 import { claudeSessionExists } from "@/lib/transcript";
 import type { SessionRow } from "@/types";
 
@@ -98,11 +96,7 @@ export function planResume(opts: {
     plan: {
       session,
       sessionName,
-      contract: buildContract(
-        sessionName,
-        helpText({ agent: true }),
-        buildSiblingContext(session.id),
-      ),
+      contract: buildSessionContract(sessionName, session.id, conversationId),
       conversationId,
       resumeExisting: claudeSessionExists(conversationId, opts.cwd),
     },

@@ -1,9 +1,22 @@
 import { register } from "@/cli/router";
 import { getSession } from "@/db/queries/sessions";
+import { getEventsByType } from "@/db/queries/events";
 import { buildContract, buildReminder } from "@/contract/template";
-import { buildSiblingContext } from "@/contract/context";
-import { helpText } from "@/cli/help";
-import { isContractSent, markContractSent, readAdoptionMarker } from "@/hooks/runtime";
+import {
+  byteLength,
+  contractLayers,
+  logContextDelivery,
+  type ContextLayer,
+} from "@/contract/layers";
+import { formatRecall, queryText, recall } from "@/contract/recall";
+import { isContextRecallEnabled } from "@/lib/config";
+import {
+  isContractSent,
+  markContractSent,
+  markRecalled,
+  readAdoptionMarker,
+  readRecalled,
+} from "@/hooks/runtime";
 
 /**
  * Print the session contract to stdout. Hook-facing.
@@ -32,6 +45,11 @@ import { isContractSent, markContractSent, readAdoptionMarker } from "@/hooks/ru
  * writes for itself. The `/bertrand` command needs it: it delivers the full
  * contract inside the activating turn, and without the marker the next
  * UserPromptSubmit would deliver the whole thing a second time.
+ *
+ * `--prompt-stdin` hands over the prompt being submitted, for prompt-keyed
+ * recall (contract/recall.ts, behind `contextRecall`). Read from stdin, not
+ * argv: a prompt can be pasted pages. Recall runs here rather than in a hook
+ * step of its own so it costs no second bun start on a path the user waits on.
  */
 
 /** Which session's contract to print. */
@@ -46,7 +64,7 @@ type Env = Record<string, string | undefined>;
 /**
  * Resolve the session to print for, in descending order of directness:
  *
- *   1. `--session-id` — what the hooks pass, always.
+ *   1. `--session-id` — what the hooks pass, always, with `--conversation-id`.
  *   2. `BERTRAND_SESSION` — a claude bertrand launched, invoked by hand.
  *   3. The adoption marker for `CLAUDE_CODE_SESSION_ID` — a claude bertrand
  *      adopted, which has no bertrand env at all because adoption cannot
@@ -60,7 +78,8 @@ export function resolveContractTarget(
   env: Env = process.env,
 ): ContractTarget | null {
   const explicit = flag(args, "session-id");
-  const claudeId = env.BERTRAND_CLAUDE_ID || env.CLAUDE_CODE_SESSION_ID || "";
+  const claudeId =
+    flag(args, "conversation-id") || env.BERTRAND_CLAUDE_ID || env.CLAUDE_CODE_SESSION_ID || "";
 
   const known = explicit || env.BERTRAND_SESSION;
   if (known) {
@@ -119,19 +138,82 @@ register("contract", async (args) => {
   if (!session) return; // unknown session → emit nothing, hook injects no context
 
   const sessionName = session.slug;
+  const { conversationId } = target;
+  const delivery = contractDelivery(args, conversationId);
+  const prompt = args.includes("--prompt-stdin") ? await Bun.stdin.text() : "";
 
-  if (contractDelivery(args, target.conversationId) === "reminder") {
-    process.stdout.write(buildReminder(sessionName));
-    return;
-  }
+  const hits = recallFor(session.id, conversationId, delivery, prompt);
+  const recalled: ContextLayer = { name: "recall", text: formatRecall(hits) };
 
-  const siblingContext = buildSiblingContext(session.id);
-  process.stdout.write(
-    buildContract(sessionName, helpText({ agent: true }), siblingContext),
-  );
+  const layers =
+    delivery === "reminder" ? [] : contractLayers(session.id, conversationId);
+  const base =
+    delivery === "reminder"
+      ? buildReminder(sessionName)
+      : buildContract(sessionName, ...layers.map((l) => l.text));
+  const output = recalled.text ? `${base}\n\n${recalled.text}` : base;
+  process.stdout.write(output);
 
   // After the write, not before: a marker set by a run that then failed to
   // print would downgrade every later delivery to the reminder, and the full
   // contract would never reach the session at all.
-  if (markSent) markContractSent(target.conversationId);
+  if (markSent && delivery === "full") markContractSent(conversationId);
+  try {
+    markRecalled(conversationId, hits.map((h) => h.sessionId));
+  } catch {
+    // Unrecorded, a pointer may repeat on a later prompt. Nothing worse.
+  }
+  logContextDelivery({
+    sessionId: session.id,
+    conversationId,
+    delivery,
+    bytes: byteLength(output),
+    layers: Object.fromEntries(
+      [...layers, recalled].map((l) => [l.name, byteLength(l.text)]),
+    ),
+    recalled: hits.map((h) => h.slug),
+  });
 });
+
+/** Typed prompts a full delivery's query reaches back over. */
+const FULL_QUERY_PROMPTS = 3;
+
+/**
+ * Recall for this delivery, or nothing: off unless `contextRecall` is set, and
+ * never re-pointing at the current session or one this conversation has
+ * already been shown.
+ *
+ * The query is what this delivery is answering. A reminder answers the one
+ * prompt being submitted. A full contract is a conversation's first, so it
+ * answers what has been said so far — for an adopted conversation that
+ * includes the back-filled prompts from before bertrand was watching
+ * (Tier 2.3), and for /bertrand they are the only text there is. Only the
+ * last few: a resumed conversation also gets a full delivery, and querying
+ * with its whole history would match everything a little.
+ */
+function recallFor(
+  sessionId: string,
+  conversationId: string,
+  delivery: "full" | "reminder",
+  prompt: string,
+) {
+  if (!isContextRecallEnabled()) return [];
+  try {
+    const prompts = [prompt];
+    if (delivery === "full") {
+      const earlier = getEventsByType(sessionId, "user.prompt")
+        .filter((e) => e.conversationId === conversationId)
+        .map((e) => (e.meta as { prompt?: unknown } | null)?.prompt)
+        .filter((p): p is string => typeof p === "string" && p !== prompt);
+      prompts.unshift(...earlier);
+    }
+    const query = queryText(prompts, FULL_QUERY_PROMPTS);
+    if (!query) return [];
+    const exclude = readRecalled(conversationId);
+    exclude.add(sessionId);
+    return recall(query, { exclude });
+  } catch {
+    // A recall failure must cost the pointers, never the contract.
+    return [];
+  }
+}

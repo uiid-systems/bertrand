@@ -1,6 +1,8 @@
 # Context budget — slimmer, more relevant context instead of forced log reads
 
-> **Status:** decision record, no code changed.
+> **Status:** Tier 1 merged in #307, ships in 0.43.3 (release PR #308).
+> Tier 2 built behind the `contextRecall` config flag, off by default.
+> Tier 3 replay not started. See [Where this stands](#where-this-stands).
 > **Produced in:** bertrand session `force-bertrand-logs`, 2026-10-05, using a
 > doubt-driven cycle (fresh-context adversarial review, reconciled below).
 > **Recover the full discussion with:** `bertrand log force-bertrand-logs`
@@ -28,6 +30,16 @@ not the mechanism (user decision).
    saves tokens only if it replaces exploration the agent would otherwise do.
    That has not been shown yet, and a live holdout can't show it at
    bertrand's volume. Tier 3 uses a paired offline replay instead.
+
+## Where this stands
+
+| Item | State |
+|---|---|
+| Tier 1: all four cuts, plus the machine-prompt summary fix | Merged in #307. Ships in 0.43.3 (release PR #308). Re-measured on main: 9,039 → 4,458 B (force-bertrand-logs) |
+| Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
+| Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
+| Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
+| Tier 3.3: paired replay | Not started. It can now compare `contextRecall` on and off |
 
 ---
 
@@ -105,7 +117,7 @@ terms AND-ed and results ordered by `updatedAt`. There is no relevance ranking.
 | Shrink `## bertrand CLI` to a command index plus "run `bertrand <cmd> --help`" | `helpText({ agent: true })` in `src/cli/help.ts:84`, passed as a contract layer by `contract.ts`, `session.ts`, `resume-plan.ts`, `dashboard-session.ts`; leave the human `bertrand --help` (`router.ts`) intact | ~2.9KB → ~0.5KB |
 | Scope siblings: same `group_key` first, then the same repo, capped at ~5; omit the block when empty; keep the `bertrand list` pointer for anything beyond that | `src/contract/context.ts` | ~3.1KB → ≤1.3KB, often 0 |
 
-Measured after implementing the first three rows (2026-10-05, against a
+Measured after implementing all four rows (2026-10-05, against a
 `.backup` copy of the real DB):
 
 | Session (repo) | Contract before | After |
@@ -170,6 +182,52 @@ copy, so they still get the hook's first-prompt contract.
    prompt of an unadopted conversation (`scripts.ts:189`), which is the moment
    retrieval matters most. Run retrieval on the adopting prompt using the
    back-filled history.
+
+### Tier 2 as built
+
+All of it is gated on `contextRecall`; with the flag off, contracts are
+byte-identical to Tier 1.
+
+- **Resume digest** (`src/contract/history.ts`). A `## Earlier in this session`
+  layer in every full contract: the session's other conversations (not
+  discarded, not the current one), oldest first, capped at the last three,
+  one dated line each (`first prompt → last message`, the pause-time summary
+  derivation applied per conversation), plus a `--conversation <id>`
+  drill-in. All four contract builders now go through one
+  `contractLayers()` (`src/contract/layers.ts`), so launch, resume,
+  dashboard, and hook deliveries carry the same layers.
+- **Prompt-keyed recall** (`src/contract/recall.ts`). The UserPromptSubmit
+  hook pipes the prompt to `bertrand contract --prompt-stdin`, so recall
+  costs no extra bun start. BM25 over one document per session: slug,
+  summary, and the first prompt of each conversation. Gates, all tuned
+  against the 66-session corpus:
+  - terms in more than 20% of sessions are dropped (min. 3);
+  - a hit shares at least two terms with the prompt, unless the prompt has
+    a single rare term (≤3 sessions), such as a ticket id;
+  - survivors score at least 60% of the best hit (0.5 let a "tests"-only
+    match through on a CI prompt), at most three.
+
+  It excludes the current session and any session already pointed to in this
+  conversation (`recalled-$cid` runtime marker). It skips machine prompts and
+  strips a leading `/command`. On the corpus, ten probe prompts gave
+  0 hits for "yes do it", "continue", and the context-budget prompt, and the
+  right session for the specific ones (kill-server, ui-712, the font
+  retirement, the rules rundown). One miss: "make the sidebar show fewer
+  categories" shares only "sidebar" with `less-cats-in-sidebar`.
+- **Auto-adopted and `adopt`ed conversations** (Tier 2.3). A full delivery
+  queries with the conversation's last three typed prompts, not only the
+  current one, so the adopting prompt also searches with the back-filled
+  first prompt. `/bertrand` reaches the same path with no stdin.
+- **Framing.** Both blocks call themselves quoted history as of a date, not
+  instructions, and say code and git outrank them.
+- **Deviation: provenance scope.** The plan said to search only the local
+  user's sessions. That can't be enforced per row. Sync swaps the whole
+  database (`src/sync/engine.ts`, last push wins) and rows carry no machine
+  of origin. Recall therefore relies on the framing, one-line snippets
+  capped at 200 characters, and summaries/subjects only.
+- **Cost seen so far** (sandboxed copy, force-bertrand-logs): the digest adds
+  582 B to a full contract, and one recall pointer adds ~450 B to a
+  reminder. Prompts with no match add nothing.
 
 ### Tier 3 — measure (decides whether Tier 2 stays)
 

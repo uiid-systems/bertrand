@@ -6,9 +6,11 @@ import { tmpdir } from "os";
 
 import {
   adoptionMarkerPath,
+  markRecalled,
   pruneSessionMarkers,
   pruneStaleMarkers,
   readAdoptionMarker,
+  readRecalled,
   writeAdoptionMarker,
   _setRuntimeDir,
   _getRuntimeDir,
@@ -49,6 +51,7 @@ describe("pruneSessionMarkers", () => {
     touch("auq-nudge-sid1");
     touch("working-sid1");
     touch("contract-sent-cid1");
+    markRecalled("cid1", ["sessA"]);
 
     pruneSessionMarkers("sid1", "cid1");
 
@@ -56,6 +59,7 @@ describe("pruneSessionMarkers", () => {
     expect(existsSync(join(dir, "auq-nudge-sid1"))).toBe(false);
     expect(existsSync(join(dir, "working-sid1"))).toBe(false);
     expect(existsSync(join(dir, "contract-sent-cid1"))).toBe(false);
+    expect(readRecalled("cid1").size).toBe(0);
   });
 
   test("leaves other sessions' markers untouched", () => {
@@ -94,11 +98,13 @@ describe("pruneStaleMarkers", () => {
   test("removes contract markers older than the cutoff, keeps fresh ones", () => {
     touch("contract-sent-old", 48 * 60 * 60 * 1000);
     touch("contract-sent-fresh", 0);
+    touch("recalled-old", 48 * 60 * 60 * 1000);
 
     pruneStaleMarkers(24 * 60 * 60 * 1000);
 
     expect(existsSync(join(dir, "contract-sent-old"))).toBe(false);
     expect(existsSync(join(dir, "contract-sent-fresh"))).toBe(true);
+    expect(existsSync(join(dir, "recalled-old"))).toBe(false);
   });
 
   test("only touches contract-sent markers, never other state", () => {
@@ -156,6 +162,17 @@ describe("pruneStaleMarkers", () => {
   test("missing runtime dir is a no-op (no throw)", () => {
     _setRuntimeDir(join(dir, "does-not-exist"));
     expect(() => pruneStaleMarkers()).not.toThrow();
+  });
+});
+
+describe("recall marker", () => {
+  test("accumulates the sessions a conversation has been pointed to", () => {
+    expect(readRecalled("cid1").size).toBe(0);
+    markRecalled("cid1", ["sessA"]);
+    markRecalled("cid1", ["sessB", "sessC"]);
+    markRecalled("cid1", []);
+    expect([...readRecalled("cid1")]).toEqual(["sessA", "sessB", "sessC"]);
+    expect(readRecalled("cid2").size).toBe(0);
   });
 });
 

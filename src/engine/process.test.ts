@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { _getRuntimeDir, _setRuntimeDir, contractMarkerPath } from "@/hooks/runtime";
+import { _setRootDir, paths } from "@/lib/paths";
 import { buildClaudeEnv, deliverContract } from "./process";
 import { spawnPty } from "./pty";
 
@@ -139,14 +140,17 @@ describe("deliverContract", () => {
     savedDir = _getRuntimeDir();
     dir = mkdtempSync(join(tmpdir(), "bertrand-process-"));
     _setRuntimeDir(dir);
+    // The delivery log lives under the root, not the runtime dir.
+    _setRootDir(dir);
   });
 
   afterAll(() => {
     _setRuntimeDir(savedDir);
+    _setRootDir(null);
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("passes the contract, marking it sent only on a fresh launch", () => {
+  test("passes the contract, marking and logging it only on a fresh launch", () => {
     const launched = buildClaudeEnv(OPTS).BERTRAND_CLAUDE_ID;
     expect(deliverContract(launched, "THE CONTRACT", false)).toEqual([
       "--append-system-prompt",
@@ -160,6 +164,10 @@ describe("deliverContract", () => {
       "THE CONTRACT",
     ]);
     expect(existsSync(contractMarkerPath(resumed))).toBe(false);
+
+    const logged = readFileSync(paths.contextLog, "utf-8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ conversationId: launched, delivery: "argv", bytes: 12 });
   });
 
   test("a marker it can't write never fails the launch", () => {
