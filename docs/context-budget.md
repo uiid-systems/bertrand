@@ -39,7 +39,7 @@ not the mechanism (user decision).
 | Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
 | Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
 | Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
-| Tier 3.3: paired replay | Not started. It can now compare `contextRecall` on and off |
+| Tier 3.3: paired replay | Planned, not built: see [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
 
 ---
 
@@ -288,6 +288,58 @@ What the data supports instead:
      tokens, so budget them before running.
 4. **Ship Tier 2 only if** the paired median saving clears its own arithmetic
    cost with no loss in correctness.
+
+### Tier 3 replay plan (drafted 2026-10-05, not run)
+
+**Where it runs:** the work machine. Every strong candidate is a
+tabs-backend or design-system conversation, and their transcripts and
+checkouts exist only there (the DB is synced, the transcripts are not).
+
+**Candidate tasks.** These are mined from the 28 conversations that ran
+`bertrand log|search|list`, ordered by how early they did. Each prompt
+leans on another session's work:
+
+| Conversation | Session | Prompt (abridged) | Tier 2 part it tests |
+|---|---|---|---|
+| abb12e8c | investigate-compose-refs | "look at what sibling session UI-600 did, copy that work" | recall |
+| f610e342 | utils-cleanup | "look at the work UI-596 is doing on `renderWithProps`" | recall |
+| 6c2b8787 | ci-test-failed-build | "visual regressions after merging UI-704" | recall |
+| 7bf0678d | ui-664-moving-files-storybook-balance | "continue addressing copilot comments… sibling sessions worked on this" | recall + digest |
+| 591c59eb | ui-572-font-chivo-denim-code | "reference the sibling conversation for this session" | digest |
+| 067b19a5 / 0f4fc5ec / d123e2aa | ui-420, ui-437, extend-homepage-conditions | resumes: "we're back try again", "finish this up" | digest |
+
+Add prompts that name a session or ticket but never consulted bertrand,
+until there are 15–20 tasks. Rewrite each as a self-contained question
+with a fixed answer, e.g. "Which files did UI-600 change in compose-refs,
+and which of them need the same change here?" The answer key comes from
+the original conversation's outcome, checked by hand. Pin each task to the
+repo commit at task time (`git rev-list -1 --before=<ts> main`) in a
+throwaway worktree.
+
+**Harness work it needs (none built yet):**
+- A way to render the Tier 2 block for an arbitrary prompt *as of* the
+  task's timestamp. `recall()` and `buildResumeDigest()` need an `asOf`
+  cut-off (sessions and events created before it) and an extra excluded
+  session (the task's own). Without the cut-off, recall can retrieve the
+  task's own future, which is the answer.
+- Run `claude -p --output-format json` with
+  `env -u BERTRAND_* --settings '{"disableAllHooks":true}'`. The control
+  arm appends the Tier 1 contract; the treatment arm appends the same
+  contract plus the Tier 2 block. The JSON result carries usage per run.
+
+**Budget**, measured from five local conversations: a bounded task costs
+0.5–2.7M processed tokens before its first answer (median ~1.2M, 90–95%
+cache reads). For dollars, apply the current rate card to that mix rather
+than a remembered price.
+- **Pilot:** 3 tasks × 2 arms × 2 repeats = 12 runs, ~15M processed
+  tokens. It measures within-task variance, which sets the repeat count.
+- **Full run:** 18 tasks × 2 arms × 3 repeats = 108 runs, ~130M processed
+  tokens. Decide on it after the pilot.
+
+**Analysis.** Use the paired log-ratio of processed tokens per task
+(treatment ÷ control, averaged over repeats). Report the median with a
+bootstrap CI, plus request counts and correctness per arm. Apply the
+ship rule above. A cheaper wrong answer counts as a loss.
 
 **Known noise** (applies to any tool-call proxy): subagent Bash calls are
 filed under the parent session, and Bash detail extraction (`scripts.ts:423`)
