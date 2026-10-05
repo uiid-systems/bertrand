@@ -39,7 +39,7 @@ not the mechanism (user decision).
 | Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
 | Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
 | Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
-| Tier 3.3: paired replay | Planned; the cut-off and `bertrand replay-context` are built, the runner is not. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
+| Tier 3.3: paired replay | Harness built (cut-off, `bertrand replay-context`, `scripts/replay/`); not yet run. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
 
 ---
 
@@ -332,10 +332,30 @@ throwaway worktree.
   treatment block falls before the cut-off. The same run gave an early
   signal for the pilot: that long, multi-topic prompt drew three
   loosely-related pointers.
-- **Not built:** the runner. Run `claude -p --output-format json` with
-  `env -u BERTRAND_* --settings '{"disableAllHooks":true}'`. The control
-  arm appends the Tier 1 contract; the treatment arm appends the same
-  contract plus the Tier 2 block. The JSON result carries usage per run.
+- **Built:** the runner, `scripts/replay/replay.ts`. `run --tasks
+  tasks.json --out runs.jsonl [--repeats 2] [--model <id>] [--only <ids>]
+  [--dry-run]` takes tasks shaped like `scripts/replay/tasks.example.json`.
+  For each task it:
+  - cuts a copy of the DB at `asOf` (`snapshot.ts`): later events,
+    conversations and sessions are deleted, and summaries and stats cleared;
+  - puts a `bertrand` shim that reads that copy first on the agent's PATH, so
+    `bertrand log` inside a replay can't show the future either;
+  - checks out the last commit before `asOf` in a throwaway worktree;
+  - renders both arms with `replay-context`;
+  - runs `claude -p` with hooks off, no MCP servers, read-only tools
+    (Read/Grep/Glob, `git log|show|diff`, `bertrand log|search|list`) and a
+    fixed `--session-id`, interleaving the arms in random order;
+  - counts tokens from each run's transcript, as the budget below was;
+  - appends one JSON line per run, including the answer and whether it
+    contains every answer-key fact.
+
+  `report --out runs.jsonl` prints per-task ratios, the median with a
+  seeded bootstrap 95% CI, correctness per arm, and the ship verdict (CI
+  upper bound below 1, no loss in correctness). Dry-run checked on a local
+  task: the cut kept nothing past `asOf`, the shim read the copy, the
+  worktree was cleaned up. Not yet run against `claude`. Residual leaks
+  shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
+  which can mention later work.
 
 **Budget**, measured from five local conversations: a bounded task costs
 0.5–2.7M processed tokens before its first answer (median ~1.2M, 90–95%

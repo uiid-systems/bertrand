@@ -1,0 +1,12 @@
+[
+  {
+    "id": "ui-600-compose-refs",
+    "session": "investigate-compose-refs",
+    "conversation": "abb12e8c",
+    "asOf": "2026-09-01 15:00:00",
+    "repo": "/path/to/design-system",
+    "branch": "main",
+    "prompt": "Sibling session UI-600 reworked compose-refs. Which files did it change, and which of them would need the same change in this package? Answer with file paths.",
+    "answerKey": ["compose-refs.ts"]
+  }
+]
