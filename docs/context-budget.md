@@ -26,7 +26,8 @@ not the mechanism (user decision).
    guaranteed token saving (Tier 1).
 4. **Add relevance only behind a measurement** (Tiers 2–3). Retrieval injection
    saves tokens only if it replaces exploration the agent would otherwise do.
-   That has not been shown yet.
+   That has not been shown yet, and a live holdout can't show it at
+   bertrand's volume. Tier 3 uses a paired offline replay instead.
 
 ---
 
@@ -172,15 +173,54 @@ copy, so they still get the hook's first-prompt contract.
 
 ### Tier 3 — measure (decides whether Tier 2 stays)
 
-- **Metric:** input tokens per conversation, read from transcript `usage`. This
-  is the real goal; "agent ran `bertrand log`" is a proxy that rewards needless
-  lookups.
-- **Holdout:** randomly withhold Tier 2 injection per conversation and record
-  the arm in event meta. Before/after comparisons get confounded by everything
-  else that changes.
-- **Known noise:** subagent Bash calls are filed under the parent session, and
-  Bash detail extraction (`scripts.ts:423`) truncates commands that contain
-  escaped quotes.
+**A live holdout cannot answer this at bertrand's volume.** Measured
+2026-10-05 over 90 conversations: total processed tokens per conversation
+(input + cache creation + cache read, already accrued on `conversations` by
+ingestion) run from 0.4M to 69M, median 9.2M, with a log-scale SD of 1.10.
+For 80% power at α=0.05, a randomized per-conversation holdout needs
+**~384 conversations per arm to detect a 20% drop**, ~1,700 for 10% and
+~7,300 for 5%. At ~90 conversations a month, even the 20% case takes over
+8 months. Task-to-task variance swamps any plausible effect, so this design is
+dropped.
+
+What the data supports instead:
+
+1. **Tier 1 needs arithmetic, not an experiment.** Every request re-reads the
+   whole context. Conversations make 12–140 requests (four recent bertrand
+   conversations), and 91–99% of processed tokens are cache reads. A change
+   that removes Δ tokens from the contract therefore saves
+   Δ × requests per conversation, and it can be reported exactly from data we
+   already have. For a launched conversation, Δ is ~3.4k tokens (the trimmed
+   contract plus the removed duplicate). In this session (140 requests,
+   22.5M processed) that is ~480k tokens, ~2%. Report it with the cost
+   weighting in mind: the saving is almost all cache reads, which are billed
+   at a fraction of fresh input.
+2. **Tier 2's cost side is also arithmetic.** Log the injected bytes per
+   prompt; the cost is injected tokens × the requests that follow. Only the
+   *benefit* (exploration avoided) is uncertain.
+3. **Tier 2's benefit is measured by paired replay, not live.**
+   - **Task set:** ~15–20 prompts mined from history where earlier-session
+     context demonstrably mattered. Candidates are the 28 conversations that
+     ran `bertrand log|search|list`, and prompts that name another session.
+     Pin each to its repo commit.
+   - **Arms:** run each task headless twice, identical except for the Tier 2
+     injection, on the same model. Pair on task, so the 1.10 log-SD of
+     between-task variance cancels. Repeat each pair 2–3 times for
+     within-task noise.
+   - **Measure:** processed tokens (and cost-weighted tokens) to completion,
+     request count, and whether the answer is correct. A cheaper answer that
+     is wrong is a loss.
+   - **Isolation:** `env -u BERTRAND_*` and `--settings '{"disableAllHooks":true}'`,
+     as in the `--resume` probe, so replays never record into bertrand.
+   - **Limits:** headless `-p` runs have no AskUserQuestion loop, so tasks
+     must be self-contained questions or bounded edits. Replays cost real
+     tokens, so budget them before running.
+4. **Ship Tier 2 only if** the paired median saving clears its own arithmetic
+   cost with no loss in correctness.
+
+**Known noise** (applies to any tool-call proxy): subagent Bash calls are
+filed under the parent session, and Bash detail extraction (`scripts.ts:423`)
+truncates commands that contain escaped quotes.
 
 ---
 
@@ -199,7 +239,7 @@ verdict #1.
 | 4 | "No agent compliance needed" overstated; proposes "inject, then block once until read" | **Trade-off, rejected.** A forced read costs 2–5.6KB (measured digests) and the user ruled out forced logs |
 | 5 | bm25: unstable cutoff, MATCH-syntax escaping, near-duplicate corpus, self-match | **Actionable.** Self-match verified at `scripts.ts:488` (Tier 2 ranking) |
 | 6 | Repo scoping still fills 12 slots in tabs-backend; loses cross-repo siblings | **Partly noise:** measured 0/12 relevance with global scoping here. Cross-repo loss is an accepted **trade-off** (Tier 1) |
-| 7 | Follow-through metric has no holdout and is Goodhart-prone | **Actionable** (Tier 3) |
+| 7 | Follow-through metric has no holdout and is Goodhart-prone | **Actionable, then superseded:** a holdout turned out to be underpowered at this volume (Tier 3), so Tier 3 uses paired replay instead |
 | 8 | A new hook step adds a bun cold start to user-visible latency | **Actionable:** compute inside `bertrand contract` |
 | 9 | FTS5 interacts with whole-DB sync snapshots, migrations, triggers | **Trade-off:** avoid FTS5 at the current corpus size |
 | 10 | Resume-digest wiring unspecified | **Actionable** (Tier 2.1) |
@@ -235,8 +275,8 @@ machine. Proceeding with single-model findings only.
 
 ## Open, deliberately not answered here
 
-- Whether Tier 2 retrieval saves tokens net of its own cost. That is what
-  Tier 3 exists to answer.
+- Whether Tier 2 retrieval saves tokens net of its own cost. Tier 3's paired
+  replay is designed to answer it, but has not been built or budgeted.
 - Whether the `## Rules` and `## Communicating through a turn` sections can be
   slimmed. Out of scope: they are behavior guidance, not context.
 - **The AUQ loop has no "waiting on my own background work" state.** The Stop
