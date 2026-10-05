@@ -8,7 +8,7 @@ const { _setRuntimeDir, contractMarkerPath, markContractSent, writeAdoptionMarke
   await import("@/hooks/runtime");
 _setRuntimeDir(runtimeDir);
 
-const { resolveContractTarget } = await import("./contract");
+const { contractDelivery, resolveContractTarget } = await import("./contract");
 
 const CID = "11111111-1111-4111-8111-111111111111";
 
@@ -84,5 +84,21 @@ describe("markContractSent", () => {
 
     expect(existsSync(contractMarkerPath(cid))).toBe(true);
     expect(contractMarkerPath(cid)).toBe(join(runtimeDir, `contract-sent-${cid}`));
+  });
+});
+
+describe("contractDelivery", () => {
+  test("/bertrand gets the full contract only where nothing delivered it yet", () => {
+    // An adopted claude the hook skipped: unmarked, so full — then marked.
+    const fresh = "44444444-4444-4444-8444-444444444444";
+    expect(contractDelivery(["--mark-sent"], fresh)).toBe("full");
+
+    // A launched or already-attached claude: marked before /bertrand runs.
+    markContractSent(fresh);
+    expect(contractDelivery(["--mark-sent"], fresh)).toBe("reminder");
+
+    // The hook's own first-prompt call ignores the marker; --short never does.
+    expect(contractDelivery([], fresh)).toBe("full");
+    expect(contractDelivery(["--short"], "55555555-5555-4555-8555-555555555555")).toBe("reminder");
   });
 });

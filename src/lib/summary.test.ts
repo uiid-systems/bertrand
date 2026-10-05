@@ -24,12 +24,12 @@ migrate(drizzle(sqlite), {
   migrationsFolder: join(import.meta.dir, "..", "db", "migrations"),
 });
 
-const { createSession, getSession, resolveSessionByName } = await import(
+const { createSession, getSession, resolveSessionByName, setSessionSummary } = await import(
   "@/db/queries/sessions"
 );
 const { recordSessionAlias } = await import("@/db/queries/session-aliases");
 const { insertEvent } = await import("@/db/queries/events");
-const { deriveSessionSummary, storeSessionSummary } = await import("./summary");
+const { deriveSessionSummary, healMachineSummaries, storeSessionSummary } = await import("./summary");
 const { eq } = await import("drizzle-orm");
 
 
@@ -79,6 +79,34 @@ describe("deriveSessionSummary", () => {
     expect(summary).toStartWith("line one line two spaced");
     expect(summary.length).toBe(120);
     expect(summary).not.toContain("\n");
+  });
+
+  test("machine-submitted prompts never become the subject", () => {
+    const s = makeSession("machine-first");
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>" },
+      createdAt: "2026-07-10 10:00:00",
+    });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: '<agent-message from="a1">report</agent-message>' },
+      createdAt: "2026-07-10 10:01:00",
+    });
+    insertEvent({
+      sessionId: s.id,
+      event: "user.prompt",
+      meta: { prompt: "fix the flaky build" },
+      createdAt: "2026-07-10 10:02:00",
+    });
+    expect(deriveSessionSummary(s.id)).toBe("fix the flaky build");
+
+    // Only machine prompts: no subject at all, rather than a raw XML one.
+    const bare = makeSession("machine-only");
+    insertEvent({ sessionId: bare.id, event: "user.prompt", meta: { prompt: "<task-notification>x" } });
+    expect(deriveSessionSummary(bare.id)).toBeNull();
   });
 
   test("prompt-only session summarizes to the prompt", () => {
@@ -176,6 +204,30 @@ describe("deriveSessionSummary", () => {
     expect(deriveSessionSummary(s.id)).toBe(
       "Cleaned up rm *.tmp and renamed *.test.ts files",
     );
+  });
+});
+
+describe("healMachineSummaries", () => {
+  test("re-derives machine-led summaries only, without bumping updatedAt", () => {
+    const noisy = makeSession("heal-noisy");
+    insertEvent({ sessionId: noisy.id, event: "user.prompt", meta: { prompt: '<agent-message from="a1">x</agent-message>' } });
+    insertEvent({ sessionId: noisy.id, event: "user.prompt", meta: { prompt: "tidy the sidebar" } });
+    setSessionSummary(noisy.id, '<agent-message from="a1">x → done');
+    sqlite.exec(`UPDATE sessions SET updated_at = '2026-01-01 00:00:00' WHERE id = '${noisy.id}'`);
+
+    const clean = makeSession("heal-clean");
+    setSessionSummary(clean.id, "already fine");
+
+    // Nothing derivable: left alone rather than blanked.
+    const stuck = makeSession("heal-stuck");
+    setSessionSummary(stuck.id, "<task-notification> only");
+
+    expect(healMachineSummaries()).toBe(1);
+    expect(getSession(noisy.id)?.summary).toBe("tidy the sidebar");
+    expect(getSession(noisy.id)?.updatedAt).toBe("2026-01-01 00:00:00");
+    expect(getSession(clean.id)?.summary).toBe("already fine");
+    expect(getSession(stuck.id)?.summary).toBe("<task-notification> only");
+    expect(healMachineSummaries()).toBe(0);
   });
 });
 

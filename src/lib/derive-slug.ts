@@ -26,6 +26,7 @@ import { getDb, type Db } from "@/db/client";
 import { getEventsByType } from "@/db/queries/events";
 import { getSession, isNameTakenByOtherSession } from "@/db/queries/sessions";
 import { parseGithubUrl } from "@/lib/github/web-url";
+import { isMachinePrompt } from "@/lib/machine-prompt";
 
 /** Must match SEGMENT_PATTERN in parse-session-name.ts. */
 const SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -163,15 +164,6 @@ function stripSlashCommand(prompt: string): string {
   const trimmed = prompt.trimStart();
   if (!trimmed.startsWith("/")) return prompt;
   return trimmed.replace(/^\/\S+/, "");
-}
-
-/**
- * Prompts that open with an XML-ish wrapper tag (<task-notification>, hook
- * injections) are machine text recorded through the user.prompt channel, not
- * the user speaking — they must not vote on the session's name.
- */
-function isMachinePrompt(prompt: string): boolean {
-  return /^<[a-z][a-z-]*>/.test(prompt.trimStart());
 }
 
 /** Ticket-shaped token: elky-167, UI-132 — and pr-220 / issue-38 fit too. */

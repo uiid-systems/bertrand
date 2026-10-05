@@ -16,6 +16,7 @@ import { recordSessionKey } from "@/lib/session-record";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
+import { deliverContract } from "./process";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
@@ -188,8 +189,7 @@ function startClaudePty(opts: {
       "claude",
       opts.resumeExisting ? "--resume" : "--session-id",
       opts.claudeId,
-      "--append-system-prompt",
-      opts.contract,
+      ...deliverContract(opts.claudeId, opts.contract, opts.resumeExisting),
     ],
     {
       cwd: opts.cwd,

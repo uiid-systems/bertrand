@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { buildClaudeEnv } from "./process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { _getRuntimeDir, _setRuntimeDir, contractMarkerPath } from "@/hooks/runtime";
+import { buildClaudeEnv, deliverContract } from "./process";
 import { spawnPty } from "./pty";
 
 /**
@@ -117,4 +121,56 @@ describe("buildClaudeEnv", () => {
 
     expect(output).toContain(`<${HOST_VALUE}|${ARBITRARY_VALUE}|${OPTS.sessionId}>`);
   }, 15_000);
+});
+
+/**
+ * A freshly launched claude already has the full contract in its system
+ * prompt, so the UserPromptSubmit hook must find the `contract-sent` marker on
+ * the first prompt and send only the reminder. The hook's `cid` is
+ * `BERTRAND_CLAUDE_ID` on this path — the marker is only worth anything under
+ * the key the env hands the hook. A resumed claude ignores
+ * `--append-system-prompt`, so it must stay unmarked and keep the hook's copy.
+ */
+describe("deliverContract", () => {
+  let savedDir: string;
+  let dir: string;
+
+  beforeAll(() => {
+    savedDir = _getRuntimeDir();
+    dir = mkdtempSync(join(tmpdir(), "bertrand-process-"));
+    _setRuntimeDir(dir);
+  });
+
+  afterAll(() => {
+    _setRuntimeDir(savedDir);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("passes the contract, marking it sent only on a fresh launch", () => {
+    const launched = buildClaudeEnv(OPTS).BERTRAND_CLAUDE_ID;
+    expect(deliverContract(launched, "THE CONTRACT", false)).toEqual([
+      "--append-system-prompt",
+      "THE CONTRACT",
+    ]);
+    expect(existsSync(contractMarkerPath(launched))).toBe(true);
+
+    const resumed = "99999999-8888-7777-6666-555555555555";
+    expect(deliverContract(resumed, "THE CONTRACT", true)).toEqual([
+      "--append-system-prompt",
+      "THE CONTRACT",
+    ]);
+    expect(existsSync(contractMarkerPath(resumed))).toBe(false);
+  });
+
+  test("a marker it can't write never fails the launch", () => {
+    // A file where the runtime dir should be: mkdir and write both throw.
+    const blocked = join(dir, "not-a-dir");
+    writeFileSync(blocked, "");
+    _setRuntimeDir(blocked);
+    try {
+      expect(deliverContract(OPTS.claudeId, "C", false)).toEqual(["--append-system-prompt", "C"]);
+    } finally {
+      _setRuntimeDir(dir);
+    }
+  });
 });

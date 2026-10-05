@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -76,8 +77,10 @@ export function contractMarkerPath(conversationId: string): string {
 /**
  * Record that the full contract has been delivered for this conversation.
  *
- * Normally the UserPromptSubmit hook writes this as it prints the contract.
- * The `/bertrand` command has to print the contract itself — an adopted
+ * Three writers. A fresh bertrand launch writes it at spawn, since the contract
+ * is already in that claude's system prompt (`deliverContract`,
+ * engine/process.ts). Otherwise the UserPromptSubmit hook writes it as it
+ * prints the contract. The `/bertrand` command has to print the contract itself — an adopted
  * session's first user interaction is often an AskUserQuestion answer, which
  * is a tool result and fires no UserPromptSubmit — so it marks it here
  * instead, and the hook correctly degrades to the reminder from then on.
@@ -85,6 +88,11 @@ export function contractMarkerPath(conversationId: string): string {
 export function markContractSent(conversationId: string): void {
   mkdirSync(runtimeDir, { recursive: true });
   writeFileSync(contractMarkerPath(conversationId), "");
+}
+
+/** Whether the full contract has already been delivered to this conversation. */
+export function isContractSent(conversationId: string): boolean {
+  return existsSync(contractMarkerPath(conversationId));
 }
 
 /**

@@ -3,7 +3,7 @@ import { getSession } from "@/db/queries/sessions";
 import { buildContract, buildReminder } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
 import { helpText } from "@/cli/help";
-import { markContractSent, readAdoptionMarker } from "@/hooks/runtime";
+import { isContractSent, markContractSent, readAdoptionMarker } from "@/hooks/runtime";
 
 /**
  * Print the session contract to stdout. Hook-facing.
@@ -18,7 +18,10 @@ import { markContractSent, readAdoptionMarker } from "@/hooks/runtime";
  *
  * This command lets the UserPromptSubmit hook re-deliver the contract through
  * the durable env/hook channel, so the guidance reaches those sessions too.
- * It mirrors exactly what engine/session.ts builds at launch.
+ * It mirrors exactly what engine/session.ts builds at launch. A fresh launch
+ * marks its conversation as sent (`deliverContract` in engine/process.ts), so
+ * the hook's full copy goes only to claudes that never got the argv — and to
+ * resumed ones, since claude ignores `--append-system-prompt` on `--resume`.
  *
  * `--short` emits the session rules plus a one-line loop reminder instead of the
  * full contract, for turns after the first where the full text is already in
@@ -80,8 +83,27 @@ function flag(args: string[], name: string): string | undefined {
   return inline?.slice(name.length + 3);
 }
 
+/**
+ * Full contract or the short reminder?
+ *
+ * `--short` always gets the reminder. So does `--mark-sent` once the marker
+ * already exists. By the time `/bertrand` runs it, the UserPromptSubmit hook has
+ * already handled the `/bertrand` prompt itself, so in a session bertrand
+ * launched (or one already attached) the contract arrived through the system
+ * prompt or that hook. Printing it again was a third ~9KB copy
+ * (docs/context-budget.md). Only a claude the hook skipped — not yet adopted —
+ * reaches here unmarked and gets the full text.
+ */
+export function contractDelivery(
+  args: string[],
+  conversationId: string,
+): "full" | "reminder" {
+  if (args.includes("--short")) return "reminder";
+  if (args.includes("--mark-sent") && isContractSent(conversationId)) return "reminder";
+  return "full";
+}
+
 register("contract", async (args) => {
-  const short = args.includes("--short");
   const markSent = args.includes("--mark-sent");
 
   const target = resolveContractTarget(args);
@@ -98,7 +120,7 @@ register("contract", async (args) => {
 
   const sessionName = session.slug;
 
-  if (short) {
+  if (contractDelivery(args, target.conversationId) === "reminder") {
     process.stdout.write(buildReminder(sessionName));
     return;
   }

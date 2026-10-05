@@ -452,8 +452,11 @@ export function userPromptScript(bin: string, runtimeDir: string): string {
 # The contract normally arrives via --append-system-prompt on bertrand's own
 # claude spawn, which reaches only that one process. Sessions that inherit the
 # BERTRAND_* env vars without going through launchClaude (background jobs,
-# nested \`claude\`, an external launcher) never receive it. Re-
-# injecting here — through the durable env/hook channel — closes that gap.
+# nested \`claude\`, an external launcher) never receive it, and a resumed
+# claude ignores it. Re-injecting here — through the durable env/hook channel —
+# closes that gap. A fresh launch writes the marker at spawn, so it skips the
+# duplicate. Nested claudes inherit the parent's BERTRAND_CLAUDE_ID and so its
+# marker: they get the reminder, not the full contract.
 # Full contract on the first prompt of each conversation, then the session
 # rules plus a one-line loop reminder thereafter — the soft guidance is the
 # half that decays as the conversation compacts; the mechanics are hook-enforced
@@ -493,7 +496,9 @@ if [ -f "$marker" ]; then
   contract="$(bq contract --session-id "$sid" --short)"
 else
   contract="$(bq contract --session-id "$sid")"
-  : > "$marker"
+  # Only a contract that was actually printed counts as sent: \`bq\` swallows
+  # failures, and \`/bertrand\` trusts this marker to skip its own full copy.
+  [ -n "$contract" ] && : > "$marker"
 fi
 
 [ -n "$contract" ] && jq -n --arg c "$contract" \
