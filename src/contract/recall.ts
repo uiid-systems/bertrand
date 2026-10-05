@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { events } from "@/db/schema";
 import { getAllSessions } from "@/db/queries/sessions";
 import { isMachinePrompt } from "@/lib/machine-prompt";
-import { formatDay, truncate } from "@/lib/format";
+import { formatDay, parseDbTime, truncate } from "@/lib/format";
+import { summarizeExchange } from "@/lib/summary";
+import type { EventRow } from "@/types";
 
 /**
  * Prompt-keyed recall (docs/context-budget.md, Tier 2.2): point the agent at
@@ -120,7 +122,10 @@ interface Doc {
   subjects: Subject[];
 }
 
-function loadSubjects(): Map<string, Subject[]> {
+/** Whether a stored time falls before the cut-off; everything does without one. */
+type Before = (stored: string) => boolean;
+
+function loadSubjects(before: Before): Map<string, Subject[]> {
   const rows = getDb()
     .select({
       sessionId: events.sessionId,
@@ -138,6 +143,7 @@ function loadSubjects(): Map<string, Subject[]> {
   for (const row of rows) {
     const prompt = (row.meta as { prompt?: unknown } | null)?.prompt;
     if (typeof prompt !== "string" || !prompt.trim() || isMachinePrompt(prompt)) continue;
+    if (!before(row.createdAt)) continue;
     // Legacy rows have no conversation id; the session's first prompt stands in.
     const key = row.conversationId ?? `session:${row.sessionId}`;
     if (seen.has(key)) continue;
@@ -156,42 +162,83 @@ function loadSubjects(): Map<string, Subject[]> {
   return bySession;
 }
 
-function buildCorpus(): Doc[] {
-  const subjects = loadSubjects();
+/**
+ * Each session as it stood at the cut-off: its summary re-derived from the
+ * prompts and messages before it, and when it was last active. The stored
+ * summary can't be used for a replay — it is written at the latest pause, so
+ * it may describe the very work the replayed task is asking about.
+ */
+function loadPast(before: Before): Map<string, { summary: string | null; lastAt: string }> {
+  const rows = getDb()
+    .select()
+    .from(events)
+    .where(inArray(events.event, ["user.prompt", "assistant.message"]))
+    .orderBy(events.createdAt, events.id)
+    .all() as EventRow[];
+
+  const bySession = new Map<string, { prompts: EventRow[]; messages: EventRow[]; lastAt: string }>();
+  for (const row of rows) {
+    if (!before(row.createdAt)) continue;
+    const entry = bySession.get(row.sessionId) ?? { prompts: [], messages: [], lastAt: row.createdAt };
+    (row.event === "user.prompt" ? entry.prompts : entry.messages).push(row);
+    if (parseDbTime(row.createdAt) > parseDbTime(entry.lastAt)) entry.lastAt = row.createdAt;
+    bySession.set(row.sessionId, entry);
+  }
+  return new Map(
+    [...bySession].map(([id, e]) => [id, { summary: summarizeExchange(e.prompts, e.messages), lastAt: e.lastAt }]),
+  );
+}
+
+function buildCorpus(asOf?: string): Doc[] {
+  const cutoff = asOf === undefined ? null : parseDbTime(asOf);
+  const before: Before = (stored) => cutoff === null || parseDbTime(stored) < cutoff;
+  const subjects = loadSubjects(before);
+  const past = cutoff === null ? null : loadPast(before);
   // Archived sessions stay in: archiving is how a user marks work finished,
   // and finished work is exactly what a new prompt may be repeating.
-  return getAllSessions().map(({ session }) => {
-    const own = subjects.get(session.id) ?? [];
-    const summary =
-      session.summary && !isMachinePrompt(session.summary) ? session.summary : null;
-    const terms = [
-      ...tokenize(session.slug),
-      ...tokenize(summary ?? ""),
-      ...own.flatMap((s) => [...s.terms]),
-    ];
-    const tf = new Map<string, number>();
-    for (const t of terms) tf.set(t, (tf.get(t) ?? 0) + 1);
-    return {
-      sessionId: session.id,
-      slug: session.slug,
-      repo: session.repo ?? null,
-      summary,
-      updatedAt: session.updatedAt,
-      tf,
-      length: terms.length,
-      subjects: own,
-    };
-  });
+  return getAllSessions()
+    .filter(({ session }) => before(session.startedAt))
+    .map(({ session }) => {
+      const own = subjects.get(session.id) ?? [];
+      const stored = past ? (past.get(session.id)?.summary ?? null) : session.summary;
+      const summary = stored && !isMachinePrompt(stored) ? stored : null;
+      const terms = [
+        ...tokenize(session.slug),
+        ...tokenize(summary ?? ""),
+        ...own.flatMap((s) => [...s.terms]),
+      ];
+      const tf = new Map<string, number>();
+      for (const t of terms) tf.set(t, (tf.get(t) ?? 0) + 1);
+      return {
+        sessionId: session.id,
+        slug: session.slug,
+        repo: session.repo ?? null,
+        summary,
+        updatedAt: past ? (past.get(session.id)?.lastAt ?? session.startedAt) : session.updatedAt,
+        tf,
+        length: terms.length,
+        subjects: own,
+      };
+    });
 }
 
 export function recall(
   query: string,
-  opts: { exclude: Set<string> },
+  opts: {
+    exclude: Set<string>;
+    /**
+     * Search history as it stood at this stored time — sessions, prompts and
+     * summaries from before it only. For the Tier 3 replay, where a task is
+     * re-run against the corpus it originally saw; without it, recall could
+     * hand the task its own answer.
+     */
+    asOf?: string;
+  },
 ): RecallHit[] {
   const wanted = [...new Set(tokenize(query))];
   if (wanted.length === 0) return [];
 
-  const all = buildCorpus().filter((doc) => !opts.exclude.has(doc.sessionId));
+  const all = buildCorpus(opts.asOf).filter((doc) => !opts.exclude.has(doc.sessionId));
   const n = all.length;
   if (n === 0) return [];
 

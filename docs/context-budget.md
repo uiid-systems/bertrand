@@ -39,7 +39,7 @@ not the mechanism (user decision).
 | Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
 | Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
 | Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
-| Tier 3.3: paired replay | Planned, not built: see [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
+| Tier 3.3: paired replay | Planned; the cut-off and `bertrand replay-context` are built, the runner is not. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
 
 ---
 
@@ -316,13 +316,23 @@ the original conversation's outcome, checked by hand. Pin each task to the
 repo commit at task time (`git rev-list -1 --before=<ts> main`) in a
 throwaway worktree.
 
-**Harness work it needs (none built yet):**
-- A way to render the Tier 2 block for an arbitrary prompt *as of* the
-  task's timestamp. `recall()` and `buildResumeDigest()` need an `asOf`
-  cut-off (sessions and events created before it) and an extra excluded
-  session (the task's own). Without the cut-off, recall can retrieve the
-  task's own future, which is the answer.
-- Run `claude -p --output-format json` with
+**Harness pieces:**
+- **Built:** `bertrand replay-context --session <name> --as-of <time>
+  --arm control|treatment [--conversation <id>] < prompt` prints one arm's
+  system prompt. `recall()` and `buildResumeDigest()` take an `asOf` cut-off:
+  - sessions started, prompts asked, and messages sent before the cut-off
+    only;
+  - summaries re-derived from those events, because the stored one is
+    rewritten at every pause and can describe the task's own outcome;
+  - the task's own session excluded from recall.
+
+  Both arms leave out the sibling block, since it shows current summaries
+  and no cut-off can undo that leak. Known residual: slugs are derived at
+  pause and can carry later words. Checked on 591c59eb: every date in the
+  treatment block falls before the cut-off. The same run gave an early
+  signal for the pilot: that long, multi-topic prompt drew three
+  loosely-related pointers.
+- **Not built:** the runner. Run `claude -p --output-format json` with
   `env -u BERTRAND_* --settings '{"disableAllHooks":true}'`. The control
   arm appends the Tier 1 contract; the treatment arm appends the same
   contract plus the Tier 2 block. The JSON result carries usage per run.

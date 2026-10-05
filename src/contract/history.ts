@@ -35,7 +35,10 @@ interface Exchange {
 export function buildResumeDigest(
   sessionId: string,
   currentConversationId?: string,
+  /** Only what had happened by this stored time — for the Tier 3 replay. */
+  asOf?: string,
 ): string {
+  const cutoff = asOf === undefined ? null : parseDbTime(asOf);
   const session = getSession(sessionId);
   if (!session) return "";
 
@@ -48,13 +51,14 @@ export function buildResumeDigest(
   const collect = (rows: EventRow[], key: "prompts" | "messages") => {
     for (const row of rows) {
       if (!row.conversationId || !kept.has(row.conversationId)) continue;
+      const ms = parseDbTime(row.createdAt);
+      if (cutoff !== null && ms >= cutoff) continue;
       let ex = byConversation.get(row.conversationId);
       if (!ex) {
         ex = { id: row.conversationId, prompts: [], messages: [], endedAt: "", endedMs: -1 };
         byConversation.set(row.conversationId, ex);
       }
       ex[key].push(row);
-      const ms = parseDbTime(row.createdAt);
       if (ms > ex.endedMs) {
         ex.endedMs = ms;
         ex.endedAt = row.createdAt;

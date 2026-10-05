@@ -30,6 +30,7 @@ const { createSession, updateSession, updateSessionStatus } = await import(
 const { buildSiblingContext } = await import("./context");
 const { buildResumeDigest } = await import("./history");
 const { recall, formatRecall, queryText } = await import("./recall");
+const { replayContract } = await import("./layers");
 const { createConversation, discardConversation } = await import("@/db/queries/conversations");
 const { insertEvent } = await import("@/db/queries/events");
 const { formatDay } = await import("@/lib/format");
@@ -191,6 +192,22 @@ describe("buildResumeDigest", () => {
     expect(block).toContain("bertrand log digest-many --events --conversation <id>");
   });
 
+  test("as of a cut-off, only what had happened by then", () => {
+    const s = createSession({ slug: "digest-as-of" });
+    for (const [id, day] of [["a1", "2026-09-01"], ["a2", "2026-09-02"], ["a3", "2026-09-03"]] as const) {
+      createConversation({ id: `${id}-as-of`, sessionId: s.id });
+      exchange(s.id, `${id}-as-of`, `ask ${id}`, `reply ${id}`, day);
+    }
+    // a2's prompt (10:00) is before the cut-off, its reply (11:00) after; a3 is all after.
+    const bullets = buildResumeDigest(s.id, undefined, "2026-09-02 10:30:00")
+      .split("\n")
+      .filter((l) => l.startsWith("- "));
+    expect(bullets).toEqual([
+      `- ${formatDay("2026-09-01 11:00:00")} · a1-as-of: "ask a1 → reply a1"`,
+      `- ${formatDay("2026-09-02 10:00:00")} · a2-as-of: "ask a2"`,
+    ]);
+  });
+
   test("past the cap, keeps the most recent and counts the rest", () => {
     const s = createSession({ slug: "digest-capped" });
     for (let i = 1; i <= 5; i++) {
@@ -219,7 +236,9 @@ describe("recall", () => {
     createConversation({ id: "flaky-2", sessionId: flaky.id });
     exchange(flaky.id, "flaky-1", "the s3 upload retries are flaky in staging", "added jittered backoff", "2026-09-10");
     exchange(flaky.id, "flaky-2", "now the multipart checksum mismatches on resume", "fixed the part ordering", "2026-09-11");
-    sqlite.exec(`UPDATE sessions SET updated_at = '2026-09-11 12:00:00' WHERE id = '${flaky.id}'`);
+    sqlite.exec(
+      `UPDATE sessions SET updated_at = '2026-09-11 12:00:00', started_at = '2026-09-09 00:00:00' WHERE id = '${flaky.id}'`,
+    );
     const ticket = createSession({ slug: "ui-4242" });
     updateSession(ticket.id, { summary: "pagination stalls on the invoices page → fixed the cursor" });
     // Matches on its slug alone and has nothing to quote.
@@ -228,6 +247,10 @@ describe("recall", () => {
       const s = createSession({ slug: `dashboard-chore-${i}` });
       updateSession(s.id, { summary: `tidy the dashboard chore ${i}` });
     }
+    // Every other fixture session predates the cut-offs below, so a replay's
+    // corpus is more than the one session it is looking for — a corpus that
+    // small recalls nothing, by design.
+    sqlite.exec(`UPDATE sessions SET started_at = '2026-01-01 00:00:00' WHERE id != '${flaky.id}'`);
   });
 
   test("points a specific prompt at the matching session", () => {
@@ -284,6 +307,30 @@ describe("recall", () => {
     expect(queryText(["first", "second", "<task-notification>x", "/compact", "third"], 2)).toBe(
       "second\nthird",
     );
+  });
+
+  test("as of a cut-off, sees only the sessions, prompts and outcomes that existed then", () => {
+    // Before the session existed: nothing.
+    expect(recall("s3 upload retries flaky", { exclude: new Set(), asOf: "2026-09-08 00:00:00" })).toEqual([]);
+    // Before the second conversation: its subject can't match.
+    expect(recall("multipart checksum mismatches", { exclude: new Set(), asOf: "2026-09-10 23:00:00" })).toEqual([]);
+    // Before the first reply: the stored summary's outcome ("jittered
+    // backoff") is the future, so the text is re-derived from the prompt alone.
+    const [hit] = recall("s3 upload retries flaky", { exclude: new Set(), asOf: "2026-09-10 10:30:00" });
+    expect(hit).toMatchObject({ slug: "flaky-upload", at: "2026-09-10 10:00:00" });
+    expect(hit!.text).toBe("the s3 upload retries are flaky in staging");
+  });
+
+  test("replay arms differ only by the Tier 2 history, and neither has siblings", () => {
+    const opts = { sessionId: asker.id, slug: "recall-asker", asOf: "2026-09-12 00:00:00", prompt: "s3 upload retries flaky" };
+    const control = replayContract({ ...opts, arm: "control" });
+    const treatment = replayContract({ ...opts, arm: "treatment" });
+    expect(control).toContain("## bertrand CLI");
+    expect(control).not.toContain("## Sibling Sessions");
+    expect(control).not.toContain("## Possibly related");
+    expect(treatment).toStartWith(control);
+    expect(treatment).toContain("- flaky-upload (acme/storage");
+    expect(treatment).not.toContain("## Sibling Sessions");
   });
 
   test("frames hits as dated history, and renders nothing for no hits", () => {
