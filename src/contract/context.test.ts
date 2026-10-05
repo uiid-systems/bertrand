@@ -228,6 +228,8 @@ describe("buildResumeDigest", () => {
 describe("recall", () => {
   let asker: ReturnType<typeof createSession>;
   let flaky: ReturnType<typeof createSession>;
+  let ticketId = "";
+  const ticketSession = () => ticketId;
   beforeAll(() => {
     asker = createSession({ slug: "recall-asker" });
     flaky = createSession({ slug: "flaky-upload", repo: "acme/storage" });
@@ -240,6 +242,7 @@ describe("recall", () => {
       `UPDATE sessions SET updated_at = '2026-09-11 12:00:00', started_at = '2026-09-09 00:00:00' WHERE id = '${flaky.id}'`,
     );
     const ticket = createSession({ slug: "ui-4242" });
+    ticketId = ticket.id;
     updateSession(ticket.id, { summary: "pagination stalls on the invoices page → fixed the cursor" });
     // Matches on its slug alone and has nothing to quote.
     createSession({ slug: "quiet-zebra-crossing" });
@@ -292,6 +295,30 @@ describe("recall", () => {
     expect(recall("back to ui-4242 wombat", { exclude: new Set([asker.id]) }).map((h) => h.slug)).toEqual([
       "ui-4242",
     ]);
+  });
+
+  test("a session the prompt names wins, however long the prompt", async () => {
+    const { recordSessionAlias } = await import("@/db/queries/session-aliases");
+    recordSessionAlias("ui-9999", flaky.id);
+    const ticket = (q: string) => recall(q, { exclude: new Set([asker.id]) }).map((h) => h.slug);
+
+    // One id among many words: the term gates alone would drop it.
+    expect(
+      ticket("we keep going back and forth on layout and chores, what did UI-4242 decide about it before we start"),
+    ).toEqual(["ui-4242"]);
+    // A retired name still resolves; so does a whole slug.
+    expect(ticket("what did ui-9999 conclude")).toEqual(["flaky-upload"]);
+    expect(ticket("reopen flaky-upload please")[0]).toBe("flaky-upload");
+    // Naming the current session doesn't bring it back. (The asker excluded
+    // too: it recorded "ui-4242" in a prompt of its own above.)
+    expect(recall("what did UI-4242 decide", { exclude: new Set([ticketSession(), asker.id]) })).toEqual([]);
+  });
+
+  test("a long prompt that touches many sessions a little matches none", () => {
+    // Shares a couple of words with each of three sessions and most of none.
+    expect(
+      recall("tidy the s3 dashboard chore, the invoices pagination, and staging", { exclude: new Set() }),
+    ).toEqual([]);
   });
 
   test("drops a hit with nothing to quote", () => {

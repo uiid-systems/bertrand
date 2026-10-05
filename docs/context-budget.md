@@ -207,7 +207,17 @@ byte-identical to Tier 1.
     a single rare term (≤2 sessions), such as a ticket id;
   - survivors score at least 60% of the best hit (0.5 let a "tests"-only
     match through on a CI prompt), at most three;
+  - a hit must cover at least half the prompt's distinctive weight (the IDF
+    of its surviving terms). On the corpus every relevant hit covered
+    0.67–1.0 and every noise hit 0.38 or less. Without this gate, long
+    prompts let two generic words carry a match;
   - a hit with nothing to quote (no summary, no matching subject) is dropped.
+
+  Before any scoring, a session the prompt **names** wins: a ticket id that
+  is, or opens, the session's slug or a retired alias ("UI-596" →
+  `ui-596-…`, "UI-704" → the renamed `ci-test-failed-build`), or a whole
+  hyphenated slug. In a long prompt the id is one term of thirty, which
+  the term gates can't see.
 
   Term statistics are computed without the excluded sessions, since the
   current session already holds the prompt being matched.
@@ -365,7 +375,15 @@ throwaway worktree.
   "UI-596". The two-shared-terms gate needs two matches, and only the
   ticket number matches; generic words ("render", "button") let weak
   sessions through. For UI-704, the digest names its conversation, but its
-  one line says nothing about what UI-704 changed. Residual leaks
+  one line says nothing about what UI-704 changed.
+
+  After named sessions and the coverage gate: UI-596 → exactly
+  `ui-596-…`, and UI-600 → exactly `ui-600-…` (plus its own-session digest).
+  UI-704 now gets the digest only, with no recall noise. The probe set is
+  unchanged. Still weak: the quoted *lines*. A digest or summary line is
+  "first prompt → last message", which often says nothing about what was
+  changed (UI-704's reads "seems a ci test failed → …unrelated"). The
+  pointer is right, but the agent still has to open it. Residual leaks
   shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
   which can mention later work.
 

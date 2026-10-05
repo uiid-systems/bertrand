@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { events } from "@/db/schema";
+import { events, sessionAliases } from "@/db/schema";
 import { getAllSessions } from "@/db/queries/sessions";
 import { isMachinePrompt } from "@/lib/machine-prompt";
 import { formatDay, parseDbTime, truncate } from "@/lib/format";
@@ -22,12 +22,18 @@ import type { EventRow } from "@/types";
  *   - **Ranking:** BM25 in process. The corpus is a few hundred prompts; FTS5
  *     would add triggers and migrations to a database that sync snapshots
  *     whole, for no gain at this size.
+ *   - **Named sessions first:** a ticket id ("UI-596") or a session slug the
+ *     prompt names outright points at that session — through its retired
+ *     names too — before any scoring. The user saying which session they
+ *     mean is the strongest signal there is, and the term gates below can't
+ *     see it in a long prompt where the id is one word of thirty.
  *   - **Gates:** terms in more than a fifth of all sessions carry no signal
  *     ("bertrand" in this repo's own sessions) and are dropped — with no
  *     floor, so a corpus of a handful of sessions mostly recalls nothing,
  *     which is the cheap direction to be wrong in. A hit must share two
  *     distinct terms with the prompt; a one-term prompt counts only when that
- *     term is in at most RARE_DF sessions, like a ticket number. Survivors must score
+ *     term is in at most RARE_DF sessions, like a ticket number. A hit must
+ *     also cover MIN_COVERAGE of the prompt's distinctive weight. Survivors must score
  *     within MARGIN of the best — a relative cut, because absolute BM25
  *     scores drift with corpus size.
  *
@@ -40,6 +46,14 @@ import type { EventRow } from "@/types";
 
 const MAX_HITS = 3;
 const MARGIN = 0.6;
+/**
+ * Share of the prompt's distinctive weight (IDF of its surviving terms) a hit
+ * must match. Scale-free, so a long prompt needs proportionally more overlap
+ * than a short one: on the 66-session corpus every relevant hit covered
+ * 0.67–1.0 and every noise hit 0.38 or less — the noise being long prompts
+ * where two generic words ("render", "button") were enough to pass.
+ */
+const MIN_COVERAGE = 0.5;
 const UBIQUITY = 0.2;
 /** Sessions a lone query term may appear in and still count — a ticket id. */
 const RARE_DF = 2;
@@ -222,6 +236,51 @@ function buildCorpus(asOf?: string): Doc[] {
     });
 }
 
+/** Ticket-style ids in the prompt: "UI-596", "blng-1910". */
+const TICKET = /\b[a-z][a-z0-9]*-\d+\b/g;
+
+/** Where `name` appears in `text` as a whole hyphenated word, or -1. */
+function wordAt(text: string, name: string): number {
+  let i = text.indexOf(name);
+  while (i !== -1) {
+    const before = text[i - 1] ?? " ";
+    const after = text[i + name.length] ?? " ";
+    if (!/[a-z0-9-]/.test(before) && !/[a-z0-9-]/.test(after)) return i;
+    i = text.indexOf(name, i + 1);
+  }
+  return -1;
+}
+
+/**
+ * Sessions the prompt names outright, in the order it names them: by a
+ * ticket id that is, or opens, one of the session's names ("ui-596" →
+ * `ui-596-userender…`, or an alias of a session since renamed), or by a
+ * whole hyphenated slug ("utils-cleanup"). Aliases count because a retired
+ * name is still what the user remembers the session by.
+ */
+function namedSessions(query: string, docs: Doc[]): Doc[] {
+  const text = query.toLowerCase();
+  const tickets = [...new Set(text.match(TICKET) ?? [])];
+  const aliases = new Map<string, string[]>();
+  for (const row of getDb().select().from(sessionAliases).all()) {
+    aliases.set(row.sessionId, [...(aliases.get(row.sessionId) ?? []), row.alias]);
+  }
+
+  const found: { doc: Doc; at: number }[] = [];
+  for (const doc of docs) {
+    let at = Infinity;
+    for (const name of [doc.slug, ...(aliases.get(doc.sessionId) ?? [])]) {
+      for (const t of tickets) {
+        if (name === t || name.startsWith(`${t}-`)) at = Math.min(at, wordAt(text, t));
+      }
+      const whole = name.includes("-") ? wordAt(text, name) : -1;
+      if (whole !== -1) at = Math.min(at, whole);
+    }
+    if (at !== Infinity) found.push({ doc, at });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.doc);
+}
+
 export function recall(
   query: string,
   opts: {
@@ -235,12 +294,24 @@ export function recall(
     asOf?: string;
   },
 ): RecallHit[] {
-  const wanted = [...new Set(tokenize(query))];
-  if (wanted.length === 0) return [];
-
   const all = buildCorpus(opts.asOf).filter((doc) => !opts.exclude.has(doc.sessionId));
   const n = all.length;
   if (n === 0) return [];
+
+  const named = namedSessions(query, all);
+  const hits = [
+    ...named.map((doc) => toHit(doc, [], Infinity)),
+    ...scoreByTerms(query, all).filter((h) => !named.some((d) => d.sessionId === h.sessionId)),
+  ];
+  // A slug-only match on a session with no summary yet has nothing to
+  // quote, and an empty pointer is bytes for no information.
+  return hits.filter((hit) => hit.text).slice(0, MAX_HITS);
+}
+
+function scoreByTerms(query: string, all: Doc[]): RecallHit[] {
+  const n = all.length;
+  const wanted = [...new Set(tokenize(query))];
+  if (wanted.length === 0) return [];
 
   const df = new Map<string, number>();
   for (const doc of all) {
@@ -261,10 +332,12 @@ export function recall(
     return Math.log(1 + (n - d + 0.5) / (d + 0.5));
   };
 
+  const weight = terms.reduce((sum, t) => sum + idf(t), 0);
   const scored: { doc: Doc; score: number; matched: string[] }[] = [];
   for (const doc of all) {
     const matched = terms.filter((t) => doc.tf.has(t));
     if (matched.length < minMatched) continue;
+    if (matched.reduce((sum, t) => sum + idf(t), 0) / weight < MIN_COVERAGE) continue;
     let score = 0;
     for (const t of matched) {
       const f = doc.tf.get(t)!;
@@ -279,26 +352,24 @@ export function recall(
 
   return scored
     .filter((s) => s.score >= floor)
-    .map(({ doc, score, matched }) => {
-      const best = bestSubject(doc.subjects, matched);
-      // The summary opens with the session's first prompt, so it already
-      // says what a first-conversation match is about, and adds the outcome.
-      const text =
-        best && best !== doc.subjects[0] ? best.text : (doc.summary ?? best?.text ?? "");
-      return {
-        sessionId: doc.sessionId,
-        slug: doc.slug,
-        repo: doc.repo,
-        at: best?.createdAt ?? doc.updatedAt,
-        conversationId: best?.conversationId ?? null,
-        text,
-        score,
-      };
-    })
-    // A slug-only match on a session with no summary yet has nothing to
-    // quote, and an empty pointer is bytes for no information.
-    .filter((hit) => hit.text)
-    .slice(0, MAX_HITS);
+    .map(({ doc, score, matched }) => toHit(doc, matched, score));
+}
+
+function toHit(doc: Doc, matched: string[], score: number): RecallHit {
+  const best = bestSubject(doc.subjects, matched);
+  // The summary opens with the session's first prompt, so it already
+  // says what a first-conversation match is about, and adds the outcome.
+  const text =
+    best && best !== doc.subjects[0] ? best.text : (doc.summary ?? doc.subjects[0]?.text ?? "");
+  return {
+    sessionId: doc.sessionId,
+    slug: doc.slug,
+    repo: doc.repo,
+    at: best?.createdAt ?? doc.updatedAt,
+    conversationId: best?.conversationId ?? null,
+    text,
+    score,
+  };
 }
 
 /** The subject sharing the most matched terms; the later one on a tie. */
