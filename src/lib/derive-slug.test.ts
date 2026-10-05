@@ -155,10 +155,11 @@ describe("deriveSlugFromTexts", () => {
     ).toBe("issue-214");
   });
 
-  test("machine-injected task-notification prompts are skipped", () => {
+  test("machine-injected prompts are skipped, attributes or not", () => {
     expect(
       deriveSlugFromTexts([
         "<task-notification>\n<task-id>brkytl713</task-id>\n<summary>Monitor event</summary>\n</task-notification>",
+        '<agent-message from="a5a6e5686debc497e">subagent report about tokens</agent-message>',
         "fix the login bug",
       ]),
     ).toBe("fix-login-bug");

@@ -50,7 +50,9 @@ export const MANAGED_MARKER = "<!-- bertrand:managed -->";
  *    submitting another prompt. The contract would arrive last in the sessions
  *    that need it first. Running `contract --mark-sent` here delivers it inside
  *    the activating turn and tells the hook to degrade to its one-line reminder
- *    from then on.
+ *    from then on. Where the contract already arrived — a session bertrand
+ *    launched, or one already attached — it prints only the rules instead of
+ *    a duplicate (`contractDelivery`, cli/commands/contract.ts).
  *
  * 2. **Neither command takes arguments.** `adopt` and `contract` both default to
  *    `$CLAUDE_CODE_SESSION_ID` / `$CLAUDE_PID` out of their own environment, so
@@ -81,8 +83,9 @@ environment, so neither takes arguments and there is nothing to fill in.
    recorded. Report the output verbatim, tell the user nothing was attached,
    and stop.
 
-2. Run \`${bin} contract --mark-sent\`. It prints the session contract. Read it
-   and follow it for the rest of this session; it governs how every turn ends,
+2. Run \`${bin} contract --mark-sent\`. It prints the session contract — or,
+   when this conversation already has it, just the session rules. Read it and
+   follow it for the rest of this session; it governs how every turn ends,
    including this one.
 
 3. Tell the user in one line which session is recording them. Don't recite the

@@ -1,3 +1,4 @@
+import { markContractSent } from "@/hooks/runtime";
 import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
 import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
 
@@ -49,6 +50,39 @@ export function buildClaudeEnv(
 }
 
 /**
+ * Hand `claude` the full contract as a system prompt — and, on a fresh launch,
+ * record the hand-off. The marker write is the point of this function, hence
+ * the verb: call it only on the path that really spawns.
+ *
+ * The UserPromptSubmit hook re-delivers the full contract on a conversation's
+ * first prompt unless the `contract-sent` marker says it already arrived — the
+ * re-delivery exists for claudes bertrand didn't spawn. Without the marker a
+ * launched conversation carried the ~9KB contract twice: once here, once more
+ * in its first prompt's context (docs/context-budget.md). The marker is keyed
+ * by `claudeId` because that is the `BERTRAND_CLAUDE_ID` the hook's `cid` reads
+ * on this path (see buildClaudeEnv).
+ *
+ * Never marked on `--resume`: claude ignores `--append-system-prompt` when
+ * resuming (Claude Code 2.1.289, verified 2026-10-05), so there the hook's
+ * re-delivery is the only copy the conversation gets. Best-effort: a marker
+ * that can't be written costs a duplicate contract, never the launch.
+ */
+export function deliverContract(
+  claudeId: string,
+  contract: string,
+  resume: boolean,
+): string[] {
+  if (!resume) {
+    try {
+      markContractSent(claudeId);
+    } catch {
+      // Fall back to the hook's first-prompt re-delivery.
+    }
+  }
+  return ["--append-system-prompt", contract];
+}
+
+/**
  * Spawn a Claude Code subprocess attached to a PTY bertrand owns (instead of
  * `stdio: "inherit"`), with the appropriate flags and env vars. The local
  * terminal is wired up as one consumer of that PTY (raw-mode passthrough on
@@ -73,7 +107,7 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     args.push("--session-id", opts.claudeId);
   }
 
-  args.push("--append-system-prompt", opts.contract);
+  args.push(...deliverContract(opts.claudeId, opts.contract, !!opts.resume));
 
   const env = buildClaudeEnv(opts);
 

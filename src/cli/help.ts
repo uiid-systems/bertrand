@@ -7,10 +7,12 @@
  * Subcommand-level help (`bertrand adopt --help`, `bertrand sync --help`) lives
  * with each command and is intentionally not duplicated here.
  *
- * The command reference body is shared. Only the header differs by audience:
- * a human running `--help` at a shell prompt is NOT inside a session, so the
- * agent framing ("you are running inside a session…") would be inaccurate for
- * them — hence the conditional.
+ * The two audiences get different bodies. A human gets the whole reference. The
+ * agent gets only the read-only inspection commands, compacted: it is paid for
+ * in tokens on every conversation, and the management commands (init, archive,
+ * rename, adopt, sync, serve) are the human's to run — `bertrand --help` is one
+ * call away when an agent needs them (docs/context-budget.md). help.test.ts
+ * guards the subset against drifting from the full reference.
  */
 
 const COMMAND_REFERENCE = `Usage:
@@ -67,21 +69,29 @@ bertrand wraps each Claude Code conversation in a tracked "session": it records 
 full event timeline (prompts, answers, tool use, PRs, deploys), groups sessions by
 the repo and branch they run in, and can replicate that history across machines.`;
 
-const AGENT_HEADER = `## bertrand CLI
+const AGENT_REFERENCE = `## bertrand CLI
 
-You are running inside a bertrand session. bertrand wraps each Claude Code
-conversation in a tracked "session" and records the full event timeline (prompts,
-answers, tool use, PRs, deploys), grouped by the repo and branch the session runs
-in, and replicable across machines.
-The subcommands below inspect and manage that data — reach for them (e.g.
-\`bertrand log <session>\`) instead of assuming sessions are isolated.`;
+You are running inside a bertrand session. Every conversation's prompts,
+answers, tool use and outcome are recorded, grouped by repo and branch. Reach
+for past sessions instead of assuming sessions are isolated — as history (why,
+what was tried); code and git are the current truth.
+
+  bertrand log <session>       Digest (JSON, ~1-2KB per conversation): subject,
+                               Q&A decisions, files touched, outcome. Start here.
+    --events                   Filtered timeline when the digest isn't enough:
+                               --conversation <n> --type <…> --since <…> --limit <n>
+  bertrand search <term…>      Where something was discussed across sessions.
+                               Terms AND-ed; returns pointers to drill into.
+  bertrand list [--json]       Every session with its repo, status + activity.
+  bertrand stats <session>     Durations, interactions, diff metrics.
+
+Everything else (and every flag): \`bertrand --help\`.`;
 
 /**
  * Render the top-level help.
- * @param opts.agent  Use the session-context header instead of the human one.
- *                    This is the variant injected into the session-start contract.
+ * @param opts.agent  The compact session-context variant injected into the
+ *                    session-start contract, instead of the full human help.
  */
 export function helpText(opts: { agent?: boolean } = {}): string {
-  const header = opts.agent ? AGENT_HEADER : HUMAN_HEADER;
-  return `${header}\n\n${COMMAND_REFERENCE}`;
+  return opts.agent ? AGENT_REFERENCE : `${HUMAN_HEADER}\n\n${COMMAND_REFERENCE}`;
 }

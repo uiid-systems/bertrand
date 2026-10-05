@@ -2,6 +2,7 @@ import { register } from "@/cli/router";
 import { ensureHooksCurrent } from "@/hooks/install";
 import { parseSessionName } from "@/lib/parse-session-name";
 import { recoverStaleSessions } from "@/lib/session-recovery";
+import { healMachineSummaries } from "@/lib/summary";
 
 /**
  * Print a clean one-line error and exit non-zero. Stack stays available
@@ -37,6 +38,14 @@ register("launch", async (args) => {
 
     // Recover any sessions stuck in working/blocked/prompting from crashed processes
     await recoverStaleSessions();
+
+    // Clear summaries written before machine prompts were skipped. Best-effort:
+    // stale sibling text must never stop a launch.
+    try {
+      healMachineSummaries();
+    } catch {
+      // Retried on the next launch.
+    }
 
     const sessionName = args[0];
 

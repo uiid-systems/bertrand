@@ -16,6 +16,7 @@
 
 import { getEventsByType } from "@/db/queries/events";
 import {
+  getAllSessions,
   getSession,
   setSessionSummary,
   setDerivedSessionSlug,
@@ -24,6 +25,7 @@ import { recordSessionAlias } from "@/db/queries/session-aliases";
 import { deriveSessionSlug, resolveSlugCollision } from "@/lib/derive-slug";
 import type { EventRow } from "@/types";
 import { truncate } from "@/lib/format";
+import { isMachinePrompt } from "@/lib/machine-prompt";
 
 const SUBJECT_MAX = 120;
 const OUTCOME_MAX = 180;
@@ -100,7 +102,10 @@ export function deriveSessionSummary(sessionId: string): string | null {
   const prompts = getEventsByType(sessionId, "user.prompt");
   const messages = getEventsByType(sessionId, "assistant.message");
 
-  const subject = truncate(oneLine(edgeText(prompts, "prompt", "first")), SUBJECT_MAX);
+  // Machine prompts can still be the first *recorded* one: auto-adoption
+  // records nothing until a conversation's second prompt.
+  const asked = prompts.filter((row) => !isMachinePrompt(metaStr(row.meta, "prompt")));
+  const subject = truncate(oneLine(edgeText(asked, "prompt", "first")), SUBJECT_MAX);
   const outcome = cutAtSentence(
     oneLine(condense(edgeText(messages, "text", "last"))),
     OUTCOME_MAX,
@@ -108,6 +113,26 @@ export function deriveSessionSummary(sessionId: string): string | null {
 
   if (subject && outcome) return `${subject} → ${outcome}`;
   return subject || outcome || null;
+}
+
+/**
+ * Re-derive every stored summary that still leads with a machine prompt —
+ * ones written before derivation skipped them. The sibling block heals the
+ * rows it renders, but that is only the top few per repo; the rest would keep
+ * raw `<task-notification>` XML in `bertrand log` and `search` until their
+ * session paused again. Idempotent in effect: a healed row stops matching. A
+ * row that still derives to nothing is left as it was. Returns rows healed.
+ */
+export function healMachineSummaries(): number {
+  let healed = 0;
+  for (const { session } of getAllSessions()) {
+    if (!session.summary || !isMachinePrompt(session.summary)) continue;
+    const summary = deriveSessionSummary(session.id);
+    if (!summary) continue;
+    setSessionSummary(session.id, summary);
+    healed++;
+  }
+  return healed;
 }
 
 /**

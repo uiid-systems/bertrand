@@ -30,7 +30,7 @@ const stubScript = (runtimeDir: string) => `#!/usr/bin/env bash
 if [ -n "\${BERTRAND_STUB_LOG:-}" ]; then
   printf 'argv=%s\\n' "$*" >> "$BERTRAND_STUB_LOG"
 fi
-if [ "$1" = "contract" ]; then
+if [ "$1" = "contract" ] && [ -z "\${BERTRAND_STUB_CONTRACT_EMPTY:-}" ]; then
   case "$*" in
     *--short*) printf 'SHORT_CONTRACT' ;;
     *) printf 'FULL_CONTRACT' ;;
@@ -215,6 +215,17 @@ describe("on-user-prompt.sh — contract re-injection", () => {
     expect(out.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
     expect(out.hookSpecificOutput.additionalContext).toBe("FULL_CONTRACT");
     expect(existsSync(marker(`contract-sent-${CID}`))).toBe(true);
+  });
+
+  test("a contract that printed nothing is not marked as sent", () => {
+    // \`bq\` swallows a failed \`bertrand contract\`; a marker here would make
+    // /bertrand skip the full copy too, and it would never arrive at all.
+    const { stdout } = run("on-user-prompt.sh", PROMPT_INPUT, {
+      ...env,
+      BERTRAND_STUB_CONTRACT_EMPTY: "1",
+    });
+    expect(stdout).toBe("");
+    expect(existsSync(marker(`contract-sent-${CID}`))).toBe(false);
   });
 
   test("subsequent prompt injects the short reminder", () => {
