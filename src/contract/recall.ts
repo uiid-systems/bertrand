@@ -21,22 +21,26 @@ import { formatDay, truncate } from "@/lib/format";
  *     would add triggers and migrations to a database that sync snapshots
  *     whole, for no gain at this size.
  *   - **Gates:** terms in more than a fifth of all sessions carry no signal
- *     ("bertrand" in this repo's own sessions) and are dropped. A hit must
- *     share two distinct terms with the prompt; a one-term prompt counts only
- *     when that term is rare, like a ticket number. Survivors must score
+ *     ("bertrand" in this repo's own sessions) and are dropped — with no
+ *     floor, so a corpus of a handful of sessions mostly recalls nothing,
+ *     which is the cheap direction to be wrong in. A hit must share two
+ *     distinct terms with the prompt; a one-term prompt counts only when that
+ *     term is in at most RARE_DF sessions, like a ticket number. Survivors must score
  *     within MARGIN of the best — a relative cut, because absolute BM25
  *     scores drift with corpus size.
  *
  * The caller excludes the current session: the hook records the prompt before
  * the contract is built, so the best match would otherwise be the prompt
- * itself.
+ * itself. Excluded sessions are left out of the term statistics too, or that
+ * same recorded prompt would make every one of its words look present in the
+ * corpus.
  */
 
 const MAX_HITS = 3;
 const MARGIN = 0.6;
 const UBIQUITY = 0.2;
-const MIN_UBIQUITOUS_DF = 3;
-const RARE_DF = 3;
+/** Sessions a lone query term may appear in and still count — a ticket id. */
+const RARE_DF = 2;
 const K1 = 1.2;
 const B = 0.75;
 /** Characters of a conversation's first prompt that are indexed. */
@@ -76,9 +80,10 @@ function stripSlashCommand(text: string): string {
  */
 export function queryText(prompts: string[], last = prompts.length): string {
   return prompts
-    .filter((p) => p.trim() && !isMachinePrompt(p))
-    .slice(-last)
+    .filter((p) => !isMachinePrompt(p))
     .map(stripSlashCommand)
+    .filter((p) => p.trim())
+    .slice(-last)
     .join("\n");
 }
 
@@ -86,7 +91,9 @@ export interface RecallHit {
   sessionId: string;
   slug: string;
   repo: string | null;
-  updatedAt: string;
+  /** When the shown text dates from: the matched conversation's first
+   * prompt, else the session's last update. */
+  at: string;
   /** The conversation whose first prompt matched best; null when only the
    * session-level text did. */
   conversationId: string | null;
@@ -98,6 +105,7 @@ export interface RecallHit {
 interface Subject {
   conversationId: string | null;
   text: string;
+  createdAt: string;
   terms: Set<string>;
 }
 
@@ -118,6 +126,7 @@ function loadSubjects(): Map<string, Subject[]> {
       sessionId: events.sessionId,
       conversationId: events.conversationId,
       meta: events.meta,
+      createdAt: events.createdAt,
     })
     .from(events)
     .where(eq(events.event, "user.prompt"))
@@ -137,6 +146,7 @@ function loadSubjects(): Map<string, Subject[]> {
     const subject = {
       conversationId: row.conversationId,
       text,
+      createdAt: row.createdAt,
       terms: new Set(tokenize(text.slice(0, SUBJECT_INDEX_MAX))),
     };
     const list = bySession.get(row.sessionId) ?? [];
@@ -181,7 +191,7 @@ export function recall(
   const wanted = [...new Set(tokenize(query))];
   if (wanted.length === 0) return [];
 
-  const all = buildCorpus();
+  const all = buildCorpus().filter((doc) => !opts.exclude.has(doc.sessionId));
   const n = all.length;
   if (n === 0) return [];
 
@@ -189,7 +199,7 @@ export function recall(
   for (const doc of all) {
     for (const t of wanted) if (doc.tf.has(t)) df.set(t, (df.get(t) ?? 0) + 1);
   }
-  const ubiquitous = Math.max(MIN_UBIQUITOUS_DF, UBIQUITY * n);
+  const ubiquitous = UBIQUITY * n;
   const terms = wanted.filter((t) => {
     const d = df.get(t) ?? 0;
     return d > 0 && d <= ubiquitous;
@@ -206,7 +216,6 @@ export function recall(
 
   const scored: { doc: Doc; score: number; matched: string[] }[] = [];
   for (const doc of all) {
-    if (opts.exclude.has(doc.sessionId)) continue;
     const matched = terms.filter((t) => doc.tf.has(t));
     if (matched.length < minMatched) continue;
     let score = 0;
@@ -223,7 +232,6 @@ export function recall(
 
   return scored
     .filter((s) => s.score >= floor)
-    .slice(0, MAX_HITS)
     .map(({ doc, score, matched }) => {
       const best = bestSubject(doc.subjects, matched);
       // The summary opens with the session's first prompt, so it already
@@ -234,12 +242,16 @@ export function recall(
         sessionId: doc.sessionId,
         slug: doc.slug,
         repo: doc.repo,
-        updatedAt: doc.updatedAt,
+        at: best?.createdAt ?? doc.updatedAt,
         conversationId: best?.conversationId ?? null,
         text,
         score,
       };
-    });
+    })
+    // A slug-only match on a session with no summary yet has nothing to
+    // quote, and an empty pointer is bytes for no information.
+    .filter((hit) => hit.text)
+    .slice(0, MAX_HITS);
 }
 
 /** The subject sharing the most matched terms; the later one on a tie. */
@@ -259,7 +271,7 @@ function bestSubject(subjects: Subject[], matched: string[]): Subject | null {
 export function formatRecall(hits: RecallHit[]): string {
   if (hits.length === 0) return "";
   const lines = hits.map((h) => {
-    const where = [h.repo, formatDay(h.updatedAt)].filter(Boolean).join(", ");
+    const where = [h.repo, formatDay(h.at)].filter(Boolean).join(", ");
     const conversation = h.conversationId ? ` · conversation ${h.conversationId.slice(0, 8)}` : "";
     return `- ${h.slug} (${where})${conversation}: "${truncate(h.text, LINE_MAX)}"`;
   });

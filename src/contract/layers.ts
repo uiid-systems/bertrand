@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "fs";
+import { appendFileSync, mkdirSync, renameSync, statSync } from "fs";
 import { dirname } from "path";
 import { buildContract } from "@/contract/template";
 import { buildSiblingContext } from "@/contract/context";
@@ -58,14 +58,26 @@ export interface ContextDelivery {
   recalled?: string[];
 }
 
+/** Past this size the log rotates to `.1`, so it holds at most ~2× this. */
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+
 /**
  * Append one delivery to `paths.contextLog` — the cost side of
  * docs/context-budget.md Tier 3: injected bytes × the requests that follow.
- * Best-effort: measurement must never break a contract delivery.
+ * Written whether or not `contextRecall` is on: flag-off rows are the baseline
+ * the flag-on rows are measured against. Best-effort: measurement must never
+ * break a contract delivery.
  */
 export function logContextDelivery(entry: ContextDelivery): void {
   try {
     mkdirSync(dirname(paths.contextLog), { recursive: true });
+    try {
+      if (statSync(paths.contextLog).size > LOG_MAX_BYTES) {
+        renameSync(paths.contextLog, `${paths.contextLog}.1`);
+      }
+    } catch {
+      // No log yet.
+    }
     appendFileSync(
       paths.contextLog,
       JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n",

@@ -10,6 +10,7 @@ import {
 } from "@/contract/layers";
 import { formatRecall, queryText, recall } from "@/contract/recall";
 import { isContextRecallEnabled } from "@/lib/config";
+import { findClaudeTranscript, readTypedPrompts } from "@/lib/transcript";
 import {
   isContractSent,
   markContractSent,
@@ -48,7 +49,8 @@ import {
  *
  * `--prompt-stdin` hands over the prompt being submitted, for prompt-keyed
  * recall (contract/recall.ts, behind `contextRecall`). Read from stdin, not
- * argv: a prompt can be pasted pages. Recall runs here rather than in a hook
+ * argv: a prompt can be pasted pages. `--transcript-path` says where the
+ * conversation's earlier prompts are, for a full delivery's query. Recall runs here rather than in a hook
  * step of its own so it costs no second bun start on a path the user waits on.
  */
 
@@ -142,7 +144,7 @@ register("contract", async (args) => {
   const delivery = contractDelivery(args, conversationId);
   const prompt = args.includes("--prompt-stdin") ? await Bun.stdin.text() : "";
 
-  const hits = recallFor(session.id, conversationId, delivery, prompt);
+  const hits = recallFor(session.id, conversationId, delivery, prompt, flag(args, "transcript-path"));
   const recalled: ContextLayer = { name: "recall", text: formatRecall(hits) };
 
   const layers =
@@ -175,6 +177,28 @@ register("contract", async (args) => {
   });
 });
 
+/**
+ * What the user typed in this conversation before now. The transcript is the
+ * whole record: adopt's back-fill ingests assistant output only, so the
+ * prompts before adoption exist nowhere else. The hook passes its path; the
+ * /bertrand command finds it from the cwd claude runs its tools in. Recorded
+ * prompt events stand in when there is no transcript to read.
+ */
+function earlierPrompts(
+  sessionId: string,
+  conversationId: string,
+  transcriptPath?: string,
+): string[] {
+  const path = transcriptPath || findClaudeTranscript(conversationId);
+  const typed = path ? readTypedPrompts(path) : [];
+  if (typed.length > 0) return typed;
+  return getEventsByType(sessionId, "user.prompt")
+    .filter((e) => e.conversationId === conversationId)
+    .map((e) => (e.meta as { prompt?: unknown } | null)?.prompt)
+    .filter((p): p is string => typeof p === "string")
+    .map((p) => p.trim());
+}
+
 /** Typed prompts a full delivery's query reaches back over. */
 const FULL_QUERY_PROMPTS = 3;
 
@@ -185,27 +209,26 @@ const FULL_QUERY_PROMPTS = 3;
  *
  * The query is what this delivery is answering. A reminder answers the one
  * prompt being submitted. A full contract is a conversation's first, so it
- * answers what has been said so far — for an adopted conversation that
- * includes the back-filled prompts from before bertrand was watching
- * (Tier 2.3), and for /bertrand they are the only text there is. Only the
- * last few: a resumed conversation also gets a full delivery, and querying
- * with its whole history would match everything a little.
+ * answers what has been said so far — for an adopted conversation, the
+ * prompts from before bertrand was watching (Tier 2.3), and for /bertrand they
+ * are the only text there is. Only the last few: a resumed conversation also
+ * gets a full delivery, and querying with its whole history would match
+ * everything a little.
  */
 function recallFor(
   sessionId: string,
   conversationId: string,
   delivery: "full" | "reminder",
   prompt: string,
+  transcriptPath?: string,
 ) {
   if (!isContextRecallEnabled()) return [];
   try {
     const prompts = [prompt];
     if (delivery === "full") {
-      const earlier = getEventsByType(sessionId, "user.prompt")
-        .filter((e) => e.conversationId === conversationId)
-        .map((e) => (e.meta as { prompt?: unknown } | null)?.prompt)
-        .filter((p): p is string => typeof p === "string" && p !== prompt);
-      prompts.unshift(...earlier);
+      prompts.unshift(
+        ...earlierPrompts(sessionId, conversationId, transcriptPath).filter((p) => p !== prompt.trim()),
+      );
     }
     const query = queryText(prompts, FULL_QUERY_PROMPTS);
     if (!query) return [];

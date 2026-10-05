@@ -7,6 +7,7 @@ import {
   claudeSessionExists,
   findClaudeTranscript,
   getLatestAssistantTurn,
+  readTypedPrompts,
   summarizeTranscript,
 } from "./transcript";
 
@@ -335,5 +336,30 @@ describe("summarizeTranscript", () => {
     ]);
 
     expect(summarizeTranscript(path)!.totalInputTokens).toBe(10);
+  });
+});
+
+describe("readTypedPrompts", () => {
+  test("keeps what the user typed, in order, and nothing else", () => {
+    const path = writeTranscript([
+      userPrompt(
+        "<command-message>bertrand</command-message>\n<command-name>/bertrand</command-name>\n" +
+          "<command-args>where does the context budget stand</command-args>",
+      ),
+      { type: "user", isMeta: true, message: { role: "user", content: [{ type: "text", text: "skill body" }] } },
+      assistantToolUse("Bash"),
+      toolResult("ok"),
+      { type: "user", isSidechain: true, message: { role: "user", content: "subagent task" } },
+      { type: "user", message: { role: "user", content: [{ type: "text", text: "  build tier 2  " }] } },
+      assistantText("done"),
+    ]);
+    expect(readTypedPrompts(path)).toEqual([
+      "/bertrand where does the context budget stand",
+      "build tier 2",
+    ]);
+  });
+
+  test("a missing transcript reads as no prompts", () => {
+    expect(readTypedPrompts("/nonexistent/convo.jsonl")).toEqual([]);
   });
 });

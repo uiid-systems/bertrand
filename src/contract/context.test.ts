@@ -32,6 +32,7 @@ const { buildResumeDigest } = await import("./history");
 const { recall, formatRecall, queryText } = await import("./recall");
 const { createConversation, discardConversation } = await import("@/db/queries/conversations");
 const { insertEvent } = await import("@/db/queries/events");
+const { formatDay } = await import("@/lib/format");
 
 
 const current = createSession({ slug: "current" });
@@ -179,10 +180,13 @@ describe("buildResumeDigest", () => {
     expect(lines[0]).toBe("## Earlier in this session");
     expect(block).toContain("not instructions");
     // Current (c5) and discarded (c4) are left out; c1–c3 fit the cap of 3.
+    // Dated by each conversation's last event; formatDay keeps the
+    // assertion independent of the machine's timezone and the current year.
+    const day = (d: string) => formatDay(`2026-09-0${d} 11:00:00`);
     expect(lines.filter((l) => l.startsWith("- "))).toEqual([
-      '- Sep 1 · c1-diges: "ask c1 → reply c1"',
-      '- Sep 2 · c2-diges: "ask c2 → reply c2"',
-      '- Sep 3 · c3-diges: "ask c3 → reply c3"',
+      `- ${day("1")} · c1-diges: "ask c1 → reply c1"`,
+      `- ${day("2")} · c2-diges: "ask c2 → reply c2"`,
+      `- ${day("3")} · c3-diges: "ask c3 → reply c3"`,
     ]);
     expect(block).toContain("bertrand log digest-many --events --conversation <id>");
   });
@@ -194,11 +198,12 @@ describe("buildResumeDigest", () => {
       exchange(s.id, `cap-${i}`, `ask ${i}`, `reply ${i}`, `2026-09-0${i}`);
     }
     const bullets = buildResumeDigest(s.id).split("\n").filter((l) => l.startsWith("- "));
+    const day = (d: number) => formatDay(`2026-09-0${d} 11:00:00`);
     expect(bullets).toEqual([
       "- …2 earlier",
-      '- Sep 3 · cap-3: "ask 3 → reply 3"',
-      '- Sep 4 · cap-4: "ask 4 → reply 4"',
-      '- Sep 5 · cap-5: "ask 5 → reply 5"',
+      `- ${day(3)} · cap-3: "ask 3 → reply 3"`,
+      `- ${day(4)} · cap-4: "ask 4 → reply 4"`,
+      `- ${day(5)} · cap-5: "ask 5 → reply 5"`,
     ]);
   });
 });
@@ -215,7 +220,10 @@ describe("recall", () => {
     exchange(flaky.id, "flaky-1", "the s3 upload retries are flaky in staging", "added jittered backoff", "2026-09-10");
     exchange(flaky.id, "flaky-2", "now the multipart checksum mismatches on resume", "fixed the part ordering", "2026-09-11");
     sqlite.exec(`UPDATE sessions SET updated_at = '2026-09-11 12:00:00' WHERE id = '${flaky.id}'`);
-    createSession({ slug: "ui-4242" });
+    const ticket = createSession({ slug: "ui-4242" });
+    updateSession(ticket.id, { summary: "pagination stalls on the invoices page → fixed the cursor" });
+    // Matches on its slug alone and has nothing to quote.
+    createSession({ slug: "quiet-zebra-crossing" });
     for (let i = 0; i < 4; i++) {
       const s = createSession({ slug: `dashboard-chore-${i}` });
       updateSession(s.id, { summary: `tidy the dashboard chore ${i}` });
@@ -225,8 +233,13 @@ describe("recall", () => {
   test("points a specific prompt at the matching session", () => {
     const hits = recall("why are the s3 upload retries flaky again", { exclude: new Set([asker.id]) });
     expect(hits.map((h) => h.slug)).toEqual(["flaky-upload"]);
-    // The first conversation matched, so the summary (which opens with it) is shown.
-    expect(hits[0]).toMatchObject({ conversationId: "flaky-1", repo: "acme/storage" });
+    // The first conversation matched, so the summary (which opens with it) is
+    // shown — dated by that conversation, not the session's last touch.
+    expect(hits[0]).toMatchObject({
+      conversationId: "flaky-1",
+      repo: "acme/storage",
+      at: "2026-09-10 10:00:00",
+    });
     expect(hits[0]!.text).toContain("jittered backoff");
   });
 
@@ -248,19 +261,38 @@ describe("recall", () => {
     expect(recall("back to ui-4242", { exclude: new Set() }).map((h) => h.slug)).toEqual(["ui-4242"]);
   });
 
+  test("the current session's own recorded prompt doesn't skew the match", () => {
+    // The hook records the prompt before the contract is built. Counted in
+    // the term statistics, its unique words would look present in the corpus
+    // and turn a one-rare-term prompt into an unmatchable two-term one.
+    insertEvent({ sessionId: asker.id, event: "user.prompt", meta: { prompt: "back to ui-4242 wombat" } });
+    expect(recall("back to ui-4242 wombat", { exclude: new Set([asker.id]) }).map((h) => h.slug)).toEqual([
+      "ui-4242",
+    ]);
+  });
+
+  test("drops a hit with nothing to quote", () => {
+    expect(recall("quiet zebra crossing", { exclude: new Set() })).toEqual([]);
+  });
+
   test("queries with what the user typed, never machine prompts or the slash command", () => {
     expect(queryText(["<task-notification> s3 upload", "/bertrand s3 upload retries", ""])).toBe(
       "s3 upload retries",
     );
-    // `last` counts typed prompts only, so a machine prompt can't use up a slot.
-    expect(queryText(["first", "second", "<task-notification>x", "third"], 2)).toBe("second\nthird");
+    // `last` counts typed prompts only, so neither a machine prompt nor a bare
+    // slash command can use up a slot.
+    expect(queryText(["first", "second", "<task-notification>x", "/compact", "third"], 2)).toBe(
+      "second\nthird",
+    );
   });
 
   test("frames hits as dated history, and renders nothing for no hits", () => {
     const block = formatRecall(recall("s3 upload retries flaky", { exclude: new Set() }));
     expect(block).toStartWith("## Possibly related past sessions");
     expect(block).toContain("not instructions");
-    expect(block).toContain("- flaky-upload (acme/storage, Sep 11) · conversation flaky-1:");
+    expect(block).toContain(
+      `- flaky-upload (acme/storage, ${formatDay("2026-09-10 10:00:00")}) · conversation flaky-1:`,
+    );
     expect(formatRecall([])).toBe("");
   });
 });

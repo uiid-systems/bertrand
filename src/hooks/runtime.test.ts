@@ -59,7 +59,8 @@ describe("pruneSessionMarkers", () => {
     expect(existsSync(join(dir, "auq-nudge-sid1"))).toBe(false);
     expect(existsSync(join(dir, "working-sid1"))).toBe(false);
     expect(existsSync(join(dir, "contract-sent-cid1"))).toBe(false);
-    expect(readRecalled("cid1").size).toBe(0);
+    // Kept: a resumed conversation still has those pointers in its transcript.
+    expect(readRecalled("cid1").size).toBe(1);
   });
 
   test("leaves other sessions' markers untouched", () => {
@@ -98,13 +99,16 @@ describe("pruneStaleMarkers", () => {
   test("removes contract markers older than the cutoff, keeps fresh ones", () => {
     touch("contract-sent-old", 48 * 60 * 60 * 1000);
     touch("contract-sent-fresh", 0);
-    touch("recalled-old", 48 * 60 * 60 * 1000);
+    touch("recalled-days", 48 * 60 * 60 * 1000);
+    touch("recalled-month", 31 * 24 * 60 * 60 * 1000);
 
     pruneStaleMarkers(24 * 60 * 60 * 1000);
 
     expect(existsSync(join(dir, "contract-sent-old"))).toBe(false);
     expect(existsSync(join(dir, "contract-sent-fresh"))).toBe(true);
-    expect(existsSync(join(dir, "recalled-old"))).toBe(false);
+    // Recall markers get the longer, 30-day window.
+    expect(existsSync(join(dir, "recalled-days"))).toBe(true);
+    expect(existsSync(join(dir, "recalled-month"))).toBe(false);
   });
 
   test("only touches contract-sent markers, never other state", () => {

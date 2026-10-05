@@ -199,16 +199,24 @@ byte-identical to Tier 1.
 - **Prompt-keyed recall** (`src/contract/recall.ts`). The UserPromptSubmit
   hook pipes the prompt to `bertrand contract --prompt-stdin`, so recall
   costs no extra bun start. BM25 over one document per session: slug,
-  summary, and the first prompt of each conversation. Gates, all tuned
-  against the 66-session corpus:
-  - terms in more than 20% of sessions are dropped (min. 3);
+  summary, and the first prompt of each conversation. Gates, tuned against
+  the 66-session corpus:
+  - terms in more than 20% of sessions are dropped, with no floor, so a
+    corpus of a handful of sessions mostly recalls nothing;
   - a hit shares at least two terms with the prompt, unless the prompt has
-    a single rare term (≤3 sessions), such as a ticket id;
+    a single rare term (≤2 sessions), such as a ticket id;
   - survivors score at least 60% of the best hit (0.5 let a "tests"-only
-    match through on a CI prompt), at most three.
+    match through on a CI prompt), at most three;
+  - a hit with nothing to quote (no summary, no matching subject) is dropped.
+
+  Term statistics are computed without the excluded sessions, since the
+  current session already holds the prompt being matched.
 
   It excludes the current session and any session already pointed to in this
-  conversation (`recalled-$cid` runtime marker). It skips machine prompts and
+  conversation (`recalled-$cid` runtime marker). That marker survives pause
+  and is swept after 30 days, since a resumed conversation still has the old
+  pointers in its transcript. Pointers are dated by the matched
+  conversation, with the year when it isn't the current one. It skips machine prompts and
   strips a leading `/command`. On the corpus, ten probe prompts gave
   0 hits for "yes do it", "continue", and the context-budget prompt, and the
   right session for the specific ones (kill-server, ui-712, the font
@@ -216,8 +224,10 @@ byte-identical to Tier 1.
   categories" shares only "sidebar" with `less-cats-in-sidebar`.
 - **Auto-adopted and `adopt`ed conversations** (Tier 2.3). A full delivery
   queries with the conversation's last three typed prompts, not only the
-  current one, so the adopting prompt also searches with the back-filled
-  first prompt. `/bertrand` reaches the same path with no stdin.
+  current one. They are read from the transcript (`readTypedPrompts`): adopt's
+  back-fill ingests assistant output only, so earlier prompts exist nowhere
+  else. The hook passes `transcript_path`, and `/bertrand` finds the
+  transcript from its cwd. Slash commands are unwrapped to `/<name> <args>`.
 - **Framing.** Both blocks call themselves quoted history as of a date, not
   instructions, and say code and git outrank them.
 - **Deviation: provenance scope.** The plan said to search only the local
@@ -225,6 +235,9 @@ byte-identical to Tier 1.
   database (`src/sync/engine.ts`, last push wins) and rows carry no machine
   of origin. Recall therefore relies on the framing, one-line snippets
   capped at 200 characters, and summaries/subjects only.
+- **Injection log.** `~/.bertrand/context-log.jsonl` is written whether or
+  not the flag is on, because flag-off rows are the baseline. It rotates to
+  `.1` at 5MB.
 - **Cost seen so far** (sandboxed copy, force-bertrand-logs): the digest adds
   582 B to a full contract, and one recall pointer adds ~450 B to a
   reminder. Prompts with no match add nothing.
@@ -330,6 +343,20 @@ machine. Proceeding with single-model findings only.
 | 7 | `derive-slug.ts` had its own machine-prompt regex that missed `<agent-message from="…">` | **Actionable:** one shared `lib/machine-prompt.ts` (any lowercase tag, attributes allowed) |
 | 8 | A current session missing from the non-archived list silently fell back to the global list | **Actionable:** resolved with `getSession` |
 | 9 | Siblings on resume are scoped from the session's previous repo/branch (built before `recordSessionKey`) | **Trade-off:** edge case; on a true `--resume` the argv copy is ignored anyway |
+
+## Doubt cycle 4 — review of the Tier 2 build (PR #309)
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | The current session's freshly recorded prompt counted toward term frequencies, so every word of the prompt looked present in the corpus. A one-rare-term prompt became two terms and stopped matching, on every conversation's first prompt | **Actionable, reproduced:** statistics now exclude excluded sessions |
+| 2 | Tier 2.3 didn't work. Adopt's back-fill ingests only assistant entries (`db/events/ingest.ts`), so there were no earlier `user.prompt` rows to query, and `/bertrand` had none at all. The first verification inserted the row by hand | **Actionable:** earlier prompts come from the transcript. Re-verified with a real transcript and the real hook |
+| 3 | A slug-only match on a session with no summary rendered as `""` | **Actionable:** dropped |
+| 4 | Pointers carried the session's `updatedAt`, not the matched conversation's date; no year | **Actionable** |
+| 5 | Pausing pruned `recalled-$cid`, so a resumed conversation could get the same pointers again | **Actionable:** kept 30 days |
+| 6 | The ubiquity gate's floor of 3 meant that in a corpus under ~15 sessions any term passed the single-term exception | **Actionable:** no floor; single-term exception ≤2 sessions |
+| 7 | The log ignores the flag and grows without bound; `resume-plan.test` reads the real config | **Partly actionable:** rotation at 5MB. Always-on logging is deliberate (it provides the baseline). The config read is read-only and harmless |
+| 8 | Missing tests: the contract handler, hook stdin, the current-prompt case; date assertions failed under `TZ=Pacific/Auckland` | **Partly actionable:** added current-prompt, empty-hit, transcript-reader and marker-retention tests; dates are now timezone-independent. Handler and hook stdin are covered by the end-to-end runs, not unit tests |
+| 9 | A bare `/command` took up one of the three query slots | **Actionable:** stripped before counting |
 
 ## Open, deliberately not answered here
 

@@ -50,6 +50,12 @@ const RECALL_MARKER_PREFIX = "recalled-";
 
 /** Default age past which an orphaned contract-sent marker is swept. */
 const STALE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Age past which a recall marker is swept. Longer than the rest because its
+ * job outlives the process: a conversation resumed days later still has the
+ * old pointers in its transcript, and showing them again is pure cost.
+ */
+const RECALL_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Indirection over paths.runtime so tests can point the marker dir at a temp
 // location. Narrower than `_setRootDir` in lib/paths on purpose: a test of the
@@ -134,7 +140,7 @@ export function pruneSessionMarkers(
   rmMarker(`worktree-${sessionId}`);
   if (conversationId) {
     rmMarker(`${CONTRACT_MARKER_PREFIX}${conversationId}`);
-    rmMarker(`${RECALL_MARKER_PREFIX}${conversationId}`);
+    // `recalled-` stays: see RECALL_STALE_MS.
     // Dropped along with the adoption marker so a `claude --resume` of this
     // conversation re-arms the same way a fresh one does: one prompt to prove
     // materiality, then a re-attach. Left behind, an already-declined gate
@@ -160,7 +166,10 @@ export function pruneSessionMarkers(
  * session the user is still in — a worse failure than the stale file. So the
  * marker carries claude's pid, and a live pid vetoes the sweep outright.
  */
-export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
+export function pruneStaleMarkers(
+  maxAgeMs: number = STALE_MS,
+  recallMaxAgeMs: number = RECALL_STALE_MS,
+): void {
   let entries: string[];
   try {
     entries = readdirSync(runtimeDir);
@@ -169,6 +178,7 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
   }
 
   const cutoff = Date.now() - maxAgeMs;
+  const recallCutoff = Date.now() - recallMaxAgeMs;
   for (const name of entries) {
     const isContract = name.startsWith(CONTRACT_MARKER_PREFIX);
     const isAdoption = name.startsWith(ADOPTION_MARKER_PREFIX);
@@ -177,8 +187,6 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
     // so the worst a premature sweep costs is one more `auto-adopt` spawn that
     // reaches the same conclusion.
     const isAutoCreate = name.startsWith(AUTO_CREATE_MARKER_PREFIX);
-    // Same footing as a contract marker: once the conversation moves on, it
-    // has done its job.
     const isRecall = name.startsWith(RECALL_MARKER_PREFIX);
     if (!isContract && !isAdoption && !isAutoCreate && !isRecall) continue;
 
@@ -191,7 +199,8 @@ export function pruneStaleMarkers(maxAgeMs: number = STALE_MS): void {
     }
 
     try {
-      if (statSync(join(runtimeDir, name)).mtimeMs < cutoff) rmMarker(name);
+      const limit = isRecall ? recallCutoff : cutoff;
+      if (statSync(join(runtimeDir, name)).mtimeMs < limit) rmMarker(name);
     } catch {
       // Raced with another process removing it — fine.
     }

@@ -379,3 +379,56 @@ export function getLatestAssistantTurn(filePath: string): AssistantTurn | null {
   };
 }
 
+
+/**
+ * The prompts a user typed into a conversation, in order, read from its
+ * transcript.
+ *
+ * Bertrand's own `user.prompt` events only exist from the moment its hook
+ * started recording; an adopted conversation's earlier prompts live only in
+ * the transcript, since back-fill ingests assistant output alone. Tool
+ * results, sidechains and `isMeta` entries (skill bodies, caveats) are not
+ * typed input. A slash command is stored wrapped in `<command-*>` tags; it is
+ * unwrapped to `/<name> <args>` so the user's words in the args survive.
+ */
+export function readTypedPrompts(filePath: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(filePath, "utf-8");
+  } catch {
+    return [];
+  }
+
+  const prompts: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry.type !== "user" || entry.isSidechain === true || entry.isMeta === true) continue;
+
+    const content = (entry.message as Record<string, unknown> | undefined)?.content;
+    let prompt = "";
+    if (typeof content === "string") {
+      prompt = content;
+    } else if (Array.isArray(content)) {
+      const blocks = content as Array<Record<string, unknown>>;
+      if (blocks.some((b) => b.type === "tool_result")) continue;
+      prompt = blocks
+        .filter((b) => b.type === "text" && typeof b.text === "string")
+        .map((b) => b.text as string)
+        .join("\n");
+    }
+
+    const command = prompt.match(/<command-name>([^<]*)<\/command-name>/);
+    if (command) {
+      const args = prompt.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1] ?? "";
+      prompt = `${command[1]} ${args}`;
+    }
+    if (prompt.trim()) prompts.push(prompt.trim());
+  }
+  return prompts;
+}

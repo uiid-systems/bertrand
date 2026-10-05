@@ -42,11 +42,16 @@ export function formatAgo(storedOrDate: string | Date): string {
   });
 }
 
-/** "Oct 3" — a calendar day, for text that must stay true as it ages. */
+/**
+ * "Oct 3" — a calendar day, for text that must stay true as it ages. Carries
+ * the year when it isn't this one, so last year's work never reads as recent.
+ */
 export function formatDay(stored: string): string {
-  return new Date(parseDbTime(stored)).toLocaleDateString("en-US", {
+  const at = new Date(parseDbTime(stored));
+  return at.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    ...(at.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
   });
 }
 

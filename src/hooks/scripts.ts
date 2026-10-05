@@ -498,7 +498,8 @@ prompt="$(printf '%s' "$input" | jq -r '.prompt // ""')"
 if [ -f "$marker" ]; then
   contract="$(printf '%s' "$prompt" | bq contract --session-id "$sid" --conversation-id "\${cid:-$sid}" --short --prompt-stdin)"
 else
-  contract="$(printf '%s' "$prompt" | bq contract --session-id "$sid" --conversation-id "\${cid:-$sid}" --prompt-stdin)"
+  contract="$(printf '%s' "$prompt" | bq contract --session-id "$sid" --conversation-id "\${cid:-$sid}" --prompt-stdin \\
+    --transcript-path "$(printf '%s' "$input" | jq -r '.transcript_path // ""')")"
   # Only a contract that was actually printed counts as sent: \`bq\` swallows
   # failures, and \`/bertrand\` trusts this marker to skip its own full copy.
   [ -n "$contract" ] && : > "$marker"
