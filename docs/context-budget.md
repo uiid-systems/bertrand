@@ -39,7 +39,7 @@ not the mechanism (user decision).
 | Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
 | Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
 | Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
-| Tier 3.3: paired replay | Harness built (cut-off, `bertrand replay-context`, `scripts/replay/`); not yet run. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Runs on the work machine; pilot ~15M processed tokens |
+| Tier 3.3: paired replay | Harness built (cut-off, `bertrand replay-context`, `scripts/replay/`); not yet run. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Pilot tasks drafted locally; ~15M processed tokens |
 
 ---
 
@@ -291,9 +291,10 @@ What the data supports instead:
 
 ### Tier 3 replay plan (drafted 2026-10-05, not run)
 
-**Where it runs:** the work machine. Every strong candidate is a
-tabs-backend or design-system conversation, and their transcripts and
-checkouts exist only there (the DB is synced, the transcripts are not).
+**Where it runs:** the work machine, which has the task repos, the
+original transcripts and the DB. Pilot task files stay out of this public
+repo, since they describe private-repo work. The pilot's live in
+`~/.bertrand/replay/pilot.tasks.json`.
 
 **Candidate tasks.** These are mined from the 28 conversations that ran
 `bertrand log|search|list`, ordered by how early they did. Each prompt
@@ -353,7 +354,18 @@ throwaway worktree.
   seeded bootstrap 95% CI, correctness per arm, and the ship verdict (CI
   upper bound below 1, no loss in correctness). Dry-run checked on a local
   task: the cut kept nothing past `asOf`, the shim read the copy, the
-  worktree was cleaned up. Not yet run against `claude`. Residual leaks
+  worktree was cleaned up. Two bugs the pilot dry run caught: git read the
+  zone-less UTC `asOf` as local time (it checked out a commit with the
+  task's own later revert), and the cut deleted the task's own session and
+  conversation, which start exactly at `asOf`. Not yet run against `claude`.
+
+  **Pilot readiness check (2026-10-05):** the treatment blocks for the three
+  drafted tasks are mostly noise. For the UI-596 task, recall returns three
+  unrelated sessions and misses `ui-596-…`, even though the prompt names
+  "UI-596". The two-shared-terms gate needs two matches, and only the
+  ticket number matches; generic words ("render", "button") let weak
+  sessions through. For UI-704, the digest names its conversation, but its
+  one line says nothing about what UI-704 changed. Residual leaks
   shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
   which can mention later work.
 

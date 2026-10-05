@@ -29,11 +29,16 @@ export function cutSnapshot(sourceDb: string, home: string, asOf: string): strin
   const cut = new Database(db);
   try {
     cut.exec("PRAGMA foreign_keys = ON");
-    const after = (column: string) => `julianday(${column}) >= julianday($asOf)`;
+    // `asOf` is the moment the task was asked, which is usually the instant
+    // its own conversation (and maybe session) started. So rows that *start*
+    // at it survive — the replay needs them to exist — while events at it go:
+    // the first is the task's own prompt, which the runner supplies.
+    const atOrAfter = (column: string) => `julianday(${column}) >= julianday($asOf)`;
+    const after = (column: string) => `julianday(${column}) > julianday($asOf)`;
     cut.transaction(() => {
       const run = (sql: string) => cut.query(sql).run({ $asOf: asOf });
       // Events first: they reference conversations without a cascade.
-      run(`DELETE FROM events WHERE ${after("created_at")}
+      run(`DELETE FROM events WHERE ${atOrAfter("created_at")}
              OR conversation_id IN (SELECT id FROM conversations WHERE ${after("started_at")})`);
       run(`DELETE FROM conversations WHERE ${after("started_at")}`);
       run(`DELETE FROM sessions WHERE ${after("started_at")}`); // cascades the rest

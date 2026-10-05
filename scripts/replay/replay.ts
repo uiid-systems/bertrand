@@ -18,6 +18,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rm
 import { homedir, tmpdir } from "os";
 import { join, resolve } from "path";
 import { claudeTranscriptPath, summarizeTranscript } from "@/lib/transcript";
+import { parseDbTime } from "@/lib/format";
 import { cutSnapshot, writeBertrandShim } from "./snapshot";
 import { isCorrect, verdict, type RunRecord } from "./report";
 
@@ -79,6 +80,15 @@ function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, string>; s
   return proc.stdout.toString();
 }
 
+/**
+ * Stored sqlite times are UTC with no zone marker, and git reads a bare
+ * "YYYY-MM-DD HH:MM:SS" as local time — off by the machine's UTC offset,
+ * which checked out a commit hours after the task was asked.
+ */
+function utc(stored: string): string {
+  return new Date(parseDbTime(stored)).toISOString();
+}
+
 /** process.env minus bertrand's identity, so no replay records into a session. */
 function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
   const env: Record<string, string> = {};
@@ -115,7 +125,7 @@ async function run(): Promise<void> {
       writeBertrandShim(bin, home, BERTRAND);
       const commit =
         task.commit ??
-        sh(["git", "-C", task.repo, "rev-list", "-1", `--before=${task.asOf}`, task.branch ?? "main"]).trim();
+        sh(["git", "-C", task.repo, "rev-list", "-1", `--before=${utc(task.asOf)}`, task.branch ?? "main"]).trim();
       if (!commit) throw new Error(`no commit on ${task.branch ?? "main"} before ${task.asOf}`);
       sh(["git", "-C", task.repo, "worktree", "add", "--detach", tree, commit]);
 
