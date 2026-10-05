@@ -4,7 +4,7 @@ import { events, sessionAliases } from "@/db/schema";
 import { getAllSessions } from "@/db/queries/sessions";
 import { isMachinePrompt } from "@/lib/machine-prompt";
 import { formatDay, parseDbTime, truncate } from "@/lib/format";
-import { summarizeExchange } from "@/lib/summary";
+import { statusOf, summarizeExchange } from "@/lib/summary";
 import type { EventRow } from "@/types";
 
 /**
@@ -61,7 +61,9 @@ const K1 = 1.2;
 const B = 0.75;
 /** Characters of a conversation's first prompt that are indexed. */
 const SUBJECT_INDEX_MAX = 600;
-const LINE_MAX = 200;
+/** A quoted line; a status line runs "<subject> → <status>". */
+const LINE_MAX = 300;
+const SUBJECT_LINE_MAX = 80;
 
 const STOPWORDS = new Set(
   (
@@ -107,22 +109,28 @@ export interface RecallHit {
   sessionId: string;
   slug: string;
   repo: string | null;
-  /** When the shown text dates from: the matched conversation's first
-   * prompt, else the session's last update. */
+  /** When the shown text dates from: its status question, else the matched
+   * conversation's first prompt, else the session's last update. */
   at: string;
   /** The conversation whose first prompt matched best; null when only the
    * session-level text did. */
   conversationId: string | null;
-  /** One line to show: the matched conversation's subject, else the summary. */
+  /** One line to show: the quoted conversation's "subject → status", else
+   * its subject or the session summary. */
   text: string;
   score: number;
 }
 
+/** One conversation of a session, as recall sees it. */
 interface Subject {
   conversationId: string | null;
+  /** First typed prompt; "" when none was recorded (adopted mid-conversation). */
   text: string;
   createdAt: string;
   terms: Set<string>;
+  /** Its last status question (`statusOf`), "" if it asked none. */
+  status: string;
+  statusAt: string | null;
 }
 
 interface Doc {
@@ -140,38 +148,57 @@ interface Doc {
 type Before = (stored: string) => boolean;
 
 function loadSubjects(before: Before): Map<string, Subject[]> {
-  const rows = getDb()
-    .select({
-      sessionId: events.sessionId,
-      conversationId: events.conversationId,
-      meta: events.meta,
-      createdAt: events.createdAt,
-    })
+  const rows = (getDb()
+    .select()
     .from(events)
-    .where(eq(events.event, "user.prompt"))
+    .where(inArray(events.event, ["user.prompt", "session.waiting"]))
     .orderBy(events.id)
-    .all();
+    .all() as EventRow[]).filter((row) => before(row.createdAt));
 
-  const seen = new Set<string>();
-  const bySession = new Map<string, Subject[]>();
+  // Legacy rows have no conversation id; the session stands in for one.
+  const key = (row: EventRow) => row.conversationId ?? `session:${row.sessionId}`;
+  const byConversation = new Map<string, { sessionId: string; subject: Subject; questions: EventRow[] }>();
   for (const row of rows) {
+    let entry = byConversation.get(key(row));
+    if (!entry) {
+      entry = {
+        sessionId: row.sessionId,
+        subject: {
+          conversationId: row.conversationId,
+          text: "",
+          createdAt: row.createdAt,
+          terms: new Set(),
+          status: "",
+          statusAt: null,
+        },
+        questions: [],
+      };
+      byConversation.set(key(row), entry);
+    }
+    if (row.event === "session.waiting") {
+      entry.questions.push(row);
+      continue;
+    }
     const prompt = (row.meta as { prompt?: unknown } | null)?.prompt;
-    if (typeof prompt !== "string" || !prompt.trim() || isMachinePrompt(prompt)) continue;
-    if (!before(row.createdAt)) continue;
-    // Legacy rows have no conversation id; the session's first prompt stands in.
-    const key = row.conversationId ?? `session:${row.sessionId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (entry.subject.text || typeof prompt !== "string" || !prompt.trim() || isMachinePrompt(prompt)) {
+      continue;
+    }
     const text = stripSlashCommand(prompt).replace(/\s+/g, " ").trim();
-    const subject = {
-      conversationId: row.conversationId,
-      text,
-      createdAt: row.createdAt,
-      terms: new Set(tokenize(text.slice(0, SUBJECT_INDEX_MAX))),
-    };
-    const list = bySession.get(row.sessionId) ?? [];
-    list.push(subject);
-    bySession.set(row.sessionId, list);
+    entry.subject.text = text;
+    entry.subject.createdAt = row.createdAt;
+    entry.subject.terms = new Set(tokenize(text.slice(0, SUBJECT_INDEX_MAX)));
+  }
+
+  const bySession = new Map<string, Subject[]>();
+  for (const { sessionId, subject, questions } of byConversation.values()) {
+    subject.status = statusOf(questions);
+    subject.statusAt = subject.status ? questions[questions.length - 1]!.createdAt : null;
+    // A conversation with neither a prompt nor a status has nothing to say.
+    if (!subject.text && !subject.status) continue;
+    bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), subject]);
+  }
+  for (const list of bySession.values()) {
+    list.sort((a, b) => parseDbTime(a.createdAt) - parseDbTime(b.createdAt));
   }
   return bySession;
 }
@@ -357,16 +384,23 @@ function scoreByTerms(query: string, all: Doc[]): RecallHit[] {
 
 function toHit(doc: Doc, matched: string[], score: number): RecallHit {
   const best = bestSubject(doc.subjects, matched);
-  // The summary opens with the session's first prompt, so it already
-  // says what a first-conversation match is about, and adds the outcome.
+  // Quote the conversation that matched — or, for a session the prompt
+  // named, the latest one with a status: where that session ended up.
+  const quoted = best ?? [...doc.subjects].reverse().find((s) => s.status) ?? null;
+  const status = quoted?.status
+    ? [quoted.text && truncate(quoted.text, SUBJECT_LINE_MAX), quoted.status].filter(Boolean).join(" → ")
+    : "";
+  // No status anywhere: the summary opens with the session's first prompt,
+  // so it already says what a first-conversation match is about.
   const text =
-    best && best !== doc.subjects[0] ? best.text : (doc.summary ?? doc.subjects[0]?.text ?? "");
+    status ||
+    (best && best !== doc.subjects[0] ? best.text : (doc.summary ?? doc.subjects[0]?.text ?? ""));
   return {
     sessionId: doc.sessionId,
     slug: doc.slug,
     repo: doc.repo,
-    at: best?.createdAt ?? doc.updatedAt,
-    conversationId: best?.conversationId ?? null,
+    at: (status && quoted?.statusAt) || best?.createdAt || doc.updatedAt,
+    conversationId: (status ? quoted?.conversationId : best?.conversationId) ?? null,
     text,
     score,
   };

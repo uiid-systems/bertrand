@@ -1,7 +1,7 @@
 import { getEventsByType } from "@/db/queries/events";
 import { getConversationsBySession } from "@/db/queries/conversations";
 import { getSession } from "@/db/queries/sessions";
-import { summarizeExchange } from "@/lib/summary";
+import { statusExchange } from "@/lib/summary";
 import { formatDay, parseDbTime } from "@/lib/format";
 import type { EventRow } from "@/types";
 
@@ -12,8 +12,8 @@ import type { EventRow } from "@/types";
  * The highest-precision history bertrand has — same session, so relevance is
  * given rather than guessed — and the case agents most often reconstruct by
  * hand with `bertrand log <self>`. Capped to the most recent few, one line
- * each ("first prompt → last message", the session-summary derivation applied
- * per conversation), with a drill-in pointer for the rest.
+ * each ("first prompt → last status question", see `statusExchange`), with a
+ * drill-in pointer for the rest.
  *
  * Framed as dated history, not live context: an old prompt like "commit and
  * open the PR" must not read as an instruction to this conversation.
@@ -25,6 +25,7 @@ interface Exchange {
   id: string;
   prompts: EventRow[];
   messages: EventRow[];
+  questions: EventRow[];
   /** Last event, as stored — formatted for display. */
   endedAt: string;
   /** The same, as epoch ms. Stored times mix sqlite and ISO formats, which
@@ -48,14 +49,14 @@ export function buildResumeDigest(
   kept.delete(currentConversationId ?? "");
 
   const byConversation = new Map<string, Exchange>();
-  const collect = (rows: EventRow[], key: "prompts" | "messages") => {
+  const collect = (rows: EventRow[], key: "prompts" | "messages" | "questions") => {
     for (const row of rows) {
       if (!row.conversationId || !kept.has(row.conversationId)) continue;
       const ms = parseDbTime(row.createdAt);
       if (cutoff !== null && ms >= cutoff) continue;
       let ex = byConversation.get(row.conversationId);
       if (!ex) {
-        ex = { id: row.conversationId, prompts: [], messages: [], endedAt: "", endedMs: -1 };
+        ex = { id: row.conversationId, prompts: [], messages: [], questions: [], endedAt: "", endedMs: -1 };
         byConversation.set(row.conversationId, ex);
       }
       ex[key].push(row);
@@ -67,11 +68,12 @@ export function buildResumeDigest(
   };
   collect(getEventsByType(sessionId, "user.prompt"), "prompts");
   collect(getEventsByType(sessionId, "assistant.message"), "messages");
+  collect(getEventsByType(sessionId, "session.waiting"), "questions");
 
   const lines = [...byConversation.values()]
     .sort((a, b) => a.endedMs - b.endedMs)
     .map((ex) => {
-      const summary = summarizeExchange(ex.prompts, ex.messages);
+      const summary = statusExchange(ex.prompts, ex.messages, ex.questions);
       return summary && `- ${formatDay(ex.endedAt)} · ${ex.id.slice(0, 8)}: "${summary}"`;
     })
     .filter((line): line is string => !!line);

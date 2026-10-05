@@ -191,9 +191,8 @@ byte-identical to Tier 1.
 - **Resume digest** (`src/contract/history.ts`). A `## Earlier in this session`
   layer in every full contract: the session's other conversations (not
   discarded, not the current one), oldest first, capped at the last three,
-  one dated line each (`first prompt → last message`, the pause-time summary
-  derivation applied per conversation), plus a `--conversation <id>`
-  drill-in. All four contract builders now go through one
+  one dated line each (`first prompt → last status question`, else last
+  message), plus a `--conversation <id>` drill-in. All four contract builders now go through one
   `contractLayers()` (`src/contract/layers.ts`), so launch, resume,
   dashboard, and hook deliveries carry the same layers.
 - **Prompt-keyed recall** (`src/contract/recall.ts`). The UserPromptSubmit
@@ -380,10 +379,22 @@ throwaway worktree.
   After named sessions and the coverage gate: UI-596 → exactly
   `ui-596-…`, and UI-600 → exactly `ui-600-…` (plus its own-session digest).
   UI-704 now gets the digest only, with no recall noise. The probe set is
-  unchanged. Still weak: the quoted *lines*. A digest or summary line is
-  "first prompt → last message", which often says nothing about what was
-  changed (UI-704's reads "seems a ci test failed → …unrelated"). The
-  pointer is right, but the agent still has to open it. Residual leaks
+  unchanged. The quoted *lines* were still weak: "first prompt → last
+  message" often says nothing about what changed (UI-704's read "seems a ci
+  test failed → …unrelated").
+
+  Fixed by quoting each conversation's **last status question** instead
+  (`statusExchange`, `lib/summary.ts`). Bertrand's rules make every
+  AskUserQuestion state what the turn did, so the last one is the
+  conversation's own status report. It falls back to the last message when
+  there is none. This is Tier 2 only: stored session summaries are
+  untouched, and flag-off contracts are still byte-identical to main. The
+  pilot lines now read, e.g., UI-596: "… → Commit 1 (renderWithProps
+  chaining + 16 tests) is in at 91c387699c". UI-600's digest reads "…
+  covering the renderWithProps ref merge plus the compose-refs.ts cleanup".
+  Treatment blocks shrank to 3.9–4.5KB with the noise gone. UI-600's own
+  pointer stays thin: its first status question came a minute after the
+  task's cut-off. Residual leaks
   shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
   which can mention later work.
 

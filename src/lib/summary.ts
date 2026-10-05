@@ -29,6 +29,7 @@ import { isMachinePrompt } from "@/lib/machine-prompt";
 
 const SUBJECT_MAX = 120;
 const OUTCOME_MAX = 180;
+const STATUS_MAX = 220;
 
 /** Collapse whitespace runs so multi-line prompts read as one line. */
 function oneLine(text: string): string {
@@ -125,6 +126,39 @@ export function summarizeExchange(
 
   if (subject && outcome) return `${subject} → ${outcome}`;
   return subject || outcome || null;
+}
+
+/**
+ * "<first prompt> → <last status question>" — the Tier 2 history line
+ * (contract/history.ts, contract/recall.ts), falling back to
+ * {@link summarizeExchange} when the slice asked no questions.
+ *
+ * Why the question: bertrand's rules make every AskUserQuestion stand alone —
+ * "say what this turn did and name the decision at hand" — so the last one is
+ * the conversation's own status report ("All UI-704 acceptance criteria are
+ * done in 3 local commits…"). The last assistant message is whatever was
+ * said last, often a tool narration ("Checking CI…") that says nothing about
+ * what changed. Kept apart from the stored session summary so the sibling
+ * block, `list` and `search` don't change under the `contextRecall` flag.
+ */
+export function statusExchange(
+  prompts: EventRow[],
+  messages: EventRow[],
+  questions: EventRow[],
+): string | null {
+  const status = statusOf(questions);
+  if (!status) return summarizeExchange(prompts, messages);
+  const asked = prompts.filter((row) => !isMachinePrompt(metaStr(row.meta, "prompt")));
+  const subject = truncate(oneLine(edgeText(asked, "prompt", "first")), SUBJECT_MAX);
+  return subject ? `${subject} → ${status}` : status;
+}
+
+/** The last status question of a slice of `session.waiting` rows, one line. */
+export function statusOf(questions: EventRow[]): string {
+  const last = [...questions].reverse().find((row) => metaStr(row.meta, "question") || row.summary);
+  if (!last) return "";
+  const text = metaStr(last.meta, "question") || last.summary || "";
+  return cutAtSentence(oneLine(condense(text)), STATUS_MAX);
 }
 
 /**

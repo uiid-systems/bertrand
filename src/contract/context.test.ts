@@ -208,6 +208,24 @@ describe("buildResumeDigest", () => {
     ]);
   });
 
+  test("quotes a conversation's last status question over its last message", () => {
+    const s = createSession({ slug: "digest-status" });
+    createConversation({ id: "st-1", sessionId: s.id });
+    exchange(s.id, "st-1", "fix the spinner", "Checking CI…", "2026-09-04");
+    const ask = (question: string, at: string) =>
+      insertEvent({ sessionId: s.id, conversationId: "st-1", event: "session.waiting", meta: { question }, createdAt: at });
+    ask("Spinner fixed in two commits. Push?", "2026-09-04 10:30:00");
+    ask("Pushed as abc123 and CI is green. Anything else?", "2026-09-04 10:45:00");
+
+    const line = (asOf?: string) =>
+      buildResumeDigest(s.id, undefined, asOf).split("\n").find((l) => l.startsWith("- "));
+    expect(line()).toContain('"fix the spinner → Pushed as abc123 and CI is green. Anything else?"');
+    // As of before the second question, the first is the status.
+    expect(line("2026-09-04 10:40:00")).toContain('"fix the spinner → Spinner fixed in two commits. Push?"');
+    // No question yet: the last message stands in.
+    expect(line("2026-09-04 10:20:00")).toContain('"fix the spinner"');
+  });
+
   test("past the cap, keeps the most recent and counts the rest", () => {
     const s = createSession({ slug: "digest-capped" });
     for (let i = 1; i <= 5; i++) {
@@ -312,6 +330,19 @@ describe("recall", () => {
     // Naming the current session doesn't bring it back. (The asker excluded
     // too: it recorded "ui-4242" in a prompt of its own above.)
     expect(recall("what did UI-4242 decide", { exclude: new Set([ticketSession(), asker.id]) })).toEqual([]);
+  });
+
+  test("a named session is quoted by where it ended up", () => {
+    // No conversation id, like a legacy row: the session stands in.
+    insertEvent({
+      sessionId: ticketId,
+      event: "session.waiting",
+      meta: { question: "Cursor pagination fixed and merged as #12. Close the ticket?" },
+      createdAt: "2026-09-12 09:00:00",
+    });
+    const [hit] = recall("what did UI-4242 end up doing", { exclude: new Set([asker.id]) });
+    expect(hit).toMatchObject({ slug: "ui-4242", at: "2026-09-12 09:00:00" });
+    expect(hit!.text).toBe("Cursor pagination fixed and merged as #12. Close the ticket?");
   });
 
   test("a long prompt that touches many sessions a little matches none", () => {
