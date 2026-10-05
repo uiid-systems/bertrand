@@ -350,11 +350,16 @@ throwaway worktree.
     conversations and sessions are deleted, and summaries and stats cleared;
   - puts a `bertrand` shim that reads that copy first on the agent's PATH, so
     `bertrand log` inside a replay can't show the future either;
-  - checks out the last commit before `asOf` in a throwaway worktree;
+  - exports the last commit before `asOf` (`git archive`) into a plain
+    directory: no `.git` to read the future from, and no worktree for
+    anything else to manage;
   - renders both arms with `replay-context`;
-  - runs `claude -p` with hooks off, no MCP servers, read-only tools
-    (Read/Grep/Glob, `git log|show|diff`, `bertrand log|search|list`) and a
-    fixed `--session-id`, interleaving the arms in random order;
+  - runs `claude -p --restricted --permission-mode dontAsk` with only
+    Read/Grep/Glob, and Bash limited to `bertrand log|search|list`. It also
+    turns hooks and MCP servers off, fixes `--session-id`, and interleaves
+    the arms in random order. `--restricted` is what makes this a sandbox: it
+    ignores the user's settings files and confines file tools to the tree.
+    `--allowedTools` alone only *adds* permissions;
   - counts tokens from each run's transcript, as the budget below was;
   - appends one JSON line per run, including the answer and whether it
     contains every answer-key fact.
@@ -366,7 +371,22 @@ throwaway worktree.
   worktree was cleaned up. Two bugs the pilot dry run caught: git read the
   zone-less UTC `asOf` as local time (it checked out a commit with the
   task's own later revert), and the cut deleted the task's own session and
-  conversation, which start exactly at `asOf`. Not yet run against `claude`.
+  conversation, which start exactly at `asOf`.
+
+  **First pilot attempt (2026-10-05), aborted after 1 recorded run.**
+  - Registered worktrees for design-system tasks were deleted mid-run.
+    Claude Code itself reported "Working directory … was deleted". The cause
+    is unconfirmed: idle test worktrees survived, and nothing in the repo's
+    hooks prunes them.
+  - The sandbox leaked. Without `--restricted`, the user's own allow-rules
+    applied, and an agent ran `git -C` against both live repos and read
+    present-day code, which is the task's future.
+
+  Both are fixed (export plus `--restricted`). A probe confirmed `git -C`,
+  `cat` and reads outside the tree are denied, while `bertrand
+  log|search|list` work against the cut snapshot. The one recorded run is
+  set aside (`pilot.runs.leaky-sandbox.jsonl`). The attempt and probes
+  cost 1.44M processed tokens.
 
   **Pilot readiness check (2026-10-05):** the treatment blocks for the three
   drafted tasks are mostly noise. For the UI-596 task, recall returns three

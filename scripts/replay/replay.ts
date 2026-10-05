@@ -14,7 +14,7 @@
  * tasks.example.json.
  */
 import { randomUUID } from "crypto";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join, resolve } from "path";
 import { claudeTranscriptPath, summarizeTranscript } from "@/lib/transcript";
@@ -42,18 +42,17 @@ interface Task {
 }
 
 const ARMS = ["control", "treatment"] as const;
-/** Read-only: a replay answers a question, it never edits the checkout. */
-const TOOLS = [
-  "Read",
-  "Grep",
-  "Glob",
-  "Bash(git log:*)",
-  "Bash(git show:*)",
-  "Bash(git diff:*)",
-  "Bash(bertrand log:*)",
-  "Bash(bertrand search:*)",
-  "Bash(bertrand list:*)",
-];
+/**
+ * What a replay may do: read the exported tree, and read history through the
+ * cut `bertrand`. Enforced, not suggested — `--restricted` drops every tool
+ * not named here, ignores the user's settings files (whose allow-rules
+ * otherwise widen these), and confines the file tools to the tree;
+ * `dontAsk` denies anything not pre-approved. Without it, the first pilot's
+ * agent ran `git -C` against both live repos and read their present-day
+ * code: the replayed task's future.
+ */
+const TOOLS = ["Read", "Grep", "Glob", "Bash"];
+const ALLOWED = ["Bash(bertrand log:*)", "Bash(bertrand search:*)", "Bash(bertrand list:*)"];
 const RUN_TIMEOUT_MS = 20 * 60 * 1000;
 /** This checkout's bertrand: `replay-context` isn't in a released build yet. */
 const BERTRAND = ["bun", resolve(import.meta.dir, "../../src/index.ts")];
@@ -88,6 +87,9 @@ function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, string>; s
 function utc(stored: string): string {
   return new Date(parseDbTime(stored)).toISOString();
 }
+
+/** One shell word. */
+const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
 /** process.env minus bertrand's identity, so no replay records into a session. */
 function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
@@ -127,7 +129,12 @@ async function run(): Promise<void> {
         task.commit ??
         sh(["git", "-C", task.repo, "rev-list", "-1", `--before=${utc(task.asOf)}`, task.branch ?? "main"]).trim();
       if (!commit) throw new Error(`no commit on ${task.branch ?? "main"} before ${task.asOf}`);
-      sh(["git", "-C", task.repo, "worktree", "add", "--detach", tree, commit]);
+      // An export, not a worktree. A plain directory has no git history to
+      // read the future from, and nothing that manages the repo's worktrees
+      // can reach it — registered worktrees vanished mid-run in the first
+      // pilot, cause unconfirmed.
+      mkdirSync(tree);
+      sh(["sh", "-c", `git -C ${quote(task.repo)} archive ${commit} | tar -x -C ${quote(tree)}`]);
 
       const system = Object.fromEntries(
         ARMS.map((arm) => [
@@ -168,13 +175,6 @@ async function run(): Promise<void> {
     } catch (e) {
       console.error(`${task.id}: ${e instanceof Error ? e.message : e}`);
     } finally {
-      if (existsSync(tree)) {
-        try {
-          sh(["git", "-C", task.repo, "worktree", "remove", "--force", tree]);
-        } catch {
-          // Left for `git worktree prune`.
-        }
-      }
       if (!args.includes("--keep")) rmSync(work, { recursive: true, force: true });
     }
   }
@@ -195,9 +195,12 @@ function runArm(
       "--output-format", "json",
       "--session-id", sessionId,
       "--append-system-prompt", system,
+      "--restricted",
+      "--tools", TOOLS.join(","),
+      "--allowedTools", ...ALLOWED,
+      "--permission-mode", "dontAsk",
       "--settings", JSON.stringify({ disableAllHooks: true }),
       "--strict-mcp-config",
-      "--allowedTools", ...TOOLS,
       ...(where.model ? ["--model", where.model] : []),
     ],
     {
