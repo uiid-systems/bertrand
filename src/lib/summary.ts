@@ -29,6 +29,7 @@ import { isMachinePrompt } from "@/lib/machine-prompt";
 
 const SUBJECT_MAX = 120;
 const OUTCOME_MAX = 180;
+const STATUS_MAX = 220;
 
 /** Collapse whitespace runs so multi-line prompts read as one line. */
 function oneLine(text: string): string {
@@ -99,9 +100,21 @@ function edgeText(rows: EventRow[], key: string, edge: "first" | "last"): string
  * an empty text, and blindly taking the newest row would blank the outcome.
  */
 export function deriveSessionSummary(sessionId: string): string | null {
-  const prompts = getEventsByType(sessionId, "user.prompt");
-  const messages = getEventsByType(sessionId, "assistant.message");
+  return summarizeExchange(
+    getEventsByType(sessionId, "user.prompt"),
+    getEventsByType(sessionId, "assistant.message"),
+  );
+}
 
+/**
+ * The derivation itself, over any slice of a session's prompts and messages —
+ * the whole session here, one conversation in the resume digest
+ * (contract/history.ts). Both rows lists in event order.
+ */
+export function summarizeExchange(
+  prompts: EventRow[],
+  messages: EventRow[],
+): string | null {
   // Machine prompts can still be the first *recorded* one: auto-adoption
   // records nothing until a conversation's second prompt.
   const asked = prompts.filter((row) => !isMachinePrompt(metaStr(row.meta, "prompt")));
@@ -113,6 +126,39 @@ export function deriveSessionSummary(sessionId: string): string | null {
 
   if (subject && outcome) return `${subject} → ${outcome}`;
   return subject || outcome || null;
+}
+
+/**
+ * "<first prompt> → <last status question>" — the Tier 2 history line
+ * (contract/history.ts, contract/recall.ts), falling back to
+ * {@link summarizeExchange} when the slice asked no questions.
+ *
+ * Why the question: bertrand's rules make every AskUserQuestion stand alone —
+ * "say what this turn did and name the decision at hand" — so the last one is
+ * the conversation's own status report ("All UI-704 acceptance criteria are
+ * done in 3 local commits…"). The last assistant message is whatever was
+ * said last, often a tool narration ("Checking CI…") that says nothing about
+ * what changed. Kept apart from the stored session summary so the sibling
+ * block, `list` and `search` don't change under the `contextRecall` flag.
+ */
+export function statusExchange(
+  prompts: EventRow[],
+  messages: EventRow[],
+  questions: EventRow[],
+): string | null {
+  const status = statusOf(questions);
+  if (!status) return summarizeExchange(prompts, messages);
+  const asked = prompts.filter((row) => !isMachinePrompt(metaStr(row.meta, "prompt")));
+  const subject = truncate(oneLine(edgeText(asked, "prompt", "first")), SUBJECT_MAX);
+  return subject ? `${subject} → ${status}` : status;
+}
+
+/** The last status question of a slice of `session.waiting` rows, one line. */
+export function statusOf(questions: EventRow[]): string {
+  const last = [...questions].reverse().find((row) => metaStr(row.meta, "question") || row.summary);
+  if (!last) return "";
+  const text = metaStr(last.meta, "question") || last.summary || "";
+  return cutAtSentence(oneLine(condense(text)), STATUS_MAX);
 }
 
 /**

@@ -1,14 +1,32 @@
-import { describe, test, expect } from "bun:test";
-import { existsSync, mkdtempSync } from "fs";
+import { describe, test, expect, beforeAll } from "bun:test";
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import * as schema from "@/db/schema";
+import { _setDb } from "@/db/client";
+import { _setRootDir, paths } from "@/lib/paths";
 
 const runtimeDir = mkdtempSync(join(tmpdir(), "bertrand-contract-"));
 const { _setRuntimeDir, contractMarkerPath, markContractSent, writeAdoptionMarker } =
   await import("@/hooks/runtime");
 _setRuntimeDir(runtimeDir);
+// Config (the contextRecall flag) and the delivery log live under the root.
+_setRootDir(runtimeDir);
 
-const { contractDelivery, resolveContractTarget } = await import("./contract");
+const sqlite = new Database(join(runtimeDir, "test.db"));
+sqlite.exec("PRAGMA foreign_keys = ON");
+_setDb(drizzle(sqlite, { schema }));
+migrate(drizzle(sqlite), {
+  migrationsFolder: join(import.meta.dir, "..", "..", "db", "migrations"),
+});
+
+const { contractDelivery, renderContract, resolveContractTarget } = await import("./contract");
+const { createSession, updateSession } = await import("@/db/queries/sessions");
+const { createConversation } = await import("@/db/queries/conversations");
+const { insertEvent } = await import("@/db/queries/events");
 
 const CID = "11111111-1111-4111-8111-111111111111";
 
@@ -19,6 +37,16 @@ describe("resolveContractTarget", () => {
         BERTRAND_SESSION: "sess_env",
       }),
     ).toMatchObject({ sessionId: "sess_flag" });
+  });
+
+  test("takes the conversation from --conversation-id over the env", () => {
+    // The hook passes its own `${cid:-$sid}`, which for an adopted claude comes
+    // from the payload — the env may not carry it at all.
+    expect(
+      resolveContractTarget(["--session-id", "sess_flag", "--conversation-id", "conv_flag"], {
+        BERTRAND_CLAUDE_ID: CID,
+      }),
+    ).toEqual({ sessionId: "sess_flag", conversationId: "conv_flag" });
   });
 
   test("accepts --session-id=value", () => {
@@ -100,5 +128,92 @@ describe("contractDelivery", () => {
     // The hook's own first-prompt call ignores the marker; --short never does.
     expect(contractDelivery([], fresh)).toBe("full");
     expect(contractDelivery(["--short"], "55555555-5555-4555-8555-555555555555")).toBe("reminder");
+  });
+});
+
+describe("renderContract", () => {
+  const setRecall = (on: boolean) =>
+    writeFileSync(join(runtimeDir, "config.json"), JSON.stringify({ contextRecall: on }));
+  const render = (args: string[], conversationId: string, prompt = "") => {
+    let out = "";
+    renderContract(args, { sessionId: self.id, conversationId }, prompt, (t) => (out += t));
+    return out;
+  };
+  const lastLog = () =>
+    JSON.parse(readFileSync(paths.contextLog, "utf-8").trim().split("\n").at(-1)!);
+
+  let self: ReturnType<typeof createSession>;
+  beforeAll(() => {
+    self = createSession({ slug: "render-self" });
+    createConversation({ id: "render-earlier", sessionId: self.id });
+    insertEvent({ sessionId: self.id, conversationId: "render-earlier", event: "user.prompt", meta: { prompt: "an earlier ask" } });
+    insertEvent({ sessionId: self.id, conversationId: "render-earlier", event: "assistant.message", meta: { text: "an earlier answer" } });
+
+    const flaky = createSession({ slug: "flaky-upload" });
+    updateSession(flaky.id, { summary: "the s3 upload retries are flaky in staging → added jittered backoff" });
+    for (let i = 0; i < 6; i++) createSession({ slug: `render-filler-${i}` });
+  });
+
+  test("flag off: the plain contract and reminder, logged with their layers", () => {
+    setRecall(false);
+    const full = render([], "render-off", "why are the s3 upload retries flaky");
+    expect(full).toContain("## bertrand CLI");
+    expect(full).not.toContain("## Earlier in this session");
+    expect(full).not.toContain("## Possibly related");
+    expect(lastLog()).toMatchObject({ delivery: "full", layers: { history: 0, recall: 0 }, recalled: [] });
+
+    const short = render(["--short"], "render-off", "why are the s3 upload retries flaky");
+    expect(short).toStartWith("Reminder — you are in bertrand session render-self");
+    expect(short).not.toContain("## Possibly related");
+  });
+
+  test("flag on: a reminder carries recall once per conversation", () => {
+    setRecall(true);
+    const prompt = "why are the s3 upload retries flaky";
+    const first = render(["--short"], "render-on", prompt);
+    expect(first).toContain("## Possibly related past sessions");
+    expect(first).toContain("- flaky-upload (");
+    expect(lastLog()).toMatchObject({ delivery: "reminder", recalled: ["flaky-upload"] });
+
+    // Already in this conversation's history: not pointed to again.
+    expect(render(["--short"], "render-on", prompt)).not.toContain("## Possibly related");
+    // A different conversation hasn't seen it.
+    expect(render(["--short"], "render-other", prompt)).toContain("- flaky-upload (");
+  });
+
+  test("flag on: a full delivery adds the digest and queries the transcript's prompts", () => {
+    setRecall(true);
+    // The adopting prompt says nothing; the prompt before adoption, only in
+    // the transcript, carries the subject.
+    const transcript = join(runtimeDir, "adopted.jsonl");
+    writeFileSync(
+      transcript,
+      JSON.stringify({ type: "user", message: { role: "user", content: "the s3 upload retries are flaky again" } }) + "\n",
+    );
+    const full = render(["--transcript-path", transcript], "render-adopted", "ok go ahead");
+    expect(full).toContain("## Earlier in this session");
+    expect(full).toContain('"an earlier ask → an earlier answer"');
+    expect(full).toContain("- flaky-upload (");
+  });
+
+  test("--mark-sent marks only after a full contract was written", () => {
+    setRecall(false);
+    expect(() =>
+      renderContract(["--mark-sent"], { sessionId: self.id, conversationId: "render-fail" }, "", () => {
+        throw new Error("EPIPE");
+      }),
+    ).toThrow();
+    expect(existsSync(contractMarkerPath("render-fail"))).toBe(false);
+
+    expect(render(["--mark-sent"], "render-fail")).toContain("## bertrand CLI");
+    expect(existsSync(contractMarkerPath("render-fail"))).toBe(true);
+    // Marked now, so /bertrand gets the rules only.
+    expect(render(["--mark-sent"], "render-fail")).toStartWith("Reminder");
+  });
+
+  test("an unknown session writes nothing", () => {
+    let wrote = false;
+    renderContract([], { sessionId: "nope", conversationId: "x" }, "", () => (wrote = true));
+    expect(wrote).toBe(false);
   });
 });

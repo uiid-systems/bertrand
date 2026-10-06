@@ -15,9 +15,7 @@ import {
   addLabelToSession,
   getOrCreateLabelByName,
 } from "@/db/queries/labels";
-import { buildContract } from "@/contract/template";
-import { buildSiblingContext } from "@/contract/context";
-import { helpText } from "@/cli/help";
+import { buildSessionContract } from "@/contract/layers";
 import { launchClaude, isClaudeRunning } from "./process";
 import { finalizeSessionRow } from "@/lib/session-finalize";
 import { ensureServerStarted } from "@/lib/server-lifecycle";
@@ -197,8 +195,7 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
 
   // Build contract with context
-  const siblingContext = buildSiblingContext(session.id);
-  const contract = buildContract(sessionName, helpText({ agent: true }), siblingContext);
+  const contract = buildSessionContract(sessionName, session.id, claudeId);
 
   // Launch Claude
   const exitCode = await launchClaude({

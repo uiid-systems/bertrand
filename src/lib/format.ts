@@ -43,6 +43,19 @@ export function formatAgo(storedOrDate: string | Date): string {
 }
 
 /**
+ * "Oct 3" — a calendar day, for text that must stay true as it ages. Carries
+ * the year when it isn't this one, so last year's work never reads as recent.
+ */
+export function formatDay(stored: string): string {
+  const at = new Date(parseDbTime(stored));
+  return at.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(at.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
+  });
+}
+
+/**
  * Epoch ms for a stored timestamp. SQLite's datetime('now') strings
  * ("YYYY-MM-DD HH:MM:SS") are UTC but carry no zone marker, so new Date()
  * would read them as LOCAL time and skew comparisons by the machine's UTC

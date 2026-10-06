@@ -1,6 +1,8 @@
 # Context budget — slimmer, more relevant context instead of forced log reads
 
-> **Status:** decision record, no code changed.
+> **Status:** Tier 1 merged in #307, ships in 0.43.3 (release PR #308).
+> Tier 2 built behind the `contextRecall` config flag, off by default.
+> Tier 3 replay not started. See [Where this stands](#where-this-stands).
 > **Produced in:** bertrand session `force-bertrand-logs`, 2026-10-05, using a
 > doubt-driven cycle (fresh-context adversarial review, reconciled below).
 > **Recover the full discussion with:** `bertrand log force-bertrand-logs`
@@ -28,6 +30,16 @@ not the mechanism (user decision).
    saves tokens only if it replaces exploration the agent would otherwise do.
    That has not been shown yet, and a live holdout can't show it at
    bertrand's volume. Tier 3 uses a paired offline replay instead.
+
+## Where this stands
+
+| Item | State |
+|---|---|
+| Tier 1: all four cuts, plus the machine-prompt summary fix | Merged in #307. Ships in 0.43.3 (release PR #308). Re-measured on main: 9,039 → 4,458 B (force-bertrand-logs) |
+| Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
+| Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
+| Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
+| Tier 3.3: paired replay | Harness built; pilot run 2026-10-06: inconclusive, no saving seen (see [Pilot result](#tier-3-replay-plan-drafted-2026-10-05-not-run)) See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Pilot tasks drafted locally; ~15M processed tokens |
 
 ---
 
@@ -105,7 +117,7 @@ terms AND-ed and results ordered by `updatedAt`. There is no relevance ranking.
 | Shrink `## bertrand CLI` to a command index plus "run `bertrand <cmd> --help`" | `helpText({ agent: true })` in `src/cli/help.ts:84`, passed as a contract layer by `contract.ts`, `session.ts`, `resume-plan.ts`, `dashboard-session.ts`; leave the human `bertrand --help` (`router.ts`) intact | ~2.9KB → ~0.5KB |
 | Scope siblings: same `group_key` first, then the same repo, capped at ~5; omit the block when empty; keep the `bertrand list` pointer for anything beyond that | `src/contract/context.ts` | ~3.1KB → ≤1.3KB, often 0 |
 
-Measured after implementing the first three rows (2026-10-05, against a
+Measured after implementing all four rows (2026-10-05, against a
 `.backup` copy of the real DB):
 
 | Session (repo) | Contract before | After |
@@ -171,6 +183,74 @@ copy, so they still get the hook's first-prompt contract.
    retrieval matters most. Run retrieval on the adopting prompt using the
    back-filled history.
 
+### Tier 2 as built
+
+All of it is gated on `contextRecall`; with the flag off, contracts are
+byte-identical to Tier 1.
+
+- **Resume digest** (`src/contract/history.ts`). A `## Earlier in this session`
+  layer in every full contract: the session's other conversations (not
+  discarded, not the current one), oldest first, capped at the last three,
+  one dated line each (`first prompt → last status question`, else last
+  message), plus a `--conversation <id>` drill-in. All four contract builders now go through one
+  `contractLayers()` (`src/contract/layers.ts`), so launch, resume,
+  dashboard, and hook deliveries carry the same layers.
+- **Prompt-keyed recall** (`src/contract/recall.ts`). The UserPromptSubmit
+  hook pipes the prompt to `bertrand contract --prompt-stdin`, so recall
+  costs no extra bun start. BM25 over one document per session: slug,
+  summary, and the first prompt of each conversation. Gates, tuned against
+  the 66-session corpus:
+  - terms in more than 20% of sessions are dropped, with no floor, so a
+    corpus of a handful of sessions mostly recalls nothing;
+  - a hit shares at least two terms with the prompt, unless the prompt has
+    a single rare term (≤2 sessions), such as a ticket id;
+  - survivors score at least 60% of the best hit (0.5 let a "tests"-only
+    match through on a CI prompt), at most three;
+  - a hit must cover at least half the prompt's distinctive weight (the IDF
+    of its surviving terms). On the corpus every relevant hit covered
+    0.67–1.0 and every noise hit 0.38 or less. Without this gate, long
+    prompts let two generic words carry a match;
+  - a hit with nothing to quote (no summary, no matching subject) is dropped.
+
+  Before any scoring, a session the prompt **names** wins: a ticket id that
+  is, or opens, the session's slug or a retired alias ("UI-596" →
+  `ui-596-…`, "UI-704" → the renamed `ci-test-failed-build`), or a whole
+  hyphenated slug. In a long prompt the id is one term of thirty, which
+  the term gates can't see.
+
+  Term statistics are computed without the excluded sessions, since the
+  current session already holds the prompt being matched.
+
+  It excludes the current session and any session already pointed to in this
+  conversation (`recalled-$cid` runtime marker). That marker survives pause
+  and is swept after 30 days, since a resumed conversation still has the old
+  pointers in its transcript. Pointers are dated by the matched
+  conversation, with the year when it isn't the current one. It skips machine prompts and
+  strips a leading `/command`. On the corpus, ten probe prompts gave
+  0 hits for "yes do it", "continue", and the context-budget prompt, and the
+  right session for the specific ones (kill-server, ui-712, the font
+  retirement, the rules rundown). One miss: "make the sidebar show fewer
+  categories" shares only "sidebar" with `less-cats-in-sidebar`.
+- **Auto-adopted and `adopt`ed conversations** (Tier 2.3). A full delivery
+  queries with the conversation's last three typed prompts, not only the
+  current one. They are read from the transcript (`readTypedPrompts`): adopt's
+  back-fill ingests assistant output only, so earlier prompts exist nowhere
+  else. The hook passes `transcript_path`, and `/bertrand` finds the
+  transcript from its cwd. Slash commands are unwrapped to `/<name> <args>`.
+- **Framing.** Both blocks call themselves quoted history as of a date, not
+  instructions, and say code and git outrank them.
+- **Deviation: provenance scope.** The plan said to search only the local
+  user's sessions. That can't be enforced per row. Sync swaps the whole
+  database (`src/sync/engine.ts`, last push wins) and rows carry no machine
+  of origin. Recall therefore relies on the framing, one-line snippets
+  capped at 200 characters, and summaries/subjects only.
+- **Injection log.** `~/.bertrand/context-log.jsonl` is written whether or
+  not the flag is on, because flag-off rows are the baseline. It rotates to
+  `.1` at 5MB.
+- **Cost seen so far** (sandboxed copy, force-bertrand-logs): the digest adds
+  582 B to a full contract, and one recall pointer adds ~450 B to a
+  reminder. Prompts with no match add nothing.
+
 ### Tier 3 — measure (decides whether Tier 2 stays)
 
 **A live holdout cannot answer this at bertrand's volume.** Measured
@@ -217,6 +297,171 @@ What the data supports instead:
      tokens, so budget them before running.
 4. **Ship Tier 2 only if** the paired median saving clears its own arithmetic
    cost with no loss in correctness.
+
+### Tier 3 replay plan (drafted 2026-10-05, not run)
+
+**Where it runs:** the work machine, which has the task repos, the
+original transcripts and the DB. Pilot task files stay out of this public
+repo, since they describe private-repo work. The pilot's live in
+`~/.bertrand/replay/pilot.tasks.json`.
+
+**Candidate tasks.** These are mined from the 28 conversations that ran
+`bertrand log|search|list`, ordered by how early they did. Each prompt
+leans on another session's work:
+
+| Conversation | Session | Prompt (abridged) | Tier 2 part it tests |
+|---|---|---|---|
+| abb12e8c | investigate-compose-refs | "look at what sibling session UI-600 did, copy that work" | recall |
+| f610e342 | utils-cleanup | "look at the work UI-596 is doing on `renderWithProps`" | recall |
+| 6c2b8787 | ci-test-failed-build | "visual regressions after merging UI-704" | recall |
+| 7bf0678d | ui-664-moving-files-storybook-balance | "continue addressing copilot comments… sibling sessions worked on this" | recall + digest |
+| 591c59eb | ui-572-font-chivo-denim-code | "reference the sibling conversation for this session" | digest |
+| 067b19a5 / 0f4fc5ec / d123e2aa | ui-420, ui-437, extend-homepage-conditions | resumes: "we're back try again", "finish this up" | digest |
+
+Add prompts that name a session or ticket but never consulted bertrand,
+until there are 15–20 tasks. Rewrite each as a self-contained question
+with a fixed answer, e.g. "Which files did UI-600 change in compose-refs,
+and which of them need the same change here?" The answer key comes from
+the original conversation's outcome, checked by hand. Pin each task to the
+repo commit at task time (`git rev-list -1 --before=<ts> main`) in a
+throwaway worktree.
+
+**Harness pieces:**
+- **Built:** `bertrand replay-context --session <name> --as-of <time>
+  --arm control|treatment [--conversation <id>] < prompt` prints one arm's
+  system prompt. `recall()` and `buildResumeDigest()` take an `asOf` cut-off:
+  - sessions started, prompts asked, and messages sent before the cut-off
+    only;
+  - summaries re-derived from those events, because the stored one is
+    rewritten at every pause and can describe the task's own outcome;
+  - the task's own session excluded from recall.
+
+  Both arms leave out the sibling block, since it shows current summaries
+  and no cut-off can undo that leak. Known residual: slugs are derived at
+  pause and can carry later words. Checked on 591c59eb: every date in the
+  treatment block falls before the cut-off. The same run gave an early
+  signal for the pilot: that long, multi-topic prompt drew three
+  loosely-related pointers.
+- **Built:** the runner, `scripts/replay/replay.ts`. `run --tasks
+  tasks.json --out runs.jsonl [--repeats 2] [--model <id>] [--only <ids>]
+  [--dry-run]` takes tasks shaped like `scripts/replay/tasks.example.json`.
+  For each task it:
+  - cuts a copy of the DB at `asOf` (`snapshot.ts`): later events,
+    conversations and sessions are deleted, and summaries and stats cleared;
+  - puts a `bertrand` shim that reads that copy first on the agent's PATH, so
+    `bertrand log` inside a replay can't show the future either;
+  - exports the last commit before `asOf` (`git archive`) into a plain
+    directory: no `.git` to read the future from, and no worktree for
+    anything else to manage;
+  - renders both arms with `replay-context`;
+  - runs `claude -p --restricted --permission-mode dontAsk` with only
+    Read/Grep/Glob, and Bash limited to `bertrand log|search|list`. It also
+    turns hooks and MCP servers off, fixes `--session-id`, and interleaves
+    the arms in random order. `--restricted` is what makes this a sandbox: it
+    ignores the user's settings files and confines file tools to the tree.
+    `--allowedTools` alone only *adds* permissions;
+  - counts tokens from each run's transcript, as the budget below was;
+  - appends one JSON line per run, including the answer and whether it
+    contains every answer-key fact.
+
+  `report --out runs.jsonl` prints per-task ratios, the median with a
+  seeded bootstrap 95% CI, correctness per arm, and the ship verdict (CI
+  upper bound below 1, no loss in correctness). Dry-run checked on a local
+  task: the cut kept nothing past `asOf`, the shim read the copy, the
+  worktree was cleaned up. Two bugs the pilot dry run caught: git read the
+  zone-less UTC `asOf` as local time (it checked out a commit with the
+  task's own later revert), and the cut deleted the task's own session and
+  conversation, which start exactly at `asOf`.
+
+  **First pilot attempt (2026-10-05), aborted after 1 recorded run.**
+  - Registered worktrees for design-system tasks were deleted mid-run.
+    Claude Code itself reported "Working directory … was deleted". The cause
+    is unconfirmed: idle test worktrees survived, and nothing in the repo's
+    hooks prunes them.
+  - The sandbox leaked. Without `--restricted`, the user's own allow-rules
+    applied, and an agent ran `git -C` against both live repos and read
+    present-day code, which is the task's future.
+
+  Both are fixed (export plus `--restricted`). A probe confirmed `git -C`,
+  `cat` and reads outside the tree are denied, while `bertrand
+  log|search|list` work against the cut snapshot. The one recorded run is
+  set aside (`pilot.runs.leaky-sandbox.jsonl`). The attempt and probes
+  cost 1.44M processed tokens.
+
+  **Pilot readiness check (2026-10-05):** the treatment blocks for the three
+  drafted tasks are mostly noise. For the UI-596 task, recall returns three
+  unrelated sessions and misses `ui-596-…`, even though the prompt names
+  "UI-596". The two-shared-terms gate needs two matches, and only the
+  ticket number matches; generic words ("render", "button") let weak
+  sessions through. For UI-704, the digest names its conversation, but its
+  one line says nothing about what UI-704 changed.
+
+  After named sessions and the coverage gate: UI-596 → exactly
+  `ui-596-…`, and UI-600 → exactly `ui-600-…` (plus its own-session digest).
+  UI-704 now gets the digest only, with no recall noise. The probe set is
+  unchanged. The quoted *lines* were still weak: "first prompt → last
+  message" often says nothing about what changed (UI-704's read "seems a ci
+  test failed → …unrelated").
+
+  Fixed by quoting each conversation's **last status question** instead
+  (`statusExchange`, `lib/summary.ts`). Bertrand's rules make every
+  AskUserQuestion state what the turn did, so the last one is the
+  conversation's own status report. It falls back to the last message when
+  there is none. This is Tier 2 only: stored session summaries are
+  untouched, and flag-off contracts are still byte-identical to main. The
+  pilot lines now read, e.g., UI-596: "… → Commit 1 (renderWithProps
+  chaining + 16 tests) is in at 91c387699c". UI-600's digest reads "…
+  covering the renderWithProps ref merge plus the compose-refs.ts cleanup".
+  Treatment blocks shrank to 3.9–4.5KB with the noise gone. UI-600's own
+  pointer stays thin: its first status question came a minute after the
+  task's cut-off. Residual leaks
+  shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
+  which can mention later work.
+
+**Pilot result (2026-10-06, 3 tasks × 2 arms × 2 repeats, 4.66M processed
+tokens).** Inconclusive, and no sign of a saving:
+
+| Task | Treatment vs control, processed tokens | Correct (hand-checked) |
+|---|---|---|
+| UI-596 handler chaining | −8.3% | 2/2 → 2/2 |
+| UI-600 ref composition | +50.2% | ungradable: 2 runs ended on bare options (below) |
+| UI-704 button collapse | +2.1% | key unreliable (below) |
+
+- **Median +2.1%.** 95% CI −8.3% … +50.2% over 3 tasks; verdict: don't
+  ship.
+- **Mechanism: the history didn't replace lookups.** Treatment runs still
+  called `bertrand` 2–8 times (control: 1–6). The pointer block invites
+  verification ("Open one with `bertrand log`"). These prompts also name
+  their session ("UI-596"), so control found it in one or two commands
+  anyway. Prompts that name their session are where Tier 2 has least to add.
+- **Noise.** Within-task log-SD is 0.54: one UI-596 control run used 139k
+  tokens, its repeat 532k. At 3 repeats and ~390k per run:
+  - a 30% effect needs ~13 tasks (78 runs, ~30M processed tokens);
+  - a 20% effect needs ~32 tasks (192 runs, ~74M);
+  - a 10% effect needs ~140 tasks (840 runs, ~330M).
+- **Harness flaws found:**
+  1. Both arms' system prompt is the full contract, whose loop rules say to
+     end on AskUserQuestion, which a headless run doesn't have. Some runs
+     therefore ended on a bare list of options, with the answer in an
+     earlier message that `result` doesn't capture. Fix: drop the loop
+     rules from replay arms, and grade the whole final turn.
+  2. The UI-704 key (`min-inline-size`) came from a diagnosis the original
+     conversation never confirmed ("Still no collapse…"). No run in either
+     arm named it; most said `flex-shrink: 0`. Drop or re-key the task.
+
+**Budget**, measured from five local conversations: a bounded task costs
+0.5–2.7M processed tokens before its first answer (median ~1.2M, 90–95%
+cache reads). For dollars, apply the current rate card to that mix rather
+than a remembered price.
+- **Pilot:** 3 tasks × 2 arms × 2 repeats = 12 runs, ~15M processed
+  tokens. It measures within-task variance, which sets the repeat count.
+- **Full run:** 18 tasks × 2 arms × 3 repeats = 108 runs, ~130M processed
+  tokens. Decide on it after the pilot.
+
+**Analysis.** Use the paired log-ratio of processed tokens per task
+(treatment ÷ control, averaged over repeats). Report the median with a
+bootstrap CI, plus request counts and correctness per arm. Apply the
+ship rule above. A cheaper wrong answer counts as a loss.
 
 **Known noise** (applies to any tool-call proxy): subagent Bash calls are
 filed under the parent session, and Bash detail extraction (`scripts.ts:423`)
@@ -272,6 +517,20 @@ machine. Proceeding with single-model findings only.
 | 7 | `derive-slug.ts` had its own machine-prompt regex that missed `<agent-message from="…">` | **Actionable:** one shared `lib/machine-prompt.ts` (any lowercase tag, attributes allowed) |
 | 8 | A current session missing from the non-archived list silently fell back to the global list | **Actionable:** resolved with `getSession` |
 | 9 | Siblings on resume are scoped from the session's previous repo/branch (built before `recordSessionKey`) | **Trade-off:** edge case; on a true `--resume` the argv copy is ignored anyway |
+
+## Doubt cycle 4 — review of the Tier 2 build (PR #309)
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | The current session's freshly recorded prompt counted toward term frequencies, so every word of the prompt looked present in the corpus. A one-rare-term prompt became two terms and stopped matching, on every conversation's first prompt | **Actionable, reproduced:** statistics now exclude excluded sessions |
+| 2 | Tier 2.3 didn't work. Adopt's back-fill ingests only assistant entries (`db/events/ingest.ts`), so there were no earlier `user.prompt` rows to query, and `/bertrand` had none at all. The first verification inserted the row by hand | **Actionable:** earlier prompts come from the transcript. Re-verified with a real transcript and the real hook |
+| 3 | A slug-only match on a session with no summary rendered as `""` | **Actionable:** dropped |
+| 4 | Pointers carried the session's `updatedAt`, not the matched conversation's date; no year | **Actionable** |
+| 5 | Pausing pruned `recalled-$cid`, so a resumed conversation could get the same pointers again | **Actionable:** kept 30 days |
+| 6 | The ubiquity gate's floor of 3 meant that in a corpus under ~15 sessions any term passed the single-term exception | **Actionable:** no floor; single-term exception ≤2 sessions |
+| 7 | The log ignores the flag and grows without bound; `resume-plan.test` reads the real config | **Partly actionable:** rotation at 5MB. Always-on logging is deliberate (it provides the baseline). The config read is read-only and harmless |
+| 8 | Missing tests: the contract handler, hook stdin, the current-prompt case; date assertions failed under `TZ=Pacific/Auckland` | **Actionable:** the handler body is now `renderContract()` with tests for flag off/on, once-per-conversation recall, transcript-driven queries and write-then-mark; the hook stub logs stdin, so the hook tests check the exact `contract` call and a prompt with shell metacharacters; current-prompt, empty-hit, transcript-reader and marker-retention tests added; dates are timezone-independent |
+| 9 | A bare `/command` took up one of the three query slots | **Actionable:** stripped before counting |
 
 ## Open, deliberately not answered here
 
