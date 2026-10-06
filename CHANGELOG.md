@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.44.0](https://github.com/uiid-systems/bertrand/compare/v0.43.2...v0.44.0) (2026-10-06)
+
+
+### Features
+
+* **contract:** opt-in relevant-history recall (context budget Tier 2) ([#309](https://github.com/uiid-systems/bertrand/issues/309)) ([9f686e3](https://github.com/uiid-systems/bertrand/commit/9f686e35782fe5f41d9624a195967620ea76453c))
+
+
+### Performance
+
+* **contract:** slim and de-duplicate injected session context ([#307](https://github.com/uiid-systems/bertrand/issues/307)) ([18e65c3](https://github.com/uiid-systems/bertrand/commit/18e65c3af7cda960690a0c35340000c655518036))
+
 ## [0.43.2](https://github.com/uiid-systems/bertrand/compare/v0.43.1...v0.43.2) (2026-10-02)
 
 
