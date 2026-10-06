@@ -39,7 +39,7 @@ not the mechanism (user decision).
 | Tier 1 savings report (Tier 3.1) | Waiting for 0.43.3 to be installed and used in real conversations |
 | Tier 2: resume digest, prompt-keyed retrieval, auto-adopt first prompt | Built, off by default: `{ "contextRecall": true }` in `~/.bertrand/config.json`. See [Tier 2 as built](#tier-2-as-built) |
 | Tier 3.2: injected-bytes logging | Built, always on: one JSON line per delivery in `~/.bertrand/context-log.jsonl` |
-| Tier 3.3: paired replay | Harness built (cut-off, `bertrand replay-context`, `scripts/replay/`); not yet run. See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Pilot tasks drafted locally; ~15M processed tokens |
+| Tier 3.3: paired replay | Harness built; pilot run 2026-10-06: inconclusive, no saving seen (see [Pilot result](#tier-3-replay-plan-drafted-2026-10-05-not-run)) See [Tier 3 replay plan](#tier-3-replay-plan-drafted-2026-10-05-not-run). Pilot tasks drafted locally; ~15M processed tokens |
 
 ---
 
@@ -417,6 +417,37 @@ throwaway worktree.
   task's cut-off. Residual leaks
   shared by both arms: Claude Code's own auto-memory and CLAUDE.md files,
   which can mention later work.
+
+**Pilot result (2026-10-06, 3 tasks × 2 arms × 2 repeats, 4.66M processed
+tokens).** Inconclusive, and no sign of a saving:
+
+| Task | Treatment vs control, processed tokens | Correct (hand-checked) |
+|---|---|---|
+| UI-596 handler chaining | −8.3% | 2/2 → 2/2 |
+| UI-600 ref composition | +50.2% | ungradable: 2 runs ended on bare options (below) |
+| UI-704 button collapse | +2.1% | key unreliable (below) |
+
+- **Median +2.1%.** 95% CI −8.3% … +50.2% over 3 tasks; verdict: don't
+  ship.
+- **Mechanism: the history didn't replace lookups.** Treatment runs still
+  called `bertrand` 2–8 times (control: 1–6). The pointer block invites
+  verification ("Open one with `bertrand log`"). These prompts also name
+  their session ("UI-596"), so control found it in one or two commands
+  anyway. Prompts that name their session are where Tier 2 has least to add.
+- **Noise.** Within-task log-SD is 0.54: one UI-596 control run used 139k
+  tokens, its repeat 532k. At 3 repeats and ~390k per run:
+  - a 30% effect needs ~13 tasks (78 runs, ~30M processed tokens);
+  - a 20% effect needs ~32 tasks (192 runs, ~74M);
+  - a 10% effect needs ~140 tasks (840 runs, ~330M).
+- **Harness flaws found:**
+  1. Both arms' system prompt is the full contract, whose loop rules say to
+     end on AskUserQuestion, which a headless run doesn't have. Some runs
+     therefore ended on a bare list of options, with the answer in an
+     earlier message that `result` doesn't capture. Fix: drop the loop
+     rules from replay arms, and grade the whole final turn.
+  2. The UI-704 key (`min-inline-size`) came from a diagnosis the original
+     conversation never confirmed ("Still no collapse…"). No run in either
+     arm named it; most said `flex-shrink: 0`. Drop or re-key the task.
 
 **Budget**, measured from five local conversations: a bounded task costs
 0.5–2.7M processed tokens before its first answer (median ~1.2M, 90–95%
