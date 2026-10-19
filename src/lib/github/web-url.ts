@@ -4,10 +4,8 @@
  * no API calls, no titles fetched. Returns null for anything that isn't a
  * recognizable GitHub entity so callers can fall back to a plain link.
  *
- * The one URL-shape parser in the codebase (ELKY-169): the dashboard's
- * markdown link chips and slug derivation both classify URLs through it.
- * It must stay importable from the dashboard's type graph, so no runtime
- * dependencies (see src/types-boundary.test.ts).
+ * The one URL-shape parser in the codebase (ELKY-169): slug derivation
+ * classifies URLs through it.
  */
 
 export type GithubRef =
@@ -83,19 +81,4 @@ export function parseGithubUrl(href: string): GithubRef | null {
 
   // Deeper links (blob, tree, actions, releases, …): degrade to the repo.
   return { kind: "repo", owner, repo: repo! };
-}
-
-/** Compact chip label, e.g. `owner/repo#123`, `owner/repo@abc1234`, `@owner`. */
-export function githubRefLabel(ref: GithubRef): string {
-  switch (ref.kind) {
-    case "pr":
-    case "issue":
-      return `${ref.owner}/${ref.repo}#${ref.number}`;
-    case "commit":
-      return `${ref.owner}/${ref.repo}@${ref.sha.slice(0, 7)}`;
-    case "repo":
-      return `${ref.owner}/${ref.repo}`;
-    case "user":
-      return `@${ref.login}`;
-  }
 }

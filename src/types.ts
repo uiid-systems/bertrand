@@ -1,14 +1,6 @@
 /**
- * Shared API/domain shapes. The dashboard's TypeScript program includes this
- * file (`dashboard/tsconfig.json`), so every module reachable from here has to
- * resolve under the dashboard's build too.
- *
- * `import type` is not enough to keep that safe on its own — it erases the
- * runtime import but the *type* graph still has to resolve, so pointing at a
- * module that does I/O makes the dashboard build depend on everything behind
- * it. Import only from leaf type modules — a `types.ts` beside the module
- * that owns the shape — never from a module that imports `fs`, `os`, `path`
- * or `bun`. `types-boundary.test.ts` enforces this.
+ * Shared domain shapes. Import only from leaf type modules here — never from a
+ * module that does I/O — so this stays cheap to reach from anywhere.
  */
 import type { sessions, events, sessionStats } from "./db/schema";
 
@@ -22,7 +14,7 @@ export type EventRow = Omit<typeof events.$inferSelect, "meta"> & {
 export type SessionStatsRow = typeof sessionStats.$inferSelect;
 
 /**
- * A session as every list endpoint serves it.
+ * A session as every list query returns it.
  *
  * There is no sibling `project` field any more, and nothing replaced it: the
  * grouping dimension is now four columns *on the session itself* (`repo`,
@@ -41,21 +33,3 @@ export type SessionListRow = {
 
 export type ArchiveReason = "not-found" | "active" | "already-archived";
 export type UnarchiveReason = "not-found" | "not-archived";
-export type ArchiveErrorReason = ArchiveReason | UnarchiveReason | "unknown";
-
-/**
- * Every way the dashboard's resume action can be refused, plus the client's
- * own fallback when the server sends no reason. Paired with `RESUME_ERROR` in
- * `src/server/index.ts`, which turns each into a status and a message.
- *
- * Session *discard* used to be the other member of this family. It is gone —
- * with the TUI exit screen removed there was no non-dashboard route to it, and
- * archive covers wanting a session out of the way.
- */
-export type SessionActionErrorReason =
-  | "not-found"
-  | "conversation-not-found"
-  | "already-running"
-  | "no-cwd"
-  | "at-capacity"
-  | "unknown";

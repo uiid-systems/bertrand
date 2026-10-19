@@ -13,7 +13,7 @@ const COMMANDS = [
   "adopt",
   "auto-adopt",
   "update",
-  "serve",
+  "recover",
   "sync",
   "import",
   "completion",

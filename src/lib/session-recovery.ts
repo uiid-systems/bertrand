@@ -3,8 +3,9 @@
  * moved because it does not belong to the launcher: it reads and writes DB rows
  * and touches no PTY. Recovery is the *only* thing that ever finalizes an
  * adopted session (nothing stands over one to watch it exit), so it has to stay
- * reachable from `bertrand serve` and the hook path — which is exactly what a
- * demoted `src/engine` must not be. See `src/layer-boundary.test.ts`.
+ * reachable from the hook path (`bertrand recover`, fired by the prompt hook) —
+ * which is exactly what a demoted `src/engine` must not be. See
+ * `src/layer-boundary.test.ts`.
  */
 import { getRecoverableSessions } from "@/db/queries/sessions";
 import { getConversationsBySession } from "@/db/queries/conversations";
@@ -44,21 +45,14 @@ const CRASHED_EXIT_CODE = 1;
  * Recovery runs the *same* bookkeeping as a clean exit, via
  * `finalizeSessionRow`. It previously did a partial job — status and summary,
  * but no `endedAt`, timing, or marker pruning — which left crashed sessions
- * with broken durations and stats. That divergence is exactly the defect #208
- * hit when the dashboard path had its own finalize; there should only ever be
- * one.
+ * with broken durations and stats. There should only ever be one finalize.
  *
  * The one thing it cannot share is *when*. A clean exit is observed as it
- * happens; recovery finds out on whatever schedule the next launch or dashboard
- * start sets — which for an adopted session is the normal case, not a crash.
- * Stamping the sweep's own clock would write that entire delay into the session
- * as work or wait time, so the end is dated to the session's last recorded
- * event instead.
- *
- * Scoped to the active project's DB, which is where every recoverable session
- * lives: the CLI recovers the project it was launched in, and dashboard
- * sessions are always created in serve's active project
- * (`spawnDashboardSession` resolves it).
+ * happens; recovery finds out on whatever schedule the next sweep runs (a
+ * launch, or the prompt hook's throttled `bertrand recover`) — which for an
+ * adopted session is the normal case, not a crash. Stamping the sweep's own
+ * clock would write that entire delay into the session as work or wait time,
+ * so the end is dated to the session's last recorded event instead.
  *
  * Returns the number of recovered sessions.
  */

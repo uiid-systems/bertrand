@@ -53,9 +53,7 @@ export function getDb(): DrizzleDb {
 }
 
 /**
- * Forget the cached handle, so the next `getDb()` opens the file again. Long
- * running processes (the dashboard server) call this when they need to be sure
- * they are not serving a stale connection.
+ * Forget the cached handle, so the next `getDb()` opens the file again.
  *
  * Note: this does NOT close the underlying sqlite connection — that's by
  * design. The connection closes when garbage collected or when the process

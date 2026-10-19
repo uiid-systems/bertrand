@@ -20,11 +20,11 @@ import {
  *
  *   log <session>            digest: subject, decision trail, files, outcome
  *   log <session> --events   filtered timeline (--conversation/--type/--since/--limit)
- *   log <session> --full     complete record — dashboard parity, ~100KB+
+ *   log <session> --full     complete record, ~100KB+
  *
- * Output is always JSON: the CLI's consumer is an agent; humans have the TUI
- * and the dashboard. Bare `--json` returns the full record — contracts
- * injected before the digest rework promised exactly that — but it defers to
+ * Output is always JSON: the CLI's consumer is an agent; humans have the TUI.
+ * Bare `--json` returns the full record — contracts injected before the digest
+ * rework promised exactly that — but it defers to
  * `--events`, whose callers postdate the rework and want the filtered view.
  */
 
@@ -167,9 +167,9 @@ function statsBlock(session: SessionRow) {
     const { sessionId: _sid, updatedAt: _at, ...rest } = stats;
     return rest;
   }
-  // computeSessionStats is the same full-shape computation finalize persists
-  // and the dashboard's liveStats endpoint serves — using it keeps the live
-  // and stored paths shape-identical (incl. linesAdded/linesRemoved/filesTouched).
+  // computeSessionStats is the same full-shape computation finalize persists,
+  // so the live and stored paths stay shape-identical (incl.
+  // linesAdded/linesRemoved/filesTouched).
   return computeSessionStats(session.id);
 }
 

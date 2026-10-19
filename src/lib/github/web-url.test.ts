@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { githubRefLabel, parseGithubUrl, type GithubRef } from "./web-url";
+import { parseGithubUrl } from "./web-url";
 
 describe("parseGithubUrl", () => {
   test("classifies a pull request URL", () => {
@@ -74,18 +74,5 @@ describe("parseGithubUrl", () => {
       owner: "uiid-systems",
       repo: "orca",
     });
-  });
-});
-
-describe("githubRefLabel", () => {
-  test("labels each ref kind compactly", () => {
-    const cases: Array<[GithubRef, string]> = [
-      [{ kind: "pr", owner: "o", repo: "r", number: "1" }, "o/r#1"],
-      [{ kind: "issue", owner: "o", repo: "r", number: "2" }, "o/r#2"],
-      [{ kind: "commit", owner: "o", repo: "r", sha: "abc1234def" }, "o/r@abc1234"],
-      [{ kind: "repo", owner: "o", repo: "r" }, "o/r"],
-      [{ kind: "user", login: "o" }, "@o"],
-    ];
-    for (const [ref, label] of cases) expect(githubRefLabel(ref)).toBe(label);
   });
 });

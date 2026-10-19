@@ -357,9 +357,8 @@ export function permissionDoneScript(bin: string, runtimeDir: string): string {
 # Hook: PostToolUse (catch-all)
 #
 # Captures every tool call Claude makes. Two event flows:
-#   1. Edit/Write/MultiEdit → tool.applied with diff payload. Keeps the
-#      existing dashboard diff-renderer happy and is the only place we get
-#      old_string/new_string on auto-approved edits.
+#   1. Edit/Write/MultiEdit → tool.applied with diff payload. The only place
+#      we get old_string/new_string on auto-approved edits.
 #   2. Everything else → tool.used. The PermissionRequest hook may have set
 #      a marker; if so the call was prompted-then-approved (outcome:approved),
 #      otherwise it was auto-approved (outcome:auto). Denials never reach
@@ -468,15 +467,6 @@ ${sessionGuard(runtimeDir, { autoCreate: true })}
 # other path, including the launched one this hook was originally written for.
 [ -z "$input" ] && ${READ_PAYLOAD_REST}
 
-# Bring the shared dashboard server up if it isn't already. This is the one
-# lifecycle event every launch path shares, so it is the only place that covers
-# the TUI, \`bertrand adopt\`, the /bertrand command and a bare \`claude\` alike —
-# server start used to live in the TUI launcher, which meant an adopted session
-# never got one. Costs a single kill(pid,0) when a server is already healthy,
-# and never waits for readiness, so a cold start cannot stall the turn.
-# Stdout muted: UserPromptSubmit parses stdout as a hook decision.
-bq ensure-server >/dev/null
-
 # A new prompt means the user is still here, so any pending exit signal is
 # stale — drop it. Normal exits never reach this hook (the Stop that follows
 # "Done for now" clears the marker itself), so this only ever catches a marker
@@ -484,6 +474,18 @@ bq ensure-server >/dev/null
 # now refuses to ask anything while the marker exists, so an orphan would
 # silently pause the next session on its first question.
 rm -f "${runtimeDir}/done-$sid"
+
+# Finalize sessions whose claude is gone. An adopted session has no bertrand
+# process to watch it exit, so without this sweep only \`bertrand launch\` ever
+# ends one — and a user who records solely through /bertrand or auto-adoption
+# never runs it. At most once per 10 minutes machine-wide: the marker is
+# touched before the spawn so concurrent prompts don't each start a sweep.
+# Backgrounded with all output detached, so the prompt never waits on it.
+sweep="${runtimeDir}/recover-sweep"
+if [ -z "$(find "$sweep" -mmin -10 2>/dev/null)" ]; then
+  : > "$sweep"
+  bq recover >/dev/null 2>&1 &
+fi
 
 # Record the prompt event. Stdout muted so only the context JSON below reaches
 # the hook's stdout (UserPromptSubmit parses stdout as a hook decision).

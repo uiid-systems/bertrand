@@ -5,10 +5,10 @@ import type { SessionListRow, SessionStatus } from "@/types";
  * Statuses where Claude is engaged with the session right now — working
  * (`active`), halted on an AskUserQuestion (`waiting`), or halted on a
  * permission approval (`blocked`). Mirrors LIVE_STATUSES in
- * src/db/queries/sessions.ts and isLiveStatus in the dashboard.
+ * src/db/queries/sessions.ts.
  *
- * A live session belongs to another process (a second terminal, or the
- * dashboard), so the launch screen lists it but never offers to resume it.
+ * A live session belongs to another process (a second terminal), so the
+ * launch screen lists it but never offers to resume it.
  */
 const LIVE_STATUSES: ReadonlySet<SessionStatus> = new Set([
   "active",
@@ -23,7 +23,7 @@ export function isLiveStatus(status: SessionStatus): boolean {
 /**
  * Display order for the launch picker. Live rows lead: a session running right
  * now is the one the user opened the screen to check on, and it must be visible
- * without scrolling. Within live, the dashboard's blocked → waiting → active
+ * without scrolling. Within live, blocked → waiting → active
  * order puts the session halted on the user first. Paused rows — the ones this
  * screen can actually resume — follow, and archived rows trail when shown.
  * The cursor skips live rows, so leading with them costs no keypresses.

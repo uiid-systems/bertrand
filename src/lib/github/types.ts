@@ -1,16 +1,9 @@
 /**
  * Pure data shapes for the GitHub layer.
  *
- * Only repo identity now. The pull-request and check shapes lived here too,
- * for a dashboard PR card that no longer exists; they went with it rather than
- * sitting in the barrel as types nothing constructs.
- *
- * A leaf on purpose: this module imports nothing, so anything that needs only
- * the *shape* of a repo identity can reach it without dragging in the parser
- * (`identity.ts`) or anything below it. `src/types.ts` — the barrel the
- * dashboard's TypeScript program reads — depends on this file transitively,
- * and its build must never end up resolving `fs`/`os`/`path` to typecheck a
- * type it erases. Keep this module import-free.
+ * Only repo identity now. A leaf on purpose: this module imports nothing, so
+ * anything that needs only the *shape* of a repo identity can reach it without
+ * dragging in the parser (`identity.ts`) or anything below it.
  */
 
 /**

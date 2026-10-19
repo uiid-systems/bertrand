@@ -1,6 +1,6 @@
 # bertrand
 
-Multi-session workflow logger for Claude Code. Tracks concurrent Claude Code sessions, captures their timelines into a local database, and surfaces them in a dashboard for review.
+Multi-session workflow logger for Claude Code. Tracks concurrent Claude Code sessions, and captures their timelines into a local database that later sessions (and you, via `bertrand log`) can read back.
 
 ## How it works
 
@@ -9,14 +9,14 @@ Bertrand wraps Claude Code with two pieces:
 1. **A system-prompt contract** that tells the agent to call `AskUserQuestion` every turn with concrete, actionable options.
 2. **Claude Code hooks** that observe tool calls and lifecycle events (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `PermissionRequest`) and write structured events into a local SQLite database.
 
-The agent never knows bertrand exists. Hooks fire, scripts call `bertrand update`, rows land in the DB, the dashboard reads them.
+The agent never knows bertrand exists. Hooks fire, scripts call `bertrand update`, rows land in the DB.
 
 When a session calls `AskUserQuestion`, bertrand marks it `waiting`. When you answer, the session moves back to `active`.
 
 ## Prerequisites
 
 - **[Claude Code](https://code.claude.com/docs/en/overview)** — `--append-system-prompt` and hooks support required.
-- **[Bun](https://bun.sh/)** ≥ 1.3 — runtime for bertrand and the dashboard.
+- **[Bun](https://bun.sh/)** ≥ 1.3 — runtime for bertrand.
 
 ## Install
 
@@ -76,7 +76,7 @@ That records the conversation so far, starts capturing the rest of it, and appli
 
 `bertrand adopt` is the same thing without the slash command, for a terminal you're already in.
 
-An attached session goes in unnamed and is named from its own transcript at the first pause, exactly like a launched one. Bertrand ends it when Claude Code exits — there's no bertrand process watching an attached session, so that happens on the next `bertrand` launch or dashboard start rather than instantly.
+An attached session goes in unnamed and is named from its own transcript at the first pause, exactly like a launched one. Bertrand ends it when Claude Code exits — there's no bertrand process watching an attached session, so that happens on the next prompt in any recorded session (at most every ten minutes) or the next `bertrand` launch, rather than instantly.
 
 Resuming one (`claude --resume`) picks up where it left off, but only once you run `/bertrand` again: attaching leaves a marker keyed to the conversation, and ending the session clears it. The second `/bertrand` re-attaches to the same session — same name, same timeline — and back-fills anything said in between. Archived sessions are the exception; those stay closed.
 
@@ -104,24 +104,9 @@ Interactive picker showing all sessions with status badges. Add `--project <slug
 | `bertrand log <session>` | Print the timeline event log for a session. Supports `--json` (includes `project: { slug, name }` for agent consumption) and `--project <slug>` for cross-project reads. |
 | `bertrand stats <session>` | Print materialized stats (duration, work/wait split, lines changed). |
 | `bertrand archive <name>` | Archive or unarchive a session. |
-| `bertrand serve` | Start the dashboard HTTP API on `:5200`. |
 | `bertrand backfill-stats` | Re-compute stats for older sessions after schema changes. |
 | `bertrand update` | Hook-facing event writer. Internal — don't call directly. |
-
-## Dashboard
-
-A Vite + React + TanStack Router app at `dashboard/`. Renders timelines (assistant text, thinking, code diffs, permissions, Q&A pairs, context snapshots), engagement stats, and a session sidebar.
-
-Run both the API and the dev server:
-
-```sh
-cd dashboard
-bun run dev
-```
-
-This spawns `bertrand serve` (API on `:5200`) and `vite` (dashboard on `:5199`). Visit [http://localhost:5199](http://localhost:5199). The dashboard proxies `/api` to `:5200`.
-
-> The dashboard is currently dev-mode only. There's no production build/serve path yet.
+| `bertrand recover` | Finalize sessions whose Claude process has exited. Run by the prompt hook; safe to run by hand. |
 
 ## Session states
 
@@ -136,10 +121,6 @@ This spawns `bertrand serve` (API on `:5200`) and `vite` (dashboard on `:5199`).
 
 ```
 Claude Code hook  →  ~/.bertrand/hooks/*.sh  →  `bertrand update --event …`  →  SQLite (events table)
-                                                                                       ↓
-                                                                             /api/events/:sessionId
-                                                                                       ↓
-                                                                              dashboard timeline
 ```
 
 Key tables ([`src/db/schema.ts`](src/db/schema.ts)):
@@ -151,9 +132,9 @@ Key tables ([`src/db/schema.ts`](src/db/schema.ts)):
 - **`session_stats`** — materialized stats, refreshed at session end.
 - **`worktree_associations`** — tracked worktree branches per session.
 
-Stats are computed live for `active`/`waiting` sessions and read from the materialized row otherwise — see [`src/server/index.ts`](src/server/index.ts).
+Stats are computed live for `active`/`waiting` sessions and read from the materialized row otherwise — see [`src/cli/commands/log.ts`](src/cli/commands/log.ts).
 
-`src/engine` and `src/tui` — the PTY relay and the launcher UI — are **optional**. Recording a session needs only the hooks, the database and the CLI, which is why `bertrand adopt` can pick up a `claude` that bertrand never started. Nothing on the recording path may import either directory; the two are reached through `await import(…)` from `bertrand launch` and the dashboard's session routes, and [`src/layer-boundary.test.ts`](src/layer-boundary.test.ts) fails if that changes.
+`src/engine` and `src/tui` — the PTY launcher and its UI — are **optional**. Recording a session needs only the hooks, the database and the CLI, which is why `bertrand adopt` can pick up a `claude` that bertrand never started. Nothing on the recording path may import either directory; the two are reached through `await import(…)` from `bertrand launch`, and [`src/layer-boundary.test.ts`](src/layer-boundary.test.ts) fails if that changes.
 
 ## File layout
 
@@ -164,17 +145,10 @@ src/
   cli/         # Command router and command handlers
   contract/    # System-prompt contract (AskUserQuestion loop, sibling context)
   db/          # Drizzle schema, migrations, query functions
-  engine/      # Optional launcher: the PTY relay `bertrand launch` runs Claude under
+  engine/      # Optional launcher: the PTY `bertrand launch` runs Claude under
   hooks/       # Hook script generation (bash templates)
   lib/         # Session lifecycle (finalize, recovery), timing FSM, diff stats, formatting
-  server/      # Bun HTTP server (/api/*)
   tui/         # Optional launcher: Storm TUI screens
-dashboard/
-  src/
-    api/         # Typed TanStack Query hooks
-    components/  # Timeline content renderers, sidebar, markdown
-    lib/         # Event categories, transforms, formatting
-    routes/      # TanStack Router pages
 schema/        # Drizzle migration SQL
 ```
 
@@ -203,8 +177,6 @@ bun test                # Run backend tests
 bun run db:generate     # Generate Drizzle migration after schema change
 bun run db:migrate      # Apply migrations to ~/.bertrand/bertrand.db
 ```
-
-The dashboard has its own `tsc -b` typecheck — run from `dashboard/`.
 
 ## Releasing
 

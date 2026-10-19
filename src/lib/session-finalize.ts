@@ -1,9 +1,8 @@
 /**
  * End-of-session bookkeeping. Lived in `src/engine` until ELKY-176; it is pure
- * DB/stats work with no PTY in it, and both hosts of a session — the CLI
- * launcher and the server — plus crash recovery need it, so it sits in `lib`
- * with the rest of the session lifecycle. See `session-recovery.ts` and
- * `src/layer-boundary.test.ts`.
+ * DB/stats work with no PTY in it, and both the CLI launcher and crash recovery
+ * need it, so it sits in `lib` with the rest of the session lifecycle. See
+ * `session-recovery.ts` and `src/layer-boundary.test.ts`.
  */
 import { getSession, updateSession } from "@/db/queries/sessions";
 import { endConversation, getConversation } from "@/db/queries/conversations";
@@ -31,8 +30,8 @@ export interface FinalizeSessionOptions {
    * was standing over the process and watched it go.
    *
    * Recovery is the exception, and the reason this option exists. It notices an
-   * adopted session's exit whenever the next `bertrand launch` or `serve`
-   * happens to run, which can be days later. `computeTimings` closes the open
+   * adopted session's exit whenever the next `bertrand launch` happens to
+   * run, which can be days later. `computeTimings` closes the open
    * period at the `claude.ended` event, so stamping the sweep's own clock
    * writes the entire gap into the session as work or wait: a session
    * abandoned five days ago records five days of user_wait, an activePct of 0,
@@ -43,13 +42,8 @@ export interface FinalizeSessionOptions {
 }
 
 /**
- * End-of-Claude cleanup, shared by both ways a session can be hosted: a CLI
- * process (`session.ts`) and the server itself (`dashboard-session.ts`).
- *
- * Deliberately one implementation. These two paths previously each had their
- * own, and the server's silently skipped summaries, timing, marker pruning and
- * sync push — a session that ran in the dashboard was blank to its neighbors
- * and absent from stats.
+ * End-of-Claude cleanup, shared by a CLI-hosted session's exit (`session.ts`)
+ * and crash recovery (`session-recovery.ts`).
  *
  * Runs defensively: if the session or conversation row was deleted while Claude
  * was running (a parallel bertrand instance, a manual delete), skip the writes

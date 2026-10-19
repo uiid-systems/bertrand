@@ -10,7 +10,7 @@
  * The two audiences get different bodies. A human gets the whole reference. The
  * agent gets only the read-only inspection commands, compacted: it is paid for
  * in tokens on every conversation, and the management commands (init, archive,
- * rename, adopt, sync, serve) are the human's to run — `bertrand --help` is one
+ * rename, adopt, sync) are the human's to run — `bertrand --help` is one
  * call away when an agent needs them (docs/context-budget.md). help.test.ts
  * guards the subset against drifting from the full reference.
  */
@@ -55,7 +55,6 @@ Manage sessions:
                                second prompt on — no \`adopt\` needed.
   bertrand sync <op>           onboard | push | pull | status | invite | enable | disable
                                (bertrand sync --help)
-  bertrand serve               Start the local dashboard HTTP server.
 
 \`log\` always emits JSON; add --json to list/stats for the same.
 
