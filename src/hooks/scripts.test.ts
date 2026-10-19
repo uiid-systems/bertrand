@@ -7,6 +7,8 @@ import {
   chmodSync,
   existsSync,
   readFileSync,
+  statSync,
+  utimesSync,
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -263,6 +265,60 @@ describe("on-user-prompt.sh — contract re-injection", () => {
       );
       expect(readFileSync(log(), "utf-8")).toContain(`stdin=${prompt}\n`);
     });
+  });
+});
+
+describe("on-user-prompt.sh — stale-session sweep", () => {
+  // Adopted sessions have no bertrand process watching them exit, so this
+  // throttled sweep is the only thing that ends them for a user who never runs
+  // `bertrand launch`. The spawn is backgrounded, so the tests poll for it.
+  const env = { BERTRAND_SESSION: SID, BERTRAND_CLAUDE_ID: CID };
+  const input = JSON.stringify({ prompt: "hello" });
+  const sweep = () => marker("recover-sweep");
+  const log = () => join(workDir, "stub.log");
+
+  const recoverCalled = () => {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (existsSync(log()) && readFileSync(log(), "utf-8").includes("argv=recover\n")) {
+        return true;
+      }
+      Bun.sleepSync(20);
+    }
+    return false;
+  };
+
+  const ageMarker = (minutes: number) => {
+    const at = new Date(Date.now() - minutes * 60_000);
+    utimesSync(sweep(), at, at);
+    return statSync(sweep()).mtimeMs;
+  };
+
+  test("sweeps when no sweep has run yet", () => {
+    run("on-user-prompt.sh", input, { ...env, BERTRAND_STUB_LOG: log() });
+    expect(existsSync(sweep())).toBe(true);
+    expect(recoverCalled()).toBe(true);
+  });
+
+  test("skips while the last sweep is under ten minutes old", () => {
+    writeFileSync(sweep(), "");
+    const before = ageMarker(1);
+    run("on-user-prompt.sh", input, { ...env, BERTRAND_STUB_LOG: log() });
+    // The gate is synchronous: an untouched marker means nothing was spawned.
+    expect(statSync(sweep()).mtimeMs).toBe(before);
+  });
+
+  test("sweeps again once the marker goes stale", () => {
+    writeFileSync(sweep(), "");
+    const before = ageMarker(20);
+    run("on-user-prompt.sh", input, { ...env, BERTRAND_STUB_LOG: log() });
+    expect(statSync(sweep()).mtimeMs).toBeGreaterThan(before);
+    expect(recoverCalled()).toBe(true);
+  });
+
+  test("leaves the hook's stdout to the contract", () => {
+    const { stdout } = run("on-user-prompt.sh", input, env);
+    expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe("FULL_CONTRACT");
   });
 });
 

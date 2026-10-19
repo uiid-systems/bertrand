@@ -165,9 +165,8 @@ async function resolveConversationForResume(
  * `finalizeSession` has already paused the session by the time Claude's
  * process returns, so the screen was a modal gate the user had to dismiss to
  * get their terminal back. Of the rest, archive is on the CLI (`bertrand
- * archive`) and in the dashboard, resume is running `bertrand` again or the
- * dashboard's exit panel, and discard is gone — nothing outside the screen
- * wanted it, and archive covers putting a session away.
+ * archive`), resume is running `bertrand` again, and discard is gone — nothing
+ * outside the screen wanted it, and archive covers putting a session away.
  */
 async function runLaunchCycle(): Promise<void> {
   const selection = await startLaunchTui();

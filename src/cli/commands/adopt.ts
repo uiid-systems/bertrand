@@ -216,9 +216,9 @@ async function create(
     slug: untakenPlaceholderSlug({ branch: group.branch }),
     nameSource: "derived",
     // The key's fields are persisted verbatim alongside the value computed
-    // from them: the row has to answer "where did this run?" for the dashboard
-    // and for `--resume` without re-shelling out to git, and the pieces are not
-    // recoverable from the key (`<repo>@<branch>` cannot name a worktree).
+    // from them: the row has to answer "where did this run?" for `--resume`
+    // without re-shelling out to git, and the pieces are not recoverable from
+    // the key (`<repo>@<branch>` cannot name a worktree).
     ...sessionKey,
     groupKey: groupKeyValue,
   });

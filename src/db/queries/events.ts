@@ -1,4 +1,4 @@
-import { eq, and, gt, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { events } from "@/db/schema";
 import { normalizeEventMeta } from "@/lib/markdown";
@@ -34,27 +34,11 @@ export function insertEvent(opts: {
 export function getEventsBySession(
   sessionId: string,
   db: Db = getDb(),
-  opts?: {
-    /**
-     * Only rows with id > sinceId. Events are append-only (never updated or
-     * deleted), so the max id a client has seen is a complete cursor — the
-     * dashboard polls with it to fetch just the delta instead of the full
-     * timeline. Note: ordering is by createdAt (transcript ingestion can
-     * backdate rows), so new ids don't necessarily sort last; consumers must
-     * merge-and-resort, not blindly append.
-     */
-    sinceId?: number;
-  },
 ): EventRow[] {
-  const bySession = eq(events.sessionId, sessionId);
   return db
     .select()
     .from(events)
-    .where(
-      opts?.sinceId != null
-        ? and(bySession, gt(events.id, opts.sinceId))
-        : bySession,
-    )
+    .where(eq(events.sessionId, sessionId))
     .orderBy(events.createdAt, events.id)
     .all() as EventRow[];
 }
@@ -106,30 +90,6 @@ export function getEventsByType(
     // must fall back to insertion order to stay deterministic.
     .orderBy(events.createdAt, events.id)
     .all() as EventRow[];
-}
-
-/** First or last event of a given type in a session, by createdAt. */
-export function getEdgeEventOfType(
-  sessionId: string,
-  eventType: string,
-  edge: "first" | "last",
-): EventRow | undefined {
-  // `id` breaks ties in the same direction as the timestamp. `created_at` has
-  // one-second granularity, so two events of the same type inside one second
-  // are routinely tied — and an ascending tiebreak under a descending sort
-  // would return the *earliest* of them for edge "last", which is the opposite
-  // of what was asked for.
-  return getDb()
-    .select()
-    .from(events)
-    .where(and(eq(events.sessionId, sessionId), eq(events.event, eventType)))
-    .orderBy(
-      ...(edge === "first"
-        ? [events.createdAt, events.id]
-        : [desc(events.createdAt), desc(events.id)]),
-    )
-    .limit(1)
-    .get() as EventRow | undefined;
 }
 
 export function getLatestEvent(sessionId: string) {

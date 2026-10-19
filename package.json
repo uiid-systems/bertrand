@@ -45,11 +45,6 @@
     "db:migrate": "bun run src/db/migrate.ts",
     "prepublishOnly": "bun run build"
   },
-  "bertrand": {
-    "setup": "bun install && (cd dashboard && bun install)",
-    "run": "cd dashboard && bunx vite --port $BERTRAND_PORT --strictPort",
-    "api": "BERTRAND_PORT=$BERTRAND_API_PORT bun run src/index.ts serve"
-  },
   "dependencies": {
     "@orchetron/storm": "^0.2.0",
     "@supabase/supabase-js": "^2.108.1",

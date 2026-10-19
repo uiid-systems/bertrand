@@ -16,8 +16,8 @@ export interface ContextLayer {
 
 /**
  * The context sections that follow the rules in a full contract. One list, so
- * every path that builds a contract — the TUI launch, resume, the dashboard,
- * the hook — injects the same thing.
+ * every path that builds a contract — the TUI launch, resume, the hook —
+ * injects the same thing.
  *
  * `conversationId` is the conversation the contract is for; the resume digest
  * describes the session's *other* conversations.

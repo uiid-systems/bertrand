@@ -65,8 +65,7 @@ const cache = new Map<string, CacheEntry>();
 
 /**
  * Resolutions that have started but not settled, keyed identically to the
- * cache. The dashboard polls every project on an interval, so without this a
- * burst of concurrent callers would each spawn their own `git`.
+ * cache, so a burst of concurrent callers doesn't each spawn its own `git`.
  */
 const inFlight = new Map<string, Promise<RepoResolution>>();
 

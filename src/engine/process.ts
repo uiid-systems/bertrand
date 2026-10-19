@@ -1,7 +1,6 @@
 import { markContractSent } from "@/hooks/runtime";
 import { byteLength, logContextDelivery } from "@/contract/layers";
-import { smallestDims, spawnPty, type PtyDims, type PtyHandle } from "./pty";
-import { connectTerminalRelay, type TerminalRelayClient } from "./terminal-relay-client";
+import { spawnPty, type PtyHandle } from "./pty";
 
 export interface ClaudeLaunchOpts {
   sessionId: string;
@@ -93,8 +92,7 @@ export function deliverContract(
  * Spawn a Claude Code subprocess attached to a PTY bertrand owns (instead of
  * `stdio: "inherit"`), with the appropriate flags and env vars. The local
  * terminal is wired up as one consumer of that PTY (raw-mode passthrough on
- * stdin, resize forwarding) — see docs/pty-wrapper.md for why this is the
- * seam a browser consumer attaches to later without changing this function.
+ * stdin, resize forwarding).
  *
  * Behavior change from `stdio: "inherit"`: Ctrl+C at the real terminal used
  * to signal the `claude` child directly, since it owned the controlling
@@ -120,16 +118,12 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
 
   return new Promise((resolve, reject) => {
     let pty: PtyHandle;
-    let relay: TerminalRelayClient | null = null;
     try {
       pty = spawnPty(["claude", ...args], {
         env,
         cols: process.stdout.columns,
         rows: process.stdout.rows,
-        onData: (chunk) => {
-          process.stdout.write(chunk);
-          relay?.send(chunk);
-        },
+        onData: (chunk) => process.stdout.write(chunk),
       });
     } catch (err) {
       reject(new Error(`Failed to launch claude: ${(err as Error).message}`));
@@ -137,68 +131,6 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     }
 
     activePty = pty;
-
-    const localDims = () => ({
-      cols: process.stdout.columns ?? 80,
-      rows: process.stdout.rows ?? 24,
-    });
-
-    /**
-     * Geometry a dashboard browser has taken over, or null when none has. Held
-     * here rather than in the relay so the PTY's size is always decided in one
-     * place, by the process that owns it.
-     */
-    let browserClaim: PtyDims | null = null;
-
-    /** The size to actually give the PTY — see smallestDims(). */
-    const currentDims = () => smallestDims(localDims(), browserClaim);
-
-    /** Resizes the PTY and tells attached browsers what actually took effect. */
-    const applyDims = () => {
-      const { cols, rows } = currentDims();
-      if (cols < 1 || rows < 1) return;
-      try {
-        pty.resize(cols, rows);
-      } catch {
-        // Session already exited; there is nothing left to resize.
-        return;
-      }
-      relay?.sendDims(cols, rows);
-    };
-
-    // A dashboard browser is a second consumer of the same PTY, symmetric with
-    // the local terminal below for input — both just call pty.write(). Geometry
-    // is negotiated rather than owned: this side stays the authority on what the
-    // PTY's size actually is (and reports it via sendDims), but a browser can
-    // ask to take sizing over so the terminal fits the panel it is rendered in.
-    relay = connectTerminalRelay({
-      sessionId: opts.sessionId,
-      onInput: (chunk) => pty.write(chunk),
-      onSetSize: (dims) => {
-        browserClaim = dims;
-        applyDims();
-      },
-      // A browser attaching mid-session missed the output that drew the current
-      // screen. Two resizes in quick succession read as a real terminal resize,
-      // which makes the TUI repaint its whole frame.
-      onRepaint: () => {
-        const { cols, rows } = currentDims();
-        try {
-          pty.resize(cols, Math.max(1, rows - 1));
-          setTimeout(() => {
-            try {
-              pty.resize(cols, rows);
-            } catch {
-              // Session exited between the two resizes — nothing to repaint.
-            }
-          }, 50);
-        } catch {
-          // Session already exited; a repaint request is moot.
-        }
-      },
-    });
-    const initialDims = currentDims();
-    relay.sendDims(initialDims.cols, initialDims.rows);
 
     // Local terminal is one consumer of the PTY: raw stdin bytes forward
     // straight through, and resize follows the real terminal's dimensions.
@@ -208,10 +140,14 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     process.stdin.resume();
     if (stdinIsTty) process.stdin.setRawMode(true);
 
-    // Resizing the local terminal re-derives the effective size (a browser may
-    // still be claiming a smaller one) and tells attached browsers the result.
     const onResize = () => {
-      if (process.stdout.columns && process.stdout.rows) applyDims();
+      const { columns, rows } = process.stdout;
+      if (!columns || !rows) return;
+      try {
+        pty.resize(columns, rows);
+      } catch {
+        // Session already exited; there is nothing left to resize.
+      }
     };
     if (process.stdout.isTTY) process.stdout.on("resize", onResize);
 
@@ -221,30 +157,23 @@ export function launchClaude(opts: ClaudeLaunchOpts): Promise<number> {
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
 
-    const cleanup = (exitCode: number) => {
+    const cleanup = () => {
       process.stdin.removeListener("data", onStdinData);
       if (stdinIsTty) process.stdin.setRawMode(false);
       process.stdin.pause();
       if (process.stdout.isTTY) process.stdout.removeListener("resize", onResize);
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
-      // Before the close, and for CLI sessions too: a browser watching one
-      // through the relay is just as stranded by a silent disconnect as a
-      // browser watching a dashboard-owned session.
-      relay?.sendEnded(exitCode);
-      relay?.close();
       activePty = null;
     };
 
     pty.exited.then(
       (code) => {
-        cleanup(code);
+        cleanup();
         resolve(code);
       },
       (err) => {
-        // The process is gone either way; browsers need telling regardless of
-        // whether we learned the real code.
-        cleanup(1);
+        cleanup();
         reject(err);
       },
     );

@@ -589,8 +589,8 @@ describe("runAdopt — find-or-create on the group key", () => {
 
     const session = getSession(result.sessionId)!;
     // The pieces are stored alongside the key computed from them: the key
-    // cannot name the worktree a session ran in, and the dashboard and
-    // `--resume` both need that path without re-shelling out to git.
+    // cannot name the worktree a session ran in, and `--resume` needs that
+    // path without re-shelling out to git.
     expect(session.branch).toBe("elky-184-persist");
     expect(session.worktreeRoot).toEndWith("/group-persist");
     // Not compared to `worktreeRoot` textually: `--show-toplevel` answers with

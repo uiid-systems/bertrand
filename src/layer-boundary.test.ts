@@ -14,17 +14,16 @@ import { isTestFile, resolveSpec, specifiersOf, tsFilesUnder } from "./import-gr
  * loaded, because that is the shape of a session bertrand did not launch
  * (`bertrand adopt`, ELKY-179/180).
  *
- * Neither directory is deleted, and neither is deprecated: the PTY relay is the
- * only route to a live terminal in the browser, and the TUI remains the nicer
- * path. Demoted means *reachable only on demand*.
+ * Neither directory is deleted, and neither is deprecated: the TUI remains the
+ * nicer path. Demoted means *reachable only on demand*.
  *
  * Two tests, because the property has two halves that can fail independently:
  *
  *   1. **Statically** — no Layer 1 module may name `src/engine` or `src/tui` in
  *      an `import … from` clause, directly or through any chain. `await
  *      import("…")` is deliberately invisible to this walk: it is how an
- *      optional dependency is spelled, and the two sites that use it
- *      (`cli/commands/launch.ts`, `server/index.ts`) are the demotion.
+ *      optional dependency is spelled, and the site that uses it
+ *      (`cli/commands/launch.ts`) is the demotion.
  *   2. **At runtime** — running the real entrypoint must load zero modules from
  *      either directory. This is the half that catches a top-level `await
  *      import`, which the static walk cannot see by construction.
@@ -40,10 +39,6 @@ const LAUNCHER_DIRS = ["engine", "tui"] as const;
  * Layer 1 — what bertrand is when it is only a logger: the database, the hook
  * handlers, the contract, the CLI, and the lib modules the hook-fired commands
  * reach for. Taken from the layering in docs/orca-boundary.md (Workstream 4).
- *
- * `src/server` is Layer 2 and not listed, but it is *reached* from Layer 1 via
- * `cli/commands/serve.ts`, so the walk covers it anyway — which matters,
- * because `bertrand serve` runs for the whole of every recorded session.
  */
 const LAYER_1_DIRS = ["db", "hooks", "contract", "cli"];
 const LAYER_1_FILES = [

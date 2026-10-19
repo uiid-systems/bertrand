@@ -244,8 +244,8 @@ export function computeAndPersist(
 }
 
 /**
- * Live timing-only computation for CLI rendering. The dashboard prefers
- * computeSessionStats which returns the full row.
+ * Live timing-only computation for CLI rendering. computeSessionStats returns
+ * the full row.
  */
 export function computeTimingsLive(sessionId: string): TimingSummary {
   return computeTimings(getEventsBySession(sessionId));

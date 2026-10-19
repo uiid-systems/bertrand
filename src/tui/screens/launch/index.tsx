@@ -59,9 +59,9 @@ function repoHeaderRow(group: RepoGroup): PickerItem {
 function sessionRow(s: SessionRow): PickerItem {
   const status = s.session.status;
   const color = STATUS_COLOR[status] ?? "gray";
-  // A live row is running in another terminal (or the dashboard) — listed so
-  // the screen shows every session the user has, but not selectable: resuming
-  // it here would attach a second claude to the same session.
+  // A live row is running in another terminal — listed so the screen shows
+  // every session the user has, but not selectable: resuming it here would
+  // attach a second claude to the same session.
   const disabled = isLiveStatus(status);
   const isArchived = status === "archived";
   const branch = s.session.branch;

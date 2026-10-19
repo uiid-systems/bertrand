@@ -9,15 +9,8 @@ import { claudeSessionExists } from "@/lib/transcript";
 import type { SessionRow } from "@/types";
 
 /**
- * Everything a host needs to resume a session, resolved once and shared by both
- * hosts (#214).
- *
- * The CLI (`session.ts:resume`) and the server (`dashboard-session.ts`) differ
- * only in *how* they run `claude` — a foreground PTY that owns the terminal
- * versus a server-owned one the browser attaches to. The decisions before that
- * point are identical, and two copies of them is exactly the divergence that
- * bit #208 (two finalize implementations) and that #209 collapsed back onto a
- * shared path. So the decisions live here and the hosts own only the spawn.
+ * Everything needed to resume a session, resolved before `claude` is spawned
+ * (#214). The decisions live here and `session.ts:resume` owns only the spawn.
  */
 export interface ResumePlan {
   session: SessionRow;

@@ -1,13 +1,7 @@
 /**
- * Static import-graph primitives, shared by the two boundary tests:
- * `types-boundary.test.ts` (nothing in the dashboard's type graph may reach a
- * runtime-only dependency) and `layer-boundary.test.ts` (nothing in Layer 1
- * may reach the launcher).
- *
- * Only the fiddly parts live here — reading specifiers out of a file and
- * turning one into a path on disk. Each test keeps its own walk and its own
- * policy, because the two ask different questions of the same edges. What they
- * must not do is keep two copies of the regex below.
+ * Static import-graph primitives for `layer-boundary.test.ts` (nothing in
+ * Layer 1 may reach the launcher): reading specifiers out of a file and turning
+ * one into a path on disk.
  *
  * Test-only. Nothing in the shipped CLI imports this module.
  */
@@ -42,8 +36,7 @@ export function specifiersOf(file: string): string[] {
  * Resolve a relative or `@/`-aliased specifier to a file on disk, `null` for a
  * bare package specifier (not ours to walk) or an unresolvable path.
  *
- * `srcRoot` is what `@/` maps to — the root `src`, per `tsconfig.json` and the
- * dashboard's own `paths`.
+ * `srcRoot` is what `@/` maps to — the root `src`, per `tsconfig.json`.
  */
 export function resolveSpec(
   spec: string,

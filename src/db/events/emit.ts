@@ -138,8 +138,7 @@ type ToolPermission = {
  *   - `tool.applied` fires for tools that mutate files; meta carries diffs.
  *   - `tool.used` fires for the read-only / shell-shaped tools we previously
  *     missed entirely (auto-approved Read, Grep, Glob, etc., and Bash when
- *     no permission prompt was required). The timeline stays comprehensible
- *     because dashboard compact-mode rolls these into tool.work batches.
+ *     no permission prompt was required).
  *
  * `outcome` distinguishes the permission path:
  *   - `auto`     — tool ran without ever prompting the user
@@ -167,7 +166,7 @@ export function emitToolUsed(args: EventTarget & {
   });
 }
 
-/** Used by emitToolUsed; also exposed for the dashboard's renderer. */
+/** Used by emitToolUsed. */
 export function formatToolSummary(tool: string, detail: string): string {
   if (!detail) return tool;
   switch (tool) {

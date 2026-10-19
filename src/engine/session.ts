@@ -18,7 +18,6 @@ import {
 import { buildSessionContract } from "@/contract/layers";
 import { launchClaude, isClaudeRunning } from "./process";
 import { finalizeSessionRow } from "@/lib/session-finalize";
-import { ensureServerStarted } from "@/lib/server-lifecycle";
 import { planResume } from "./resume-plan";
 import { pruneStaleMarkers } from "@/hooks/runtime";
 import { formatDbTime } from "@/lib/format";
@@ -184,7 +183,6 @@ export async function launch(opts: LaunchOpts): Promise<string> {
   });
   liveSession = { sessionId: session.id, claudeId };
   installExitHandlers();
-  await ensureServerStarted();
 
   const sessionName = slug;
 
@@ -217,10 +215,8 @@ export async function launch(opts: LaunchOpts): Promise<string> {
 export async function resume(opts: ResumeOpts): Promise<string> {
   pruneStaleMarkers();
 
-  // Shared with the server-hosted path so the two can't drift on which
-  // conversation to attach to or whether Claude has ever seen it. A CLI process
-  // runs in the session's own directory, so `process.cwd()` is the right place
-  // to look for the transcript here.
+  // A CLI process runs in the session's own directory, so `process.cwd()` is
+  // the right place to look for the transcript here.
   const planned = planResume({
     sessionId: opts.sessionId,
     conversationId: opts.conversationId,
@@ -242,7 +238,6 @@ export async function resume(opts: ResumeOpts): Promise<string> {
   });
   liveSession = { sessionId: session.id, claudeId: opts.conversationId };
   installExitHandlers();
-  await ensureServerStarted();
 
   // Outside the resume guard on purpose. The event must not be re-emitted for
   // a continuing conversation, but where the session is running must be
@@ -273,9 +268,8 @@ export async function resume(opts: ResumeOpts): Promise<string> {
 
 /**
  * Run end-of-Claude cleanup for a CLI-hosted session. The shared work lives in
- * finalizeSessionRow so the server-hosted path (dashboard-session.ts) cannot
- * drift from it; only the liveSession bookkeeping below is specific to owning
- * a session in this process.
+ * finalizeSessionRow, which crash recovery also uses; only the liveSession
+ * bookkeeping below is specific to owning a session in this process.
  */
 function finalizeSession(
   sessionId: string,
