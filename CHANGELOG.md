@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/uiid-systems/bertrand/compare/v0.44.0...v0.44.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **hooks:** make Done for now optional and pause on it directly ([#311](https://github.com/uiid-systems/bertrand/issues/311)) ([7c613ed](https://github.com/uiid-systems/bertrand/commit/7c613ed11ee810848c6ebf41e6202657b0ef666a))
+
 ## [0.44.0](https://github.com/uiid-systems/bertrand/compare/v0.43.2...v0.44.0) (2026-10-06)
 
 
