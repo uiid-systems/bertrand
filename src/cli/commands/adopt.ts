@@ -42,7 +42,7 @@ import {
   untakenPlaceholderSlug,
   updateSession,
 } from "@/db/queries/sessions";
-import { writeAdoptionMarker } from "@/hooks/runtime";
+import { clearExitMarkers, writeAdoptionMarker } from "@/hooks/runtime";
 import { processStartedAt } from "@/lib/process-identity";
 import { deriveSessionKey, groupKey, type SessionKey } from "@/lib/session-key";
 import { sessionKeyColumns } from "@/lib/session-record";
@@ -350,6 +350,11 @@ async function attach(
       ? {}
       : { status: "active" as const, pid: opts.pid, pidStartedAt, endedAt: null }),
   });
+
+  // Before the marker, so the first hook to resolve this session can't see an
+  // exit the previous conversation signalled. The prompt hook clears it too,
+  // but a conversation joining via /bertrand isn't attached on that prompt.
+  clearExitMarkers(session.id);
 
   writeAdoptionMarker(opts.claudeSessionId, {
     sessionId: session.id,

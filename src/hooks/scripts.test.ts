@@ -138,18 +138,25 @@ describe("on-done.sh — AUQ loop enforcement", () => {
 });
 
 describe("Done-for-now handoff — on-answered / on-waiting / on-user-prompt", () => {
-  test("Done-for-now answer → drops done marker, clears nudge, halts the loop", () => {
+  test("Done-for-now answer → halts the loop and pauses, leaving no marker", () => {
     writeFileSync(marker(`auq-nudge-${SID}`), "2");
+    const log = join(workDir, "stub.log");
     const input = JSON.stringify({
       tool_input: { answers: { q: "Done for now" }, questions: [] },
     });
     const { stdout } = run("on-answered.sh", input, {
       BERTRAND_SESSION: SID,
       BERTRAND_CLAUDE_ID: CID,
+      BERTRAND_STUB_LOG: log,
     });
     expect(stdout).toContain('"continue": false');
-    expect(existsSync(marker(`done-${SID}`))).toBe(true);
+    // continue:false ends the turn without a Stop event, so on-done.sh never
+    // runs to consume a marker or pause — this hook has to do both.
+    expect(existsSync(marker(`done-${SID}`))).toBe(false);
     expect(existsSync(marker(`auq-nudge-${SID}`))).toBe(false);
+    expect(readFileSync(log, "utf-8")).toContain(
+      `argv=update --session-id ${SID} --event session.paused`,
+    );
   });
 
   test("ordinary answer → no done marker, nudge counter reset", () => {
@@ -184,17 +191,15 @@ describe("Done-for-now handoff — on-answered / on-waiting / on-user-prompt", (
     expect(existsSync(marker(`done-${SID}`))).toBe(true);
   });
 
-  test("on-waiting.sh refuses to ask again once the done marker exists", () => {
-    // Valid payload, so a block can only come from the marker — not multiSelect.
+  test("on-waiting.sh still asks while a done marker exists", () => {
+    // It used to refuse here, and a marker that outlived its conversation
+    // then blocked the next one's first question.
     const input = JSON.stringify({
       tool_input: { questions: [{ question: "q", multiSelect: true }] },
     });
-    const env = { BERTRAND_SESSION: SID, BERTRAND_CLAUDE_ID: CID };
-
-    expect(run("on-waiting.sh", input, env).code).toBe(0);
-
     writeFileSync(marker(`done-${SID}`), "");
-    expect(run("on-waiting.sh", input, env).code).toBe(2);
+    const env = { BERTRAND_SESSION: SID, BERTRAND_CLAUDE_ID: CID };
+    expect(run("on-waiting.sh", input, env).code).toBe(0);
   });
 
   test("on-user-prompt.sh clears a done marker orphaned by a dead session", () => {

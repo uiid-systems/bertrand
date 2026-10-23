@@ -127,6 +127,16 @@ export function markRecalled(conversationId: string, sessionIds: string[]): void
 }
 
 /**
+ * Drop a session's pending exit signal. A conversation attaching to the
+ * session is the user coming back, so a `done-` marker left by an earlier
+ * conversation is stale — and on-done.sh would read it as this one's exit.
+ */
+export function clearExitMarkers(sessionId: string): void {
+  rmMarker(`done-${sessionId}`);
+  rmMarker(`auq-nudge-${sessionId}`);
+}
+
+/**
  * Remove the markers owned by a finished session/conversation. Best-effort —
  * a missing file is a no-op, and a missing runtime dir is ignored.
  */

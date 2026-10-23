@@ -214,7 +214,7 @@ function quietHelper(bin: string): string {
   return `bq() { ${bin} "$@" 2>/dev/null || true; }`;
 }
 
-/** PreToolUse AskUserQuestion → refuse once exiting, enforce multiSelect:true, then mark session as waiting */
+/** PreToolUse AskUserQuestion → enforce multiSelect:true, then mark session as waiting */
 export function waitingScript(bin: string, runtimeDir: string): string {
   return `#!/usr/bin/env bash
 # Hook: PreToolUse AskUserQuestion → enforce multiSelect, mark session as waiting
@@ -222,18 +222,6 @@ ${quietHelper(bin)}
 ${sessionGuard(runtimeDir)}
 
 ${READ_PAYLOAD_REST}
-
-# Refuse to ask anything once the session is exiting. "Done for now" co-selected
-# with real work leaves the agent one more turn to finish that work (see
-# on-answered.sh) — but that turn has to END, not re-open the loop and prompt
-# the user again after they already said they were done. The contract tells the
-# agent not to ask again; this is what makes it so where the contract cannot
-# reach. Checked before multiSelect: if the session is over, the shape of the
-# question no longer matters.
-if [ -f "${runtimeDir}/done-$sid" ]; then
-  printf 'This bertrand session is exiting — the user selected "Done for now". Do not ask another question. Finish any work they co-selected alongside it, then end your turn; bertrand pauses the session from there.\\n' >&2
-  exit 2
-fi
 
 # Block AUQ calls that omit multiSelect:true on any question. multiSelect is a
 # UX-safety mechanism in bertrand (prevents submit-on-focus), not a cardinality
@@ -301,7 +289,11 @@ rm -f "${runtimeDir}/auq-nudge-$sid"
 # Done for now ends the session. Two shapes, because multiSelect is forced on
 # and co-selection is therefore the normal case rather than an edge:
 #
-#   sole selection → nothing else was asked for, halt the agent immediately.
+#   sole selection → nothing else was asked for, halt the agent immediately
+#                    and pause here. continue:false ends the turn without a
+#                    Stop event (true of every Claude Code release since at
+#                    least 2.1.287), so on-done.sh never runs on this path to
+#                    pause the session or consume a marker dropped here.
 #   co-selected    → the user picked real work *and* signalled the exit. Drop
 #                    the marker but let the turn run, so the agent does that
 #                    work and ends on its own; on-done.sh sees the marker and
@@ -309,19 +301,24 @@ rm -f "${runtimeDir}/auq-nudge-$sid"
 #
 # Halting on any occurrence (what this used to do) made the second shape
 # unreachable: continue:false killed the turn before the co-selected work ran.
-#
-# Either way the marker tells on-done.sh this Stop is a legitimate exit rather
-# than a dropped AUQ call. Both tests below are bash builtins — no fork, on a
-# hook that runs on every answered question.
+# Both tests below are bash builtins — no fork, on a hook that runs on every
+# answered question.
 case "$done_check" in
   *"Done for now"*)
-    touch "${runtimeDir}/done-$sid"
-
     # Anything picked besides the exit itself? Strip the label, then the
     # separators AUQ joins selections with — a non-empty remainder is work.
     rest="\${done_check//Done for now/}"
     rest="\${rest//[[:space:],]/}"
-    [ -z "$rest" ] && printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
+    if [ -z "$rest" ]; then
+      # The turn's assistant output was flushed by on-waiting.sh before the
+      # question went out, so the pause-time summary already has it. Stdout
+      # muted: it carries the decision JSON below.
+      rm -f "${runtimeDir}/done-$sid"
+      bq update --session-id "$sid" --event session.paused >/dev/null
+      printf '{"continue": false, "stopReason": "User selected Done for now"}\\n'
+    else
+      touch "${runtimeDir}/done-$sid"
+    fi
     ;;
 esac
 `;
@@ -468,11 +465,13 @@ ${sessionGuard(runtimeDir, { autoCreate: true })}
 [ -z "$input" ] && ${READ_PAYLOAD_REST}
 
 # A new prompt means the user is still here, so any pending exit signal is
-# stale — drop it. Normal exits never reach this hook (the Stop that follows
-# "Done for now" clears the marker itself), so this only ever catches a marker
-# orphaned by a session that died mid-turn. Worth the one builtin: on-waiting.sh
-# now refuses to ask anything while the marker exists, so an orphan would
-# silently pause the next session on its first question.
+# stale — drop it. Normal exits never reach this hook (a sole "Done for now"
+# leaves no marker, and the Stop after a co-selected one clears its own), so
+# this only ever catches a marker orphaned by a session that died mid-turn.
+# A conversation that joins via /bertrand is not attached yet on its first
+# prompt, so \`adopt\` clears the marker on that path. Worth the one builtin: an
+# orphan would make on-done.sh pause the next turn that ends without a question
+# instead of nudging the loop back open.
 rm -f "${runtimeDir}/done-$sid"
 
 # Finalize sessions whose claude is gone. An adopted session has no bertrand
@@ -559,7 +558,7 @@ if [ ! -f "$done_marker" ]; then
     # Claude Code always renders a block reason to the user as "Stop hook
     # error: …" (no way to suppress it), so keep it to one short line — the
     # full rule already lives in the contract.
-    reason='End the turn with AskUserQuestion (multiSelect, "Done for now" option).'
+    reason='End the turn with AskUserQuestion (multiSelect).'
     wait
     jq -n --arg r "$reason" '{decision:"block", reason:$r}'
     exit 0

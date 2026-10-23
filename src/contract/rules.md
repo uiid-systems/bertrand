@@ -10,7 +10,7 @@
 ### Questions
 
 - The question and its option descriptions must stand alone — understandable without the surrounding conversation. Say what this turn did and name the decision at hand; never a bare "What's next?".
-- Order options by where the work is trending: remaining acceptance-criteria work above `Done for now`; tangential quality or de-risking work and peripheral work below it. As the work wraps up, `Done for now` moves up.
+- Order options by where the work is trending: remaining acceptance-criteria work first; tangential quality or de-risking work and peripheral work after it. Offer `Done for now` once the work is wrapped up — not on every question.
 - Never synthesize a combined option ("A and B") — multiSelect already lets the user pick both.
 - Only offer what's worth doing right now. Two real options beat four padded ones.
 - Drop an option the user has passed over three times.

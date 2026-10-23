@@ -515,6 +515,35 @@ describe("runAdopt — find-or-create on the group key", () => {
     expect(getConversationsBySession(first.sessionId)).toHaveLength(2);
   });
 
+  test("a joining conversation clears the exit its predecessor signalled", async () => {
+    // Left standing, on-done.sh reads it as the new conversation's exit and
+    // pauses the session instead of nudging the loop back open.
+    const repo = makeRepo("group-done", "elky-184-done");
+
+    const first = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const done = join(workdir, "run", `done-${first.sessionId}`);
+    writeFileSync(done, "");
+
+    const second = await runAdopt({
+      claudeSessionId: claudeId(),
+      cwd: repo,
+      pid: null,
+      backfill: false,
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(existsSync(done)).toBe(false);
+  });
+
   test("an archived session on the key does not capture new work", async () => {
     // Archiving is the user saying "this one is done". A later claude on the
     // same branch is new work and must get a row of its own, rather than
