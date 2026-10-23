@@ -14,7 +14,7 @@ export const rules = rulesTemplate.trim();
 
 /**
  * Generate the contract system prompt for a session.
- * Soft guidance only — hard rules (multiSelect, Done-for-now exit) are enforced
+ * Soft guidance only — hard rules (multiSelect, the AUQ loop) are enforced
  * by hooks in `src/hooks/scripts.ts` so they survive contexts where the contract
  * doesn't reach the agent (subagents, background jobs, direct `claude` invocations).
  */
@@ -36,7 +36,7 @@ export function buildContract(
  * turn after the first (see `bertrand contract --short`).
  *
  * It carries the *rules* rather than the loop mechanics, deliberately. The
- * mechanics — end on AUQ, multiSelect:true, a `Done for now` option — are hook
+ * mechanics — end on AUQ, multiSelect:true — are hook
  * enforced, so a lapse is blocked whether or not the agent still remembers
  * them; repeating them buys nothing. The rules are soft guidance that nothing
  * catches, which makes them the half that actually decays as a long
@@ -47,7 +47,7 @@ export function buildContract(
 export function buildReminder(sessionName: string): string {
   return (
     `Reminder — you are in bertrand session ${sessionName}: end this turn with an ` +
-    `AskUserQuestion call (multiSelect:true on every question, plus a "Done for now" option).\n\n` +
+    `AskUserQuestion call (multiSelect:true on every question).\n\n` +
     rules
   );
 }
